@@ -81,7 +81,8 @@ export default function App() {
   //   if (!session) return;
   //   supabase.from("profiles").select("gender, plan, lang, nickname, full_name")
   //     .eq("id", session.user.id).single().then(({ data }) => {
-  //       if (data) { setGender(data.gender ?? "M"); setUserPlan(data.plan ?? "free"); setLang(data.lang ?? "it"); }
+  //       // NB: profiles.gender è 'male'/'female' nel DB, l'app usa 'M'/'F' — va convertito qui.
+  //       if (data) { setGender(data.gender === "female" ? "F" : "M"); setUserPlan(data.plan ?? "free"); setLang(data.lang ?? "it"); }
   //     });
   // }, [session]);
 

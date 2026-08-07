@@ -110,10 +110,14 @@ export function makeAuth(supabase) {
     },
 
     async signUp(email, password, fullName, gender, birthDate) {
+      // Il DB accetta SOLO 'male'/'female' esatti (check constraint su profiles.gender).
+      // L'app usa "M"/"F" internamente ovunque: la conversione avviene solo qui,
+      // al confine con Supabase, senza toccare il resto del codice.
+      const dbGender = gender === "F" ? "female" : "male";
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName, gender, birth_date: birthDate } },
+        options: { data: { full_name: fullName, gender: dbGender, birth_date: birthDate } },
       });
       if (error) throw new Error(mapAuthError(error.message));
       return data;
