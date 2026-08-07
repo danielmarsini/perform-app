@@ -45,7 +45,7 @@ export default function App() {
   const [session, setSession] = useState(null);
 
   // --- Stato condiviso tra TUTTE le schermate ---------------------------------
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
   const [gender, setGender] = useState("M");           // 'M' | 'F' — da profiles.gender
   const [lang, setLang] = useState("it");               // 'it' | 'en' | 'es' | 'fr'
   const [userPlan, setUserPlan] = useState("free");      // 'free' | 'performance_pack' | 'full_coaching'

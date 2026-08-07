@@ -1,11 +1,11 @@
 /* ============================================================================
-   PERFORM · AuthView.jsx — INGRESSO PUBBLICO
+   PERFORM Â· AuthView.jsx â€” INGRESSO PUBBLICO
    Evidence-Based Method by D. Marsini
 
    Contenuto:
      0. supabase ............ client reale, inizializzato da variabili
                                d'ambiente Vite (VITE_SUPABASE_URL,
-                               VITE_SUPABASE_ANON_KEY) — vedi sezione 0 sotto
+                               VITE_SUPABASE_ANON_KEY) â€” vedi sezione 0 sotto
      1. makeAuth ............ wrapper delle chiamate Supabase Auth reali,
                                nessuna simulazione
      2. BrandMark ........... logo istituzionale originale: icona Activity
@@ -14,41 +14,41 @@
      3. Field / Primary / ErrorLine / ConsentRow
                               .. componenti di presentazione STABILI, dichiarati
                                a livello di modulo (non dentro AuthScreen):
-                               è il fix strutturale del bug "perdita del focus
-                               a ogni lettera digitata" — vedi nota sotto.
-     4. AuthScreen .......... login · registrazione (data di nascita con
-                               blocco minorenni, 3 consensi ad accordion) ·
-                               verifica email a codice OTP reale · recupero e
+                               Ã¨ il fix strutturale del bug "perdita del focus
+                               a ogni lettera digitata" â€” vedi nota sotto.
+     4. AuthScreen .......... login Â· registrazione (data di nascita con
+                               blocco minorenni, 3 consensi ad accordion) Â·
+                               verifica email a codice OTP reale Â· recupero e
                                reimpostazione password
      5. LegalConsents ....... versione standalone dei 3 consensi (riutilizzabile
                                per un eventuale ri-consenso a informativa aggiornata)
      6. AuthView ............ contenitore dimostrativo che monta AuthScreen con
                                il client reale (si elimina in produzione, dove
-                               è l'app stessa a montare AuthScreen)
+                               Ã¨ l'app stessa a montare AuthScreen)
 
    REQUISITI D'AMBIENTE (obbligatori, senza non parte nulla):
    Su Vercel ? Project Settings ? Environment Variables (Production + Preview):
      VITE_SUPABASE_URL       = https://<project-ref>.supabase.co
      VITE_SUPABASE_ANON_KEY  = <anon/public key del progetto Supabase>
    In locale: file .env (mai committato) con le stesse due chiavi.
-   Il prefisso VITE_ è obbligatorio: senza, Vite non le espone al bundle
+   Il prefisso VITE_ Ã¨ obbligatorio: senza, Vite non le espone al bundle
    client-side, e import.meta.env.VITE_SUPABASE_URL risulterebbe undefined.
 
    Su Supabase, Authentication ? Email Templates deve avere il template di
    conferma registrazione impostato per inviare un CODICE a 6 cifre (non il
-   classico magic link), perché supabase.auth.verifyOtp({ type: 'signup' })
+   classico magic link), perchÃ© supabase.auth.verifyOtp({ type: 'signup' })
    funzioni come previsto in doVerifyOtp qui sotto.
 
-   FIX STRUTTURALE — perdita del focus sugli input:
+   FIX STRUTTURALE â€” perdita del focus sugli input:
    Nella versione precedente i componenti Field/ConsentRow/Primary erano
    dichiarati DENTRO il corpo della funzione AuthScreen. Ad ogni pressione di
    tasto, lo stato cambiava, AuthScreen si ri-eseguiva da capo e ricreava una
-   funzione Field "nuova" con un'identità diversa dalla precedente: React la
+   funzione Field "nuova" con un'identitÃ  diversa dalla precedente: React la
    vedeva come un componente diverso, smontava il vecchio <input> dal DOM e ne
    montava uno nuovo, perdendo il focus e il cursore ad ogni carattere. Ora
    questi componenti sono dichiarati una sola volta, a livello di modulo:
-   la loro identità resta stabile tra un render e l'altro, React aggiorna solo
-   le props e il DOM dell'input non viene mai ricreato — la digitazione è
+   la loro identitÃ  resta stabile tra un render e l'altro, React aggiorna solo
+   le props e il DOM dell'input non viene mai ricreato â€” la digitazione Ã¨
    continua e fluida.
 
    Tipografia: un'unica famiglia sans-serif geometrica nativa (system-ui /
@@ -56,7 +56,7 @@
    Testo descrittivo in grigio satinato #A1A1AA, su bianco e su onyx.
 
    NOTA: la gestione Whitelist (bypass pagamento/anamnesi) NON vive qui:
-   è una funzione amministrativa riservata alla Dashboard Coach privata.
+   Ã¨ una funzione amministrativa riservata alla Dashboard Coach privata.
 
    Tutto pilotato da props: nessuna dipendenza dal resto dell'app, a parte
    il client Supabase reale definito qui sotto.
@@ -70,10 +70,10 @@ import {
 } from "lucide-react";
 
 /* ============================================================================
-   0 · CLIENT SUPABASE — inizializzazione reale da variabili d'ambiente Vite
+   0 Â· CLIENT SUPABASE â€” inizializzazione reale da variabili d'ambiente Vite
    Su Vercel, VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY vanno impostate nel
    pannello Environment Variables del progetto (Production + Preview) e
-   prefissate con VITE_ perché Vite le esponga al bundle del client.
+   prefissate con VITE_ perchÃ© Vite le esponga al bundle del client.
    ========================================================================== */
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -81,7 +81,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error(
-    "PERFORM · variabili d'ambiente Supabase mancanti: verifica VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY."
+    "PERFORM Â· variabili d'ambiente Supabase mancanti: verifica VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY."
   );
 }
 
@@ -98,7 +98,7 @@ const SANS =
   'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
 /* ============================================================================
-   1 · WRAPPER SUPABASE AUTH — nessuna simulazione: chiamate dirette al client.
+   1 Â· WRAPPER SUPABASE AUTH â€” nessuna simulazione: chiamate dirette al client.
    ========================================================================== */
 
 export function makeAuth(supabase) {
@@ -164,8 +164,8 @@ function mapAuthError(msg = "") {
   const m = msg.toLowerCase();
   if (m.includes("invalid login")) return "Email o password non corrette.";
   if (m.includes("email not confirmed")) return "Conferma prima l'email che ti ho inviato.";
-  if (m.includes("already registered")) return "Esiste già un account con questa email. Prova ad accedere.";
-  if (m.includes("weak") || m.includes("6 characters")) return "La password è troppo debole: usa almeno 8 caratteri.";
+  if (m.includes("already registered")) return "Esiste giÃ  un account con questa email. Prova ad accedere.";
+  if (m.includes("weak") || m.includes("6 characters")) return "La password Ã¨ troppo debole: usa almeno 8 caratteri.";
   if (m.includes("token") || m.includes("otp") || m.includes("expired")) return "Codice non valido o scaduto. Richiedine uno nuovo.";
   if (m.includes("rate limit")) return "Troppi tentativi. Riprova tra qualche minuto.";
   return "Qualcosa non ha funzionato. Riprova.";
@@ -182,7 +182,7 @@ function getAge(birthDateStr) {
 }
 
 /* ============================================================================
-   2 · BRAND MARK
+   2 Â· BRAND MARK
    ========================================================================== */
 
 function BrandMark({ dark = false, size = 68 }) {
@@ -230,7 +230,7 @@ function BrandMark({ dark = false, size = 68 }) {
 }
 
 /* ============================================================================
-   3 · COMPONENTI DI PRESENTAZIONE STABILI (fix del focus)
+   3 Â· COMPONENTI DI PRESENTAZIONE STABILI (fix del focus)
    ========================================================================== */
 
 function Field({ id, label, type = "text", value, onChange, placeholder, icon: Icon, toggle, max, showPw, onToggleShowPw, onEnter, theme, inputRef, highlight }) {
@@ -293,7 +293,7 @@ function Primary({ children, onClick, disabled, busy, theme }) {
         fontWeight: 600,
       }}
     >
-      {busy ? "UN ATTIMO…" : children}
+      {busy ? "UN ATTIMOâ€¦" : children}
     </button>
   );
 }
@@ -348,7 +348,7 @@ function ConsentRow({ item, checked, expanded, onToggleCheck, onToggleExpand, th
 }
 
 /* ============================================================================
-   4 · SCHERMATA DI ACCESSO
+   4 Â· SCHERMATA DI ACCESSO
    ========================================================================== */
 
 const CONSENT_COPY = [
@@ -364,11 +364,11 @@ const CONSENT_COPY = [
   },
   {
     key: "medical",
-    title: "Esonero Responsabilità Medica e Sana Costituzione",
+    title: "Esonero ResponsabilitÃ  Medica e Sana Costituzione",
     long:
       "Dichiarazione esplicita che il software e Coach Daniel Marsini non forniscono terapie mediche o " +
-      "diete cliniche: le indicazioni non costituiscono diagnosi né prescrizione. Attestazione di sana e " +
-      "robusta costituzione prima di intraprendere sforzi ad alta intensità a RIR 0, con l'impegno a " +
+      "diete cliniche: le indicazioni non costituiscono diagnosi nÃ© prescrizione. Attestazione di sana e " +
+      "robusta costituzione prima di intraprendere sforzi ad alta intensitÃ  a RIR 0, con l'impegno a " +
       "consultare un medico in presenza di patologie pregresse.",
   },
   {
@@ -460,7 +460,7 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
     if (password.length < 8) { goTo(pwRef, "pw"); return setError("La password deve avere almeno 8 caratteri."); }
     if (password !== password2) { goTo(pw2Ref, "pw2"); return setError("Le due password non coincidono."); }
     if (!birthDate) { goTo(birthRef, "birth"); return setError("Inserisci la data di nascita."); }
-    if (isMinor) { goTo(birthRef, "birth"); return setError("L'accesso è riservato ai maggiori di 18 anni."); }
+    if (isMinor) { goTo(birthRef, "birth"); return setError("L'accesso Ã¨ riservato ai maggiori di 18 anni."); }
     if (!allConsentsChecked) { goTo(consentsRef, "consents"); return setError("Devi accettare tutti e tre i punti obbligatori per registrarti."); }
     setBusy(true);
     try {
@@ -600,7 +600,7 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
         {mode === "login" && (
           <>
             <Field id="email" label="Email" type="email" value={email} onChange={setEmail} placeholder="nome@email.it" icon={Mail} onEnter={submitCurrent} theme={theme} />
-            <Field id="pw" label="Password" value={password} onChange={setPassword} placeholder="••••••••" icon={Lock} toggle showPw={showPw} onToggleShowPw={() => setShowPw((v) => !v)} onEnter={submitCurrent} theme={theme} />
+            <Field id="pw" label="Password" value={password} onChange={setPassword} placeholder="Password" icon={Lock} toggle showPw={showPw} onToggleShowPw={() => setShowPw((v) => !v)} onEnter={submitCurrent} theme={theme} />
             <ErrorLine error={error} />
             <Primary onClick={doLogin} busy={busy} theme={theme}>ACCEDI</Primary>
 
@@ -660,7 +660,7 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
             />
             {isMinor && (
               <p className="text-xs mb-3 rounded-lg px-3 py-2 text-left" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 600 }}>
-                L'accesso è riservato ai maggiori di 18 anni.
+                L'accesso Ã¨ riservato ai maggiori di 18 anni.
               </p>
             )}
 
@@ -713,7 +713,7 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
             <Primary onClick={doSignUp} busy={busy} theme={theme}>{signupLabel}</Primary>
             <div className="text-center">
               <button onClick={() => { setMode("login"); reset(); }} className="text-xs mt-4" style={{ color: soft, fontWeight: 500 }}>
-                Ho già un account
+                Ho giÃ  un account
               </button>
             </div>
           </>
@@ -724,7 +724,7 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
             <span className="inline-flex w-14 h-14 rounded-full items-center justify-center mb-4" style={{ backgroundColor: dark ? "#FFFFFF" : "#111111" }}>
               <Mail size={22} style={{ color: dark ? "#09090B" : GOLD }} />
             </span>
-            <p className="text-base mb-2" style={{ color: ink, fontWeight: 600 }}>Certifica la tua identità</p>
+            <p className="text-base mb-2" style={{ color: ink, fontWeight: 600 }}>Certifica la tua identitÃ </p>
             <p className="text-sm mb-1 leading-relaxed" style={{ color: soft }}>
               Inserisci il codice OTP a 6 cifre inviato al tuo indirizzo email.
             </p>
@@ -801,8 +801,8 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
           <div className="text-center">
             <p className="text-base mb-2" style={{ color: ink, fontWeight: 600 }}>Imposta una nuova password</p>
             <p className="text-sm mb-6" style={{ color: soft }}>Almeno 8 caratteri. Al salvataggio entri direttamente nell'app.</p>
-            <Field id="np1" label="Nuova password" value={password} onChange={setPassword} placeholder="••••••••" icon={Lock} toggle showPw={showPw} onToggleShowPw={() => setShowPw((v) => !v)} onEnter={submitCurrent} theme={theme} />
-            <Field id="np2" label="Conferma password" value={password2} onChange={setPassword2} placeholder="••••••••" icon={Lock} toggle showPw={showPw} onToggleShowPw={() => setShowPw((v) => !v)} onEnter={submitCurrent} theme={theme} />
+            <Field id="np1" label="Nuova password" value={password} onChange={setPassword} placeholder="Password" icon={Lock} toggle showPw={showPw} onToggleShowPw={() => setShowPw((v) => !v)} onEnter={submitCurrent} theme={theme} />
+            <Field id="np2" label="Conferma password" value={password2} onChange={setPassword2} placeholder="Password" icon={Lock} toggle showPw={showPw} onToggleShowPw={() => setShowPw((v) => !v)} onEnter={submitCurrent} theme={theme} />
             <ErrorLine error={error} />
             <Primary onClick={doUpdate} busy={busy} theme={theme}>SALVA ED ENTRA</Primary>
           </div>
@@ -813,7 +813,7 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
 }
 
 /* ============================================================================
-   5 · CONSENSI LEGALI · VERSIONE STANDALONE
+   5 Â· CONSENSI LEGALI Â· VERSIONE STANDALONE
    ========================================================================== */
 
 export function LegalConsents({ dark = false, onAccept, onBack }) {
@@ -925,7 +925,7 @@ export function LegalConsents({ dark = false, onAccept, onBack }) {
 }
 
 /* ============================================================================
-   6 · ANTEPRIMA — si elimina in produzione
+   6 Â· ANTEPRIMA â€” si elimina in produzione
    ========================================================================== */
 
 export default function AuthView() {
@@ -967,7 +967,7 @@ export default function AuthView() {
       {log && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 px-5 py-3 rounded-full text-sm spring-in"
              style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
-          Accesso riuscito: {log.user?.email} {log.isNew ? "· nuovo iscritto" : ""}
+          Accesso riuscito: {log.user?.email} {log.isNew ? "Â· nuovo iscritto" : ""}
         </div>
       )}
     </div>
