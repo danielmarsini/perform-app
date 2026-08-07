@@ -1,0 +1,1395 @@
+/* ============================================================================
+   PERFORM · ClientProfileView.jsx  (ex 07_ClientProfile.jsx)
+   Coach Daniel Marsini — Area Profilo Atleta
+
+   Contenuto:
+     1. i18n ................. selettore lingua, dizionario IT/EN/ES/FR
+     2. Utilità .............. badge XP, testo gradiente animato, grafico peso
+     3. ClientProfileView .... vista Atleta unica: avatar, XP, Archivio Check
+     4. SettingsDrawer ....... Onyx, notifiche, paywall Stripe a 5 piani, privacy
+     5. Anteprima ............ da eliminare in produzione
+
+   REVISIONE 4 — internazionalizzazione, gradienti animati, profilo puro
+   - Titoli di sezione e prezzi dei 5 piani ora usano GradientText: gradiente
+     animato a 3 stop, Oro Lucido Vivo (#D4AF37→#F3E5AB→#AA7C11) per uomo,
+     Rosa Cipria Luminescente (#E5C1CD→#F4E0E6→#C896A6) per donna, in base a
+     `userGender` da Supabase. Animazione via background-position, GPU-friendly.
+   - Card "FULL COACHING SUPREMO" con micro-bordo luminescente colore brand e
+     badge fisso bilingue "CONSIGLIATO / RECOMMENDED" (testo dato letteralmente
+     dal committente, non passa dal motore di traduzione).
+   - Motore i18n a 4 lingue (IT/EN/ES/FR): oggetto `translations`, selettore a
+     bandiere sotto l'avatar, traduzione istantanea di profilo, piani Stripe
+     e impostazioni.
+   - RIMOSSO: CoachClientRoster e ogni riferimento a reparti Attivi/In
+     attesa/Scaduti — quella gestione ora vive in CoachDashboard.jsx. Chiunque
+     apra questo file (atleta o coach in test) vede solo la vista Atleta.
+   - RIMOSSA la tab "Template" di SettingsDrawer (era solo per il coach):
+     restano Aspetto, Notifiche, Abbonamento, Privacy per chiunque.
+   - Rimossa la sezione "Record personali" dalla vista principale: la vista
+     Atleta ora mostra esattamente avatar, nickname, XP e Archivio Check, come
+     da specifica. Se ti serve ancora, la ripristino in due minuti: il codice
+     (WeightChart, badge, Section) resta tutto disponibile e riusabile.
+   - Logica OWNER: se l'email account è danielmarsini@coach.com, la card Full
+     Coaching mostra "👑 PROPRIETARIO / OWNER" al posto del bottone d'acquisto.
+   ========================================================================== */
+
+import React, { useState, useRef, useEffect } from "react";
+import {
+  User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
+  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy,
+} from "lucide-react";
+
+/* ============================================================================
+   1 · INTERNAZIONALIZZAZIONE
+   ========================================================================== */
+
+export const LANGS = [
+  { code: "it", flag: "🇮🇹", label: "Italiano" },
+  { code: "en", flag: "🇬🇧", label: "English" },
+  { code: "es", flag: "🇪🇸", label: "Español" },
+  { code: "fr", flag: "🇫🇷", label: "Français" },
+];
+
+export const translations = {
+  it: {
+    settingsTitle: "Impostazioni",
+    tabs: { aspetto: "Aspetto", notifiche: "Notifiche", piano: "Abbonamento", privacy: "Privacy" },
+    editProfile: "Modifica profilo",
+    save: "Salva", cancel: "Annulla",
+    nicknameLabel: "Nickname pubblico",
+    bioLabel: "Bio · massimo 160 caratteri",
+    bioPlaceholder: "Due righe su di te: sport, obiettivo, una frase.",
+    nicknameHint: "Il nickname è ciò che vedono gli altri atleti: cambia subito in Home e nella classifica. Il nome vero non è mai pubblico.",
+    langLabel: "Lingua",
+    stats: { level: "Livello", xp: "XP", streak: "Streak", rank: "Classifica" },
+    records: {
+      title: "I miei traguardi",
+      sub: (n) => `${n} esercizi tracciati`,
+      filterAll: "Tutti", filterFavorites: "Preferiti",
+      emptyAll: "Registra gli allenamenti in Home, nella scheda che ti ha impostato il coach: le progressioni compaiono qui, settimana per settimana.",
+      emptyFavorites: "Non hai ancora esercizi preferiti: tocca la stella su quelli che vuoi tenere d'occhio — utile se fai powerlifting o se vuoi seguire da vicino un distretto carente.",
+      compoundTag: "Multiarticolare",
+      weekLabel: "Sett.", lastSession: "Ultima seduta", vsPrev: "vs settimana precedente",
+      favoriteAdd: "Aggiungi ai preferiti", favoriteRemove: "Rimuovi dai preferiti",
+      noProgressionData: "Serve almeno una seduta registrata per questo esercizio.",
+    },
+    archive: {
+      title: "Il Mio Archivio Check",
+      subReady: (n) => `${n} check di peso · sola lettura`,
+      subEmpty: "Nessun check ancora",
+      weightTrend: "Andamento del peso",
+      deltaPrefix: "Dal primo check:", deltaSuffix: "si aggiorna ogni lunedì con il check",
+      photoGallery: "Galleria foto personali · Fronte · Lato · Retro",
+      compareTitle: "Confronto mensile",
+      compareHint: "Una foto al mese, dal giorno dell'iscrizione: scegli due mesi da confrontare.",
+      compareA: "Mese A", compareB: "Mese B",
+      timelineTitle: "Cronologia completa",
+      photoEmpty: "Le foto del check si aggiungono ogni mese, a partire dal giorno dell'iscrizione.",
+      photoLabels: ["Frontale", "Laterale", "Posteriore"],
+      photoAbsent: "Assente",
+      photoFooter: "Visibili solo a te e a Coach Daniel. Archivio in sola lettura: una nuova foto al mese, salvata automaticamente dal giorno dell'iscrizione.",
+      noWeightData: "Servono almeno due check per disegnare la curva.",
+    },
+    darkModeOnyx: "Dark Mode Onyx",
+    notif: {
+      title: "Reminder push",
+      meals: "Pasti", mealsDesc: "Un promemoria se un pasto resta vuoto oltre l'orario abituale.",
+      steps: "Passi", stepsDesc: "Avviso serale se sei sotto la soglia giornaliera.",
+      sleep: "Sonno", sleepDesc: "Promemoria per registrare l'orario di addormentamento.",
+      motivation: "Pop-up motivazionali", motivationDesc: "Messaggi sui record e nelle settimane difficili.",
+      footer: "Le notifiche non sostituiscono il tuo giudizio: se una ti dà fastidio, spegnila.",
+    },
+    plan: {
+      activeTitle: "Piano attivo", chooseTitle: "Seleziona il tuo Piano PERFORM",
+      manageBilling: "Gestisci pagamento e rinnovo",
+      billingNote: "Il portale è gestito da Stripe: da lì aggiorni la carta, scarichi le fatture o disdici il rinnovo.",
+      freeRenew: "Nessun rinnovo: l'uso base è gratuito per sempre.",
+      oneTimeRenew: "Acquisto una tantum, nessun rinnovo automatico.",
+      autoRenew: (d) => `Rinnovo automatico il ${d}`,
+      subscribed: "Abbonamento attivo",
+      current: "Piano attuale",
+      freeCta: "Torna al Free", oneTimeCta: "Acquista ora", switchCta: "Passa a questo piano",
+    },
+    plans: {
+      free:        { name: "FREE", includes: ["Diario libero autogestito: dieta, carichi, integrazione, passi e sonno", "Nessun grafico storico o IA"] },
+      performance: { name: "PERFORMANCE PACK", includes: ["Tutto il Free", "Assistente PERFORM AI per ottimizzare le diete e fare domande profonde ai report scientifici", "Grafici storici 2D avanzati: Sonno, Passi, HRV, stile Apple Salute"] },
+      scheda:      { name: "SCHEDA PERSONALIZZATA", includes: ["Scheda di allenamento personalizzata fatta da me", "2 settimane di follow-up incluse", "Video review delle esecuzioni"] },
+      training:    { name: "SOLO ALLENAMENTO COACHING", includes: ["Scheda su misura aggiornata in continuo", "Video review delle esecuzioni", "Check settimanale", "Supporto diretto H24 su WhatsApp"] },
+      full:        { name: "FULL COACHING SUPREMO", includes: ["Tutto Solo Allenamento Coaching", "Calcolo macro preciso", "Dieta ON/OFF a 4 momenti della giornata", "Lista sostituzioni alimenti ed esercizi automatica", "Protocollo di integrazione d'élite", "Supporto WhatsApp dedicato 24/7"] },
+    },
+    periods: { none: "", recurring: "/mese", one_time: "una tantum" },
+    privacy: {
+      title: "Privacy e trattamento dati",
+      genericBody: "I dati del tuo profilo, il Nickname, i passi, il sonno e il diario quotidiano di macros ed idratazione sono archiviati in modo criptato e sicuro su PERFORM per permetterti di tracciare i tuoi progressi. Nessun dato viene ceduto o venduto a terzi.",
+      extendedBody: "Il tuo percorso di coaching include anche le foto del check del lunedì, le circonferenze corporee, i bio-marker ematici e le 56 domande della tua anamnesi iniziale: questi dati sono protetti da crittografia di livello medico e visibili unicamente a Coach Daniel Marsini.",
+      legalNote: "Titolare del trattamento: Daniel Marsini. Base giuridica: consenso esplicito ex art. 9 GDPR, raccolto alla registrazione e revocabile.",
+      documents: "Documenti",
+      docs: ["Informativa privacy", "Termini di servizio", "Esonero responsabilità medica"],
+      dangerTitle: "Elimina account e dati storici",
+      dangerBody: "Cancella definitivamente profilo, anamnesi, foto, misurazioni e diario. L'operazione è immediata e irreversibile: non esiste ripristino.",
+      deleteBtn: "Elimina il mio account",
+      confirmText: "Confermi? Non potrò recuperare nulla, nemmeno su tua richiesta.",
+      confirmYes: "Sì, elimina tutto", confirmNo: "Annulla",
+    },
+    footer: "© 2026 Coach Daniel Marsini",
+  },
+  en: {
+    settingsTitle: "Settings",
+    tabs: { aspetto: "Appearance", notifiche: "Notifications", piano: "Subscription", privacy: "Privacy" },
+    editProfile: "Edit profile",
+    save: "Save", cancel: "Cancel",
+    nicknameLabel: "Public nickname",
+    bioLabel: "Bio · up to 160 characters",
+    bioPlaceholder: "Two lines about you: sport, goal, one sentence.",
+    nicknameHint: "Your nickname is what other athletes see: it updates instantly on Home and the leaderboard. Your real name is never public.",
+    langLabel: "Language",
+    stats: { level: "Level", xp: "XP", streak: "Streak", rank: "Rank" },
+    records: {
+      title: "My Milestones",
+      sub: (n) => `${n} exercises tracked`,
+      filterAll: "All", filterFavorites: "Favorites",
+      emptyAll: "Log your workouts on Home, in the plan your coach set up: progressions show up here, week by week.",
+      emptyFavorites: "No favorite exercises yet: tap the star on the ones you want to keep an eye on — handy for powerlifting or a lagging muscle group.",
+      compoundTag: "Compound",
+      weekLabel: "Wk", lastSession: "Last session", vsPrev: "vs previous week",
+      favoriteAdd: "Add to favorites", favoriteRemove: "Remove from favorites",
+      noProgressionData: "Needs at least one logged session for this exercise.",
+    },
+    archive: {
+      title: "My Check Archive",
+      subReady: (n) => `${n} weight checks · read-only`,
+      subEmpty: "No checks yet",
+      weightTrend: "Weight trend",
+      deltaPrefix: "Since first check:", deltaSuffix: "updates every Monday with your check",
+      photoGallery: "Personal photo gallery · Front · Side · Back",
+      compareTitle: "Monthly comparison",
+      compareHint: "One photo a month, from your sign-up day: pick two months to compare.",
+      compareA: "Month A", compareB: "Month B",
+      timelineTitle: "Full timeline",
+      photoEmpty: "Check photos are added every month, starting from your sign-up day.",
+      photoLabels: ["Front", "Side", "Back"],
+      photoAbsent: "Missing",
+      photoFooter: "Visible only to you and Coach Daniel. Read-only archive: one new photo a month, saved automatically from your sign-up day.",
+      noWeightData: "You need at least two checks to draw the curve.",
+    },
+    darkModeOnyx: "Dark Mode Onyx",
+    notif: {
+      title: "Push reminders",
+      meals: "Meals", mealsDesc: "A reminder if a meal stays empty past the usual time.",
+      steps: "Steps", stepsDesc: "Evening alert if you're below the daily threshold.",
+      sleep: "Sleep", sleepDesc: "Reminder to log your bedtime.",
+      motivation: "Motivational pop-ups", motivationDesc: "Messages about records and tough weeks.",
+      footer: "Notifications don't replace your judgment: if one bothers you, turn it off.",
+    },
+    plan: {
+      activeTitle: "Active plan", chooseTitle: "Choose your PERFORM Plan",
+      manageBilling: "Manage payment and renewal",
+      billingNote: "The portal is managed by Stripe: update your card, download invoices, or cancel renewal from there.",
+      freeRenew: "No renewal: basic use is free forever.",
+      oneTimeRenew: "One-time purchase, no automatic renewal.",
+      autoRenew: (d) => `Automatic renewal on ${d}`,
+      subscribed: "Subscription active",
+      current: "Current plan",
+      freeCta: "Back to Free", oneTimeCta: "Buy now", switchCta: "Switch to this plan",
+    },
+    plans: {
+      free:        { name: "FREE", includes: ["Self-guided free-form diary: diet, loads, supplements, steps and sleep", "No historical charts or AI"] },
+      performance: { name: "PERFORMANCE PACK", includes: ["Everything in Free", "PERFORM AI assistant to optimize your diet and dig deep into the scientific reports", "Advanced 2D historical charts: Sleep, Steps, HRV, Apple Health style"] },
+      scheda:      { name: "CUSTOM PLAN", includes: ["Custom training plan built by me personally", "2 weeks of follow-up included", "Video review of your execution"] },
+      training:    { name: "TRAINING-ONLY COACHING", includes: ["Continuously updated custom plan", "Video review of your execution", "Weekly check-in", "Direct 24/7 support on WhatsApp"] },
+      full:        { name: "FULL SUPREME COACHING", includes: ["Everything in Training-Only Coaching", "Precise macro calculation", "4-window ON/OFF diet cycling", "Automatic food & exercise substitution list", "Elite supplementation protocol", "Dedicated 24/7 WhatsApp support"] },
+    },
+    periods: { none: "", recurring: "/mo", one_time: "one-time" },
+    privacy: {
+      title: "Privacy and data handling",
+      genericBody: "Your profile data, Nickname, steps, sleep, and daily macros/hydration log are stored encrypted and securely on PERFORM so you can track your progress. No data is shared or sold to third parties.",
+      extendedBody: "Your coaching plan also covers the Monday check photos, body measurements, blood bio-markers, and your 56-question intake form: this data is protected by medical-grade encryption and visible only to Coach Daniel Marsini.",
+      legalNote: "Data controller: Daniel Marsini. Legal basis: explicit consent under GDPR Art. 9, collected at sign-up and revocable.",
+      documents: "Documents",
+      docs: ["Privacy notice", "Terms of service", "Medical liability waiver"],
+      dangerTitle: "Delete account and historical data",
+      dangerBody: "Permanently deletes your profile, intake form, photos, measurements, and diary. The action is immediate and irreversible: there is no restore.",
+      deleteBtn: "Delete my account",
+      confirmText: "Are you sure? I won't be able to recover anything, even on request.",
+      confirmYes: "Yes, delete everything", confirmNo: "Cancel",
+    },
+    footer: "© 2026 Coach Daniel Marsini",
+  },
+  es: {
+    settingsTitle: "Ajustes",
+    tabs: { aspetto: "Apariencia", notifiche: "Notificaciones", piano: "Suscripción", privacy: "Privacidad" },
+    editProfile: "Editar perfil",
+    save: "Guardar", cancel: "Cancelar",
+    nicknameLabel: "Nickname público",
+    bioLabel: "Bio · máximo 160 caracteres",
+    bioPlaceholder: "Dos líneas sobre ti: deporte, objetivo, una frase.",
+    nicknameHint: "Tu nickname es lo que ven los demás atletas: se actualiza al instante en Inicio y en la clasificación. Tu nombre real nunca es público.",
+    langLabel: "Idioma",
+    stats: { level: "Nivel", xp: "XP", streak: "Racha", rank: "Ranking" },
+    records: {
+      title: "Mis Logros",
+      sub: (n) => `${n} ejercicios registrados`,
+      filterAll: "Todos", filterFavorites: "Favoritos",
+      emptyAll: "Registra tus entrenamientos en Inicio, en el plan que te configuró tu coach: las progresiones aparecen aquí, semana a semana.",
+      emptyFavorites: "Aún no tienes ejercicios favoritos: toca la estrella en los que quieras vigilar de cerca — útil si haces powerlifting o tienes un grupo muscular rezagado.",
+      compoundTag: "Multiarticular",
+      weekLabel: "Sem.", lastSession: "Última sesión", vsPrev: "vs semana anterior",
+      favoriteAdd: "Añadir a favoritos", favoriteRemove: "Quitar de favoritos",
+      noProgressionData: "Se necesita al menos una sesión registrada para este ejercicio.",
+    },
+    archive: {
+      title: "Mi Archivo de Chequeos",
+      subReady: (n) => `${n} chequeos de peso · solo lectura`,
+      subEmpty: "Aún no hay chequeos",
+      weightTrend: "Evolución del peso",
+      deltaPrefix: "Desde el primer chequeo:", deltaSuffix: "se actualiza cada lunes con tu chequeo",
+      photoGallery: "Galería de fotos personales · Frente · Lado · Espalda",
+      compareTitle: "Comparación mensual",
+      compareHint: "Una foto al mes, desde el día de tu inscripción: elige dos meses para comparar.",
+      compareA: "Mes A", compareB: "Mes B",
+      timelineTitle: "Cronología completa",
+      photoEmpty: "Las fotos del chequeo se añaden cada mes, a partir del día de tu inscripción.",
+      photoLabels: ["Frente", "Lado", "Espalda"],
+      photoAbsent: "Ausente",
+      photoFooter: "Visibles solo para ti y Coach Daniel. Archivo de solo lectura: una foto nueva al mes, guardada automáticamente desde tu día de inscripción.",
+      noWeightData: "Se necesitan al menos dos chequeos para dibujar la curva.",
+    },
+    darkModeOnyx: "Dark Mode Onyx",
+    notif: {
+      title: "Recordatorios push",
+      meals: "Comidas", mealsDesc: "Un aviso si una comida queda vacía más allá del horario habitual.",
+      steps: "Pasos", stepsDesc: "Aviso nocturno si estás por debajo del umbral diario.",
+      sleep: "Sueño", sleepDesc: "Recordatorio para registrar la hora de dormir.",
+      motivation: "Pop-ups motivacionales", motivationDesc: "Mensajes sobre récords y semanas difíciles.",
+      footer: "Las notificaciones no sustituyen tu criterio: si una te molesta, apágala.",
+    },
+    plan: {
+      activeTitle: "Plan activo", chooseTitle: "Elige tu Plan PERFORM",
+      manageBilling: "Gestionar pago y renovación",
+      billingNote: "El portal lo gestiona Stripe: desde allí actualizas la tarjeta, descargas facturas o cancelas la renovación.",
+      freeRenew: "Sin renovación: el uso básico es gratis para siempre.",
+      oneTimeRenew: "Compra única, sin renovación automática.",
+      autoRenew: (d) => `Renovación automática el ${d}`,
+      subscribed: "Suscripción activa",
+      current: "Plan actual",
+      freeCta: "Volver al Gratis", oneTimeCta: "Comprar ahora", switchCta: "Cambiar a este plan",
+    },
+    plans: {
+      free:        { name: "GRATIS", includes: ["Diario libre autogestionado: dieta, cargas, suplementación, pasos y sueño", "Sin gráficos históricos ni IA"] },
+      performance: { name: "PACK RENDIMIENTO", includes: ["Todo lo del plan Gratis", "Asistente PERFORM AI para optimizar tu dieta y consultar en profundidad los informes científicos", "Gráficos históricos 2D avanzados: Sueño, Pasos, VFC, estilo Apple Salud"] },
+      scheda:      { name: "PLAN PERSONALIZADO", includes: ["Plan de entrenamiento personalizado hecho por mí", "2 semanas de seguimiento incluidas", "Revisión en video de tu ejecución"] },
+      training:    { name: "COACHING SOLO ENTRENAMIENTO", includes: ["Plan a medida actualizado de forma continua", "Revisión en video de tu ejecución", "Check semanal", "Soporte directo 24/7 por WhatsApp"] },
+      full:        { name: "FULL COACHING SUPREMO", includes: ["Todo el Coaching Solo Entrenamiento", "Cálculo preciso de macros", "Dieta ON/OFF en 4 momentos del día", "Lista automática de sustituciones de alimentos y ejercicios", "Protocolo de suplementación de élite", "Soporte WhatsApp dedicado 24/7"] },
+    },
+    periods: { none: "", recurring: "/mes", one_time: "pago único" },
+    privacy: {
+      title: "Privacidad y tratamiento de datos",
+      genericBody: "Los datos de tu perfil, el Nickname, los pasos, el sueño y el diario diario de macros e hidratación se almacenan de forma cifrada y segura en PERFORM para que puedas seguir tu progreso. Ningún dato se cede ni se vende a terceros.",
+      extendedBody: "Tu plan de coaching incluye también las fotos del chequeo del lunes, las medidas corporales, los bio-marcadores sanguíneos y las 56 preguntas de tu anamnesis inicial: estos datos están protegidos por cifrado de nivel médico y son visibles únicamente para Coach Daniel Marsini.",
+      legalNote: "Responsable del tratamiento: Daniel Marsini. Base jurídica: consentimiento explícito según art. 9 RGPD, recogido en el registro y revocable.",
+      documents: "Documentos",
+      docs: ["Aviso de privacidad", "Términos de servicio", "Exención de responsabilidad médica"],
+      dangerTitle: "Eliminar cuenta y datos históricos",
+      dangerBody: "Elimina definitivamente tu perfil, anamnesis, fotos, medidas y diario. La acción es inmediata e irreversible: no existe restauración.",
+      deleteBtn: "Eliminar mi cuenta",
+      confirmText: "¿Confirmas? No podré recuperar nada, ni siquiera a petición tuya.",
+      confirmYes: "Sí, eliminar todo", confirmNo: "Cancelar",
+    },
+    footer: "© 2026 Coach Daniel Marsini",
+  },
+  fr: {
+    settingsTitle: "Paramètres",
+    tabs: { aspetto: "Apparence", notifiche: "Notifications", piano: "Abonnement", privacy: "Confidentialité" },
+    editProfile: "Modifier le profil",
+    save: "Enregistrer", cancel: "Annuler",
+    nicknameLabel: "Pseudo public",
+    bioLabel: "Bio · 160 caractères maximum",
+    bioPlaceholder: "Deux lignes sur toi : sport, objectif, une phrase.",
+    nicknameHint: "Ton pseudo est ce que voient les autres athlètes : il se met à jour instantanément sur l'accueil et le classement. Ton vrai nom n'est jamais public.",
+    langLabel: "Langue",
+    stats: { level: "Niveau", xp: "XP", streak: "Série", rank: "Classement" },
+    records: {
+      title: "Mes Records",
+      sub: (n) => `${n} exercices suivis`,
+      filterAll: "Tous", filterFavorites: "Favoris",
+      emptyAll: "Enregistre tes séances sur l'accueil, dans le programme configuré par ton coach : les progressions apparaissent ici, semaine après semaine.",
+      emptyFavorites: "Aucun exercice favori pour l'instant : touche l'étoile sur ceux que tu veux surveiller de près — utile en powerlifting ou pour un groupe musculaire en retard.",
+      compoundTag: "Polyarticulaire",
+      weekLabel: "Sem.", lastSession: "Dernière séance", vsPrev: "vs semaine précédente",
+      favoriteAdd: "Ajouter aux favoris", favoriteRemove: "Retirer des favoris",
+      noProgressionData: "Il faut au moins une séance enregistrée pour cet exercice.",
+    },
+    archive: {
+      title: "Mon Archive de Suivi",
+      subReady: (n) => `${n} suivis de poids · lecture seule`,
+      subEmpty: "Aucun suivi pour l'instant",
+      weightTrend: "Évolution du poids",
+      deltaPrefix: "Depuis le premier suivi :", deltaSuffix: "se met à jour chaque lundi avec ton suivi",
+      photoGallery: "Galerie photo personnelle · Face · Profil · Dos",
+      compareTitle: "Comparaison mensuelle",
+      compareHint: "Une photo par mois, depuis ton jour d'inscription : choisis deux mois à comparer.",
+      compareA: "Mois A", compareB: "Mois B",
+      timelineTitle: "Chronologie complète",
+      photoEmpty: "Les photos de suivi s'ajoutent chaque mois, à partir de ton jour d'inscription.",
+      photoLabels: ["Face", "Profil", "Dos"],
+      photoAbsent: "Absente",
+      photoFooter: "Visibles uniquement par toi et Coach Daniel. Archive en lecture seule : une nouvelle photo par mois, enregistrée automatiquement depuis ton jour d'inscription.",
+      noWeightData: "Il faut au moins deux suivis pour tracer la courbe.",
+    },
+    darkModeOnyx: "Dark Mode Onyx",
+    notif: {
+      title: "Rappels push",
+      meals: "Repas", mealsDesc: "Un rappel si un repas reste vide au-delà de l'heure habituelle.",
+      steps: "Pas", stepsDesc: "Alerte du soir si tu es sous le seuil quotidien.",
+      sleep: "Sommeil", sleepDesc: "Rappel pour enregistrer l'heure du coucher.",
+      motivation: "Pop-up motivationnels", motivationDesc: "Messages sur les records et les semaines difficiles.",
+      footer: "Les notifications ne remplacent pas ton jugement : si l'une te dérange, désactive-la.",
+    },
+    plan: {
+      activeTitle: "Abonnement actif", chooseTitle: "Choisis ton Plan PERFORM",
+      manageBilling: "Gérer le paiement et le renouvellement",
+      billingNote: "Le portail est géré par Stripe : mets à jour ta carte, télécharge tes factures ou annule le renouvellement depuis là.",
+      freeRenew: "Aucun renouvellement : l'usage de base est gratuit à vie.",
+      oneTimeRenew: "Achat unique, aucun renouvellement automatique.",
+      autoRenew: (d) => `Renouvellement automatique le ${d}`,
+      subscribed: "Abonnement actif",
+      current: "Plan actuel",
+      freeCta: "Retour au Gratuit", oneTimeCta: "Acheter maintenant", switchCta: "Passer à ce plan",
+    },
+    plans: {
+      free:        { name: "GRATUIT", includes: ["Journal libre autogéré : alimentation, charges, compléments, pas et sommeil", "Aucun graphique historique ni IA"] },
+      performance: { name: "PACK PERFORMANCE", includes: ["Tout le plan Gratuit", "Assistant PERFORM AI pour optimiser ton alimentation et interroger en profondeur les rapports scientifiques", "Graphiques historiques 2D avancés : Sommeil, Pas, VFC, façon Apple Santé"] },
+      scheda:      { name: "PROGRAMME SUR MESURE", includes: ["Programme d'entraînement personnalisé fait par moi", "2 semaines de suivi incluses", "Revue vidéo de ton exécution"] },
+      training:    { name: "COACHING ENTRAÎNEMENT SEUL", includes: ["Programme sur mesure mis à jour en continu", "Revue vidéo de ton exécution", "Bilan hebdomadaire", "Support direct 24/7 via WhatsApp"] },
+      full:        { name: "FULL COACHING SUPRÊME", includes: ["Tout le Coaching Entraînement Seul", "Calcul précis des macros", "Régime ON/OFF à 4 moments de la journée", "Liste automatique de substitutions aliments et exercices", "Protocole de complémentation d'élite", "Support WhatsApp dédié 24/7"] },
+    },
+    periods: { none: "", recurring: "/mois", one_time: "paiement unique" },
+    privacy: {
+      title: "Confidentialité et traitement des données",
+      genericBody: "Les données de ton profil, ton Pseudo, tes pas, ton sommeil et ton journal quotidien de macros et d'hydratation sont archivés de façon cryptée et sécurisée sur PERFORM pour te permettre de suivre tes progrès. Aucune donnée n'est cédée ou vendue à des tiers.",
+      extendedBody: "Ton parcours de coaching inclut aussi les photos de suivi du lundi, les mensurations corporelles, les bio-marqueurs sanguins et les 56 questions de ton anamnèse initiale : ces données sont protégées par un chiffrement de niveau médical et visibles uniquement par Coach Daniel Marsini.",
+      legalNote: "Responsable du traitement : Daniel Marsini. Base légale : consentement explicite selon l'art. 9 RGPD, recueilli à l'inscription et révocable.",
+      documents: "Documents",
+      docs: ["Politique de confidentialité", "Conditions d'utilisation", "Décharge de responsabilité médicale"],
+      dangerTitle: "Supprimer le compte et les données historiques",
+      dangerBody: "Supprime définitivement ton profil, ton anamnèse, tes photos, tes mensurations et ton journal. L'action est immédiate et irréversible : aucune restauration possible.",
+      deleteBtn: "Supprimer mon compte",
+      confirmText: "Tu confirmes ? Je ne pourrai rien récupérer, même sur demande.",
+      confirmYes: "Oui, tout supprimer", confirmNo: "Annuler",
+    },
+    footer: "© 2026 Coach Daniel Marsini",
+  },
+};
+
+/* Selettore lingua — card grandi con bandiera e nome, usato in Impostazioni → Aspetto */
+function LangSelector({ lang, onChange }) {
+  return (
+    <div className="grid grid-cols-4 gap-2" role="group" aria-label="Lingua / Language">
+      {LANGS.map((l) => {
+        const on = lang === l.code;
+        return (
+          <button key={l.code} onClick={() => onChange(l.code)}
+            className="rounded-xl flex flex-col items-center justify-center gap-1 py-3 transition-all duration-200 active:scale-95"
+            style={{
+              border: on ? "1.5px solid var(--ink)" : "1px solid var(--line)",
+              backgroundColor: on ? "var(--surface-2)" : "transparent",
+            }}
+            aria-label={l.label} aria-pressed={on}>
+            <span style={{ fontSize: "1.55rem", lineHeight: 1 }}>{l.flag}</span>
+            <span style={{ fontSize: "0.68rem", fontWeight: on ? 700 : 500,
+                            color: on ? "var(--ink)" : "var(--ink-2)" }}>{l.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================================
+   2 · UTILITÀ
+   ========================================================================== */
+
+/* Testo con gradiente brand animato: Oro Lucido Vivo (uomo) / Rosa Cipria
+   Luminescente (donna). Animazione via background-position, leggera per la
+   GPU: nessun re-render React, solo CSS in loop continuo. */
+export function GradientText({ children, gender, className, style }) {
+  const gold = gender !== "F";
+  return (
+    <span
+      className={className}
+      style={{
+        backgroundImage: gold
+          ? "linear-gradient(90deg,#D4AF37,#F3E5AB,#AA7C11,#F3E5AB,#D4AF37)"
+          : "linear-gradient(90deg,#E5C1CD,#F4E0E6,#C896A6,#F4E0E6,#E5C1CD)",
+        backgroundSize: "300% auto",
+        WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+        animation: "gradientMove 3.6s linear infinite",
+        ...style,
+      }}>
+      {children}
+    </span>
+  );
+}
+
+export function veteranBadge(joinedAt) {
+  if (!joinedAt) return null;
+  const d = new Date(joinedAt);
+  const months = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
+  if (months >= 24) return { text: `VETERANO · dal ${d.getFullYear()}`, icon: "🏆" };
+  if (months >= 12) return { text: `ATLETA ÉLITE · ${Math.floor(months / 12)} anno`, icon: "🥇" };
+  if (months >= 3)  return { text: `${months} mesi`, icon: "⭐" };
+  return { text: "NUOVO ISCRITTO", icon: "🌱" };
+}
+
+export function VeteranBadge({ joinedAt }) {
+  const b = veteranBadge(joinedAt);
+  if (!b) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full"
+      style={{ padding: "4px 10px", fontSize: "0.7rem", fontWeight: 600,
+        background: "var(--surface-2)", color: "var(--ink-2)", border: "1px solid var(--line)" }}>
+      {b.icon} {b.text}
+    </span>
+  );
+}
+
+/* Scala di titoli PERFORM — calcolata sui punti XP reali dell'atleta
+   (Supabase: colonna `xp_total`, aggiornata dal trigger di gamification).
+   Soglie: 0–999 Recruit · 1.000–2.999 Hardworker · 3.000–6.999 Iron Mind ·
+   7.000–14.999 Bio-Hacker · 15.000+ Livello Élite. */
+export function xpTierBadge(xp) {
+  const v = xp || 0;
+  if (v >= 15000) return { label: "LIVELLO ÉLITE", icon: "🏆", tier: 4 };
+  if (v >= 7000)  return { label: "BIO-HACKER",     icon: "🧬", tier: 3 };
+  if (v >= 3000)  return { label: "IRON MIND",      icon: "🧠", tier: 2 };
+  if (v >= 1000)  return { label: "HARDWORKER",     icon: "💪", tier: 1 };
+  return         { label: "RECRUIT", sub: "Nuovo Iscritto", icon: "🌱", tier: 0 };
+}
+
+const RECRUIT_SUB = { it: "Nuovo Iscritto", en: "New Member", es: "Nuevo Miembro", fr: "Nouveau Membre" };
+
+export function EliteXpBadge({ xp, accent, lang }) {
+  const b = xpTierBadge(xp);
+  const metal = b.tier >= 3;
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full"
+      style={{
+        padding: "8px 15px", fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.01em",
+        background: metal
+          ? `linear-gradient(120deg, ${accent} 0%, #FFFFFF 46%, ${accent} 100%)`
+          : `${accent}1A`,
+        color: metal ? "#111111" : accent,
+        boxShadow: metal ? `0 4px 16px ${accent}55` : "none",
+        border: metal ? "none" : `1px solid ${accent}40`,
+      }}>
+      <span aria-hidden="true">{b.icon}</span>
+      <span>
+        {b.label}{b.tier === 0 ? ` (${RECRUIT_SUB[lang] || RECRUIT_SUB.it})` : ""}: {(xp || 0).toLocaleString("it-IT")} XP
+      </span>
+    </span>
+  );
+}
+
+export function WeightChart({ points, accent, t }) {
+  if (!points || points.length < 2) {
+    return <p className="meta text-sm">{t.noWeightData}</p>;
+  }
+  const W = 320, H = 130, pad = 24;
+  const vals = points.map((p) => p.kg);
+  const min = Math.min(...vals) - 0.6, max = Math.max(...vals) + 0.6;
+  const x = (i) => pad + (i * (W - pad * 2)) / (points.length - 1);
+  const y = (v) => H - pad - ((v - min) / (max - min || 1)) * (H - pad * 1.8);
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(p.kg)}`).join(" ");
+  const area = `${path} L${x(points.length - 1)},${H - pad} L${pad},${H - pad} Z`;
+  const delta = +(vals[vals.length - 1] - vals[0]).toFixed(1);
+
+  return (
+    <>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={t.weightTrend}>
+        <defs>
+          <linearGradient id="wfill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={accent} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={accent} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="var(--line)" />
+        <path d={area} fill="url(#wfill)" />
+        <path d={path} fill="none" stroke={accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        {points.map((p, i) => (
+          <g key={i}>
+            <circle cx={x(i)} cy={y(p.kg)} r="3.4" fill="var(--surface)" stroke={accent} strokeWidth="2" />
+            {(i === 0 || i === points.length - 1) && (
+              <text x={x(i)} y={y(p.kg) - 10} textAnchor="middle" fontSize="8.5" fontWeight="700"
+                    fill={accent} fontFamily="system-ui, -apple-system, sans-serif">{p.kg}</text>
+            )}
+            {i % Math.ceil(points.length / 5) === 0 && (
+              <text x={x(i)} y={H - pad + 13} textAnchor="middle" fontSize="7.5"
+                    fill="var(--ink-2)" fontFamily="system-ui, -apple-system, sans-serif">{p.label}</text>
+            )}
+          </g>
+        ))}
+      </svg>
+      <p className="meta font-data mt-1.5" style={{ fontSize: "0.7rem" }}>
+        {t.deltaPrefix}{" "}
+        <span style={{ color: delta === 0 ? "var(--ink-2)" : delta < 0 ? "#10B981" : "#B45309", fontWeight: 700 }}>
+          {delta > 0 ? "+" : ""}{delta} kg
+        </span>{" "}· {t.deltaSuffix}
+      </p>
+    </>
+  );
+}
+
+/* Progressione settimanale di un singolo esercizio: peso del set migliore
+   seduta per seduta. Stesso linguaggio visivo di WeightChart, generalizzato:
+   qui il valore è il carico sollevato, non il peso corporeo. */
+function ExerciseTrendChart({ sessions, accent, t }) {
+  if (!sessions || sessions.length < 2) {
+    return <p className="meta" style={{ fontSize: "0.72rem" }}>{t.noProgressionData}</p>;
+  }
+  const W = 280, H = 84, pad = 16;
+  const vals = sessions.map((s) => s.kg);
+  const min = Math.min(...vals) - 2, max = Math.max(...vals) + 2;
+  const x = (i) => pad + (i * (W - pad * 2)) / (sessions.length - 1);
+  const y = (v) => H - pad - ((v - min) / (max - min || 1)) * (H - pad * 1.6);
+  const path = sessions.map((s, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(s.kg)}`).join(" ");
+  const last = sessions[sessions.length - 1];
+  const prev = sessions[sessions.length - 2];
+  const delta = +(last.kg - prev.kg).toFixed(1);
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={t.title}>
+        <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="var(--line)" />
+        <path d={path} fill="none" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {sessions.map((s, i) => (
+          <circle key={i} cx={x(i)} cy={y(s.kg)} r="2.8" fill="var(--surface)" stroke={accent} strokeWidth="1.8" />
+        ))}
+      </svg>
+      <div className="flex items-center justify-between mt-1">
+        <p className="meta font-data" style={{ fontSize: "0.66rem" }}>
+          {t.lastSession}: <span style={{ color: "var(--ink)", fontWeight: 700 }}>{last.kg} kg</span> × {last.reps}
+        </p>
+        {prev && (
+          <p className="font-data" style={{ fontSize: "0.62rem", fontWeight: 700,
+                       color: delta === 0 ? "var(--ink-2)" : delta > 0 ? "#10B981" : "#B45309" }}>
+            {delta > 0 ? "+" : ""}{delta} kg <span className="meta" style={{ fontWeight: 500 }}>{t.vsPrev}</span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Confronto mensile: una foto al mese dal giorno dell'iscrizione, messe
+   affiancate per vedere il cambiamento reale. checkPhotos va ordinato per
+   data crescente prima di arrivare qui. */
+function PhotoCompareGrid({ checkPhotos, t }) {
+  const monthLabel = (d) => new Date(d).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  const [aIdx, setAIdx] = useState(0);
+  const [bIdx, setBIdx] = useState(Math.max(0, (checkPhotos?.length || 1) - 1));
+
+  if (!checkPhotos?.length) return null;
+
+  const Column = ({ idx, onChange, label }) => {
+    const shot = checkPhotos[idx];
+    return (
+      <div className="min-w-0">
+        <select value={idx} onChange={(e) => onChange(+e.target.value)}
+          className="input w-full px-2.5 py-2 text-xs mb-2" aria-label={label}>
+          {checkPhotos.map((s, i) => (
+            <option key={s.date} value={i}>{monthLabel(s.date)}</option>
+          ))}
+        </select>
+        <div className="grid grid-cols-3 gap-1.5">
+          {["front", "side", "back"].map((k, i) => (
+            <div key={k} className="rounded-lg overflow-hidden"
+                 style={{ border: "1px solid var(--line)", backgroundColor: "var(--surface-2)", aspectRatio: "3/4" }}>
+              {shot?.[k] ? <img src={shot[k]} alt={t.photoLabels[i]} className="w-full h-full object-cover" />
+                        : <span className="w-full h-full flex items-center justify-center label" style={{ fontSize: "0.5rem" }}>{t.photoAbsent}</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <p className="meta leading-relaxed mb-3" style={{ fontSize: "0.75rem" }}>{t.compareHint}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Column idx={aIdx} onChange={setAIdx} label={t.compareA} />
+        <Column idx={bIdx} onChange={setBIdx} label={t.compareB} />
+      </div>
+    </div>
+  );
+}
+
+function BiometricPhotoGallery({ checkPhotos, t }) {
+  if (!checkPhotos?.length) {
+    return <p className="body">{t.photoEmpty}</p>;
+  }
+  return (
+    <div className="space-y-4">
+      {checkPhotos.map((s) => (
+        <div key={s.date}>
+          <p className="label mb-2">
+            {new Date(s.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {["front", "side", "back"].map((k, i) => (
+              <div key={k} className="text-center">
+                <div className="rounded-xl overflow-hidden"
+                     style={{ border: "1px solid var(--line)", backgroundColor: "var(--surface-2)", aspectRatio: "3/4" }}>
+                  {s[k] ? <img src={s[k]} alt={t.photoLabels[i]} className="w-full h-full object-cover" />
+                        : <span className="w-full h-full flex items-center justify-center label">{t.photoAbsent}</span>}
+                </div>
+                <p className="label mt-1" style={{ fontSize: "0.52rem" }}>{t.photoLabels[i]}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <p className="meta leading-relaxed" style={{ fontSize: "0.72rem" }}>{t.photoFooter}</p>
+    </div>
+  );
+}
+
+function Section({ id, icon: Icon, title, sub, openId, setOpenId, children }) {
+  const on = openId === id;
+  return (
+    <div className="card mb-3">
+      <button onClick={() => setOpenId(on ? null : id)} className="w-full flex items-center gap-3.5 text-left">
+        <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+              style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+          <Icon size={17} style={{ color: "var(--ink)" }} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="h2 block">{title}</span>
+          <span className="meta block" style={{ fontSize: "0.78rem" }}>{sub}</span>
+        </span>
+        {on ? <ChevronUp size={16} style={{ color: "var(--ink-2)" }} />
+            : <ChevronDown size={16} style={{ color: "var(--ink-2)" }} />}
+      </button>
+      {on && <div className="spring-in mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }}>{children}</div>}
+    </div>
+  );
+}
+
+/* Card di un esercizio nei Traguardi: stella preferiti, tag multiarticolare,
+   mini-grafico di progressione settimanale. I dati arrivano dagli
+   allenamenti che l'atleta registra in Home, sulla scheda impostata dal
+   coach (Supabase: `workout_logs` filtrati per `exercise_id`). */
+function ExerciseProgressCard({ ex, favorite, onToggleFavorite, accent, t }) {
+  return (
+    <div className="inner px-4 py-3.5 mb-2.5">
+      <div className="flex items-start justify-between gap-2 mb-2.5">
+        <div className="min-w-0">
+          <p className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 700 }}>{ex.name}</p>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {ex.muscleGroup && (
+              <span className="label" style={{ fontSize: "0.56rem", color: "var(--ink-2)" }}>{ex.muscleGroup}</span>
+            )}
+            {ex.compound && (
+              <span className="rounded-full px-2 py-0.5" style={{ fontSize: "0.56rem", fontWeight: 700,
+                       backgroundColor: `${accent}22`, color: accent }}>{t.compoundTag}</span>
+            )}
+          </div>
+        </div>
+        <button onClick={() => onToggleFavorite(ex.id)}
+          className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-transform active:scale-90"
+          style={{ border: "1px solid var(--line)", color: favorite ? accent : "var(--ink-2)" }}
+          aria-label={favorite ? t.favoriteRemove : t.favoriteAdd} aria-pressed={favorite}>
+          <span style={{ fontSize: "0.95rem" }}>{favorite ? "★" : "☆"}</span>
+        </button>
+      </div>
+      <ExerciseTrendChart sessions={ex.sessions} accent={accent} t={t} />
+    </div>
+  );
+}
+
+/* ============================================================================
+   3 · PROFILO ATLETA — vista unica per chiunque apra l'app
+   ========================================================================== */
+
+export function ClientProfileView({
+  accent, accentText, gender, lang, onChangeLang,
+  profile,           // { name, nickname, bio, avatar, joined_at, gender, email }
+  level, xp,
+  checkPhotos, weightPoints,
+  exercises,                                   // [{ id, name, muscleGroup, compound, sessions:[{week,date,kg,reps}] }]
+  favoriteExerciseIds, onToggleFavoriteExercise,
+  onSaveProfile, onOpenSettings, nicknameTaken,
+}) {
+  const t = translations[lang] || translations.it;
+  const [editing, setEditing] = useState(false);
+  const [nick, setNick] = useState(profile.nickname || "");
+  const [bio, setBio] = useState(profile.bio || "");
+  const [avatar, setAvatar] = useState(profile.avatar || null);
+  const [err, setErr] = useState("");
+  const [openSection, setOpenSection] = useState("archivio");
+  const [exFilter, setExFilter] = useState("all"); // "all" | "compound" | "favorites"
+  const fileRef = useRef(null);
+
+  const save = () => {
+    const n = nick.trim();
+    if (n.length < 3 || n.length > 20) return setErr("3–20 " + t.nicknameLabel.toLowerCase());
+    if (!/^[A-Za-z0-9_.-]+$/.test(n)) return setErr("A-Z 0-9 . _ -");
+    if (nicknameTaken && n.toLowerCase() !== (profile.nickname || "").toLowerCase() && nicknameTaken(n))
+      return setErr("—");
+    setErr("");
+    onSaveProfile({ nickname: n, bio: bio.trim(), avatar });
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    setNick(profile.nickname || ""); setBio(profile.bio || "");
+    setAvatar(profile.avatar || null); setErr(""); setEditing(false);
+  };
+
+  return (
+    <div className="spring-in">
+      {/* ---------- avatar in cima, cornice brand animata oro/rosa vivo ---------- */}
+      <div className="relative rounded-2xl mb-4"
+           style={{
+             padding: 2,
+             backgroundImage: gender === "F"
+               ? "linear-gradient(120deg,#E5C1CD,#F4E0E6,#C896A6,#F4E0E6,#E5C1CD)"
+               : "linear-gradient(120deg,#D4AF37,#F3E5AB,#AA7C11,#F3E5AB,#D4AF37)",
+             backgroundSize: "300% auto",
+             animation: "gradientMove 3.6s linear infinite",
+           }}>
+      <div className="card" style={{ border: "none", margin: 0 }}>
+        <button onClick={onOpenSettings}
+          className="absolute top-5 right-5 w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-90"
+          style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}
+          aria-label={t.settingsTitle}>
+          <Settings size={17} strokeWidth={1.7} style={{ color: "var(--ink)" }} />
+        </button>
+
+        <div className="flex items-start gap-4 pr-12">
+          <button onClick={() => editing && fileRef.current?.click()}
+            className="relative rounded-full overflow-hidden shrink-0"
+            style={{ width: 84, height: 84, backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}
+            aria-label={editing ? "avatar" : "avatar"}>
+            {avatar ? (
+              <img src={avatar} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <span className="w-full h-full flex items-center justify-center">
+                <User size={30} style={{ color: "var(--ink-2)" }} />
+              </span>
+            )}
+            {editing && (
+              <span className="absolute inset-0 flex items-center justify-center"
+                    style={{ backgroundColor: "rgba(17,17,17,0.55)" }}>
+                <Camera size={20} style={{ color: "#FFFFFF" }} />
+              </span>
+            )}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                 onChange={(e) => { const f = e.target.files?.[0]; if (f) setAvatar(URL.createObjectURL(f)); }} />
+
+          <div className="min-w-0 flex-1">
+            {!editing ? (
+              <>
+                <GradientText gender={gender} style={{ fontSize: "1.3rem", fontWeight: 800, letterSpacing: "-0.01em" }}>
+                  {profile.nickname || "—"}
+                </GradientText>
+                <p className="meta mt-0.5" style={{ fontSize: "0.78rem" }}>{profile.name}</p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  <EliteXpBadge xp={xp} accent={accentText} lang={lang} />
+                  <VeteranBadge joinedAt={profile.joined_at} />
+                </div>
+                {profile.bio && <p className="body mt-3" style={{ fontSize: "0.87rem" }}>{profile.bio}</p>}
+                <button onClick={() => setEditing(true)}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs"
+                  style={{ border: `1px solid ${accentText}`, color: accentText, fontWeight: 600 }}>
+                  <Pencil size={12} /> {t.editProfile}
+                </button>
+              </>
+            ) : (
+              <>
+                <label className="block mb-2.5">
+                  <span className="label block mb-1.5">{t.nicknameLabel}</span>
+                  <input value={nick} onChange={(e) => { setNick(e.target.value); setErr(""); }}
+                    maxLength={20} className="input w-full px-3.5 py-2.5 text-sm" aria-label={t.nicknameLabel} />
+                </label>
+                <label className="block mb-2.5">
+                  <span className="label block mb-1.5">{t.bioLabel}</span>
+                  <textarea rows={2} value={bio} onChange={(e) => setBio(e.target.value.slice(0, 160))}
+                    className="input w-full px-3.5 py-2.5 text-sm resize-none"
+                    placeholder={t.bioPlaceholder} aria-label={t.bioLabel} />
+                  <span className="meta font-data" style={{ fontSize: "0.68rem" }}>{bio.length}/160</span>
+                </label>
+                {err && <p className="text-xs mb-2.5" style={{ color: "#DC2626" }}>{err}</p>}
+                <div className="flex gap-2">
+                  <button onClick={save} className="flex-1 rounded-full px-4 py-2.5 text-sm flex items-center justify-center gap-1.5"
+                    style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
+                    <Check size={14} style={{ color: accent }} /> {t.save}
+                  </button>
+                  <button onClick={cancel} className="rounded-full px-4 py-2.5 text-sm"
+                    style={{ border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                    {t.cancel}
+                  </button>
+                </div>
+                <p className="meta mt-2.5 leading-relaxed" style={{ fontSize: "0.72rem" }}>{t.nicknameHint}</p>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mt-5">
+          {[[t.stats.level, level], [t.stats.xp, xp.toLocaleString()]].map(([k, v]) => (
+            <div key={k} className="inner px-2 py-2.5 text-center">
+              <p className="label" style={{ fontSize: "0.52rem" }}>{k}</p>
+              <GradientText gender={gender} className="block mt-0.5" style={{ fontSize: "0.95rem", fontWeight: 800 }}>
+                {v}
+              </GradientText>
+            </div>
+          ))}
+        </div>
+      </div>
+      </div>
+
+      {/* ---------- Il Mio Archivio Check ---------- */}
+      <Section id="archivio" icon={TrendingDown}
+               title={<GradientText gender={gender}>{t.archive.title}</GradientText>}
+               openId={openSection} setOpenId={setOpenSection}
+               sub={weightPoints?.length ? t.archive.subReady(weightPoints.length) : t.archive.subEmpty}>
+        <p className="label mb-2">{t.archive.weightTrend}</p>
+        <WeightChart points={weightPoints} accent={accent} t={t.archive} />
+
+        <p className="label mt-6 mb-2">{t.archive.photoGallery}</p>
+        <p className="h2 mb-2" style={{ fontSize: "0.95rem" }}>{t.archive.compareTitle}</p>
+        <PhotoCompareGrid checkPhotos={checkPhotos} t={t.archive} />
+
+        <p className="h2 mt-6 mb-2" style={{ fontSize: "0.95rem" }}>{t.archive.timelineTitle}</p>
+        <BiometricPhotoGallery checkPhotos={checkPhotos} t={t.archive} />
+      </Section>
+
+      <Section id="traguardi" icon={Trophy}
+               title={<GradientText gender={gender}>{t.records.title}</GradientText>}
+               openId={openSection} setOpenId={setOpenSection}
+               sub={exercises?.length ? t.records.sub(exercises.length) : t.records.emptyAll}>
+        {(() => {
+          const favSet = new Set(favoriteExerciseIds || []);
+          const filtered = (exercises || []).filter((ex) => exFilter === "favorites" ? favSet.has(ex.id) : true);
+          const emptyText = exFilter === "favorites" ? t.records.emptyFavorites : t.records.emptyAll;
+          return (
+            <>
+              <div className="grid grid-cols-2 gap-1.5 mb-4">
+                {[["all", t.records.filterAll], ["favorites", t.records.filterFavorites]].map(([id, lab]) => {
+                  const on = exFilter === id;
+                  return (
+                    <button key={id} onClick={() => setExFilter(id)}
+                      className="rounded-xl px-1 py-2.5 text-center"
+                      style={on ? { backgroundColor: "var(--ink)", color: "var(--page)" }
+                                : { border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                      <span style={{ fontSize: "0.7rem", fontWeight: 600 }}>{lab}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {!filtered.length ? (
+                <p className="body">{emptyText}</p>
+              ) : (
+                filtered.map((ex) => (
+                  <ExerciseProgressCard key={ex.id} ex={ex} favorite={favSet.has(ex.id)}
+                    onToggleFavorite={onToggleFavoriteExercise} accent={accent} t={t.records} />
+                ))
+              )}
+            </>
+          );
+        })()}
+      </Section>
+    </div>
+  );
+}
+
+/* ============================================================================
+   4 · DRAWER IMPOSTAZIONI
+   ========================================================================== */
+
+export const OWNER_EMAIL = "danielmarsini@coach.com";
+
+/* Piani Stripe — listino ufficiale a 5 livelli, contenuti tradotti via
+   translations.plans[lang][id]. price_id sono placeholder: la Checkout
+   Session vera si crea server-side in una Supabase Edge Function.
+   currentPlan arriva da Supabase: tabella `subscriptions`, colonna `plan_id`. */
+export const STRIPE_PLANS = [
+  { id: "free",        emoji: "🆓", price: 0,  billing: "none",      priceId: null },
+  { id: "performance", emoji: "⚡", price: 5,  billing: "recurring", priceId: "price_performance_pack_placeholder" },
+  { id: "scheda",      emoji: "🏋️", price: 40, billing: "one_time",  priceId: "price_scheda_personalizzata_placeholder" },
+  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_solo_allenamento_placeholder" },
+  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_full_coaching_supremo_placeholder", highlight: true, recommended: true },
+];
+
+function Toggle({ on, onClick, label, desc }) {
+  return (
+    <div className="inner flex items-center justify-between gap-3 px-4 py-3.5 mb-2.5">
+      <div className="min-w-0">
+        <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{label}</p>
+        {desc && <p className="meta mt-0.5 leading-relaxed" style={{ fontSize: "0.75rem" }}>{desc}</p>}
+      </div>
+      <button onClick={onClick} role="switch" aria-checked={on} aria-label={label}
+        className="relative rounded-full transition-all duration-300 shrink-0"
+        style={{ width: 48, height: 28, backgroundColor: on ? "var(--ink)" : "var(--surface)",
+                 border: on ? "none" : "1px solid var(--line)" }}>
+        <span className="absolute rounded-full transition-all duration-300"
+              style={{ width: 22, height: 22, top: 3, left: on ? 23 : 3,
+                       backgroundColor: "#FFFFFF", boxShadow: "0 2px 6px rgba(0,0,0,0.22)" }} />
+      </button>
+    </div>
+  );
+}
+
+/* Card di piano Stripe — glassmorphism; Full Coaching ha micro-bordo
+   luminescente + badge fisso bilingue "CONSIGLIATO / RECOMMENDED" (testo
+   letterale richiesto dal committente, non tradotto dal motore i18n).
+   Se isOwner e plan.id === 'full', mostra "👑 PROPRIETARIO / OWNER" al posto
+   del bottone: sblocco nativo, nessun redirect a Stripe. */
+function PlanCard({ plan, active, accent, accentText, gender, dark, t, onChangePlan, isOwner }) {
+  const copy = t.plans[plan.id];
+  const period = t.periods[plan.billing];
+  const ownerOverride = isOwner && plan.id === "full";
+  const glow = !!plan.highlight;
+
+  return (
+    <div className="relative rounded-2xl p-5 mb-2.5"
+         style={{
+           backgroundColor: dark ? "rgba(255,255,255,0.045)" : "rgba(255,255,255,0.55)",
+           backdropFilter: "blur(18px) saturate(160%)",
+           WebkitBackdropFilter: "blur(18px) saturate(160%)",
+           border: `1.5px solid ${glow || active ? accent : "var(--line)"}`,
+           boxShadow: glow
+             ? `0 0 0 1px ${accent}55, 0 0 26px ${accent}4D, var(--shadow)`
+             : "var(--shadow)",
+         }}
+         data-theme-card>
+      {plan.recommended && (
+        <span className="absolute -top-2.5 right-5 rounded-full px-3 py-1"
+              style={{ backgroundColor: accent, color: "#111111", fontWeight: 700,
+                       fontSize: "0.58rem", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+          CONSIGLIATO / RECOMMENDED
+        </span>
+      )}
+      <div className="flex items-baseline justify-between gap-3 mb-2 mt-1.5">
+        <span style={{ color: "var(--ink)", fontSize: "1.02rem", fontWeight: 700, letterSpacing: "-0.01em" }}>
+          {plan.emoji} {copy.name}
+        </span>
+        <GradientText gender={gender} className="shrink-0" style={{ fontWeight: 800, fontSize: "1.05rem" }}>
+          {plan.price} €<span style={{ fontWeight: 500, fontSize: "0.68rem" }}> {period}</span>
+        </GradientText>
+      </div>
+      <ul className="space-y-1 mb-3">
+        {copy.includes.map((f) => (
+          <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "var(--ink-3)" }}>
+            <Check size={13} className="shrink-0 mt-0.5" style={{ color: accent }} /> {f}
+          </li>
+        ))}
+      </ul>
+      {ownerOverride ? (
+        <p className="flex items-center gap-1.5" style={{ color: accent, fontSize: "0.72rem", fontWeight: 800,
+                     letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          <Crown size={13} /> 👑 PROPRIETARIO / OWNER
+        </p>
+      ) : active ? (
+        <p style={{ color: accentText, fontSize: "0.68rem", fontWeight: 700,
+                     letterSpacing: "0.08em", textTransform: "uppercase" }}>{t.plan.current}</p>
+      ) : (
+        <button onClick={() => onChangePlan(plan)}
+          className="w-full rounded-full px-4 py-2.5 text-sm"
+          style={plan.highlight
+            ? { backgroundColor: accent, color: "#111111", fontWeight: 700 }
+            : { border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
+          {plan.billing === "none" ? t.plan.freeCta : plan.billing === "one_time" ? t.plan.oneTimeCta : t.plan.switchCta}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function SettingsDrawer({
+  open, onClose, dark, onToggleDark, accent, accentText, gender, lang, onChangeLang,
+  currentPlan, planRenewsOn, accountEmail,
+  notifications, onToggleNotification,
+  onOpenBillingPortal, onChangePlan, onDeleteAccount,
+}) {
+  const t = translations[lang] || translations.it;
+  const [tab, setTab] = useState("aspetto");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  if (!open) return null;
+
+  const TABS = [["aspetto", t.tabs.aspetto], ["notifiche", t.tabs.notifiche], ["piano", t.tabs.piano], ["privacy", t.tabs.privacy]];
+  const activePlan = STRIPE_PLANS.find((p) => p.id === currentPlan) || STRIPE_PLANS[0];
+  const isOwner = accountEmail === OWNER_EMAIL;
+
+  const startStripeCheckout = (plan) => {
+    if (plan.billing === "none") { onChangePlan(plan.id); return; }
+    // In produzione: POST a una Supabase Edge Function che crea la Stripe
+    // Checkout Session (mode: plan.billing === "one_time" ? "payment" : "subscription")
+    // e restituisce session.url per il redirect. priceId è il price_... reale di Stripe.
+    onChangePlan(plan.id, plan.priceId);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" style={{ backgroundColor: "rgba(9,9,11,0.4)" }}
+         role="dialog" aria-modal="true" aria-label={t.settingsTitle}>
+      <button className="absolute inset-0" onClick={onClose} aria-label="close" />
+
+      <div className="drawer-in relative w-full max-w-sm h-full overflow-y-auto"
+           style={{ backgroundColor: "var(--surface)", boxShadow: "-12px 0 44px rgba(0,0,0,0.18)" }}>
+        <div className="px-6 pt-7 pb-4 flex items-center justify-between">
+          <p className="h1" style={{ fontSize: "1.2rem", fontWeight: 700 }}>{t.settingsTitle}</p>
+          <button onClick={onClose} className="p-2" style={{ color: "var(--ink-2)" }} aria-label="close">
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="px-6 pb-3">
+          <div className="grid grid-cols-4 gap-1.5">
+            {TABS.map(([id, lab]) => {
+              const on = tab === id;
+              return (
+                <button key={id} onClick={() => setTab(id)}
+                  className="rounded-xl px-1 py-2.5"
+                  style={on ? { backgroundColor: "var(--ink)", color: "var(--page)" }
+                            : { border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                  <span className="block" style={{ fontSize: "0.62rem", fontWeight: 600, letterSpacing: "0.02em" }}>{lab}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="px-6 pb-10">
+          {/* ---------------- ASPETTO ---------------- */}
+          {tab === "aspetto" && (
+            <div className="spring-in">
+              <button onClick={onToggleDark} className="card w-full flex items-center justify-between gap-3 mb-3">
+                <span className="flex items-center gap-2.5">
+                  {dark ? <Moon size={17} style={{ color: accent }} /> : <Sun size={17} style={{ color: accent }} />}
+                  {dark ? (
+                    <GradientText gender={gender} style={{ fontWeight: 700 }}>{t.darkModeOnyx}</GradientText>
+                  ) : (
+                    <span style={{ fontWeight: 700, color: "var(--ink)" }}>{t.darkModeOnyx}</span>
+                  )}
+                </span>
+                <span className="relative rounded-full transition-all duration-300"
+                      style={{ width: 48, height: 28, backgroundColor: dark ? accent : "var(--surface-2)",
+                               border: dark ? "none" : "1px solid var(--line)" }}>
+                  <span className="absolute rounded-full transition-all duration-300"
+                        style={{ width: 22, height: 22, top: 3, left: dark ? 23 : 3,
+                                 backgroundColor: "#FFFFFF", boxShadow: "0 2px 6px rgba(0,0,0,0.22)" }} />
+                </span>
+              </button>
+
+              <p className="h2 mt-7 mb-3">{t.langLabel}</p>
+              <LangSelector lang={lang} onChange={onChangeLang} />
+            </div>
+          )}
+
+          {/* ---------------- NOTIFICHE ---------------- */}
+          {tab === "notifiche" && (
+            <div className="spring-in">
+              <p className="label mb-3">{t.notif.title}</p>
+              <Toggle on={notifications.meals} onClick={() => onToggleNotification("meals")}
+                label={t.notif.meals} desc={t.notif.mealsDesc} />
+              <Toggle on={notifications.steps} onClick={() => onToggleNotification("steps")}
+                label={t.notif.steps} desc={t.notif.stepsDesc} />
+              <Toggle on={notifications.sleep} onClick={() => onToggleNotification("sleep")}
+                label={t.notif.sleep} desc={t.notif.sleepDesc} />
+              <Toggle on={notifications.motivation} onClick={() => onToggleNotification("motivation")}
+                label={t.notif.motivation} desc={t.notif.motivationDesc} />
+              <p className="meta mt-3 leading-relaxed" style={{ fontSize: "0.75rem" }}>{t.notif.footer}</p>
+            </div>
+          )}
+
+          {/* ---------------- ABBONAMENTO / PAYWALL STRIPE ---------------- */}
+          {tab === "piano" && (
+            <div className="spring-in">
+              <div className="card mb-4">
+                <p className="label mb-1.5">{t.plan.activeTitle}</p>
+                <GradientText gender={gender} className="block mb-1" style={{ fontSize: "1.35rem", fontWeight: 700 }}>
+                  {t.plans[activePlan.id].name}
+                </GradientText>
+                <p className="meta">
+                  {isOwner && activePlan.id === "full"
+                    ? null
+                    : activePlan.billing === "none"
+                      ? t.plan.freeRenew
+                      : activePlan.billing === "one_time"
+                        ? t.plan.oneTimeRenew
+                        : planRenewsOn
+                          ? t.plan.autoRenew(new Date(planRenewsOn).toLocaleDateString())
+                          : t.plan.subscribed}
+                </p>
+                {activePlan.billing !== "none" && !(isOwner && activePlan.id === "full") && (
+                  <button onClick={onOpenBillingPortal}
+                    className="w-full rounded-full px-4 py-3 text-sm mt-4 flex items-center justify-center gap-2"
+                    style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
+                    <CreditCard size={15} style={{ color: accent }} />
+                    {t.plan.manageBilling}
+                    <ExternalLink size={12} />
+                  </button>
+                )}
+                <p className="meta mt-2.5 leading-relaxed" style={{ fontSize: "0.72rem" }}>{t.plan.billingNote}</p>
+              </div>
+
+              <p className="label mb-3">{t.plan.chooseTitle}</p>
+              {STRIPE_PLANS.map((p) => (
+                <PlanCard key={p.id} plan={p} active={p.id === activePlan.id}
+                          accent={accent} accentText={accentText} gender={gender} dark={dark} t={t}
+                          onChangePlan={startStripeCheckout} isOwner={isOwner} />
+              ))}
+            </div>
+          )}
+
+          {/* ---------------- PRIVACY ---------------- */}
+          {tab === "privacy" && (
+            <div className="spring-in">
+              <div className="card mb-3">
+                <p className="flex items-center gap-2 h2 mb-2">
+                  <ShieldCheck size={16} style={{ color: accent }} />
+                  {t.privacy.title}
+                </p>
+                <p className="body mb-3">{t.privacy.genericBody}</p>
+                {["scheda", "training", "full"].includes(activePlan.id) && (
+                  <p className="body">{t.privacy.extendedBody}</p>
+                )}
+              </div>
+
+              <div className="card mb-3">
+                <p className="label mb-2">{t.privacy.documents}</p>
+                {t.privacy.docs.map((d) => (
+                  <button key={d} className="w-full flex items-center justify-between gap-3 py-2.5"
+                          style={{ borderBottom: "1px solid var(--line)" }}>
+                    <span className="flex items-center gap-2 text-sm" style={{ color: "var(--ink)" }}>
+                      <FileText size={14} style={{ color: "var(--ink-2)" }} /> {d}
+                    </span>
+                    <ExternalLink size={13} style={{ color: "var(--ink-2)" }} />
+                  </button>
+                ))}
+              </div>
+
+              <div className="rounded-2xl p-5"
+                   style={{ backgroundColor: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.25)" }}>
+                <p className="h2 mb-2" style={{ color: "#DC2626" }}>{t.privacy.dangerTitle}</p>
+                <p className="body mb-4">{t.privacy.dangerBody}</p>
+                {!confirmDelete ? (
+                  <button onClick={() => setConfirmDelete(true)}
+                    className="w-full rounded-full px-4 py-3 text-sm flex items-center justify-center gap-2"
+                    style={{ border: "1px solid #DC2626", color: "#DC2626", fontWeight: 600 }}>
+                    <Trash2 size={15} /> {t.privacy.deleteBtn}
+                  </button>
+                ) : (
+                  <div className="spring-in">
+                    <p className="text-sm mb-3" style={{ color: "#DC2626", fontWeight: 600 }}>{t.privacy.confirmText}</p>
+                    <div className="flex gap-2">
+                      <button onClick={onDeleteAccount}
+                        className="flex-1 rounded-full px-4 py-3 text-sm"
+                        style={{ backgroundColor: "#DC2626", color: "#FFFFFF", fontWeight: 600 }}>
+                        {t.privacy.confirmYes}
+                      </button>
+                      <button onClick={() => setConfirmDelete(false)}
+                        className="rounded-full px-4 py-3 text-sm"
+                        style={{ border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                        {t.privacy.confirmNo}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-center mt-6 leading-relaxed" style={{ fontSize: "10px", color: "#A1A1AA" }}>
+                {t.privacy.legalNote}
+              </p>
+            </div>
+          )}
+
+          <p className="label text-center mt-8" style={{ fontSize: "0.6rem" }}>{t.footer}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   5 · ANTEPRIMA — da eliminare in produzione
+   ========================================================================== */
+
+export default function ClientProfileViewPreview({
+  gender: genderProp,
+  dark: darkProp,
+  lang: langProp,
+  onChangeLang: onChangeLangProp,
+  userPlan,               // 'free' | 'performance_pack' | 'full_coaching' — da App.jsx
+  onOpenSettings: onOpenSettingsProp,   // se passato, l'Impostazioni globali di App.jsx sostituisce il drawer locale
+  profileOverride,        // { name, nickname, email, joined_at } dalla sessione reale
+  ownerEmail,
+} = {}) {
+  const isControlled = genderProp !== undefined;
+  const [dark, setDark] = useState(darkProp ?? false);
+  const [gender, setGender] = useState(genderProp ?? "M");
+  const [lang, setLang] = useState(langProp ?? "it");
+  const [owner, setOwner] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [plan, setPlan] = useState(
+    userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : userPlan === "free" ? "free" : "full"
+  );
+  useEffect(() => { if (darkProp !== undefined) setDark(darkProp); }, [darkProp]);
+  useEffect(() => { if (genderProp !== undefined) setGender(genderProp); }, [genderProp]);
+  useEffect(() => { if (langProp !== undefined) setLang(langProp); }, [langProp]);
+  const [notif, setNotif] = useState({ meals: true, steps: true, sleep: true, motivation: true });
+  const [profile, setProfile] = useState({
+    name: "Marco Bianchi", nickname: "IronWolf",
+    bio: "Panca e pazienza. Obiettivo: 100 kg per 5 entro l'estate.",
+    avatar: null, joined_at: "2023-04-12",
+    email: "marco.bianchi@email.it",
+    ...profileOverride,
+  });
+
+  // Oro Lucido Vivo per gli account uomo, Rosa Cipria Luminescente per le donne
+  const accent = gender === "F" ? "#E5C1CD" : "#D4AF37";
+  const accentText = gender === "F" ? "#9D6666" : "#8C6E33";
+
+  const weightPoints = [
+    { label: "C1", kg: 89.6 }, { label: "C2", kg: 89.1 }, { label: "C3", kg: 88.7 },
+    { label: "C4", kg: 88.2 }, { label: "C5", kg: 87.9 }, { label: "C6", kg: 87.4 },
+  ];
+  // Una foto al mese dal giorno dell'iscrizione (profile.joined_at: 2023-04-12)
+  const checkPhotos = [
+    { date: "2026-02-01", front: null, side: null, back: null },
+    { date: "2026-03-01", front: null, side: null, back: null },
+    { date: "2026-04-01", front: null, side: null, back: null },
+    { date: "2026-05-01", front: null, side: null, back: null },
+    { date: "2026-06-01", front: null, side: null, back: null },
+    { date: "2026-07-01", front: null, side: null, back: null },
+  ];
+
+  // Esercizi registrati in Home, sulla scheda impostata dal coach
+  const [favoriteExerciseIds, setFavoriteExerciseIds] = useState(["panca", "squat", "stacco"]);
+  const exercises = [
+    { id: "panca", name: "Panca Piana Bilanciere", muscleGroup: "Petto", compound: true,
+      sessions: [
+        { week: "Sett 1", date: "2026-06-01", kg: 72.5, reps: 8 },
+        { week: "Sett 2", date: "2026-06-08", kg: 75, reps: 7 },
+        { week: "Sett 3", date: "2026-06-15", kg: 77.5, reps: 6 },
+        { week: "Sett 4", date: "2026-06-22", kg: 80, reps: 6 },
+        { week: "Sett 5", date: "2026-07-20", kg: 82.5, reps: 6 },
+      ] },
+    { id: "squat", name: "Squat con Bilanciere", muscleGroup: "Gambe", compound: true,
+      sessions: [
+        { week: "Sett 1", date: "2026-06-02", kg: 105, reps: 6 },
+        { week: "Sett 2", date: "2026-06-09", kg: 110, reps: 6 },
+        { week: "Sett 3", date: "2026-06-23", kg: 115, reps: 5 },
+        { week: "Sett 4", date: "2026-07-15", kg: 120, reps: 5 },
+      ] },
+    { id: "stacco", name: "Stacco da Terra", muscleGroup: "Dorso/Posteriore", compound: true,
+      sessions: [
+        { week: "Sett 1", date: "2026-05-30", kg: 135, reps: 4 },
+        { week: "Sett 2", date: "2026-06-13", kg: 142.5, reps: 3 },
+        { week: "Sett 3", date: "2026-06-28", kg: 150, reps: 3 },
+      ] },
+    { id: "trazioni", name: "Trazioni Presa Prona", muscleGroup: "Dorso", compound: true,
+      sessions: [
+        { week: "Sett 1", date: "2026-06-05", kg: 8, reps: 8 },
+        { week: "Sett 2", date: "2026-06-19", kg: 10, reps: 7 },
+        { week: "Sett 3", date: "2026-07-10", kg: 12.5, reps: 6 },
+      ] },
+    { id: "curl", name: "Curl Manubri", muscleGroup: "Bicipiti", compound: false,
+      sessions: [
+        { week: "Sett 1", date: "2026-06-06", kg: 14, reps: 10 },
+        { week: "Sett 2", date: "2026-06-20", kg: 15, reps: 10 },
+        { week: "Sett 3", date: "2026-07-11", kg: 16, reps: 9 },
+      ] },
+  ];
+
+  return (
+    <div className={isControlled ? "app-root" : "app-root min-h-screen"} data-theme={dark ? "dark" : "light"}
+         style={{ backgroundColor: isControlled ? "transparent" : (dark ? "#09090B" : "#FFFFFF"), transition: "background-color 0.4s ease" }}>
+      <style>{`
+        .app-root, .app-root *{
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        }
+        .app-root{
+          --page:#FFFFFF;--surface:#FFFFFF;--surface-2:#FCFCFD;--line:rgba(17,17,17,.06);
+          --shadow:0 8px 30px rgba(0,0,0,.02);--ink:#1A1A1A;--ink-2:#8E8E93;--ink-3:#52525B}
+        .app-root[data-theme="dark"]{--page:#09090B;--surface:#18181B;--surface-2:#131316;
+          --line:rgba(255,255,255,.07);--shadow:0 8px 30px rgba(0,0,0,.38);
+          --ink:#FAFAFA;--ink-2:#A1A1AA;--ink-3:#E4E4E7}
+        .h1{color:var(--ink);font-size:1.45rem;font-weight:700;letter-spacing:-0.01em}
+        .h2{color:var(--ink);font-size:1.12rem;font-weight:600}
+        .body{color:var(--ink-3);font-size:.9rem;line-height:1.6}
+        .meta{color:var(--ink-2);font-size:.82rem}
+        .label{color:var(--ink-2);font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+        .font-data{font-variant-numeric:tabular-nums}
+        .card{background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);
+          border-radius:1rem;padding:1.5rem}
+        .inner{background:var(--surface-2);border:1px solid var(--line);border-radius:.85rem}
+        .input{background:var(--surface);border:1px solid var(--line);color:var(--ink);
+          border-radius:.7rem;font-size:.95rem}
+        .input::placeholder{color:var(--ink-2)}
+        @keyframes springIn{0%{opacity:0;transform:translateY(10px) scale(.985)}
+          55%{opacity:1;transform:translateY(-2px) scale(1.004)}100%{opacity:1;transform:none}}
+        .spring-in{animation:springIn .3s cubic-bezier(.22,1.2,.36,1) both}
+        @keyframes drawerIn{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
+        .drawer-in{animation:drawerIn .32s cubic-bezier(.22,1.2,.36,1) both}
+        @keyframes gradientMove{0%{background-position:0% 50%}100%{background-position:300% 50%}}
+        @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+      `}</style>
+
+      {!isControlled && (
+        <div className="fixed top-3 right-3 z-40 flex gap-2">
+          <button onClick={() => setOwner((v) => !v)} className="text-xs px-3 py-2 rounded-full"
+            style={{ backgroundColor: owner ? "#D4AF37" : (dark ? "#FAFAFA" : "#111111"),
+                     color: owner ? "#111111" : (dark ? "#09090B" : "#FFFFFF"), fontWeight: 600 }}>
+            {owner ? "Owner ✓" : "Owner"}
+          </button>
+          <button onClick={() => setDark((v) => !v)} className="text-xs px-3 py-2 rounded-full"
+            style={{ backgroundColor: dark ? "#FAFAFA" : "#111111", color: dark ? "#09090B" : "#FFFFFF", fontWeight: 600 }}>
+            {dark ? "Light" : "Onyx"}
+          </button>
+          <button onClick={() => setGender((g) => (g === "M" ? "F" : "M"))} className="text-xs px-3 py-2 rounded-full"
+            style={{ backgroundColor: dark ? "#FAFAFA" : "#111111", color: dark ? "#09090B" : "#FFFFFF", fontWeight: 600 }}>
+            {gender === "M" ? "Oro" : "Rosa"}
+          </button>
+        </div>
+      )}
+
+      <main className={isControlled ? "" : "max-w-2xl mx-auto px-4 py-16"}>
+        <ClientProfileView
+          accent={accent} accentText={accentText} gender={gender} lang={lang}
+          onChangeLang={onChangeLangProp ?? setLang}
+          profile={{ ...profile, email: owner ? (ownerEmail ?? OWNER_EMAIL) : profile.email }}
+          level={4} xp={4850}
+          checkPhotos={checkPhotos} weightPoints={weightPoints}
+          exercises={exercises} favoriteExerciseIds={favoriteExerciseIds}
+          onToggleFavoriteExercise={(id) => setFavoriteExerciseIds((f) => f.includes(id) ? f.filter((x) => x !== id) : [...f, id])}
+          onSaveProfile={(d) => setProfile((p) => ({ ...p, ...d }))}
+          onOpenSettings={onOpenSettingsProp ?? (() => setSettings(true))}
+          nicknameTaken={(n) => ["SaraSteel", "LucaE"].some((x) => x.toLowerCase() === n.toLowerCase())}
+        />
+      </main>
+
+      {/* Il drawer locale resta solo per la preview isolata: quando il componente
+          è controllato da App.jsx, le Impostazioni globali (tema/lingua/piano/account)
+          vivono lì, una sola volta per tutta l'app, aperte dall'icona ingranaggio
+          nell'header (AppHeader → AppShell → onOpenSettings). */}
+      {!isControlled && (
+        <SettingsDrawer
+          open={settings} onClose={() => setSettings(false)}
+          dark={dark} onToggleDark={() => setDark((v) => !v)}
+          accent={accent} accentText={accentText} gender={gender} lang={lang} onChangeLang={setLang}
+          currentPlan={plan} planRenewsOn="2026-09-01"
+          accountEmail={owner ? OWNER_EMAIL : profile.email}
+          notifications={notif}
+          onToggleNotification={(k) => setNotif((n) => ({ ...n, [k]: !n[k] }))}
+          onOpenBillingPortal={() => {}}
+          onChangePlan={(id) => setPlan(id)}
+          onDeleteAccount={() => {}}
+        />
+      )}
+    </div>
+  );
+}
