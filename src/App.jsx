@@ -208,37 +208,47 @@ export default function App() {
 
       {/* Impostazioni globali: UNA sola istanza per tutta l'app, aperta
           dall'icona ingranaggio nell'header (AppHeader) o dalla card
-          Impostazioni nel Profilo — mai duplicata per-schermata. */}
-      <SettingsDrawer
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        dark={dark}
-        onToggleDark={() => setDark((v) => !v)}
-        accent={accent}
-        accentText={accent}
-        gender={gender}
-        lang={lang}
-        onChangeLang={setLang}
-        currentPlan={stripePlanId}
-        planRenewsOn="2026-09-01"
-        accountEmail={session.user.email || ""}
-        notifications={notifications}
-        onToggleNotification={(k) => setNotifications((n) => ({ ...n, [k]: !n[k] }))}
-        onOpenBillingPortal={() => {
-          // TODO produzione: redirect verso la Customer Portal Session di Stripe
-          // creata da una Edge Function server-side (mai la secret key sul client).
-        }}
-        onChangePlan={(id) => {
-          const mapped = id === "full" ? "full_coaching" : id === "performance" ? "performance_pack" : "free";
-          setUserPlan(mapped);
-          // TODO produzione: qui va la vera chiamata di checkout Stripe, non
-          // solo l'aggiornamento dello stato locale.
-        }}
-        onDeleteAccount={() => {
-          // TODO produzione: cancellazione account reale (Supabase Auth admin
-          // + cascata su profiles/checkins/... secondo le policy GDPR).
-        }}
-      />
+          Impostazioni nel Profilo — mai duplicata per-schermata.
+          Il wrapper .app-root con data-theme è OBBLIGATORIO: SettingsDrawer
+          non definisce da sé le variabili CSS del tema (--surface, --line,
+          --ink...), le eredita da un antenato con questa classe. Senza,
+          il pannello appare trasparente — bug corretto qui. */}
+      <div className="app-root" data-theme={dark ? "dark" : "light"}>
+        <SettingsDrawer
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          dark={dark}
+          onToggleDark={() => setDark((v) => !v)}
+          accent={accent}
+          accentText={accent}
+          gender={gender}
+          lang={lang}
+          onChangeLang={setLang}
+          currentPlan={stripePlanId}
+          planRenewsOn="2026-09-01"
+          accountEmail={session.user.email || ""}
+          notifications={notifications}
+          onToggleNotification={(k) => setNotifications((n) => ({ ...n, [k]: !n[k] }))}
+          onOpenBillingPortal={() => {
+            // TODO produzione: redirect verso la Customer Portal Session di Stripe
+            // creata da una Edge Function server-side (mai la secret key sul client).
+          }}
+          onChangePlan={(id) => {
+            const mapped = id === "full" ? "full_coaching" : id === "performance" ? "performance_pack" : "free";
+            setUserPlan(mapped);
+            // TODO produzione: qui va la vera chiamata di checkout Stripe, non
+            // solo l'aggiornamento dello stato locale.
+          }}
+          onDeleteAccount={() => {
+            // TODO produzione: cancellazione account reale (Supabase Auth admin
+            // + cascata su profiles/checkins/... secondo le policy GDPR).
+          }}
+          onLogout={async () => {
+            await supabase.auth.signOut();
+            setSession(null);
+          }}
+        />
+      </div>
     </>
   );
 }

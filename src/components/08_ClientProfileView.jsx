@@ -1012,7 +1012,7 @@ export function SettingsDrawer({
   open, onClose, dark, onToggleDark, accent, accentText, gender, lang, onChangeLang,
   currentPlan, planRenewsOn, accountEmail,
   notifications, onToggleNotification,
-  onOpenBillingPortal, onChangePlan, onDeleteAccount,
+  onOpenBillingPortal, onChangePlan, onDeleteAccount, onLogout,
 }) {
   const t = translations[lang] || translations.it;
   const [tab, setTab] = useState("aspetto");
@@ -1171,6 +1171,14 @@ export function SettingsDrawer({
                   </button>
                 ))}
               </div>
+
+              {onLogout && (
+                <button onClick={onLogout}
+                  className="w-full rounded-2xl px-4 py-3.5 text-sm mb-4"
+                  style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
+                  Esci dall'account
+                </button>
+              )}
 
               <div className="rounded-2xl p-5"
                    style={{ backgroundColor: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.25)" }}>
