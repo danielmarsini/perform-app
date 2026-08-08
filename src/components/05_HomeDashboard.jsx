@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, logWorkoutSet } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -2117,7 +2117,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const fmtMMSS = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
   const syncToCoach = (payload) =>
-    onCoachSync && onCoachSync({ type: "workout", exercise: ex.name, ...payload });
+    onCoachSync && onCoachSync({ type: "workout", exercise: ex.name, exerciseId: ex.id, ...payload });
 
   const handleVideoUpload = (e) => {
     const file = e.target.files?.[0];
@@ -4702,6 +4702,19 @@ export default function HomePreview({
   const pushCoachSync = (evt) => {
     setCoachFeed((f) => [...f.slice(-99), { ...evt, at: new Date().toISOString() }]);
     setLastActivityDate(new Date().toISOString().slice(0, 10));
+
+    // Salvataggio reale: quando il cliente spunta una serie come completata su
+    // un esercizio assegnato dal coach (isRealMode + exerciseId reale), scrive
+    // sia lo storico completo (workout_sets, una riga per serie) sia un
+    // riassunto rapido su workout_logs (ultima serie + stato "done").
+    if (isRealMode && evt.type === "workout" && evt.kind === "set-completed" && evt.exerciseId && evt.row) {
+      const { kg, reps, rir } = evt.row;
+      logWorkoutSet(supabaseProp, evt.exerciseId, userId, evt.rowIndex + 1, {
+        repsCompleted: reps !== "" ? Number(reps) : null,
+        loadKg: kg !== "" ? Number(kg) : null,
+        rir: rir !== "" ? Number(rir) : null,
+      }).catch((err) => console.error("PERFORM: errore salvataggio workout_sets", err));
+    }
   };
   const simulateInactivity = () => {
     const d = new Date(); d.setDate(d.getDate() - 3);

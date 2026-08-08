@@ -3,6 +3,7 @@ import {
   fetchClientList,
   assignNutritionTarget,
   assignWorkoutExercise,
+  fetchClientSetHistory,
   MUSCLE_TARGETS,
 } from "../lib/coachingData.js";
 
@@ -29,6 +30,20 @@ export default function CoachAssignPanel({ supabase, coachId, accent = "#D4AF37"
       .catch((err) => { if (mounted) { setStatus({ type: "error", text: err.message }); setLoadingClients(false); } });
     return () => { mounted = false; };
   }, [supabase]);
+
+  // Storico completo delle serie svolte dal cliente selezionato (ultimi 14 giorni).
+  const [setHistory, setSetHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  useEffect(() => {
+    if (!clientId) { setSetHistory([]); return; }
+    setLoadingHistory(true);
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+    fetchClientSetHistory(supabase, clientId, from, to)
+      .then((rows) => setSetHistory(rows))
+      .catch((err) => console.error("PERFORM: errore lettura storico serie", err))
+      .finally(() => setLoadingHistory(false));
+  }, [supabase, clientId]);
 
   // --- form target nutrizionali ---
   const [dayType, setDayType] = useState("on");
@@ -109,6 +124,44 @@ export default function CoachAssignPanel({ supabase, coachId, accent = "#D4AF37"
           color: status.type === "ok" ? "#15803d" : "#b91c1c",
         }}>
           {status.text}
+        </div>
+      )}
+
+      {clientId && (
+        <div style={{ ...cardStyle }}>
+          <h3 style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "0.5rem" }}>Storico serie (ultimi 14 giorni)</h3>
+          {loadingHistory ? (
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-2, #8E8E93)" }}>Caricamento…</p>
+          ) : setHistory.length === 0 ? (
+            <p style={{ fontSize: "0.85rem", color: "var(--ink-2, #8E8E93)" }}>Nessuna serie registrata in questo periodo.</p>
+          ) : (
+            <div style={{ maxHeight: 260, overflowY: "auto" }}>
+              <table style={{ width: "100%", fontSize: "0.82rem", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ textAlign: "left", color: "var(--ink-2, #8E8E93)" }}>
+                    <th style={{ padding: "0.3rem 0.4rem" }}>Data</th>
+                    <th style={{ padding: "0.3rem 0.4rem" }}>Esercizio</th>
+                    <th style={{ padding: "0.3rem 0.4rem" }}>Serie</th>
+                    <th style={{ padding: "0.3rem 0.4rem" }}>Kg</th>
+                    <th style={{ padding: "0.3rem 0.4rem" }}>Reps</th>
+                    <th style={{ padding: "0.3rem 0.4rem" }}>RIR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {setHistory.map((s, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid var(--line, rgba(17,17,17,.08))" }}>
+                      <td style={{ padding: "0.3rem 0.4rem" }}>{s.workout_logs?.date}</td>
+                      <td style={{ padding: "0.3rem 0.4rem" }}>{s.workout_logs?.exercise_name}</td>
+                      <td style={{ padding: "0.3rem 0.4rem" }}>#{s.set_number}</td>
+                      <td style={{ padding: "0.3rem 0.4rem" }}>{s.load_kg ?? "—"}</td>
+                      <td style={{ padding: "0.3rem 0.4rem" }}>{s.reps_completed ?? "—"}</td>
+                      <td style={{ padding: "0.3rem 0.4rem" }}>{s.rir ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
