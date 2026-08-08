@@ -75,15 +75,57 @@ export async function fetchExerciseHistory(supabase, userId, exerciseName, limit
    SCRITTURA — lato cliente (compilare la scheda assegnata)
    ------------------------------------------------------------------------- */
 
-// Il cliente compila una riga già inserita dal coach: aggiorna reps/carico/rir
-// e marca la riga come svolta. Non tocca is_read_only (resta true, è il "cosa
-// prescritto"): il progresso reale va nei campi reps_completed/load_kg/status.
-export async function logWorkoutSet(supabase, workoutLogId, { repsCompleted, loadKg, rir }) {
-  const { error } = await supabase
+// Il cliente compila una serie: registra QUESTA serie specifica in workout_sets
+// (storico completo, mai sovrascritto) e aggiorna anche la riga riassuntiva in
+// workout_logs (ultima serie + stato 'done'), utile per viste rapide che non
+// hanno bisogno del dettaglio serie-per-serie.
+export async function logWorkoutSet(supabase, workoutLogId, userId, setNumber, { repsCompleted, loadKg, rir }) {
+  const { error: setError } = await supabase.from("workout_sets").upsert(
+    {
+      workout_log_id: workoutLogId,
+      user_id: userId,
+      set_number: setNumber,
+      reps_completed: repsCompleted,
+      load_kg: loadKg,
+      rir,
+      completed_at: new Date().toISOString(),
+    },
+    { onConflict: "workout_log_id,set_number" }
+  );
+  if (setError) throw setError;
+
+  const { error: logError } = await supabase
     .from("workout_logs")
     .update({ reps_completed: repsCompleted, load_kg: loadKg, rir, status: "done" })
     .eq("id", workoutLogId);
+  if (logError) throw logError;
+}
+
+// Storico completo delle serie di un esercizio assegnato, per il coach (o per
+// il cliente stesso): ogni riga è UNA serie realmente svolta, non l'ultima soltanto.
+export async function fetchWorkoutSets(supabase, workoutLogId) {
+  const { data, error } = await supabase
+    .from("workout_sets")
+    .select("set_number, reps_completed, load_kg, rir, completed_at")
+    .eq("workout_log_id", workoutLogId)
+    .order("set_number", { ascending: true });
   if (error) throw error;
+  return data ?? [];
+}
+
+// Tutte le serie svolte da un cliente in un intervallo di date, con il nome
+// esercizio incluso (join lato client su workout_logs) — utile per il coach
+// che vuole vedere lo storico completo di un atleta senza aprire esercizio per esercizio.
+export async function fetchClientSetHistory(supabase, userId, fromDateISO, toDateISO) {
+  const { data, error } = await supabase
+    .from("workout_sets")
+    .select("set_number, reps_completed, load_kg, rir, completed_at, workout_logs!inner(date, exercise_name, muscle_target, user_id)")
+    .eq("workout_logs.user_id", userId)
+    .gte("workout_logs.date", fromDateISO)
+    .lte("workout_logs.date", toDateISO)
+    .order("completed_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
 }
 
 /* ---------------------------------------------------------------------------
@@ -136,6 +178,89 @@ export async function fetchClientList(supabase) {
     .order("nickname", { ascending: true });
   if (error) throw error;
   return data ?? [];
+}
+
+/* ---------------------------------------------------------------------------
+   HUB ATLETI — roster reale + anamnesi
+   ------------------------------------------------------------------------- */
+
+// Anamnesi (56 risposte, salvate come JSON) di un cliente. Ritorna {} se non
+// ha ancora compilato nulla — nessun crash, il pannello mostra 0% compilata.
+export async function fetchAnamnesis(supabase, userId) {
+  const { data, error } = await supabase
+    .from("anamnesis_responses")
+    .select("answers, updated_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.answers ?? {};
+}
+
+// Scrive (o aggiorna) le risposte anamnesi di un cliente. Upsert: sovrascrive
+// tutte le risposte con l'oggetto passato — il chiamante deve unire lo stato
+// precedente con le nuove risposte prima di chiamare questa funzione.
+export async function saveAnamnesis(supabase, userId, answers) {
+  const { error } = await supabase
+    .from("anamnesis_responses")
+    .upsert({ user_id: userId, answers, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) throw error;
+}
+
+// Roster reale per l'Hub Atleti del pannello coach: combina profiles + ultimo
+// checkin + anamnesi in una forma compatibile con l'interfaccia già costruita.
+// Campi non ancora tracciabili da nessuna tabella reale (adherence, rings,
+// prs, evening) restano a un valore neutro di default — NON sono inventati,
+// sono segnalati come 0/vuoto finché non viene costruita la fonte dati vera
+// (checkins serali, calcolo aderenza da workout_sets, PR da workout_sets).
+export async function fetchClientRoster(supabase) {
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, nickname, full_name, gender, role, xp_total, current_streak, plan, created_at")
+    .eq("role", "user")
+    .order("created_at", { ascending: false });
+  if (profilesError) throw profilesError;
+  if (!profiles || profiles.length === 0) return [];
+
+  const roster = await Promise.all(
+    profiles.map(async (p) => {
+      const [{ data: checkins }, answers] = await Promise.all([
+        supabase.from("checkins").select("date, weight, chest, arm, thigh").eq("user_id", p.id).order("date", { ascending: false }).limit(8),
+        fetchAnamnesis(supabase, p.id).catch(() => ({})),
+      ]);
+      const ordered = (checkins ?? []).slice().reverse(); // dal più vecchio al più recente, come si aspetta il grafico
+      const last = ordered[ordered.length - 1];
+
+      return {
+        id: p.id,
+        name: p.full_name || p.nickname || "Atleta",
+        gender: p.gender === "female" ? "F" : "M",
+        goal: answers.obiettivoPrinc || null,
+        calories: null, // letto separatamente da nutrition_targets quando serve, non duplicato qui
+        adherence: 0,   // TODO: calcolare da workout_sets/nutrition_logs quando costruiamo quella metrica
+        streak: p.current_streak ?? 0,
+        xp: p.xp_total ?? 0,
+        plan: p.plan || "free",
+        status: "active",
+        age: answers.eta ?? null,
+        birthDate: null,
+        heightCm: answers.heightCm ?? null,
+        bodyFatPct: answers.bodyFatPct ?? null,
+        activity: answers.activity ?? null,
+        foodLikes: answers.foodLikes ?? [],
+        foodDislikes: answers.foodDislikes ?? [],
+        email: null, // non esposto qui: solo auth.users (admin API) lo conosce, non la tabella profiles
+        lastCheck: last ? { weight: Number(last.weight) } : { weight: null },
+        weightHistory: ordered.map((c) => Number(c.weight)).filter((n) => !Number.isNaN(n)),
+        waistCm: null,
+        billingStatus: p.plan && p.plan !== "free" ? "active" : "pending",
+        prs: {},
+        evening: { energia: null, digestione: null, sonno: null, doloreGrado: 0, doloreNota: "" },
+        rings: { allenamento: 0, alimentazione: 0, recupero: 0 },
+        _anamnesisAnswers: answers, // portato dietro per AnamnesisPanel, non per la roster card
+      };
+    })
+  );
+  return roster;
 }
 
 export { MUSCLE_TARGETS };
