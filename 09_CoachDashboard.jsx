@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, createContext, useContext } from "react";
 import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
   AlertTriangle, Dumbbell, Salad, Pill, Copy, MessageCircle, Plus,
@@ -158,7 +158,14 @@ const STATUS_META = {
 /* Campi anamnesi aggiunti (age, heightCm, bodyFatPct, activity, foodLikes):
    non presenti nel monolite in questa forma sintetica — li introduco per
    alimentare il motore di Generazione Predittiva Totale (TDEE + macros). */
-const CLIENTS = [
+import { fetchClientRoster, fetchAnamnesis, saveAnamnesis } from "../lib/coachingData.js";
+
+// Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
+// i pannelli innestati (Anamnesi, Editor) senza dover passare supabase/coachId
+// come prop attraverso ogni livello di componenti.
+const CoachDataContext = createContext({ clients: [], supabase: null, coachId: null, isRealMode: false });
+
+const DEMO_CLIENTS = [
   { id: 1, demoId: "marco", name: "Marco Bianchi", gender: "M", goal: "ipertrofia", calories: 2900, adherence: 94, streak: 17, xp: 3450, plan: "full", status: "active",
     age: 29, birthDate: "1997-04-12", heightCm: 180, bodyFatPct: 14, activity: "attivo", foodLikes: ["Petto di pollo", "Riso Basmati", "Mandorle"], foodDislikes: [],
     email: "marco.bianchi@icloud.com", password: "Marco-7734", lastCheck: { weight: 80.7, sleep: 7, stress: 4, energy: 8, hunger: 5 },
@@ -1439,6 +1446,7 @@ function ComplianceRing({ label, value }) {
    Cliccare un atleta segnalato apre direttamente il suo profilo sulla tab
    Bioritmi & Grafici, dove il dolore è documentato per esteso. */
 function AlarmsDashboard({ onOpen }) {
+  const { clients: CLIENTS } = useContext(CoachDataContext);
   const flagged = CLIENTS.filter((c) => c.evening.doloreGrado >= 3 || computeStatus(c) === "red").sort((a, b) => b.evening.doloreGrado - a.evening.doloreGrado);
   if (flagged.length === 0) {
     return (
@@ -1604,6 +1612,7 @@ function fmtLastLogin(d) {
 }
 
 function AccessControlTable({ passwordOverrides, onRegenerate }) {
+  const { clients: CLIENTS } = useContext(CoachDataContext);
   const rows = [...CLIENTS].sort((a, b) => a.name.localeCompare(b.name, "it"));
   return (
     <div className="c-card">
@@ -2411,8 +2420,27 @@ function AnamAreaSection({ areaId, label, questions, answers, onChange, defaultO
 }
 
 function AnamnesisPanel({ client }) {
-  const [answers, setAnswers] = useState(() => simulateAnamnesis(client));
+  const { supabase, isRealMode } = useContext(CoachDataContext);
+  const [answers, setAnswers] = useState(() => (isRealMode ? (client._anamnesisAnswers ?? {}) : simulateAnamnesis(client)));
+  const [saveState, setSaveState] = useState(null); // null | 'saving' | 'saved' | 'error'
+
   const setField = (k, v) => setAnswers((a) => ({ ...a, [k]: v }));
+
+  // Autosalvataggio reale: 900ms dopo l'ultima modifica, scrive tutte le
+  // risposte su anamnesis_responses. Debounced per non scrivere a ogni
+  // singolo carattere digitato.
+  useEffect(() => {
+    if (!isRealMode) return undefined;
+    setSaveState("saving");
+    const t = setTimeout(() => {
+      saveAnamnesis(supabase, client.id, answers)
+        .then(() => setSaveState("saved"))
+        .catch((err) => { console.error("PERFORM: errore salvataggio anamnesi", err); setSaveState("error"); });
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, isRealMode, client.id]);
+
   const totalFilled = ANAM_QUESTIONS.filter((q) => q.t !== "photos" && String(answers[q.k] ?? "").trim() !== "").length;
   const pct = Math.round((totalFilled / (ANAM_QUESTIONS.length - 1)) * 100); // -1: __foto non conta come domanda testuale
 
@@ -2459,9 +2487,18 @@ function AnamnesisPanel({ client }) {
           answers={answers} onChange={setField} defaultOpen={areaId === "a1"} />
       ))}
 
-      <p className="c-muted text-xs px-1 leading-relaxed">
-        Queste risposte sono simulate per l'anteprima (il monolite non contiene ancora i dati reali compilati dagli atleti). Appena mi mandi le risposte vere o il modulo di registrazione, le sostituisco 1:1 — struttura e chiavi restano identiche.
-      </p>
+      {isRealMode ? (
+        <p className="c-muted text-xs px-1 leading-relaxed">
+          {saveState === "saving" && "Salvataggio in corso…"}
+          {saveState === "saved" && "✓ Risposte salvate."}
+          {saveState === "error" && "Errore nel salvataggio — riprova o controlla la connessione."}
+          {!saveState && "Le risposte del cliente, quando le compila, appaiono qui automaticamente."}
+        </p>
+      ) : (
+        <p className="c-muted text-xs px-1 leading-relaxed">
+          Queste risposte sono simulate per l'anteprima (il monolite non contiene ancora i dati reali compilati dagli atleti). Appena mi mandi le risposte vere o il modulo di registrazione, le sostituisco 1:1 — struttura e chiavi restano identiche.
+        </p>
+      )}
     </div>
   );
 }
@@ -3177,6 +3214,7 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
 
 /* -------------------------------- CATALOGO ---------------------------------- */
 function RosterView({ onOpen }) {
+  const { clients: CLIENTS } = useContext(CoachDataContext);
   const [dept, setDept] = useState("active");
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -3240,7 +3278,7 @@ const PLAN_PRICING = {
    definizione di Monthly Recurring Revenue) dei clienti attivi con
    pagamento in regola — un pagamento fallito non genera MRR, coerente col
    Billing Shield che sposta l'account su Scaduti. */
-function computeMRR() {
+function computeMRR(CLIENTS) {
   return CLIENTS.filter((c) => deptOf(c) === "active" && c.billingStatus === "active")
     .reduce((sum, c) => {
       const plan = PLAN_PRICING[c.plan];
@@ -3251,7 +3289,7 @@ function computeMRR() {
 /* Storico transazioni simulato: una riga per cliente con un pagamento
    plausibile negli ultimi 30 giorni, coerente con lo stato reale del suo
    billingStatus/status già presente nei dati. Ordinato dal più recente. */
-function buildTransactions() {
+function buildTransactions(CLIENTS) {
   const now = new Date("2026-08-04T19:04:00");
   const txs = [];
   let dayOffset = 0;
@@ -3352,8 +3390,9 @@ function buildRevenueHistory(mrr) {
 }
 
 function FinanceModule({ isDark }) {
-  const mrr = useMemo(() => computeMRR(), []);
-  const transactions = useMemo(() => buildTransactions(), []);
+  const { clients: CLIENTS } = useContext(CoachDataContext);
+  const mrr = useMemo(() => computeMRR(CLIENTS), [CLIENTS]);
+  const transactions = useMemo(() => buildTransactions(CLIENTS), [CLIENTS]);
   const revenueHistory = useMemo(() => buildRevenueHistory(mrr), [mrr]);
   return (
     <div>
@@ -3380,11 +3419,23 @@ const TABS = [
   { id: "rete", label: "Hub Rete & Accessi", icon: Server },
 ];
 
-export default function CoachDashboard() {
+export default function CoachDashboard({ supabase, coachId } = {}) {
+  const isRealMode = Boolean(supabase && coachId);
+  const [realClients, setRealClients] = useState(null); // null = non ancora caricato
+
+  useEffect(() => {
+    if (!isRealMode) return;
+    fetchClientRoster(supabase)
+      .then(setRealClients)
+      .catch((err) => { console.error("PERFORM: errore caricamento roster clienti", err); setRealClients([]); });
+  }, [isRealMode, supabase]);
+
+  const clients = isRealMode ? (realClients ?? []) : DEMO_CLIENTS;
+
   const [tab, setTab] = useState("atleti");
   const [selectedId, setSelectedId] = useState(null);
   const [clientInitialTab, setClientInitialTab] = useState("anamnesi");
-  const client = CLIENTS.find((c) => c.id === selectedId);
+  const client = clients.find((c) => c.id === selectedId);
   // Store condiviso tra Registro Check, Co-Pilota AI e Timeline dell'atleta
   // per il target ON/OFF della settimana corrente — vedi nota in ClientTimeline.
   const [quickTargets, setQuickTargets] = useState({});
@@ -3408,46 +3459,48 @@ export default function CoachDashboard() {
   const [isDark, setIsDark] = useState(false);
 
   return (
-    <div className={`coach-root${isDark ? " dark" : ""}`}>
-      <GlobalStyle />
-      <main className="max-w-6xl mx-auto px-4 py-8 pb-24">
-        <CoachContextBar isDark={isDark} onToggleDark={() => setIsDark((v) => !v)} />
-        {selectedId != null ? (
-          <ClientDetail client={client} onBack={() => { setSelectedId(null); setClientInitialTab("anamnesi"); }} quickTargets={quickTargets} setQuickTargets={setQuickTargets} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} initialTab={clientInitialTab} />
-        ) : (
-          <>
-            <div className="flex gap-1.5 mb-6">
-              {TABS.map((t) => {
-                const on = tab === t.id;
-                const Ico = t.icon;
-                return (
-                  <button key={t.id} onClick={() => setTab(t.id)} className="flex-1 rounded-xl px-3 py-3 flex items-center justify-center gap-2"
-                    style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
-                    <Ico size={16} style={{ color: on ? "#C5A059" : "var(--ink-soft)" }} />
-                    <span className="font-data text-xs uppercase" style={{ letterSpacing: "0.06em", fontWeight: on ? 600 : 400 }}>{t.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {tab === "atleti" && (
-              <div>
-                <AlarmsDashboard onOpen={openClientAlert} />
-                <RosterView onOpen={setSelectedId} />
+    <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode }}>
+      <div className={`coach-root${isDark ? " dark" : ""}`}>
+        <GlobalStyle />
+        <main className="max-w-6xl mx-auto px-4 py-8 pb-24">
+          <CoachContextBar isDark={isDark} onToggleDark={() => setIsDark((v) => !v)} />
+          {selectedId != null ? (
+            <ClientDetail client={client} onBack={() => { setSelectedId(null); setClientInitialTab("anamnesi"); }} quickTargets={quickTargets} setQuickTargets={setQuickTargets} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} initialTab={clientInitialTab} />
+          ) : (
+            <>
+              <div className="flex gap-1.5 mb-6">
+                {TABS.map((t) => {
+                  const on = tab === t.id;
+                  const Ico = t.icon;
+                  return (
+                    <button key={t.id} onClick={() => setTab(t.id)} className="flex-1 rounded-xl px-3 py-3 flex items-center justify-center gap-2"
+                      style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+                      <Ico size={16} style={{ color: on ? "#C5A059" : "var(--ink-soft)" }} />
+                      <span className="font-data text-xs uppercase" style={{ letterSpacing: "0.06em", fontWeight: on ? 600 : 400 }}>{t.label}</span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
 
-            {tab === "finanziario" && <FinanceModule isDark={isDark} />}
+              {tab === "atleti" && (
+                <div>
+                  <AlarmsDashboard onOpen={openClientAlert} />
+                  <RosterView onOpen={setSelectedId} />
+                </div>
+              )}
 
-            {tab === "rete" && (
-              <div className="space-y-5">
-                <WhitelistPanel />
-                <AccessControlTable passwordOverrides={passwordOverrides} onRegenerate={regeneratePassword} />
-              </div>
-            )}
-          </>
-        )}
-      </main>
-    </div>
+              {tab === "finanziario" && <FinanceModule isDark={isDark} />}
+
+              {tab === "rete" && (
+                <div className="space-y-5">
+                  <WhitelistPanel />
+                  <AccessControlTable passwordOverrides={passwordOverrides} onRegenerate={regeneratePassword} />
+                </div>
+              )}
+            </>
+          )}
+        </main>
+      </div>
+    </CoachDataContext.Provider>
   );
 }

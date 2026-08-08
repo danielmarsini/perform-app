@@ -180,4 +180,87 @@ export async function fetchClientList(supabase) {
   return data ?? [];
 }
 
+/* ---------------------------------------------------------------------------
+   HUB ATLETI — roster reale + anamnesi
+   ------------------------------------------------------------------------- */
+
+// Anamnesi (56 risposte, salvate come JSON) di un cliente. Ritorna {} se non
+// ha ancora compilato nulla — nessun crash, il pannello mostra 0% compilata.
+export async function fetchAnamnesis(supabase, userId) {
+  const { data, error } = await supabase
+    .from("anamnesis_responses")
+    .select("answers, updated_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.answers ?? {};
+}
+
+// Scrive (o aggiorna) le risposte anamnesi di un cliente. Upsert: sovrascrive
+// tutte le risposte con l'oggetto passato — il chiamante deve unire lo stato
+// precedente con le nuove risposte prima di chiamare questa funzione.
+export async function saveAnamnesis(supabase, userId, answers) {
+  const { error } = await supabase
+    .from("anamnesis_responses")
+    .upsert({ user_id: userId, answers, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) throw error;
+}
+
+// Roster reale per l'Hub Atleti del pannello coach: combina profiles + ultimo
+// checkin + anamnesi in una forma compatibile con l'interfaccia già costruita.
+// Campi non ancora tracciabili da nessuna tabella reale (adherence, rings,
+// prs, evening) restano a un valore neutro di default — NON sono inventati,
+// sono segnalati come 0/vuoto finché non viene costruita la fonte dati vera
+// (checkins serali, calcolo aderenza da workout_sets, PR da workout_sets).
+export async function fetchClientRoster(supabase) {
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, nickname, full_name, gender, role, xp_total, current_streak, plan, created_at")
+    .eq("role", "user")
+    .order("created_at", { ascending: false });
+  if (profilesError) throw profilesError;
+  if (!profiles || profiles.length === 0) return [];
+
+  const roster = await Promise.all(
+    profiles.map(async (p) => {
+      const [{ data: checkins }, answers] = await Promise.all([
+        supabase.from("checkins").select("date, weight, chest, arm, thigh").eq("user_id", p.id).order("date", { ascending: false }).limit(8),
+        fetchAnamnesis(supabase, p.id).catch(() => ({})),
+      ]);
+      const ordered = (checkins ?? []).slice().reverse(); // dal più vecchio al più recente, come si aspetta il grafico
+      const last = ordered[ordered.length - 1];
+
+      return {
+        id: p.id,
+        name: p.full_name || p.nickname || "Atleta",
+        gender: p.gender === "female" ? "F" : "M",
+        goal: answers.obiettivoPrinc || null,
+        calories: null, // letto separatamente da nutrition_targets quando serve, non duplicato qui
+        adherence: 0,   // TODO: calcolare da workout_sets/nutrition_logs quando costruiamo quella metrica
+        streak: p.current_streak ?? 0,
+        xp: p.xp_total ?? 0,
+        plan: p.plan || "free",
+        status: "active",
+        age: answers.eta ?? null,
+        birthDate: null,
+        heightCm: answers.heightCm ?? null,
+        bodyFatPct: answers.bodyFatPct ?? null,
+        activity: answers.activity ?? null,
+        foodLikes: answers.foodLikes ?? [],
+        foodDislikes: answers.foodDislikes ?? [],
+        email: null, // non esposto qui: solo auth.users (admin API) lo conosce, non la tabella profiles
+        lastCheck: last ? { weight: Number(last.weight) } : { weight: null },
+        weightHistory: ordered.map((c) => Number(c.weight)).filter((n) => !Number.isNaN(n)),
+        waistCm: null,
+        billingStatus: p.plan && p.plan !== "free" ? "active" : "pending",
+        prs: {},
+        evening: { energia: null, digestione: null, sonno: null, doloreGrado: 0, doloreNota: "" },
+        rings: { allenamento: 0, alimentazione: 0, recupero: 0 },
+        _anamnesisAnswers: answers, // portato dietro per AnamnesisPanel, non per la roster card
+      };
+    })
+  );
+  return roster;
+}
+
 export { MUSCLE_TARGETS };
