@@ -198,7 +198,7 @@ export default function App() {
                 </button>
               </div>
               {coachView === "dashboard" ? (
-                <CoachDashboard />
+                <CoachDashboard supabase={supabase} coachId={session.user.id} />
               ) : (
                 <CoachAssignPanel supabase={supabase} coachId={session.user.id} accent={accent} />
               )}
