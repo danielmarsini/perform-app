@@ -947,7 +947,7 @@ function Toggle({ on, onClick, label, desc }) {
    letterale richiesto dal committente, non tradotto dal motore i18n).
    Se isOwner e plan.id === 'full', mostra "👑 PROPRIETARIO / OWNER" al posto
    del bottone: sblocco nativo, nessun redirect a Stripe. */
-function PlanCard({ plan, active, accent, accentText, gender, dark, t, onChangePlan, isOwner }) {
+export function PlanCard({ plan, active, accent, accentText, gender, dark, t, onChangePlan, isOwner }) {
   const copy = t.plans[plan.id];
   const period = t.periods[plan.billing];
   const ownerOverride = isOwner && plan.id === "full";

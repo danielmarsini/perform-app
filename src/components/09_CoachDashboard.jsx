@@ -24,7 +24,7 @@ import {
 
 /* --------------------------- DESIGN TOKEN REALI --------------------------- */
 /* Estratti verbatim dal blocco <style> del monolite (righe 8170-8350).      */
-const GlobalStyle = () => (
+export const GlobalStyle = () => (
   <style>{`
     /* DIRETTIVA TIPOGRAFICA ASSOLUTA: nessun font esterno caricato (via
        @import o @font-face). Solo i font nativi di sistema — lo stesso
@@ -255,7 +255,7 @@ function deptOf(c) {
    plausibile: se mi mandi AuthView.jsx o l'elenco esatto dei campi di
    registrazione (email, password, eventuali altri) sostituisco con quelli
    veri e tolgo il placeholder. */
-const ANAM_AREAS = {
+export const ANAM_AREAS = {
   a1: "1 · Dati anagrafici e personali",
   a2: "2 · Dati fisici e composizione",
   a3: "3 · Anamnesi medica e salute confidenziale",
@@ -267,7 +267,7 @@ const ANAM_AREAS = {
   a9: "9 · Obiettivi e aspettative",
 };
 
-const ANAM_QUESTIONS = [
+export const ANAM_QUESTIONS = [
   /* 1 · Dati anagrafici e personali */
   { area: "a1", n: 1,  k: "nome",         q: "Nome e cognome", t: "text", req: true },
   { area: "a1", n: 2,  k: "nascita",      q: "Data di nascita", t: "date", req: true },
@@ -2393,7 +2393,7 @@ function AnamField({ q, value, onChange }) {
   return <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={q.ph} className={common} />;
 }
 
-function AnamAreaSection({ areaId, label, questions, answers, onChange, defaultOpen }) {
+export function AnamAreaSection({ areaId, label, questions, answers, onChange, defaultOpen }) {
   const [open, setOpen] = useState(!!defaultOpen);
   const filled = questions.filter((q) => q.t !== "photos" && String(answers[q.k] ?? "").trim() !== "").length;
   return (

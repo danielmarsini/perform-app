@@ -8,6 +8,7 @@ import ClassificaView from "./components/07_ClassificaView.jsx";
 import ProfileScreen, { SettingsDrawer } from "./components/08_ClientProfileView.jsx";
 import CoachDashboard from "./components/09_CoachDashboard.jsx";
 import CoachAssignPanel from "./components/10_CoachAssignPanel.jsx";
+import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
 
 /* ============================================================================
    APP.JSX — punto di innesto reale dei 7 moduli PERFORM
@@ -19,10 +20,14 @@ import CoachAssignPanel from "./components/10_CoachAssignPanel.jsx";
    scollegate" — ogni file, in isolamento, aveva i propri toggle locali.
 
    PRODUZIONE — TODO espliciti:
-   - `profileRow` va sostituito con una vera fetch da Supabase
-     (`select gender, plan, nickname, full_name from profiles where id = session.user.id`)
-     eseguita in un useEffect dopo il login. Qui è simulata perché la tabella
-     `profiles` esiste già nello schema v11 ma il fetch non è ancora cablato.
+   - La riga `profiles` (gender, plan, onboarding_completed) viene ora
+     recuperata davvero con una fetch in useEffect dopo il login — vedi sotto.
+     `lang` resta invece stato locale: non è ancora una colonna in profiles.
+   - Finché `profiles.onboarding_completed` è false, si monta OnboardingFlow
+     (11) al posto della Home: selezione piano, e se il piano scelto è a
+     coaching (scheda/training/full) anche l'anamnesi obbligatoria. Richiede
+     la colonna aggiunta in SCHEMA_v16_onboarding.sql — se non è ancora stata
+     eseguita su Supabase, ogni utente resta bloccato in OnboardingFlow.
    - La chiave Anthropic in NewsTipsView (`aiEndpoint`) va spostata dietro
      l'Edge Function proxy (già annotato nel file 06 stesso).
    - ClassificaView (07) e CoachDashboard (09) sono montati "as-is": non hanno
@@ -43,6 +48,8 @@ export default function App() {
 
   const [authLoading, setAuthLoading] = useState(true);
   const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);       // riga profiles reale, null finché non caricata
+  const [profileLoading, setProfileLoading] = useState(true);
 
   // --- Stato condiviso tra TUTTE le schermate ---------------------------------
   const [dark, setDark] = useState(true);
@@ -73,18 +80,38 @@ export default function App() {
     };
   }, []);
 
-  // TODO produzione: quando `session` cambia, fetch della riga `profiles` reale
-  // (gender, nickname, plan, lingua preferita) e settare gender/userPlan/lang
-  // di conseguenza invece di lasciare i default "M"/"free"/"it". Es.:
-  //
-  // useEffect(() => {
-  //   if (!session) return;
-  //   supabase.from("profiles").select("gender, plan, lang, nickname, full_name")
-  //     .eq("id", session.user.id).single().then(({ data }) => {
-  //       // NB: profiles.gender è 'male'/'female' nel DB, l'app usa 'M'/'F' — va convertito qui.
-  //       if (data) { setGender(data.gender === "female" ? "F" : "M"); setUserPlan(data.plan ?? "free"); setLang(data.lang ?? "it"); }
-  //     });
-  // }, [session]);
+  // Fetch della riga `profiles` reale (gender, plan, onboarding_completed):
+  // serve sia per allineare tema/piano allo stato salvato, sia per sapere se
+  // mostrare OnboardingFlow invece della Home (vedi sotto). `lang` non è
+  // ancora una colonna reale nello schema — resta lo stato locale "it" finché
+  // non viene aggiunta, coerente con quanto già annotato in SettingsDrawer.
+  useEffect(() => {
+    if (!session) { setProfile(null); setProfileLoading(false); return undefined; }
+    let cancelled = false;
+    setProfileLoading(true);
+    supabase
+      .from("profiles")
+      .select("gender, plan, onboarding_completed, nickname, full_name")
+      .eq("id", session.user.id)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error("PERFORM: errore caricamento profilo", error);
+          setProfileLoading(false);
+          return;
+        }
+        // NB: profiles.gender è 'male'/'female' nel DB, l'app usa 'M'/'F'.
+        // profiles.plan usa 'full' (check constraint SCHEMA_v14), il resto
+        // dell'app (05_HomeDashboard, gating AI) confronta 'full_coaching':
+        // stessa normalizzazione già applicata in SettingsDrawer.onChangePlan.
+        setGender(data.gender === "female" ? "F" : "M");
+        setUserPlan(data.plan === "full" ? "full_coaching" : data.plan || "free");
+        setProfile(data);
+        setProfileLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [session]);
 
   const accent = accentFor(gender, dark);
   const isCoach = (session?.user?.email || "").trim().toLowerCase() === COACH_EMAIL;
@@ -107,6 +134,37 @@ export default function App() {
         auth={auth}
         dark={dark}
         onAuthenticated={({ user }) => setSession({ user })}
+      />
+    );
+  }
+
+  if (profileLoading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+                     backgroundColor: dark ? "#09090B" : "#FFFFFF", color: dark ? "#FAFAFA" : "#111111", fontFamily: "system-ui" }}>
+        Caricamento…
+      </div>
+    );
+  }
+
+  // Gate di onboarding (SPECIFICA_FUNZIONALE.md § 1, 5): dopo la registrazione,
+  // finché il profilo non ha completato selezione piano (+ anamnesi se piano
+  // a coaching), niente Home. Il coach non passa mai da qui: non ha un piano
+  // da scegliere, la sua riga `profiles` non va mai considerata "in attesa".
+  if (!isCoach && profile && !profile.onboarding_completed) {
+    return (
+      <OnboardingFlow
+        supabase={supabase}
+        userId={session.user.id}
+        gender={gender}
+        dark={dark}
+        lang={lang}
+        accent={accent}
+        initialPlan={profile.plan}
+        onComplete={({ plan }) => {
+          setUserPlan(plan === "full" ? "full_coaching" : plan);
+          setProfile((p) => ({ ...(p ?? {}), plan, onboarding_completed: true }));
+        }}
       />
     );
   }
