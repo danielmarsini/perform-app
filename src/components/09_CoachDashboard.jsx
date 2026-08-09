@@ -785,6 +785,17 @@ function deepCloneWeek(week) {
    Sostituisce l'8 settimane fisse con una timeline ancorata a OGGI:
    S+1..S+12 in avanti (limite richiesto), storico illimitato all'indietro,
    generato pigramente quando l'atleta/coach naviga. */
+// Data in formato YYYY-MM-DD LOCALE, mai da toISOString() — che converte
+// sempre in UTC e sposta la data di un giorno indietro per chiunque sia in un
+// fuso positivo (Italia inclusa) nelle ore vicine alla mezzanotte locale.
+// mondayOf/addWeeksToDate qui sotto lavorano già correttamente in locale
+// (setDate/setHours), il bug era solo nella conversione a stringa finale.
+function toLocalISODate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 function mondayOf(date) {
   const d = new Date(date);
   const day = (d.getDay() + 6) % 7;
@@ -799,7 +810,7 @@ function addWeeksToDate(date, n) {
 }
 function weekKeyForOffset(offset) {
   const monday = addWeeksToDate(mondayOf(new Date()), offset);
-  return monday.toISOString().slice(0, 10);
+  return toLocalISODate(monday);
 }
 function weekRangeLabel(offset) {
   const start = addWeeksToDate(mondayOf(new Date()), offset);
@@ -1427,7 +1438,7 @@ function ClientRow({ client, onOpen }) {
         <button onClick={onOpen} className="flex-1 min-w-0 text-left">
           <p className="truncate" style={{ color: (critical || warning) ? "#27272A" : "var(--ink)", fontSize: "1rem", fontWeight: 500 }}>{client.name}</p>
           <p className="font-data mt-0.5 truncate" style={{ color: (critical || warning) ? "#3F3F46" : "var(--ink-soft)", fontSize: "0.68rem", letterSpacing: "0.04em" }}>
-            {client.plan === "full" ? "Full Coaching" : client.plan === "training" ? "Solo Allenamento" : "Scheda Personalizzata"} · aderenza {client.adherence}%
+            {client.plan === "full" ? "Full Coaching" : client.plan === "training" ? "Solo Allenamento" : "Scheda Personalizzata"} · aderenza {client.adherence != null ? `${client.adherence}%` : "n/d"}
           </p>
         </button>
         {(critical || warning) && (
@@ -1478,7 +1489,12 @@ function ComplianceRing({ label, value }) {
    Bioritmi & Grafici, dove il dolore è documentato per esteso. */
 function AlarmsDashboard({ onOpen }) {
   const { clients: CLIENTS } = useContext(CoachDataContext);
-  const flagged = CLIENTS.filter((c) => c.evening.doloreGrado >= 3 || computeStatus(c) === "red").sort((a, b) => b.evening.doloreGrado - a.evening.doloreGrado);
+  // Solo i clienti presi in gestione (clientStatus === "active") finiscono nel
+  // cruscotto — un iscritto che ha solo scelto un piano non è ancora seguito
+  // da nessuno. I DEMO_CLIENTS non hanno clientStatus impostato: per loro il
+  // filtro passa tutti, così l'anteprima isolata resta quella di sempre.
+  const managed = CLIENTS.filter((c) => c.clientStatus == null || c.clientStatus === "active");
+  const flagged = managed.filter((c) => c.evening.doloreGrado >= 3 || computeStatus(c) === "red").sort((a, b) => b.evening.doloreGrado - a.evening.doloreGrado);
   if (flagged.length === 0) {
     return (
       <div className="c-card mb-5">
@@ -1642,15 +1658,46 @@ function fmtLastLogin(d) {
   return `${Math.round(hours / 24)} giorni fa`;
 }
 
+const COACHING_PLAN_OPTIONS = [
+  { value: "scheda_personalizzata", label: "Scheda Personalizzata (8-12 sett.)" },
+  { value: "training", label: "Solo Allenamento Coaching" },
+  { value: "full", label: "Full Coaching Supremo" },
+];
+
+// Selettore condiviso da "Prendi in gestione" (AccessControlTable) e "Cambia
+// abbonamento" (ClientDetail): stesse 3 opzioni, stesso aspetto, ovunque il
+// coach assegni o cambi il piano di un cliente reale.
+function CoachingPlanPicker({ onPick, busy, onCancel }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex gap-1.5 flex-wrap">
+        {COACHING_PLAN_OPTIONS.map((opt) => (
+          <button key={opt.value} type="button" onClick={() => onPick(opt.value)} disabled={busy}
+            className="c-ghost px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {onCancel && (
+        <button type="button" onClick={onCancel} disabled={busy} className="text-xs self-start" style={{ color: "var(--ink-soft)" }}>
+          Annulla
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AccessControlTable({ passwordOverrides, onRegenerate }) {
   const { clients: CLIENTS, supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const rows = [...CLIENTS].sort((a, b) => a.name.localeCompare(b.name, "it"));
+  const [pickingId, setPickingId] = useState(null); // id del cliente per cui è aperto il selettore piano
   const [activatingId, setActivatingId] = useState(null);
 
-  const activate = async (c) => {
+  const activate = async (c, plan) => {
     setActivatingId(c.id);
     try {
-      await activateClient(supabase, c.id);
+      await activateClient(supabase, c.id, plan);
+      setPickingId(null);
       reloadRoster?.();
     } catch (err) {
       console.error("PERFORM: errore attivazione cliente", err);
@@ -1678,9 +1725,13 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
               <p className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>Ultimo ingresso: {fmtLastLogin(login)}</p>
               <PasswordViewer password={password} onRegenerate={() => onRegenerate(c.id, c.name)} />
               {isRealMode && c.clientStatus === "registered" && (
-                <button onClick={() => activate(c)} disabled={activatingId === c.id} className="c-btn px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">
-                  {activatingId === c.id ? "Attivazione…" : "Prendi in gestione"}
-                </button>
+                pickingId === c.id ? (
+                  <CoachingPlanPicker onPick={(plan) => activate(c, plan)} busy={activatingId === c.id} onCancel={() => setPickingId(null)} />
+                ) : (
+                  <button onClick={() => setPickingId(c.id)} className="c-btn px-3 py-2 rounded-lg text-xs font-medium">
+                    Prendi in gestione
+                  </button>
+                )
               )}
             </div>
           );
@@ -2284,7 +2335,7 @@ function AICoPilot({ client, quickTargets, setQuickTargets }) {
 
   const considerations = [];
   if (needsDeload) considerations.push(`⚠ HRV in calo del ${Math.round(hrvDropPct * 100)}% rispetto alla media recente, stress ${client.lastCheck.stress}/10 — segnale di sovrallenamento del SNC in arrivo: valuta uno scarico di volume/intensità la settimana prossima, prima che il calo diventi un infortunio o un crollo di performance.`);
-  if (stallStrategy) considerations.push(`Stallo peso/addome da 14 giorni con aderenza ${client.adherence}% — non è un problema di costanza. Strategia consigliata: ${stallStrategy.label}. ${stallStrategy.detail}`);
+  if (stallStrategy) considerations.push(`Stallo peso/addome da 14 giorni con aderenza ${client.adherence != null ? `${client.adherence}%` : "n/d"} — non è un problema di costanza. Strategia consigliata: ${stallStrategy.label}. ${stallStrategy.detail}`);
   if (badge?.type === "recomp") considerations.push(`Recomp in corso: addome in calo, peso stabile — il piano attuale sta funzionando, non toccarlo.`);
   if (lowSleep) considerations.push(`Sonno medio ${avgSleep.toFixed(1)}h nelle ultime 8 settimane — sotto le 7h il recupero è compromesso indipendentemente da dieta e allenamento.`);
   if (hasPain) considerations.push(`Dolore Grado ${client.evening.doloreGrado}/5 attivo (${client.evening.doloreNota}) — il Mesociclo AI Creator lo esclude già dagli esercizi a rischio.`);
@@ -2790,10 +2841,31 @@ function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeam
 }
 
 function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses, setXpBonuses, teamPosts, setTeamPosts, initialTab = "anamnesi" }) {
+  const { supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const status = computeStatus(client);
   const meta = STATUS_META[status];
   const [tab, setTab] = useState(initialTab);
   const titleClass = client.gender === "F" ? "gradient-title-f" : "gradient-title-m";
+
+  // "Cambia abbonamento": a differenza di "Prendi in gestione" (solo per
+  // clientStatus === "registered"), qui il selettore è sempre disponibile —
+  // il coach può correggere/aggiornare il piano di un cliente già attivo in
+  // qualsiasi momento, non solo alla prima presa in carico.
+  const [changingPlan, setChangingPlan] = useState(false);
+  const [planBusy, setPlanBusy] = useState(false);
+  const changePlan = async (plan) => {
+    setPlanBusy(true);
+    try {
+      await activateClient(supabase, client.id, plan);
+      setChangingPlan(false);
+      reloadRoster?.();
+    } catch (err) {
+      console.error("PERFORM: errore cambio abbonamento", err);
+    } finally {
+      setPlanBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
@@ -2805,7 +2877,18 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
 
       <div className="c-card mb-5">
         <p className={`font-display text-xl ${titleClass}`}>{client.name}</p>
-        <p className="c-muted font-data text-xs uppercase mt-1">{client.goal} · {client.calories} kcal · streak {client.streak} giorni · aderenza {client.adherence}%</p>
+        <p className="c-muted font-data text-xs uppercase mt-1">{client.goal} · {client.calories} kcal · streak {client.streak} giorni · aderenza {client.adherence != null ? `${client.adherence}%` : "n/d"}</p>
+        {isRealMode && (
+          <div className="mt-3">
+            {changingPlan ? (
+              <CoachingPlanPicker onPick={changePlan} busy={planBusy} onCancel={() => setChangingPlan(false)} />
+            ) : (
+              <button onClick={() => setChangingPlan(true)} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium">
+                Cambia abbonamento
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-4 gap-1.5 mb-5">
@@ -3158,7 +3241,7 @@ function predictiveBadge(client, history) {
     return { type: "recomp", label: "🟢 RECOMP IN CORSO", detail: `Addome ${dWaist.toFixed(1)} cm, peso stabile (${dWeight >= 0 ? "+" : ""}${dWeight.toFixed(1)} kg) in 14 giorni` };
   }
   if (bothStalled && client.adherence >= 85) {
-    return { type: "stall", label: "🟠 Base stallo · Valuta taglio 150 Kcal", detail: `Peso e addome fermi da 14 giorni con aderenza ${client.adherence}% — non è un problema di costanza` };
+    return { type: "stall", label: "🟠 Base stallo · Valuta taglio 150 Kcal", detail: `Peso e addome fermi da 14 giorni con aderenza ${client.adherence != null ? `${client.adherence}%` : "n/d"} — non è un problema di costanza` };
   }
   return null;
 }

@@ -12,6 +12,19 @@ const MUSCLE_TARGETS = [
   "Quadricipiti", "Femorali", "Adduttori", "Polpacci",
 ];
 
+// Data (o "oggi") in formato YYYY-MM-DD LOCALE, mai da toISOString() — che
+// converte sempre in UTC e sposta la data di un giorno indietro per chiunque
+// sia in un fuso orario positivo (Italia inclusa) nelle ore vicine alla
+// mezzanotte locale. Stessa funzione (stesso nome) di 05_HomeDashboard.jsx:
+// duplicata qui invece di condivisa via import per non introdurre un
+// accoppiamento nuovo tra i due moduli solo per un helper di 5 righe.
+function toLocalISODate(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /* ---------------------------------------------------------------------------
    LETTURA — lato cliente (Home)
    ------------------------------------------------------------------------- */
@@ -172,15 +185,18 @@ export async function assignWorkoutExercise(supabase, {
 }
 
 // Lunedì di partenza (weekStartDateISO, 'YYYY-MM-DD') → i 7 giorni di quella
-// settimana come stringhe ISO. Parsing con orario esplicito per restare in
-// timezone locale: "YYYY-MM-DD" nudo verrebbe letto come mezzanotte UTC e
-// potrebbe slittare di un giorno a seconda del fuso del browser.
+// settimana come stringhe ISO. Corretto su entrambi i lati: in INGRESSO,
+// parsing con orario esplicito per restare in timezone locale ("YYYY-MM-DD"
+// nudo verrebbe letto come mezzanotte UTC, sfasando la data di un giorno a
+// seconda del fuso); in USCITA, toLocalISODate() invece di toISOString() —
+// quest'ultima riconverte sempre in UTC, che è esattamente il bug opposto e
+// vanificava la correzione in ingresso qui sopra.
 function weekDatesFrom(weekStartDateISO) {
   const start = new Date(`${weekStartDateISO}T00:00:00`);
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(start);
     d.setDate(d.getDate() + i);
-    return d.toISOString().slice(0, 10);
+    return toLocalISODate(d);
   });
 }
 
@@ -421,7 +437,7 @@ export async function fetchClientRoster(supabase) {
         gender: p.gender === "female" ? "F" : "M",
         goal: answers.obiettivoPrinc || null,
         calories: null, // letto separatamente da nutrition_targets quando serve, non duplicato qui
-        adherence: 0,   // TODO: calcolare da workout_sets/nutrition_logs quando costruiamo quella metrica
+        adherence: null, // nessun dato tracciato ancora, non "0% aderenza"
         streak: p.current_streak ?? 0,
         xp: p.xp_total ?? 0,
         plan: p.plan || "free",
@@ -450,8 +466,19 @@ export async function fetchClientRoster(supabase) {
   return roster;
 }
 
-export async function activateClient(supabase, clientId) {
-  const { error } = await supabase.from("profiles").update({ client_status: "active" }).eq("id", clientId);
+// Piani assegnabili dal coach tramite "Prendi in gestione" / "Cambia
+// abbonamento": solo i tre a coaching reale (Free e Performance Pack restano
+// scelte autogestite del cliente, mai imposte dal coach da qui).
+const COACHING_PLANS = ["scheda_personalizzata", "training", "full"];
+
+// `plan` è obbligatorio: client_status e plan si scrivono sempre insieme,
+// nello stesso update — mai un cliente "attivo" senza un piano coerente, o
+// con ancora il piano precedente perché il chiamante l'ha dimenticato.
+export async function activateClient(supabase, clientId, plan) {
+  if (!COACHING_PLANS.includes(plan)) {
+    throw new Error(`plan non valido per l'attivazione: "${plan}". Valori ammessi: ${COACHING_PLANS.join(", ")}`);
+  }
+  const { error } = await supabase.from("profiles").update({ client_status: "active", plan }).eq("id", clientId);
   if (error) throw error;
 }
 

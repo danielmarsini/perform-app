@@ -35,6 +35,20 @@ import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory,
 
 export const WEEK_DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
+/* "Oggi" (o qualunque Date) in formato YYYY-MM-DD LOCALE, mai da
+   toISOString() — che converte sempre in UTC e sposta la data di un giorno
+   indietro per chiunque sia in un fuso orario positivo (Italia inclusa) nelle
+   ore vicine alla mezzanotte locale. getFullYear()/getMonth()/getDate()
+   restano sempre nel fuso del browser, quindi rappresentano davvero il
+   calendario che l'utente ha sotto gli occhi — coerente col cliente che
+   compila "oggi" nella scheda assegnata dal coach. */
+function toLocalISODate(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export const MACRO_COLORS = {
   kcal: { light: "#7DB8FF", base: "#2563EB", dark: "#1A3FA8" }, // Calorie · blu
   p:    { light: "#FF9A9A", base: "#DC2626", dark: "#8F1414" }, // Proteine · rosso
@@ -1297,9 +1311,9 @@ export function HomeDashboard({
      Rest Timer, tracciata via coachFeed) sul totale previsto dalla scheda;
      Alimentazione e Recupero usano consumato/target e sonno/passi di oggi.
      Tutti e tre uniscono il dato di oggi a uno storico simulato di 6 giorni. */
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = toLocalISODate();
   const todayCompletedSets = (coachFeed || []).filter(
-    (e) => e.type === "workout" && e.kind === "set-completed" && e.at && e.at.slice(0, 10) === todayStr
+    (e) => e.type === "workout" && e.kind === "set-completed" && e.at && toLocalISODate(new Date(e.at)) === todayStr
   ).length;
   const todayExpectedSets = day.isTraining ? (exercises.reduce((a, e) => a + (e.sets || 0), 0) || 10) : 1;
   const todayTrainingPct = day.isTraining ? complPct((todayCompletedSets / todayExpectedSets) * 100) : 100;
@@ -2003,7 +2017,7 @@ function WorkoutCalendarStrip({ weekPlan, selectedIso, onSelectIso }) {
   return (
     <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-2 mb-4" style={{ cursor: "grab" }}>
       {days.map((d) => {
-        const iso = d.toISOString().slice(0, 10);
+        const iso = toLocalISODate(d);
         const isToday = d.getTime() === todayMid.getTime();
         const isFuture = d.getTime() > todayMid.getTime();
         const wd = isoWeekdayOf(d);
@@ -4659,7 +4673,7 @@ export default function HomePreview({
   const [assignedExercises, setAssignedExercises] = useState(null); // null = non ancora caricato
   useEffect(() => {
     if (!supabaseProp || !userId) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toLocalISODate();
     fetchAssignedWorkouts(supabaseProp, userId, today, today)
       .then(async (rows) => {
         const withHistory = await Promise.all(rows.map(async (r) => ({
@@ -4698,10 +4712,10 @@ export default function HomePreview({
      "l'ultima registrazione": se passano più di 24 ore senza che arrivi
      nessun evento, lo streak si azzera. */
   const [coachFeed, setCoachFeed] = useState([]);
-  const [lastActivityDate, setLastActivityDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [lastActivityDate, setLastActivityDate] = useState(() => toLocalISODate());
   const pushCoachSync = (evt) => {
     setCoachFeed((f) => [...f.slice(-99), { ...evt, at: new Date().toISOString() }]);
-    setLastActivityDate(new Date().toISOString().slice(0, 10));
+    setLastActivityDate(toLocalISODate());
 
     // Salvataggio reale: quando il cliente spunta una serie come completata su
     // un esercizio assegnato dal coach (isRealMode + exerciseId reale), scrive
@@ -4718,9 +4732,9 @@ export default function HomePreview({
   };
   const simulateInactivity = () => {
     const d = new Date(); d.setDate(d.getDate() - 3);
-    setLastActivityDate(d.toISOString().slice(0, 10));
+    setLastActivityDate(toLocalISODate(d));
   };
-  const resetActivityToday = () => setLastActivityDate(new Date().toISOString().slice(0, 10));
+  const resetActivityToday = () => setLastActivityDate(toLocalISODate());
 
   /* Catalogo alimenti che cresce nel tempo: ogni scansione o inserimento
      manuale lo arricchisce, come un database collettivo stile MyFitnessPal. */
