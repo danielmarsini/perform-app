@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, createContext, useContext } from "react";
+import React, { useState, useMemo, useEffect, useCallback, createContext, useContext } from "react";
 import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
   AlertTriangle, Dumbbell, Salad, Pill, Copy, MessageCircle, Plus,
@@ -138,6 +138,28 @@ const EXERCISE_LIB = {
 };
 const EX_NAMES = Object.keys(EXERCISE_LIB);
 
+// EXERCISE_LIB usa nomi brevi per il grafico volumi (Petto, Dorsali, Deltoide
+// Ant/Lat/Post, Addominali...); MUSCLE_TARGETS (coachingData.js) è il check
+// constraint reale di workout_logs.muscle_target, con nomi estesi diversi in
+// 4 casi su 14. Serve solo per risolvere il distretto degli esercizi di
+// libreria (custom === false) al momento del salvataggio reale — i custom lo
+// chiedono a parte, con il select aggiunto in WeekWorkoutEditor qui sotto.
+const EXERCISE_LIB_MUSCLE_TO_DB = {
+  "Petto": "Pettorali",
+  "Dorsali": "Gran Dorsale",
+  "Deltoide Ant": "Deltoide Anteriore",
+  "Deltoide Lat": "Deltoide Laterale",
+  "Deltoide Post": "Deltoide Posteriore",
+  "Addominali": "Addome",
+  // Gli altri 8 nomi coincidono già: Trapezio, Bicipiti, Tricipiti,
+  // Quadricipiti, Femorali, Adduttori, Glutei, Polpacci.
+};
+function resolveMuscleTarget(exerciseName) {
+  const libMuscle = EXERCISE_LIB[exerciseName]?.direct?.[0];
+  if (!libMuscle) return null;
+  return EXERCISE_LIB_MUSCLE_TO_DB[libMuscle] || libMuscle;
+}
+
 /* ------------------------------- STATO CLIENTI ------------------------------
    Sottoinsieme reale di CLIENTS (righe 1298-1316), con l'aggiunta di due
    campi NUOVI non presenti nel monolite (password in chiaro simulata e
@@ -145,6 +167,7 @@ const EX_NAMES = Object.keys(EXERCISE_LIB);
    richiesta del Password Viewer e del Cruscotto Allarmi & Dolori.         */
 function computeStatus(client) {
   const { adherence, lastCheck } = client;
+  if (adherence == null) return "green";
   if (adherence < 70 || lastCheck.stress >= 8) return "red";
   if (adherence < 85 || lastCheck.stress >= 6 || lastCheck.sleep <= 5) return "yellow";
   return "green";
@@ -158,12 +181,15 @@ const STATUS_META = {
 /* Campi anamnesi aggiunti (age, heightCm, bodyFatPct, activity, foodLikes):
    non presenti nel monolite in questa forma sintetica — li introduco per
    alimentare il motore di Generazione Predittiva Totale (TDEE + macros). */
-import { fetchClientRoster, fetchAnamnesis, saveAnamnesis } from "../lib/coachingData.js";
+import {
+  fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
+  MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
+} from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
 // i pannelli innestati (Anamnesi, Editor) senza dover passare supabase/coachId
 // come prop attraverso ogni livello di componenti.
-const CoachDataContext = createContext({ clients: [], supabase: null, coachId: null, isRealMode: false });
+const CoachDataContext = createContext({ clients: [], supabase: null, coachId: null, isRealMode: false, reloadRoster: () => {} });
 
 const DEMO_CLIENTS = [
   { id: 1, demoId: "marco", name: "Marco Bianchi", gender: "M", goal: "ipertrofia", calories: 2900, adherence: 94, streak: 17, xp: 3450, plan: "full", status: "active",
@@ -237,6 +263,11 @@ const DEPTS = [
    blocca sul telefono dell'atleta appartiene ad AuthView.jsx/AppShell, non
    a questo pannello Coach: qui il coach vede solo l'effetto (reparto rosso). */
 function deptOf(c) {
+  if (c.clientStatus) {
+    if (c.clientStatus === "active") return "active";
+    if (c.clientStatus === "paused") return "expired";
+    return "pending";
+  }
   if (c.billingStatus === "payment_failed") return "expired";
   if (c.status === "pending_approval" || c.status === "new" || c.status === "requires_renewal") return "pending";
   return computeStatus(c) === "red" && c.adherence < 65 ? "expired" : "active";
@@ -1612,8 +1643,22 @@ function fmtLastLogin(d) {
 }
 
 function AccessControlTable({ passwordOverrides, onRegenerate }) {
-  const { clients: CLIENTS } = useContext(CoachDataContext);
+  const { clients: CLIENTS, supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const rows = [...CLIENTS].sort((a, b) => a.name.localeCompare(b.name, "it"));
+  const [activatingId, setActivatingId] = useState(null);
+
+  const activate = async (c) => {
+    setActivatingId(c.id);
+    try {
+      await activateClient(supabase, c.id);
+      reloadRoster?.();
+    } catch (err) {
+      console.error("PERFORM: errore attivazione cliente", err);
+    } finally {
+      setActivatingId(null);
+    }
+  };
+
   return (
     <div className="c-card">
       <h3 className="c-heading font-display font-bold mb-1">🔐 Controllo Accessi — Tutti gli utenti</h3>
@@ -1632,6 +1677,11 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
               </div>
               <p className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>Ultimo ingresso: {fmtLastLogin(login)}</p>
               <PasswordViewer password={password} onRegenerate={() => onRegenerate(c.id, c.name)} />
+              {isRealMode && c.clientStatus === "registered" && (
+                <button onClick={() => activate(c)} disabled={activatingId === c.id} className="c-btn px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">
+                  {activatingId === c.id ? "Attivazione…" : "Prendi in gestione"}
+                </button>
+              )}
             </div>
           );
         })}
@@ -1893,6 +1943,15 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                       {INTENSITY_TECHNIQUES.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </label>
+                  {ex.custom && (
+                    <label className="flex-1 min-w-[160px]">
+                      <span className="c-label block mb-1">Distretto muscolare</span>
+                      <select value={ex.muscleTarget || ""} onChange={(e) => updateEx(i, "muscleTarget", e.target.value)} className="t-input w-full text-sm rounded-md px-2 py-1.5">
+                        <option value="">— scegli —</option>
+                        {MUSCLE_TARGETS.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </label>
+                  )}
                 </div>
               </div>
             ))}
@@ -2279,6 +2338,7 @@ function AICoPilot({ client, quickTargets, setQuickTargets }) {
 }
 
 function ClientTimeline({ client, quickTargets, setQuickTargets }) {
+  const { supabase, isRealMode } = useContext(CoachDataContext);
   const myQuickTarget = quickTargets?.[client.id];
   const [weeksByOffset, setWeeksByOffset] = useState(() => ({ 0: makeDefaultWeek(client, 0, myQuickTarget) }));
   const [selOffset, setSelOffset] = useState(0);
@@ -2294,6 +2354,9 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   // target ON/OFF "al volo" condiviso col Registro Check Lunedì, così le due
   // viste restano coerenti: il coach può regolare le kcal da lì o da qui,
   // è lo stesso identico numero.
+  // NOTA: da qui in giù setWeek governa SOLO dieta/integratori/confirmed —
+  // restano il finto useState locale di prima, come richiesto. La parte
+  // workout reale vive nel blocco subito sotto, separata apposta.
   const setWeek = (updater) => setWeeksByOffset((m) => {
     const nextWeek = updater(m[selOffset]);
     if (selOffset === 0 && setQuickTargets) {
@@ -2301,10 +2364,92 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     }
     return { ...m, [selOffset]: nextWeek };
   });
-  const cloneToNext = () => {
+
+  // --- ALLENAMENTO REALE ------------------------------------------------
+  // Unica sotto-sezione che parla con Supabase: legge/scrive solo
+  // workout_logs tramite coachingData.js. makeDefaultWeek/deepCloneWeek
+  // continuano a girare sopra per dieta e integratori (week.workout che
+  // producono viene semplicemente ignorato quando isRealMode è true, sotto).
+  const weekStartISO = weekKeyForOffset(selOffset);
+  const [realWorkout, setRealWorkout] = useState(null); // null = non ancora caricato per questa settimana
+  const [workoutLoading, setWorkoutLoading] = useState(isRealMode);
+  const [workoutBusy, setWorkoutBusy] = useState(false);
+  const [workoutError, setWorkoutError] = useState("");
+  const [workoutSaved, setWorkoutSaved] = useState(false);
+
+  useEffect(() => {
+    if (!isRealMode) return undefined;
+    let cancelled = false;
+    setRealWorkout(null);
+    setWorkoutLoading(true);
+    setWorkoutError("");
+    setWorkoutSaved(false);
+    fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !EXERCISE_LIB[name])
+      .then((data) => { if (!cancelled) setRealWorkout(data); })
+      .catch((err) => {
+        console.error("PERFORM: errore caricamento allenamento reale", err);
+        if (!cancelled) setWorkoutError("Non sono riuscito a caricare l'allenamento di questa settimana.");
+      })
+      .finally(() => { if (!cancelled) setWorkoutLoading(false); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id, weekStartISO]);
+
+  const workoutForEditor = isRealMode ? realWorkout : week.workout;
+  const workoutEditorWeek = { ...week, workout: workoutForEditor ?? Array(7).fill(null) };
+  const handleWorkoutEditorChange = (nextWeek) => {
+    if (isRealMode) {
+      setRealWorkout(nextWeek.workout);
+      setWorkoutSaved(false);
+      setWeek((w) => ({ ...w, confirmed: { ...w.confirmed, workout: nextWeek.confirmed.workout } }));
+    } else {
+      setWeek((w) => ({ ...w, workout: nextWeek.workout, confirmed: { ...w.confirmed, workout: nextWeek.confirmed.workout } }));
+    }
+  };
+
+  const saveWorkout = async () => {
+    if (!isRealMode || !realWorkout) return;
+    setWorkoutBusy(true);
+    setWorkoutError("");
+    try {
+      // I nomi in libreria (custom === false) prendono il distretto da
+      // EXERCISE_LIB (mappato ai nomi reali del DB): il coach non deve
+      // sceglierlo a mano per quelli, solo per gli esercizi liberi.
+      const resolved = realWorkout.map((day) => day && {
+        ...day,
+        exercises: day.exercises.map((ex) => ({
+          ...ex,
+          muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name),
+        })),
+      });
+      await saveWeekWorkout(supabase, client.id, weekStartISO, resolved);
+      setRealWorkout(resolved);
+      setWorkoutSaved(true);
+      setTimeout(() => setWorkoutSaved(false), 2500);
+    } catch (err) {
+      console.error("PERFORM: errore salvataggio allenamento reale", err);
+      setWorkoutError(err.message || "Non sono riuscito a salvare l'allenamento.");
+    } finally {
+      setWorkoutBusy(false);
+    }
+  };
+
+  const cloneToNext = async () => {
     if (selOffset >= MAX_FORWARD_WEEKS) return;
     const nextOffset = selOffset + 1;
+    // Dieta/integratori: clone locale invariato, come prima.
     setWeeksByOffset((m) => ({ ...m, [nextOffset]: deepCloneWeek(m[selOffset]) }));
+    if (isRealMode) {
+      setWorkoutBusy(true);
+      setWorkoutError("");
+      try {
+        await cloneWeekWorkout(supabase, client.id, weekStartISO, weekKeyForOffset(nextOffset));
+      } catch (err) {
+        console.error("PERFORM: errore clonazione allenamento reale", err);
+        setWorkoutError(err.message || "Non sono riuscito a clonare l'allenamento della settimana.");
+      } finally {
+        setWorkoutBusy(false);
+      }
+    }
     setSelOffset(nextOffset);
     if (nextOffset > windowStart + 6) setWindowStart(nextOffset - 6);
     setCloned(true);
@@ -2346,7 +2491,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
 
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <p className="c-label">Settimana selezionata: {selOffset === 0 ? "corrente" : selOffset > 0 ? `+${selOffset} da oggi` : `${Math.abs(selOffset)} fa (storico)`}</p>
-        <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
+        <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS || workoutBusy} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
           <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : `S+${selOffset + 1}`}
         </button>
       </div>
@@ -2369,7 +2514,36 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         })}
       </div>
 
-      {section === "allenamento" && <WeekWorkoutEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
+      {section === "allenamento" && (
+        isRealMode && workoutLoading ? (
+          <p className="c-muted text-sm px-1">Caricamento allenamento…</p>
+        ) : isRealMode && !realWorkout ? (
+          <p className="text-xs rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
+            {workoutError || "Impossibile caricare l'allenamento di questa settimana."}
+          </p>
+        ) : (
+          <>
+            <WeekWorkoutEditor week={workoutEditorWeek} onChange={handleWorkoutEditorChange} client={client} />
+            {isRealMode && (
+              <div className="c-card mt-3">
+                {workoutError && (
+                  <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
+                    {workoutError}
+                  </p>
+                )}
+                <button onClick={saveWorkout} disabled={workoutBusy} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium">
+                  {workoutBusy ? "Salvataggio…" : "Salva modifiche"}
+                </button>
+                {workoutSaved && (
+                  <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block mt-3" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
+                    ✓ Allenamento salvato
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )
+      )}
       {section === "dieta" && <WeekDietEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
       {section === "integratori" && <WeekSuppsEditor week={week} onChange={(w) => setWeek(() => w)} />}
     </div>
@@ -3423,12 +3597,20 @@ export default function CoachDashboard({ supabase, coachId } = {}) {
   const isRealMode = Boolean(supabase && coachId);
   const [realClients, setRealClients] = useState(null); // null = non ancora caricato
 
-  useEffect(() => {
+  // Estratta come funzione richiamabile (non solo effetto al mount): serve ad
+  // AccessControlTable per ricaricare il roster subito dopo aver attivato un
+  // cliente da "registered" ad "active", senza aspettare un refresh manuale
+  // della pagina. Esposta ai pannelli innestati via CoachDataContext.
+  const reloadRoster = useCallback(() => {
     if (!isRealMode) return;
     fetchClientRoster(supabase)
       .then(setRealClients)
       .catch((err) => { console.error("PERFORM: errore caricamento roster clienti", err); setRealClients([]); });
   }, [isRealMode, supabase]);
+
+  useEffect(() => {
+    reloadRoster();
+  }, [reloadRoster]);
 
   const clients = isRealMode ? (realClients ?? []) : DEMO_CLIENTS;
 
@@ -3459,7 +3641,7 @@ export default function CoachDashboard({ supabase, coachId } = {}) {
   const [isDark, setIsDark] = useState(false);
 
   return (
-    <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode }}>
+    <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode, reloadRoster }}>
       <div className={`coach-root${isDark ? " dark" : ""}`}>
         <GlobalStyle />
         <main className="max-w-6xl mx-auto px-4 py-8 pb-24">

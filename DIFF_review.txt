@@ -1,0 +1,571 @@
+diff --git a/src/components/09_CoachDashboard.jsx b/src/components/09_CoachDashboard.jsx
+index ae874a1..1b549ab 100644
+--- a/src/components/09_CoachDashboard.jsx
++++ b/src/components/09_CoachDashboard.jsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useMemo, useEffect, createContext, useContext } from "react";
++import React, { useState, useMemo, useEffect, useCallback, createContext, useContext } from "react";
+ import {
+   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
+   AlertTriangle, Dumbbell, Salad, Pill, Copy, MessageCircle, Plus,
+@@ -138,6 +138,28 @@ const EXERCISE_LIB = {
+ };
+ const EX_NAMES = Object.keys(EXERCISE_LIB);
+ 
++// EXERCISE_LIB usa nomi brevi per il grafico volumi (Petto, Dorsali, Deltoide
++// Ant/Lat/Post, Addominali...); MUSCLE_TARGETS (coachingData.js) è il check
++// constraint reale di workout_logs.muscle_target, con nomi estesi diversi in
++// 4 casi su 14. Serve solo per risolvere il distretto degli esercizi di
++// libreria (custom === false) al momento del salvataggio reale — i custom lo
++// chiedono a parte, con il select aggiunto in WeekWorkoutEditor qui sotto.
++const EXERCISE_LIB_MUSCLE_TO_DB = {
++  "Petto": "Pettorali",
++  "Dorsali": "Gran Dorsale",
++  "Deltoide Ant": "Deltoide Anteriore",
++  "Deltoide Lat": "Deltoide Laterale",
++  "Deltoide Post": "Deltoide Posteriore",
++  "Addominali": "Addome",
++  // Gli altri 8 nomi coincidono già: Trapezio, Bicipiti, Tricipiti,
++  // Quadricipiti, Femorali, Adduttori, Glutei, Polpacci.
++};
++function resolveMuscleTarget(exerciseName) {
++  const libMuscle = EXERCISE_LIB[exerciseName]?.direct?.[0];
++  if (!libMuscle) return null;
++  return EXERCISE_LIB_MUSCLE_TO_DB[libMuscle] || libMuscle;
++}
++
+ /* ------------------------------- STATO CLIENTI ------------------------------
+    Sottoinsieme reale di CLIENTS (righe 1298-1316), con l'aggiunta di due
+    campi NUOVI non presenti nel monolite (password in chiaro simulata e
+@@ -145,6 +167,7 @@ const EX_NAMES = Object.keys(EXERCISE_LIB);
+    richiesta del Password Viewer e del Cruscotto Allarmi & Dolori.         */
+ function computeStatus(client) {
+   const { adherence, lastCheck } = client;
++  if (adherence == null) return "green";
+   if (adherence < 70 || lastCheck.stress >= 8) return "red";
+   if (adherence < 85 || lastCheck.stress >= 6 || lastCheck.sleep <= 5) return "yellow";
+   return "green";
+@@ -158,12 +181,15 @@ const STATUS_META = {
+ /* Campi anamnesi aggiunti (age, heightCm, bodyFatPct, activity, foodLikes):
+    non presenti nel monolite in questa forma sintetica — li introduco per
+    alimentare il motore di Generazione Predittiva Totale (TDEE + macros). */
+-import { fetchClientRoster, fetchAnamnesis, saveAnamnesis } from "../lib/coachingData.js";
++import {
++  fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
++  MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
++} from "../lib/coachingData.js";
+ 
+ // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
+ // i pannelli innestati (Anamnesi, Editor) senza dover passare supabase/coachId
+ // come prop attraverso ogni livello di componenti.
+-const CoachDataContext = createContext({ clients: [], supabase: null, coachId: null, isRealMode: false });
++const CoachDataContext = createContext({ clients: [], supabase: null, coachId: null, isRealMode: false, reloadRoster: () => {} });
+ 
+ const DEMO_CLIENTS = [
+   { id: 1, demoId: "marco", name: "Marco Bianchi", gender: "M", goal: "ipertrofia", calories: 2900, adherence: 94, streak: 17, xp: 3450, plan: "full", status: "active",
+@@ -237,6 +263,11 @@ const DEPTS = [
+    blocca sul telefono dell'atleta appartiene ad AuthView.jsx/AppShell, non
+    a questo pannello Coach: qui il coach vede solo l'effetto (reparto rosso). */
+ function deptOf(c) {
++  if (c.clientStatus) {
++    if (c.clientStatus === "active") return "active";
++    if (c.clientStatus === "paused") return "expired";
++    return "pending";
++  }
+   if (c.billingStatus === "payment_failed") return "expired";
+   if (c.status === "pending_approval" || c.status === "new" || c.status === "requires_renewal") return "pending";
+   return computeStatus(c) === "red" && c.adherence < 65 ? "expired" : "active";
+@@ -1612,8 +1643,22 @@ function fmtLastLogin(d) {
+ }
+ 
+ function AccessControlTable({ passwordOverrides, onRegenerate }) {
+-  const { clients: CLIENTS } = useContext(CoachDataContext);
++  const { clients: CLIENTS, supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
+   const rows = [...CLIENTS].sort((a, b) => a.name.localeCompare(b.name, "it"));
++  const [activatingId, setActivatingId] = useState(null);
++
++  const activate = async (c) => {
++    setActivatingId(c.id);
++    try {
++      await activateClient(supabase, c.id);
++      reloadRoster?.();
++    } catch (err) {
++      console.error("PERFORM: errore attivazione cliente", err);
++    } finally {
++      setActivatingId(null);
++    }
++  };
++
+   return (
+     <div className="c-card">
+       <h3 className="c-heading font-display font-bold mb-1">🔐 Controllo Accessi — Tutti gli utenti</h3>
+@@ -1632,6 +1677,11 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
+               </div>
+               <p className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>Ultimo ingresso: {fmtLastLogin(login)}</p>
+               <PasswordViewer password={password} onRegenerate={() => onRegenerate(c.id, c.name)} />
++              {isRealMode && c.clientStatus === "registered" && (
++                <button onClick={() => activate(c)} disabled={activatingId === c.id} className="c-btn px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">
++                  {activatingId === c.id ? "Attivazione…" : "Prendi in gestione"}
++                </button>
++              )}
+             </div>
+           );
+         })}
+@@ -1893,6 +1943,15 @@ function WeekWorkoutEditor({ week, onChange, client }) {
+                       {INTENSITY_TECHNIQUES.map((t) => <option key={t} value={t}>{t}</option>)}
+                     </select>
+                   </label>
++                  {ex.custom && (
++                    <label className="flex-1 min-w-[160px]">
++                      <span className="c-label block mb-1">Distretto muscolare</span>
++                      <select value={ex.muscleTarget || ""} onChange={(e) => updateEx(i, "muscleTarget", e.target.value)} className="t-input w-full text-sm rounded-md px-2 py-1.5">
++                        <option value="">— scegli —</option>
++                        {MUSCLE_TARGETS.map((m) => <option key={m} value={m}>{m}</option>)}
++                      </select>
++                    </label>
++                  )}
+                 </div>
+               </div>
+             ))}
+@@ -2279,6 +2338,7 @@ function AICoPilot({ client, quickTargets, setQuickTargets }) {
+ }
+ 
+ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
++  const { supabase, isRealMode } = useContext(CoachDataContext);
+   const myQuickTarget = quickTargets?.[client.id];
+   const [weeksByOffset, setWeeksByOffset] = useState(() => ({ 0: makeDefaultWeek(client, 0, myQuickTarget) }));
+   const [selOffset, setSelOffset] = useState(0);
+@@ -2294,6 +2354,9 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
+   // target ON/OFF "al volo" condiviso col Registro Check Lunedì, così le due
+   // viste restano coerenti: il coach può regolare le kcal da lì o da qui,
+   // è lo stesso identico numero.
++  // NOTA: da qui in giù setWeek governa SOLO dieta/integratori/confirmed —
++  // restano il finto useState locale di prima, come richiesto. La parte
++  // workout reale vive nel blocco subito sotto, separata apposta.
+   const setWeek = (updater) => setWeeksByOffset((m) => {
+     const nextWeek = updater(m[selOffset]);
+     if (selOffset === 0 && setQuickTargets) {
+@@ -2301,10 +2364,92 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
+     }
+     return { ...m, [selOffset]: nextWeek };
+   });
+-  const cloneToNext = () => {
++
++  // --- ALLENAMENTO REALE ------------------------------------------------
++  // Unica sotto-sezione che parla con Supabase: legge/scrive solo
++  // workout_logs tramite coachingData.js. makeDefaultWeek/deepCloneWeek
++  // continuano a girare sopra per dieta e integratori (week.workout che
++  // producono viene semplicemente ignorato quando isRealMode è true, sotto).
++  const weekStartISO = weekKeyForOffset(selOffset);
++  const [realWorkout, setRealWorkout] = useState(null); // null = non ancora caricato per questa settimana
++  const [workoutLoading, setWorkoutLoading] = useState(isRealMode);
++  const [workoutBusy, setWorkoutBusy] = useState(false);
++  const [workoutError, setWorkoutError] = useState("");
++  const [workoutSaved, setWorkoutSaved] = useState(false);
++
++  useEffect(() => {
++    if (!isRealMode) return undefined;
++    let cancelled = false;
++    setRealWorkout(null);
++    setWorkoutLoading(true);
++    setWorkoutError("");
++    setWorkoutSaved(false);
++    fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !EXERCISE_LIB[name])
++      .then((data) => { if (!cancelled) setRealWorkout(data); })
++      .catch((err) => {
++        console.error("PERFORM: errore caricamento allenamento reale", err);
++        if (!cancelled) setWorkoutError("Non sono riuscito a caricare l'allenamento di questa settimana.");
++      })
++      .finally(() => { if (!cancelled) setWorkoutLoading(false); });
++    return () => { cancelled = true; };
++  }, [isRealMode, supabase, client.id, weekStartISO]);
++
++  const workoutForEditor = isRealMode ? realWorkout : week.workout;
++  const workoutEditorWeek = { ...week, workout: workoutForEditor ?? Array(7).fill(null) };
++  const handleWorkoutEditorChange = (nextWeek) => {
++    if (isRealMode) {
++      setRealWorkout(nextWeek.workout);
++      setWorkoutSaved(false);
++      setWeek((w) => ({ ...w, confirmed: { ...w.confirmed, workout: nextWeek.confirmed.workout } }));
++    } else {
++      setWeek((w) => ({ ...w, workout: nextWeek.workout, confirmed: { ...w.confirmed, workout: nextWeek.confirmed.workout } }));
++    }
++  };
++
++  const saveWorkout = async () => {
++    if (!isRealMode || !realWorkout) return;
++    setWorkoutBusy(true);
++    setWorkoutError("");
++    try {
++      // I nomi in libreria (custom === false) prendono il distretto da
++      // EXERCISE_LIB (mappato ai nomi reali del DB): il coach non deve
++      // sceglierlo a mano per quelli, solo per gli esercizi liberi.
++      const resolved = realWorkout.map((day) => day && {
++        ...day,
++        exercises: day.exercises.map((ex) => ({
++          ...ex,
++          muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name),
++        })),
++      });
++      await saveWeekWorkout(supabase, client.id, weekStartISO, resolved);
++      setRealWorkout(resolved);
++      setWorkoutSaved(true);
++      setTimeout(() => setWorkoutSaved(false), 2500);
++    } catch (err) {
++      console.error("PERFORM: errore salvataggio allenamento reale", err);
++      setWorkoutError(err.message || "Non sono riuscito a salvare l'allenamento.");
++    } finally {
++      setWorkoutBusy(false);
++    }
++  };
++
++  const cloneToNext = async () => {
+     if (selOffset >= MAX_FORWARD_WEEKS) return;
+     const nextOffset = selOffset + 1;
++    // Dieta/integratori: clone locale invariato, come prima.
+     setWeeksByOffset((m) => ({ ...m, [nextOffset]: deepCloneWeek(m[selOffset]) }));
++    if (isRealMode) {
++      setWorkoutBusy(true);
++      setWorkoutError("");
++      try {
++        await cloneWeekWorkout(supabase, client.id, weekStartISO, weekKeyForOffset(nextOffset));
++      } catch (err) {
++        console.error("PERFORM: errore clonazione allenamento reale", err);
++        setWorkoutError(err.message || "Non sono riuscito a clonare l'allenamento della settimana.");
++      } finally {
++        setWorkoutBusy(false);
++      }
++    }
+     setSelOffset(nextOffset);
+     if (nextOffset > windowStart + 6) setWindowStart(nextOffset - 6);
+     setCloned(true);
+@@ -2346,7 +2491,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
+ 
+       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+         <p className="c-label">Settimana selezionata: {selOffset === 0 ? "corrente" : selOffset > 0 ? `+${selOffset} da oggi` : `${Math.abs(selOffset)} fa (storico)`}</p>
+-        <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
++        <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS || workoutBusy} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
+           <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : `S+${selOffset + 1}`}
+         </button>
+       </div>
+@@ -2369,7 +2514,36 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
+         })}
+       </div>
+ 
+-      {section === "allenamento" && <WeekWorkoutEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
++      {section === "allenamento" && (
++        isRealMode && workoutLoading ? (
++          <p className="c-muted text-sm px-1">Caricamento allenamento…</p>
++        ) : isRealMode && !realWorkout ? (
++          <p className="text-xs rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
++            {workoutError || "Impossibile caricare l'allenamento di questa settimana."}
++          </p>
++        ) : (
++          <>
++            <WeekWorkoutEditor week={workoutEditorWeek} onChange={handleWorkoutEditorChange} client={client} />
++            {isRealMode && (
++              <div className="c-card mt-3">
++                {workoutError && (
++                  <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
++                    {workoutError}
++                  </p>
++                )}
++                <button onClick={saveWorkout} disabled={workoutBusy} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium">
++                  {workoutBusy ? "Salvataggio…" : "Salva modifiche"}
++                </button>
++                {workoutSaved && (
++                  <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block mt-3" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
++                    ✓ Allenamento salvato
++                  </p>
++                )}
++              </div>
++            )}
++          </>
++        )
++      )}
+       {section === "dieta" && <WeekDietEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
+       {section === "integratori" && <WeekSuppsEditor week={week} onChange={(w) => setWeek(() => w)} />}
+     </div>
+@@ -3423,13 +3597,21 @@ export default function CoachDashboard({ supabase, coachId } = {}) {
+   const isRealMode = Boolean(supabase && coachId);
+   const [realClients, setRealClients] = useState(null); // null = non ancora caricato
+ 
+-  useEffect(() => {
++  // Estratta come funzione richiamabile (non solo effetto al mount): serve ad
++  // AccessControlTable per ricaricare il roster subito dopo aver attivato un
++  // cliente da "registered" ad "active", senza aspettare un refresh manuale
++  // della pagina. Esposta ai pannelli innestati via CoachDataContext.
++  const reloadRoster = useCallback(() => {
+     if (!isRealMode) return;
+     fetchClientRoster(supabase)
+       .then(setRealClients)
+       .catch((err) => { console.error("PERFORM: errore caricamento roster clienti", err); setRealClients([]); });
+   }, [isRealMode, supabase]);
+ 
++  useEffect(() => {
++    reloadRoster();
++  }, [reloadRoster]);
++
+   const clients = isRealMode ? (realClients ?? []) : DEMO_CLIENTS;
+ 
+   const [tab, setTab] = useState("atleti");
+@@ -3459,7 +3641,7 @@ export default function CoachDashboard({ supabase, coachId } = {}) {
+   const [isDark, setIsDark] = useState(false);
+ 
+   return (
+-    <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode }}>
++    <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode, reloadRoster }}>
+       <div className={`coach-root${isDark ? " dark" : ""}`}>
+         <GlobalStyle />
+         <main className="max-w-6xl mx-auto px-4 py-8 pb-24">
+diff --git a/src/lib/coachingData.js b/src/lib/coachingData.js
+index 052efbe..989d9d7 100644
+--- a/src/lib/coachingData.js
++++ b/src/lib/coachingData.js
+@@ -150,7 +150,7 @@ export async function assignNutritionTarget(supabase, {
+ }
+ 
+ export async function assignWorkoutExercise(supabase, {
+-  clientId, date, splitLabel, exerciseName, muscleTarget, setsCount, intensityTechnique,
++  clientId, date, splitLabel, exerciseName, muscleTarget, setsCount, repsTarget, restSeconds, intensityTechnique,
+ }) {
+   if (!MUSCLE_TARGETS.includes(muscleTarget)) {
+     throw new Error(`muscle_target non valido: "${muscleTarget}". Valori ammessi: ${MUSCLE_TARGETS.join(", ")}`);
+@@ -162,6 +162,8 @@ export async function assignWorkoutExercise(supabase, {
+     exercise_name: exerciseName,
+     muscle_target: muscleTarget,
+     sets_count: setsCount,
++    reps_target: repsTarget || null,
++    rest_seconds: restSeconds ?? null,
+     intensity_technique: intensityTechnique || null,
+     status: "missed",       // diventa 'done' quando il cliente compila la sessione
+     is_read_only: true,     // è una prescrizione del coach, non un log libero del cliente
+@@ -169,6 +171,189 @@ export async function assignWorkoutExercise(supabase, {
+   if (error) throw error;
+ }
+ 
++// Lunedì di partenza (weekStartDateISO, 'YYYY-MM-DD') → i 7 giorni di quella
++// settimana come stringhe ISO. Parsing con orario esplicito per restare in
++// timezone locale: "YYYY-MM-DD" nudo verrebbe letto come mezzanotte UTC e
++// potrebbe slittare di un giorno a seconda del fuso del browser.
++function weekDatesFrom(weekStartDateISO) {
++  const start = new Date(`${weekStartDateISO}T00:00:00`);
++  return Array.from({ length: 7 }, (_, i) => {
++    const d = new Date(start);
++    d.setDate(d.getDate() + i);
++    return d.toISOString().slice(0, 10);
++  });
++}
++
++// Allenamento reale di una settimana, nella stessa forma che ClientTimeline
++// (09_CoachDashboard.jsx) usa già per la parte finta (week.workout): un
++// array di 7 elementi Lunedì→Domenica, null = riposo. Se il coach non ha
++// ancora assegnato nulla per questa settimana, torna 7 null — MAI un pattern
++// finto (niente push/pull/legs inventati: quello resta solo nel fallback
++// locale di makeDefaultWeek, per quando isRealMode è false).
++// `isCustomExercise(name)` è passato dal chiamante invece di importare
++// EXERCISE_LIB qui dentro: EXERCISE_LIB vive in 09_CoachDashboard.jsx, che
++// già importa questo file — importarlo anche in senso opposto creerebbe un
++// ciclo tra i due moduli.
++export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCustomExercise) {
++  const dates = weekDatesFrom(weekStartDateISO);
++  const { data, error } = await supabase
++    .from("workout_logs")
++    .select("id, date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, intensity_technique")
++    .eq("user_id", userId)
++    .in("date", dates)
++    .order("date", { ascending: true });
++  if (error) throw error;
++
++  const byDate = new Map();
++  (data ?? []).forEach((row) => {
++    if (!byDate.has(row.date)) byDate.set(row.date, []);
++    byDate.get(row.date).push(row);
++  });
++
++  return dates.map((date) => {
++    const rows = byDate.get(date);
++    if (!rows || rows.length === 0) return null;
++    return {
++      label: rows[0].split_label || "Sessione",
++      exercises: rows.map((r) => ({
++        id: r.id,
++        name: r.exercise_name,
++        custom: typeof isCustomExercise === "function" ? isCustomExercise(r.exercise_name) : false,
++        sets: r.sets_count,
++        reps: r.reps_target || "",
++        rest: r.rest_seconds ?? 0,
++        technique: r.intensity_technique || "Nessuna",
++        muscleTarget: r.muscle_target,
++      })),
++    };
++  });
++}
++
++// Scrive l'allenamento di una settimana intera, giorno per giorno: per ogni
++// data confronta gli esercizi nuovi con quelli già assegnati (per NOME, non
++// per id — gli esercizi appena aggiunti in UI non hanno ancora un id reale),
++// aggiorna solo i campi prescrittivi di quelli già presenti (mai
++// reps_completed/load_kg/rir/status: quello è lo storico svolto dal
++// cliente, non va mai sovrascritto da qui), inserisce quelli nuovi, cancella
++// SOLO le righe del singolo giorno il cui esercizio non è più nella lista —
++// mai una delete dell'intera settimana in un colpo solo.
++export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workoutArray) {
++  if (!Array.isArray(workoutArray) || workoutArray.length !== 7) {
++    throw new Error("saveWeekWorkout: workoutArray deve avere 7 elementi (Lunedì→Domenica).");
++  }
++  const dates = weekDatesFrom(weekStartDateISO);
++
++  // Validazione preventiva su TUTTA la settimana prima di scrivere anche una
++  // sola riga: un salvataggio parziale (metà settimana scritta, metà no per
++  // un distretto mancante scoperto a metà) sarebbe peggio di un rifiuto secco.
++  const missing = [];
++  workoutArray.forEach((day, i) => {
++    (day?.exercises ?? []).forEach((ex) => {
++      if (!MUSCLE_TARGETS.includes(ex.muscleTarget)) missing.push(`"${ex.name || "esercizio senza nome"}" (${dates[i]})`);
++    });
++  });
++  if (missing.length > 0) {
++    throw new Error(`Distretto muscolare mancante o non valido per: ${missing.join(", ")}.`);
++  }
++
++  for (let i = 0; i < 7; i++) {
++    const date = dates[i];
++    const day = workoutArray[i];
++    const newExercises = day?.exercises ?? [];
++    const newNames = new Set(newExercises.map((e) => e.name));
++
++    const { data: existing, error: fetchError } = await supabase
++      .from("workout_logs")
++      .select("id, exercise_name")
++      .eq("user_id", userId)
++      .eq("date", date);
++    if (fetchError) throw fetchError;
++
++    const existingIdByName = new Map((existing ?? []).map((r) => [r.exercise_name, r.id]));
++    const toDelete = (existing ?? []).filter((r) => !newNames.has(r.exercise_name)).map((r) => r.id);
++    if (toDelete.length > 0) {
++      const { error: deleteError } = await supabase.from("workout_logs").delete().in("id", toDelete);
++      if (deleteError) throw deleteError;
++    }
++
++    for (const ex of newExercises) {
++      const prescriptiveFields = {
++        split_label: day.label || null,
++        muscle_target: ex.muscleTarget,
++        sets_count: ex.sets,
++        reps_target: ex.reps || null,
++        rest_seconds: ex.rest ?? null,
++        intensity_technique: ex.technique || null,
++      };
++      const existingId = existingIdByName.get(ex.name);
++      if (existingId) {
++        const { error: updateError } = await supabase.from("workout_logs").update(prescriptiveFields).eq("id", existingId);
++        if (updateError) throw updateError;
++      } else {
++        const { error: insertError } = await supabase.from("workout_logs").insert({
++          user_id: userId,
++          date,
++          exercise_name: ex.name,
++          status: "missed",
++          is_read_only: true,
++          ...prescriptiveFields,
++        });
++        if (insertError) throw insertError;
++      }
++    }
++  }
++}
++
++// Clona una settimana di allenamento su un'altra: legge le righe della
++// sorgente, le trasforma nella STESSA forma { label, exercises } che
++// saveWeekWorkout già sa scrivere, e delega a quella — non una seconda
++// versione scritta a mano della logica di confronto/scrittura. Vantaggio
++// pratico: clonare due volte sulla stessa settimana destinazione AGGIORNA
++// (non duplica), perché passa dallo stesso percorso — confronto per nome,
++// update dei campi prescrittivi sulle righe già presenti, insert delle
++// nuove, delete solo di quelle non più presenti — usato dal salvataggio
++// manuale. Sempre come storico nuovo: reps_completed/load_kg/rir della
++// sorgente non vengono letti né copiati, saveWeekWorkout li lascia intatti
++// per le righe già esistenti nella destinazione e non li imposta per quelle
++// nuove (nascono senza, come sempre).
++// Se la settimana sorgente non ha nulla, non tocca la destinazione: un clic
++// su "Clona" da una settimana vuota non deve svuotare quella di arrivo.
++export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, targetWeekStartISO) {
++  const sourceDates = weekDatesFrom(sourceWeekStartISO);
++
++  const { data: sourceRows, error: fetchError } = await supabase
++    .from("workout_logs")
++    .select("date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, intensity_technique")
++    .eq("user_id", userId)
++    .in("date", sourceDates);
++  if (fetchError) throw fetchError;
++  if (!sourceRows || sourceRows.length === 0) return;
++
++  const byDate = new Map();
++  sourceRows.forEach((row) => {
++    if (!byDate.has(row.date)) byDate.set(row.date, []);
++    byDate.get(row.date).push(row);
++  });
++
++  const workoutArray = sourceDates.map((date) => {
++    const rows = byDate.get(date);
++    if (!rows || rows.length === 0) return null;
++    return {
++      label: rows[0].split_label || "Sessione",
++      exercises: rows.map((r) => ({
++        name: r.exercise_name,
++        muscleTarget: r.muscle_target,
++        sets: r.sets_count,
++        reps: r.reps_target || "",
++        rest: r.rest_seconds ?? 0,
++        technique: r.intensity_technique || "Nessuna",
++      })),
++    };
++  });
++
++  await saveWeekWorkout(supabase, userId, targetWeekStartISO, workoutArray);
++}
++
+ // Elenco clienti per il selettore nel pannello coach.
+ export async function fetchClientList(supabase) {
+   const { data, error } = await supabase
+@@ -215,7 +400,7 @@ export async function saveAnamnesis(supabase, userId, answers) {
+ export async function fetchClientRoster(supabase) {
+   const { data: profiles, error: profilesError } = await supabase
+     .from("profiles")
+-    .select("id, nickname, full_name, gender, role, xp_total, current_streak, plan, created_at")
++    .select("id, nickname, full_name, email, gender, role, xp_total, current_streak, plan, client_status, last_activity, created_at")
+     .eq("role", "user")
+     .order("created_at", { ascending: false });
+   if (profilesError) throw profilesError;
+@@ -240,7 +425,9 @@ export async function fetchClientRoster(supabase) {
+         streak: p.current_streak ?? 0,
+         xp: p.xp_total ?? 0,
+         plan: p.plan || "free",
+-        status: "active",
++        status: p.client_status === "active" ? "active" : "pending",
++        clientStatus: p.client_status || "registered",
++        lastActivity: p.last_activity,
+         age: answers.eta ?? null,
+         birthDate: null,
+         heightCm: answers.heightCm ?? null,
+@@ -248,7 +435,7 @@ export async function fetchClientRoster(supabase) {
+         activity: answers.activity ?? null,
+         foodLikes: answers.foodLikes ?? [],
+         foodDislikes: answers.foodDislikes ?? [],
+-        email: null, // non esposto qui: solo auth.users (admin API) lo conosce, non la tabella profiles
++        email: p.email,
+         lastCheck: last ? { weight: Number(last.weight) } : { weight: null },
+         weightHistory: ordered.map((c) => Number(c.weight)).filter((n) => !Number.isNaN(n)),
+         waistCm: null,
+@@ -263,4 +450,9 @@ export async function fetchClientRoster(supabase) {
+   return roster;
+ }
+ 
++export async function activateClient(supabase, clientId) {
++  const { error } = await supabase.from("profiles").update({ client_status: "active" }).eq("id", clientId);
++  if (error) throw error;
++}
++
+ export { MUSCLE_TARGETS };

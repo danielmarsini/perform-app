@@ -150,7 +150,7 @@ export async function assignNutritionTarget(supabase, {
 }
 
 export async function assignWorkoutExercise(supabase, {
-  clientId, date, splitLabel, exerciseName, muscleTarget, setsCount, intensityTechnique,
+  clientId, date, splitLabel, exerciseName, muscleTarget, setsCount, repsTarget, restSeconds, intensityTechnique,
 }) {
   if (!MUSCLE_TARGETS.includes(muscleTarget)) {
     throw new Error(`muscle_target non valido: "${muscleTarget}". Valori ammessi: ${MUSCLE_TARGETS.join(", ")}`);
@@ -162,11 +162,196 @@ export async function assignWorkoutExercise(supabase, {
     exercise_name: exerciseName,
     muscle_target: muscleTarget,
     sets_count: setsCount,
+    reps_target: repsTarget || null,
+    rest_seconds: restSeconds ?? null,
     intensity_technique: intensityTechnique || null,
     status: "missed",       // diventa 'done' quando il cliente compila la sessione
     is_read_only: true,     // è una prescrizione del coach, non un log libero del cliente
   });
   if (error) throw error;
+}
+
+// Lunedì di partenza (weekStartDateISO, 'YYYY-MM-DD') → i 7 giorni di quella
+// settimana come stringhe ISO. Parsing con orario esplicito per restare in
+// timezone locale: "YYYY-MM-DD" nudo verrebbe letto come mezzanotte UTC e
+// potrebbe slittare di un giorno a seconda del fuso del browser.
+function weekDatesFrom(weekStartDateISO) {
+  const start = new Date(`${weekStartDateISO}T00:00:00`);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+}
+
+// Allenamento reale di una settimana, nella stessa forma che ClientTimeline
+// (09_CoachDashboard.jsx) usa già per la parte finta (week.workout): un
+// array di 7 elementi Lunedì→Domenica, null = riposo. Se il coach non ha
+// ancora assegnato nulla per questa settimana, torna 7 null — MAI un pattern
+// finto (niente push/pull/legs inventati: quello resta solo nel fallback
+// locale di makeDefaultWeek, per quando isRealMode è false).
+// `isCustomExercise(name)` è passato dal chiamante invece di importare
+// EXERCISE_LIB qui dentro: EXERCISE_LIB vive in 09_CoachDashboard.jsx, che
+// già importa questo file — importarlo anche in senso opposto creerebbe un
+// ciclo tra i due moduli.
+export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCustomExercise) {
+  const dates = weekDatesFrom(weekStartDateISO);
+  const { data, error } = await supabase
+    .from("workout_logs")
+    .select("id, date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, intensity_technique")
+    .eq("user_id", userId)
+    .in("date", dates)
+    .order("date", { ascending: true });
+  if (error) throw error;
+
+  const byDate = new Map();
+  (data ?? []).forEach((row) => {
+    if (!byDate.has(row.date)) byDate.set(row.date, []);
+    byDate.get(row.date).push(row);
+  });
+
+  return dates.map((date) => {
+    const rows = byDate.get(date);
+    if (!rows || rows.length === 0) return null;
+    return {
+      label: rows[0].split_label || "Sessione",
+      exercises: rows.map((r) => ({
+        id: r.id,
+        name: r.exercise_name,
+        custom: typeof isCustomExercise === "function" ? isCustomExercise(r.exercise_name) : false,
+        sets: r.sets_count,
+        reps: r.reps_target || "",
+        rest: r.rest_seconds ?? 0,
+        technique: r.intensity_technique || "Nessuna",
+        muscleTarget: r.muscle_target,
+      })),
+    };
+  });
+}
+
+// Scrive l'allenamento di una settimana intera, giorno per giorno: per ogni
+// data confronta gli esercizi nuovi con quelli già assegnati (per NOME, non
+// per id — gli esercizi appena aggiunti in UI non hanno ancora un id reale),
+// aggiorna solo i campi prescrittivi di quelli già presenti (mai
+// reps_completed/load_kg/rir/status: quello è lo storico svolto dal
+// cliente, non va mai sovrascritto da qui), inserisce quelli nuovi, cancella
+// SOLO le righe del singolo giorno il cui esercizio non è più nella lista —
+// mai una delete dell'intera settimana in un colpo solo.
+export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workoutArray) {
+  if (!Array.isArray(workoutArray) || workoutArray.length !== 7) {
+    throw new Error("saveWeekWorkout: workoutArray deve avere 7 elementi (Lunedì→Domenica).");
+  }
+  const dates = weekDatesFrom(weekStartDateISO);
+
+  // Validazione preventiva su TUTTA la settimana prima di scrivere anche una
+  // sola riga: un salvataggio parziale (metà settimana scritta, metà no per
+  // un distretto mancante scoperto a metà) sarebbe peggio di un rifiuto secco.
+  const missing = [];
+  workoutArray.forEach((day, i) => {
+    (day?.exercises ?? []).forEach((ex) => {
+      if (!MUSCLE_TARGETS.includes(ex.muscleTarget)) missing.push(`"${ex.name || "esercizio senza nome"}" (${dates[i]})`);
+    });
+  });
+  if (missing.length > 0) {
+    throw new Error(`Distretto muscolare mancante o non valido per: ${missing.join(", ")}.`);
+  }
+
+  for (let i = 0; i < 7; i++) {
+    const date = dates[i];
+    const day = workoutArray[i];
+    const newExercises = day?.exercises ?? [];
+    const newNames = new Set(newExercises.map((e) => e.name));
+
+    const { data: existing, error: fetchError } = await supabase
+      .from("workout_logs")
+      .select("id, exercise_name")
+      .eq("user_id", userId)
+      .eq("date", date);
+    if (fetchError) throw fetchError;
+
+    const existingIdByName = new Map((existing ?? []).map((r) => [r.exercise_name, r.id]));
+    const toDelete = (existing ?? []).filter((r) => !newNames.has(r.exercise_name)).map((r) => r.id);
+    if (toDelete.length > 0) {
+      const { error: deleteError } = await supabase.from("workout_logs").delete().in("id", toDelete);
+      if (deleteError) throw deleteError;
+    }
+
+    for (const ex of newExercises) {
+      const prescriptiveFields = {
+        split_label: day.label || null,
+        muscle_target: ex.muscleTarget,
+        sets_count: ex.sets,
+        reps_target: ex.reps || null,
+        rest_seconds: ex.rest ?? null,
+        intensity_technique: ex.technique || null,
+      };
+      const existingId = existingIdByName.get(ex.name);
+      if (existingId) {
+        const { error: updateError } = await supabase.from("workout_logs").update(prescriptiveFields).eq("id", existingId);
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase.from("workout_logs").insert({
+          user_id: userId,
+          date,
+          exercise_name: ex.name,
+          status: "missed",
+          is_read_only: true,
+          ...prescriptiveFields,
+        });
+        if (insertError) throw insertError;
+      }
+    }
+  }
+}
+
+// Clona una settimana di allenamento su un'altra: legge le righe della
+// sorgente, le trasforma nella STESSA forma { label, exercises } che
+// saveWeekWorkout già sa scrivere, e delega a quella — non una seconda
+// versione scritta a mano della logica di confronto/scrittura. Vantaggio
+// pratico: clonare due volte sulla stessa settimana destinazione AGGIORNA
+// (non duplica), perché passa dallo stesso percorso — confronto per nome,
+// update dei campi prescrittivi sulle righe già presenti, insert delle
+// nuove, delete solo di quelle non più presenti — usato dal salvataggio
+// manuale. Sempre come storico nuovo: reps_completed/load_kg/rir della
+// sorgente non vengono letti né copiati, saveWeekWorkout li lascia intatti
+// per le righe già esistenti nella destinazione e non li imposta per quelle
+// nuove (nascono senza, come sempre).
+// Se la settimana sorgente non ha nulla, non tocca la destinazione: un clic
+// su "Clona" da una settimana vuota non deve svuotare quella di arrivo.
+export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, targetWeekStartISO) {
+  const sourceDates = weekDatesFrom(sourceWeekStartISO);
+
+  const { data: sourceRows, error: fetchError } = await supabase
+    .from("workout_logs")
+    .select("date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, intensity_technique")
+    .eq("user_id", userId)
+    .in("date", sourceDates);
+  if (fetchError) throw fetchError;
+  if (!sourceRows || sourceRows.length === 0) return;
+
+  const byDate = new Map();
+  sourceRows.forEach((row) => {
+    if (!byDate.has(row.date)) byDate.set(row.date, []);
+    byDate.get(row.date).push(row);
+  });
+
+  const workoutArray = sourceDates.map((date) => {
+    const rows = byDate.get(date);
+    if (!rows || rows.length === 0) return null;
+    return {
+      label: rows[0].split_label || "Sessione",
+      exercises: rows.map((r) => ({
+        name: r.exercise_name,
+        muscleTarget: r.muscle_target,
+        sets: r.sets_count,
+        reps: r.reps_target || "",
+        rest: r.rest_seconds ?? 0,
+        technique: r.intensity_technique || "Nessuna",
+      })),
+    };
+  });
+
+  await saveWeekWorkout(supabase, userId, targetWeekStartISO, workoutArray);
 }
 
 // Elenco clienti per il selettore nel pannello coach.
@@ -215,7 +400,7 @@ export async function saveAnamnesis(supabase, userId, answers) {
 export async function fetchClientRoster(supabase) {
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
-    .select("id, nickname, full_name, gender, role, xp_total, current_streak, plan, created_at")
+    .select("id, nickname, full_name, email, gender, role, xp_total, current_streak, plan, client_status, last_activity, created_at")
     .eq("role", "user")
     .order("created_at", { ascending: false });
   if (profilesError) throw profilesError;
@@ -240,7 +425,9 @@ export async function fetchClientRoster(supabase) {
         streak: p.current_streak ?? 0,
         xp: p.xp_total ?? 0,
         plan: p.plan || "free",
-        status: "active",
+        status: p.client_status === "active" ? "active" : "pending",
+        clientStatus: p.client_status || "registered",
+        lastActivity: p.last_activity,
         age: answers.eta ?? null,
         birthDate: null,
         heightCm: answers.heightCm ?? null,
@@ -248,7 +435,7 @@ export async function fetchClientRoster(supabase) {
         activity: answers.activity ?? null,
         foodLikes: answers.foodLikes ?? [],
         foodDislikes: answers.foodDislikes ?? [],
-        email: null, // non esposto qui: solo auth.users (admin API) lo conosce, non la tabella profiles
+        email: p.email,
         lastCheck: last ? { weight: Number(last.weight) } : { weight: null },
         weightHistory: ordered.map((c) => Number(c.weight)).filter((n) => !Number.isNaN(n)),
         waistCm: null,
@@ -261,6 +448,11 @@ export async function fetchClientRoster(supabase) {
     })
   );
   return roster;
+}
+
+export async function activateClient(supabase, clientId) {
+  const { error } = await supabase.from("profiles").update({ client_status: "active" }).eq("id", clientId);
+  if (error) throw error;
 }
 
 export { MUSCLE_TARGETS };
