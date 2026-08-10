@@ -217,7 +217,8 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
     .select("id, date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, intensity_technique")
     .eq("user_id", userId)
     .in("date", dates)
-    .order("date", { ascending: true });
+    .order("date", { ascending: true })
+    .order("created_at", { ascending: true }); // ordine di inserimento del coach dentro lo stesso giorno
   if (error) throw error;
 
   const byDate = new Map();
