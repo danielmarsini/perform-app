@@ -1,0 +1,16 @@
+# Dipendenze
+node_modules/
+
+# Build
+dist/
+dist-ssr/
+
+# Variabili d'ambiente — chiavi Supabase reali, mai su GitHub
+.env
+.env.local
+.env.*.local
+
+# Editor/OS
+.DS_Store
+*.log
+npm-debug.log*
