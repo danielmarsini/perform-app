@@ -64,7 +64,8 @@ export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDat
     .eq("user_id", userId)
     .gte("date", fromDateISO)
     .lte("date", toDateISO)
-    .order("date", { ascending: true });
+    .order("date", { ascending: true })
+    .order("created_at", { ascending: true }); // ordine di inserimento del coach dentro lo stesso giorno
   if (error) throw error;
   return data ?? [];
 }

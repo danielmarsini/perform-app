@@ -49,6 +49,24 @@ function toLocalISODate(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Lunedì della settimana di `date` (default oggi), in locale — stessa identica
+// logica di mondayOf/weekDatesFrom lato coach (09_CoachDashboard.jsx /
+// coachingData.js), duplicata qui per lo stesso motivo di toLocalISODate: non
+// introdurre un nuovo accoppiamento tra i due moduli per un helper di poche righe.
+function mondayOfLocal(date = new Date()) {
+  const d = new Date(date);
+  const day = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - day);
+  return d;
+}
+function weekDatesFromLocal(mondayDate) {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mondayDate);
+    d.setDate(d.getDate() + i);
+    return toLocalISODate(d);
+  });
+}
+
 export const MACRO_COLORS = {
   kcal: { light: "#7DB8FF", base: "#2563EB", dark: "#1A3FA8" }, // Calorie · blu
   p:    { light: "#FF9A9A", base: "#DC2626", dark: "#8F1414" }, // Proteine · rosso
@@ -2196,10 +2214,14 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       <p className="h2">{ex.name}</p>
       <p className="meta mt-0.5">{ex.sets} serie × {ex.reps} reps · RIR {ex.rirTarget}</p>
       {ex.technique && <p className="mt-1 text-sm" style={{ color: "var(--ink-2)", fontWeight: 500 }}>Tecnica: {ex.technique}</p>}
-      {lastEntry && lastEntry.kg > 0 && (
+      {lastEntry && lastEntry.kg > 0 ? (
         <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
           Scorsa sessione identica: <span style={{ color: "var(--ink)", fontWeight: 700 }}>{lastEntry.kg} kg{lastEntry.reps ? ` × ${lastEntry.reps} reps` : ""}</span>
           {best > 0 && <> · record da battere: <span style={{ color: RECORD_GOLD_GREEN, fontWeight: 700 }}>{best} kg</span></>}
+        </p>
+      ) : (
+        <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
+          Scorsa sessione identica: <span style={{ color: "var(--ink)", fontWeight: 700 }}>n/d</span>
         </p>
       )}
       <p className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: "var(--ink)" }}>
@@ -4677,28 +4699,48 @@ export default function HomePreview({
       .catch((err) => console.error("PERFORM: errore lettura nutrition_targets", err));
   }, [supabaseProp, userId]);
 
-  // Scheda assegnata dal coach per oggi (workout_logs, is_read_only=true). Se non
-  // c'è nulla, resta l'array vuoto: niente esercizi finti mostrati a un utente reale.
-  const [assignedExercises, setAssignedExercises] = useState(null); // null = non ancora caricato
+  // Scheda assegnata dal coach per l'INTERA settimana corrente (Lun→Dom, stesso
+  // schema lunedì-domenica già usato da fetchWeekWorkout/weekDatesFrom lato
+  // coach — vedi 09_CoachDashboard.jsx/coachingData.js), non più solo oggi:
+  // serve perché WorkoutCalendarStrip/CalendarDayReadOnlyView possano mostrare
+  // il giorno che il cliente clicca davvero, non solo quello odierno. Se un
+  // giorno non ha nulla assegnato resta null — niente dati finti mostrati a
+  // un utente reale.
+  const [assignedWeek, setAssignedWeek] = useState(null); // null = non ancora caricato; 7 elementi Lun→Dom
   useEffect(() => {
     if (!supabaseProp || !userId) return;
-    const today = toLocalISODate();
-    fetchAssignedWorkouts(supabaseProp, userId, today, today)
+    let cancelled = false;
+    const weekDates = weekDatesFromLocal(mondayOfLocal());
+    fetchAssignedWorkouts(supabaseProp, userId, weekDates[0], weekDates[6])
       .then(async (rows) => {
-        const withHistory = await Promise.all(rows.map(async (r) => ({
-          id: r.id,               // id reale della riga workout_logs, serve per salvare il log dopo
-          name: r.exercise_name,
-          sets: r.sets_count ?? 3,
-          reps: "—",               // lo schema non registra un range di ripetizioni target, solo quelle svolte
-          rirTarget: "—",          // idem per l'RIR target: lo schema registra solo l'RIR realmente svolto
-          technique: r.intensity_technique || "",
-          rests: Array.from({ length: r.sets_count ?? 3 }, () => 120),
-          history: await fetchExerciseHistory(supabaseProp, userId, r.exercise_name),
-          splitLabel: r.split_label,
-        })));
-        setAssignedExercises(withHistory);
+        const byDate = new Map();
+        rows.forEach((r) => {
+          if (!byDate.has(r.date)) byDate.set(r.date, []);
+          byDate.get(r.date).push(r);
+        });
+        const week = await Promise.all(weekDates.map(async (date) => {
+          const dayRows = byDate.get(date);
+          if (!dayRows || dayRows.length === 0) return null;
+          const exercisesForDay = await Promise.all(dayRows.map(async (r) => ({
+            id: r.id,               // id reale della riga workout_logs, serve per salvare il log dopo
+            name: r.exercise_name,
+            sets: r.sets_count ?? 3,
+            reps: "—",               // lo schema non registra un range di ripetizioni target, solo quelle svolte
+            rirTarget: "—",          // idem per l'RIR target: lo schema registra solo l'RIR realmente svolto
+            technique: r.intensity_technique || "",
+            rests: Array.from({ length: r.sets_count ?? 3 }, () => 120),
+            history: await fetchExerciseHistory(supabaseProp, userId, r.exercise_name),
+            splitLabel: r.split_label,
+          })));
+          return { label: dayRows[0].split_label || "Scheda di oggi", exercises: exercisesForDay };
+        }));
+        if (!cancelled) setAssignedWeek(week);
       })
-      .catch((err) => { console.error("PERFORM: errore lettura workout_logs assegnati", err); setAssignedExercises([]); });
+      .catch((err) => {
+        console.error("PERFORM: errore lettura workout_logs assegnati", err);
+        if (!cancelled) setAssignedWeek(Array(7).fill(null));
+      });
+    return () => { cancelled = true; };
   }, [supabaseProp, userId]);
   const [rhr, setRhr] = useState("58");
   const [hrv, setHrv] = useState("62");
@@ -4766,11 +4808,6 @@ export default function HomePreview({
     { id: "e3", name: "Alzate laterali manubri", sets: 3, reps: "12-15", rirTarget: "1", technique: "", rests: [90, 90, 90],
       history: [{ kg: 12, reps: 14 }, { kg: 12.5, reps: 13 }] },
   ];
-  // In modalità reale: scheda assegnata dal coach per oggi (vuota se non ancora
-  // assegnata nulla — niente dati finti mostrati a un cliente vero). In preview
-  // isolata (nessun supabase/userId passati): la scheda dimostrativa di sempre.
-  const exercises = isRealMode ? (assignedExercises ?? []) : demoExercises;
-
   const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "", rir: "" }));
   const onSetField = (ex, i, f, v) =>
     setSets((s) => {
@@ -4783,16 +4820,23 @@ export default function HomePreview({
     { kcal: 0, p: 0, c: 0, f: 0 }
   );
 
-  // Idem per il weekPlan: in modalità reale mostra solo la scheda di oggi (lo
-  // schema attuale assegna esercizi per data singola, non un piano settimanale
-  // strutturato) — collegare l'intera settimana è un passo successivo.
+  // In modalità reale: la settimana assegnata dal coach così com'è arrivata
+  // dal fetch qui sopra (7 elementi Lun→Dom, null = riposo/non assegnato). In
+  // preview isolata: la scheda dimostrativa di sempre.
   const weekPlan = isRealMode
-    ? [exercises.length ? { label: exercises[0]?.splitLabel || "Scheda di oggi", exercises } : null, null, null, null, null, null, null]
+    ? (assignedWeek ?? Array(7).fill(null))
     : [
         { label: "Upper A — Spinta", exercises: demoExercises }, null,
         { label: "Upper B", exercises: [{ name: "Trazioni" }] }, null,
         { label: "Lower B", exercises: [{ name: "Stacco rumeno" }] }, null, null,
       ];
+
+  // "Oggi" è solo l'indice di weekPlan che corrisponde alla data odierna —
+  // non più una fetch/stato separato: stessa identica fonte dati che usa la
+  // striscia calendario per qualunque altro giorno cliccato (CalendarDayReadOnlyView
+  // legge weekPlan[isoWeekdayOf(date)] allo stesso modo).
+  const todayWeekdayIdx = isoWeekdayOf(new Date());
+  const exercises = isRealMode ? (weekPlan[todayWeekdayIdx]?.exercises ?? []) : demoExercises;
 
   // Stesso principio di exercises/weekPlan qui sopra: in modalità reale niente
   // numeri inventati. isTraining/sessionLabel riflettono la scheda vera di
@@ -4801,8 +4845,10 @@ export default function HomePreview({
   // un vero "giorno N del percorso"), e mostrare "Giorno 15" a un cliente
   // vero sarebbe un dato falso, non solo un placeholder innocuo.
   const day = isRealMode
-    ? { weekday: 0, weekNumber: null, isTraining: exercises.length > 0, sessionLabel: exercises[0]?.splitLabel || "", dayNumber: null, mesociclo: null, mesocicloWeeks: null }
+    ? { weekday: todayWeekdayIdx, weekNumber: null, isTraining: exercises.length > 0, sessionLabel: exercises[0]?.splitLabel || "", dayNumber: null, mesociclo: null, mesocicloWeeks: null }
     : { weekday: 0, weekNumber: 3, isTraining: isTrainingDay, sessionLabel: "Upper A — Spinta", dayNumber: 15, mesociclo: 2, mesocicloWeeks: 4 };
+
+  const access = { nutrition: true, recovery: true, pro: planTier === "PRO", paid: planTier === "BASE" || planTier === "PRO" };
 
   const generateSimilar = (sourceText) =>
     new Promise((res) => setTimeout(() => res(generateSimilarFood(sourceText)), 900));
@@ -4936,7 +4982,7 @@ export default function HomePreview({
           rhr={rhr} hrv={hrv}
           fullHistory={fullHistory}
           weekPlan={weekPlan} musclesOf={MUSCLES_OF} missedDayIdx={-1}
-          access={{ nutrition: true, recovery: true, pro: planTier === "PRO", paid: planTier === "BASE" || planTier === "PRO" }}
+          access={access}
           userPlan={planTier === "FREE" ? "free" : planTier === "BASE" ? "performance_pack" : "full_coaching"}
           onSetSleep={(k, v) => setSleep((s) => {
             const next = { ...s, [k]: v };
