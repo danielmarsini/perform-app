@@ -1372,7 +1372,7 @@ export function HomeDashboard({
         <ArrowLeft size={16} style={{ color: "var(--ink)" }} />
       </button>
       <div>
-        <p className="label mb-0.5">{WEEK_DAYS[day.weekday]} · settimana {day.weekNumber}</p>
+        <p className="label mb-0.5">{WEEK_DAYS[day.weekday]}{day.weekNumber != null ? ` · settimana ${day.weekNumber}` : ""}</p>
         <h2 className="h1">{title}</h2>
       </div>
     </div>
@@ -1420,11 +1420,13 @@ export function HomeDashboard({
               </span>
             </div>
 
-            <div className="mt-3">
-              <MesocicloBadge mesociclo={day.mesociclo ?? 1} week={day.weekNumber} weeks={day.mesocicloWeeks ?? 4} />
-            </div>
+            {day.mesociclo != null && (
+              <div className="mt-3">
+                <MesocicloBadge mesociclo={day.mesociclo} week={day.weekNumber} weeks={day.mesocicloWeeks ?? 4} />
+              </div>
+            )}
             <p className="meta mt-2">
-              Giorno {day.dayNumber} del percorso · {WEEK_DAYS[day.weekday]}
+              {day.dayNumber != null ? `Giorno ${day.dayNumber} del percorso · ` : ""}{WEEK_DAYS[day.weekday]}
             </p>
           </div>
 
@@ -4632,14 +4634,21 @@ export default function HomePreview({
   const isControlled = genderProp !== undefined;
   const [dark, setDark] = useState(darkProp ?? false);
   const [gender, setGender] = useState(genderProp ?? "M");
+  // I 3 piani a coaching reale (full_coaching, scheda_personalizzata, training)
+  // valgono tutti "PRO" ai fini di questo gate: la loro intera ragion d'essere
+  // è la scheda assegnata dal coach, quindi devono vedere exercises/weekPlan
+  // reali (WorkoutCalendarStrip + ExerciseCard), non FreeWorkoutBuilder — che
+  // è la routine autogestita del piano FREE, mai collegata a Supabase.
   const [planTier, setPlanTier] = useState(
-    planProp === "full_coaching" ? "PRO" : planProp === "performance_pack" ? "BASE" : planProp === "free" ? "FREE" : "FREE"
+    planProp === "full_coaching" || planProp === "scheda_personalizzata" || planProp === "training" ? "PRO"
+      : planProp === "performance_pack" ? "BASE" : "FREE"
   );
   useEffect(() => { if (darkProp !== undefined) setDark(darkProp); }, [darkProp]);
   useEffect(() => { if (genderProp !== undefined) setGender(genderProp); }, [genderProp]);
   useEffect(() => {
     if (planProp === undefined) return;
-    setPlanTier(planProp === "full_coaching" ? "PRO" : planProp === "performance_pack" ? "BASE" : "FREE");
+    setPlanTier(planProp === "full_coaching" || planProp === "scheda_personalizzata" || planProp === "training" ? "PRO"
+      : planProp === "performance_pack" ? "BASE" : "FREE");
   }, [planProp]);
   const [meals, setMeals] = useState(
     MEAL_SLOTS.reduce((a, s) => ({ ...a, [s.id]: s.id === "colazione"
@@ -4785,6 +4794,16 @@ export default function HomePreview({
         { label: "Lower B", exercises: [{ name: "Stacco rumeno" }] }, null, null,
       ];
 
+  // Stesso principio di exercises/weekPlan qui sopra: in modalità reale niente
+  // numeri inventati. isTraining/sessionLabel riflettono la scheda vera di
+  // oggi; weekNumber/dayNumber/mesociclo/mesocicloWeeks restano null — non
+  // c'è ancora una fonte reale per quei quattro campi (nessun collegamento a
+  // un vero "giorno N del percorso"), e mostrare "Giorno 15" a un cliente
+  // vero sarebbe un dato falso, non solo un placeholder innocuo.
+  const day = isRealMode
+    ? { weekday: 0, weekNumber: null, isTraining: exercises.length > 0, sessionLabel: exercises[0]?.splitLabel || "", dayNumber: null, mesociclo: null, mesocicloWeeks: null }
+    : { weekday: 0, weekNumber: 3, isTraining: isTrainingDay, sessionLabel: "Upper A — Spinta", dayNumber: 15, mesociclo: 2, mesocicloWeeks: 4 };
+
   const generateSimilar = (sourceText) =>
     new Promise((res) => setTimeout(() => res(generateSimilarFood(sourceText)), 900));
 
@@ -4903,7 +4922,7 @@ export default function HomePreview({
         <HomeDashboard
           accent={accent} accentSoft={accentSoft} accentText={accentText}
           profile={{ name: "Marco Bianchi", nickname: "IronWolf", ...profileOverride, gender, goalLabel: "86 kg mantenendo i carichi" }}
-          day={{ weekday: 0, weekNumber: 3, isTraining: isTrainingDay, sessionLabel: "Upper A — Spinta", dayNumber: 15, mesociclo: 2, mesocicloWeeks: 4 }}
+          day={day}
           target={target} consumed={consumed}
           targetOn={targetOn} targetOff={targetOff}
           onSetTargetOn={(patch) => setTargetOn((t) => ({ ...t, ...patch }))}
