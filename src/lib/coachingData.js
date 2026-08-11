@@ -157,6 +157,103 @@ export async function fetchClientSetHistory(supabase, userId, fromDateISO, toDat
   return data ?? [];
 }
 
+// Lunedì della settimana di `date` (default oggi), come stringa YYYY-MM-DD
+// locale. Stessa logica di mondayOf/mondayOfLocal già duplicata in
+// 09_CoachDashboard.jsx/05_HomeDashboard.jsx — qui però è la fonte usata
+// direttamente da entrambi tramite computeTrainingCompliance qui sotto, non
+// un'altra copia isolata: è proprio questo che garantisce "mai due calcoli
+// separati" per il cerchio Allenamento.
+function mondayISO(date = new Date()) {
+  const d = new Date(date);
+  const day = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - day);
+  return toLocalISODate(d);
+}
+
+// Cerchio "Allenamento" reale — STESSA funzione chiamata sia da Home cliente
+// (05_HomeDashboard.jsx) sia da ClientDetail (09_CoachDashboard.jsx): mai due
+// formule separate che potrebbero disallinearsi.
+//
+//   completionPct = (serie registrate su workout_sets questa settimana,
+//                     tramite l'esercizio a cui appartengono)
+//                    ÷ (somma sets_count assegnato su workout_logs questa
+//                       settimana), capped a 100.
+//   progressione  = confronto, esercizio per esercizio (stesso exercise_name
+//                    presente in entrambe le settimane), del carico massimo
+//                    (MAX load_kg) registrato questa settimana vs la scorsa:
+//                    "positive" se almeno uno migliorato e non tutti i
+//                    confrontabili sono peggiorati; "negative" se TUTTI i
+//                    confrontabili sono peggiorati; "neutral" altrimenti
+//                    (inclusi il caso "nessun esercizio confrontabile").
+//   pct finale    = completionPct, con una penalità (×0.75) solo se la
+//                    progressione è negativa — positiva/neutra non alterano
+//                    il numero (nessun bonus implementato, il tetto resta 100).
+//
+// Se non c'è NULLA assegnato questa settimana (assignedSetsTotal === 0),
+// torna status "neutral" con pct null — mai 0% (sembrerebbe un allarme) né
+// 100% (sembrerebbe completato). Il chiamante decide come rendere il "n/d".
+//
+// NOTA VOLUTA: il dolore (evening.doloreGrado / check settimanale) NON entra
+// in questo calcolo. Non esiste ancora un check-in reale del cliente
+// collegato a Supabase — è un'omissione intenzionale, non dimenticata: si
+// aggiunge quando costruiamo quel pezzo (checkins reali, non più simulati).
+export async function computeTrainingCompliance(supabase, userId) {
+  const thisMonday = mondayISO();
+  const thisDates = weekDatesFrom(thisMonday);
+  const lastMondayDate = new Date(`${thisMonday}T00:00:00`);
+  lastMondayDate.setDate(lastMondayDate.getDate() - 7);
+  const lastDates = weekDatesFrom(toLocalISODate(lastMondayDate));
+
+  const [{ data: assignedThis, error: assignedError }, { data: setsJoined, error: setsError }] = await Promise.all([
+    supabase.from("workout_logs").select("sets_count")
+      .eq("user_id", userId).gte("date", thisDates[0]).lte("date", thisDates[6]),
+    supabase.from("workout_sets")
+      .select("load_kg, workout_logs!inner(date, exercise_name, user_id)")
+      .eq("workout_logs.user_id", userId)
+      .gte("workout_logs.date", lastDates[0]).lte("workout_logs.date", thisDates[6]),
+  ]);
+  if (assignedError) throw assignedError;
+  if (setsError) throw setsError;
+
+  const assignedSetsTotal = (assignedThis ?? []).reduce((a, r) => a + (Number(r.sets_count) || 0), 0);
+  if (assignedSetsTotal === 0) {
+    return { status: "neutral", pct: null, completionPct: null, progression: "neutral" };
+  }
+
+  const registeredThisCount = (setsJoined ?? []).filter(
+    (r) => r.workout_logs.date >= thisDates[0] && r.workout_logs.date <= thisDates[6]
+  ).length;
+  const completionPct = Math.max(0, Math.min(100, Math.round((registeredThisCount / assignedSetsTotal) * 100)));
+
+  const maxThis = new Map();
+  const maxLast = new Map();
+  (setsJoined ?? []).forEach((r) => {
+    const kg = Number(r.load_kg) || 0;
+    if (kg <= 0) return;
+    const bucket = r.workout_logs.date >= thisDates[0] ? maxThis : maxLast;
+    const name = r.workout_logs.exercise_name;
+    bucket.set(name, Math.max(bucket.get(name) ?? 0, kg));
+  });
+
+  let improved = 0, worsened = 0, comparable = 0;
+  maxThis.forEach((kgThis, name) => {
+    if (!maxLast.has(name)) return;
+    comparable++;
+    const kgLast = maxLast.get(name);
+    if (kgThis > kgLast) improved++;
+    else if (kgThis < kgLast) worsened++;
+  });
+
+  let progression = "neutral";
+  if (comparable > 0) {
+    if (worsened === comparable) progression = "negative";
+    else if (improved > 0) progression = "positive";
+  }
+
+  const pct = progression === "negative" ? Math.round(completionPct * 0.75) : completionPct;
+  return { status: "ok", pct, completionPct, progression };
+}
+
 /* ---------------------------------------------------------------------------
    SCRITTURA — lato coach (pannello di assegnazione)
    ------------------------------------------------------------------------- */

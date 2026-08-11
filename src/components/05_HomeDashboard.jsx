@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -774,7 +774,10 @@ function nutritionPrecision(target, consumed) {
    continuo che si intensifica agli estremi. */
 function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   const uid = useId();
-  const color = complianceColor(pct);
+  // pct === null → nulla da misurare questa settimana (es. niente assegnato):
+  // stato neutro esplicito, non un 0% (allarme) né un 100% (falso completo).
+  const isNeutral = pct == null;
+  const color = isNeutral ? "var(--ink-2)" : complianceColor(pct);
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
   return (
     <div className="relative shrink-0 ring-breathe" style={{ width: size, height: size }}>
@@ -786,17 +789,27 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
           </linearGradient>
         </defs>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={stroke} />
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke={`url(#ringGrad-${uid})`} strokeWidth={stroke} strokeLinecap="round"
-                strokeDasharray={c} strokeDashoffset={c - c * (pct / 100)} transform={`rotate(-90 ${cx} ${cy})`}
-                style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease",
-                         filter: `drop-shadow(0 0 5px ${color}99)` }} />
+        {!isNeutral && (
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={`url(#ringGrad-${uid})`} strokeWidth={stroke} strokeLinecap="round"
+                  strokeDasharray={c} strokeDashoffset={c - c * (pct / 100)} transform={`rotate(-90 ${cx} ${cy})`}
+                  style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease",
+                           filter: `drop-shadow(0 0 5px ${color}99)` }} />
+        )}
+        {isNeutral && (
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
+                  strokeDasharray="4 5" strokeOpacity="0.55" />
+        )}
         {/* velo lucido: piccolo arco più chiaro in alto, per dare tridimensionalità */}
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.4"
-                strokeWidth={Math.max(1.5, stroke * 0.22)} strokeLinecap="round"
-                strokeDasharray={`${c * 0.12} ${c}`} strokeDashoffset={c * 0.06} transform={`rotate(-90 ${cx} ${cy})`} />
+        {!isNeutral && (
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.4"
+                  strokeWidth={Math.max(1.5, stroke * 0.22)} strokeLinecap="round"
+                  strokeDasharray={`${c * 0.12} ${c}`} strokeDashoffset={c * 0.06} transform={`rotate(-90 ${cx} ${cy})`} />
+        )}
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span style={{ fontSize: size > 60 ? "1.05rem" : "0.85rem", fontWeight: 700, color: "var(--ink)", transition: "color 0.3s ease" }}>{pct}%</span>
+        <span style={{ fontSize: size > 60 ? "1.05rem" : "0.85rem", fontWeight: 700, color: isNeutral ? "var(--ink-2)" : "var(--ink)", transition: "color 0.3s ease" }}>
+          {isNeutral ? "n/d" : `${pct}%`}
+        </span>
       </div>
     </div>
   );
@@ -808,7 +821,7 @@ function ComplianceRings({ rings, onSelect }) {
   return (
     <div className="grid grid-cols-3 gap-3">
       {rings.map((r) => {
-        const tier = complianceTier(r.pct);
+        const tier = r.pct == null ? { color: "var(--ink-2)", label: "n/d" } : complianceTier(r.pct);
         return (
           <button key={r.id} onClick={() => onSelect(r.id)}
                   className="flex flex-col items-center gap-2 transition-transform active:scale-95">
@@ -827,7 +840,8 @@ function ComplianceRings({ rings, onSelect }) {
    sfumato, dettaglio del singolo reparto in un colpo d'occhio. */
 function CompliancePopup({ ring, onClose }) {
   if (!ring) return null;
-  const tier = complianceTier(ring.pct);
+  const isNeutral = ring.pct == null;
+  const tier = isNeutral ? { color: "var(--ink-2)", label: "Nessun dato" } : complianceTier(ring.pct);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
          style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
@@ -840,8 +854,8 @@ function CompliancePopup({ ring, onClose }) {
           </p>
           <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
         </div>
-        <p style={{ fontSize: "2.6rem", fontWeight: 700, color: tier.color, lineHeight: 1 }}>{ring.pct}%</p>
-        <p className="meta mb-4 mt-1">{tier.label} · media ultimi 7 giorni</p>
+        <p style={{ fontSize: "2.6rem", fontWeight: 700, color: tier.color, lineHeight: 1 }}>{isNeutral ? "n/d" : `${ring.pct}%`}</p>
+        <p className="meta mb-4 mt-1">{isNeutral ? tier.label : `${tier.label} · media ultimi 7 giorni`}</p>
         <div className="space-y-2">
           {ring.details.map((d) => (
             <div key={d.label} className="inner flex items-center justify-between px-4 py-2.5">
@@ -1346,19 +1360,44 @@ export function HomeDashboard({
   const recoveryPain7 = [...RECOVERY_PAIN_6D, 1]; // oggi: nessun dolore segnalato (default)
   const recoveryPctComputed = recoveryWeekScore(recoverySleep7, recoverySteps7, recoveryPain7);
 
-  const trainPct = trainOverride ?? trainPctComputed;
+  // Cerchio Allenamento reale: STESSA formula di ClientDetail (coach), mai
+  // calcolata due volte — vedi computeTrainingCompliance in coachingData.js.
+  // Il simulatore di test (trainOverride) resta solo per la preview demo:
+  // sovrascrivere un numero reale con uno slider di prova sarebbe fuorviante.
+  const isRealMode = Boolean(supabase && userId);
+  const [realTrainCompliance, setRealTrainCompliance] = useState(null); // null = non ancora caricato
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    computeTrainingCompliance(supabase, userId)
+      .then((r) => { if (!cancelled) setRealTrainCompliance(r); })
+      .catch((err) => {
+        console.error("PERFORM: errore calcolo cerchio Allenamento", err);
+        if (!cancelled) setRealTrainCompliance({ status: "neutral", pct: null, completionPct: null, progression: "neutral" });
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
+
+  const trainPct = isRealMode ? (realTrainCompliance?.pct ?? null) : (trainOverride ?? trainPctComputed);
   const nutriPct = nutriOverride ?? nutriPctComputed;
   const recoveryPct = recoveryOverride ?? recoveryPctComputed;
   const recoveryTrackedDays = recoverySleep7.filter((h) => h > 0).length;
 
+  const progressionLabel = { positive: "In crescita", negative: "In calo", neutral: "Stabile" };
+
   const complianceRings = [
     {
       id: "train", label: "Allenamento", icon: Dumbbell, pct: trainPct,
-      details: [
-        { label: "Serie completate oggi", value: day.isTraining ? `${todayCompletedSets} / ${todayExpectedSets}` : "Riposo" },
-        { label: "Media 7 giorni", value: `${trainPctComputed}%` },
-        { label: "Diari carichi compilati (storico)", value: "6 / 7" },
-      ],
+      details: isRealMode
+        ? [
+            { label: "Completamento questa settimana", value: realTrainCompliance?.completionPct != null ? `${realTrainCompliance.completionPct}%` : "…" },
+            { label: "Progressione carichi vs settimana scorsa", value: realTrainCompliance ? progressionLabel[realTrainCompliance.progression] : "…" },
+          ]
+        : [
+            { label: "Serie completate oggi", value: day.isTraining ? `${todayCompletedSets} / ${todayExpectedSets}` : "Riposo" },
+            { label: "Media 7 giorni", value: `${trainPctComputed}%` },
+            { label: "Diari carichi compilati (storico)", value: "6 / 7" },
+          ],
     },
     {
       id: "nutri", label: "Alimentazione", icon: Salad, pct: nutriPct,
@@ -1509,11 +1548,15 @@ export function HomeDashboard({
           </div>
         </div>
 
-        {/* simulatore di test: solo per provare rapidamente i colori/soglie */}
+        {/* simulatore di test: solo per provare rapidamente i colori/soglie —
+            nascosto in modalità reale, non serve (e non avrebbe più effetto
+            sul cerchio Allenamento, calcolato davvero) a un cliente vero. */}
+        {!isRealMode && (
         <button onClick={() => setRingTestOpen((v) => !v)} className="text-xs mb-4" style={{ color: "var(--ink-2)" }}>
           🧪 {ringTestOpen ? "Nascondi simulatore" : "Simula percentuali (solo test)"}
         </button>
-        {ringTestOpen && (
+        )}
+        {!isRealMode && ringTestOpen && (
           <div className="spring-in rounded-2xl p-4 mb-4 space-y-4"
                style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
             {[

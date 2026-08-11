@@ -184,7 +184,7 @@ const STATUS_META = {
 import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
-  assignNutritionTarget, saveWeekSupplements,
+  assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -1469,16 +1469,21 @@ function ClientRow({ client, onOpen }) {
 
 /* ------------------------------- CRUSCOTTO ALLARMI -------------------------- */
 function ComplianceRing({ label, value }) {
-  const pct = Math.round(value * 100);
-  const color = value >= 0.75 ? "#10B981" : value >= 0.5 ? "#F0A020" : "#DC2626";
+  // value === null → niente da misurare (es. nessun esercizio assegnato
+  // questa settimana): stato neutro esplicito, non uno 0% rosso allarmante.
+  const isNeutral = value == null;
+  const pct = isNeutral ? null : Math.round(value * 100);
+  const color = isNeutral ? "#ADB5BD" : value >= 0.75 ? "#10B981" : value >= 0.5 ? "#F0A020" : "#DC2626";
   const R = 22, C = 2 * Math.PI * R;
   return (
     <div className="flex flex-col items-center gap-1.5">
       <svg width="56" height="56" style={{ transform: "rotate(-90deg)" }}>
         <circle cx="28" cy="28" r={R} fill="none" stroke="#E9ECEF" strokeWidth="5" />
-        <circle cx="28" cy="28" r={R} fill="none" stroke={color} strokeWidth="5" strokeDasharray={C} strokeDashoffset={C * (1 - value)} strokeLinecap="round" />
+        {isNeutral
+          ? <circle cx="28" cy="28" r={R} fill="none" stroke={color} strokeWidth="5" strokeDasharray="4 5" strokeOpacity="0.6" />
+          : <circle cx="28" cy="28" r={R} fill="none" stroke={color} strokeWidth="5" strokeDasharray={C} strokeDashoffset={C * (1 - value)} strokeLinecap="round" />}
       </svg>
-      <span className="font-data text-xs font-bold" style={{ color, marginTop: -40 }}>{pct}%</span>
+      <span className="font-data text-xs font-bold" style={{ color, marginTop: -40 }}>{isNeutral ? "n/d" : `${pct}%`}</span>
       <span className="c-label mt-6">{label}</span>
     </div>
   );
@@ -3195,8 +3200,30 @@ function RecoveryDashboard({ client }) {
 
 
 function BioritmiGrafici({ client }) {
+  const { supabase, isRealMode } = useContext(CoachDataContext);
   const bio = useMemo(() => buildBioHistory(client), [client]);
   const fmtWeek = (p) => { const d = new Date(p.date); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
+
+  // Cerchio Allenamento reale: STESSA formula di Home cliente (05_HomeDashboard.jsx),
+  // mai calcolata due volte — vedi computeTrainingCompliance in coachingData.js.
+  // ComplianceRing vuole un valore 0-1 (non 0-100): conversione fatta solo qui,
+  // al confine, il resto del calcolo resta identico in entrambi i posti.
+  const [trainCompliance, setTrainCompliance] = useState(null);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    computeTrainingCompliance(supabase, client.id)
+      .then((r) => { if (!cancelled) setTrainCompliance(r); })
+      .catch((err) => {
+        console.error("PERFORM: errore calcolo cerchio Allenamento", err);
+        if (!cancelled) setTrainCompliance({ status: "neutral", pct: null, completionPct: null, progression: "neutral" });
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+  const trainRingValue = isRealMode
+    ? (trainCompliance?.pct != null ? trainCompliance.pct / 100 : null)
+    : client.rings.allenamento;
+
   return (
     <div className="space-y-4">
       {client.evening.doloreGrado > 0 && (
@@ -3213,7 +3240,7 @@ function BioritmiGrafici({ client }) {
       <div className="c-card">
         <p className="c-label mb-3">Compliance diari</p>
         <div className="grid grid-cols-3 gap-3">
-          <ComplianceRing label="Allenamento" value={client.rings.allenamento} />
+          <ComplianceRing label="Allenamento" value={trainRingValue} />
           <ComplianceRing label="Alimentazione" value={client.rings.alimentazione} />
           <ComplianceRing label="Recupero" value={client.rings.recupero} />
         </div>
