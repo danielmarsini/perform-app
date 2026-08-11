@@ -4725,10 +4725,10 @@ export default function HomePreview({
             id: r.id,               // id reale della riga workout_logs, serve per salvare il log dopo
             name: r.exercise_name,
             sets: r.sets_count ?? 3,
-            reps: "—",               // lo schema non registra un range di ripetizioni target, solo quelle svolte
-            rirTarget: "—",          // idem per l'RIR target: lo schema registra solo l'RIR realmente svolto
+            reps: r.reps_target || "—",   // prescrizione del coach (SCHEMA_v17); "—" solo se davvero non impostata
+            rirTarget: "—",                // lo schema non ha una colonna di RIR target: solo il rir realmente svolto
             technique: r.intensity_technique || "",
-            rests: Array.from({ length: r.sets_count ?? 3 }, () => 120),
+            rests: Array.from({ length: r.sets_count ?? 3 }, () => r.rest_seconds ?? 120),
             history: await fetchExerciseHistory(supabaseProp, userId, r.exercise_name),
             splitLabel: r.split_label,
           })));
