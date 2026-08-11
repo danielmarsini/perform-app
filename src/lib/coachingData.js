@@ -157,7 +157,7 @@ export async function assignNutritionTarget(supabase, {
     user_id: clientId,
     day_type: dayType,
     kcal, protein, carbs, fat,
-    effective_from: effectiveFrom || new Date().toISOString().slice(0, 10),
+    effective_from: effectiveFrom || toLocalISODate(),
     set_by: coachId,
   });
   if (error) throw error;

@@ -184,6 +184,7 @@ const STATUS_META = {
 import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
+  assignNutritionTarget,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -2102,8 +2103,39 @@ function MealCard({ meal, onChange, onRemove }) {
    reale col target impostato da obiettivo+anamnesi (sezione sopra, oppure
    dalla Generazione Predittiva) — mai due numeri scollegati. */
 function WeekDietEditor({ week, onChange, client }) {
+  const { supabase, isRealMode, coachId } = useContext(CoachDataContext);
   const [profile, setProfile] = useState("ON");
   const current = week.diet[profile];
+
+  // Scrive i target ON/OFF su nutrition_targets: stessa tabella che
+  // fetchBothNutritionTargets legge lato Home cliente. A differenza
+  // dell'allenamento, qui non c'è (ancora) un fetch reale in lettura per
+  // quest'editor — week.diet resta lo stato locale di sempre, "Salva
+  // modifiche" si limita a spingere su Supabase i due target correnti.
+  const [dietSaving, setDietSaving] = useState(false);
+  const [dietError, setDietError] = useState("");
+  const [dietSaved, setDietSaved] = useState(false);
+  const saveDiet = async () => {
+    if (!isRealMode) return;
+    setDietSaving(true);
+    setDietError("");
+    try {
+      await Promise.all(["ON", "OFF"].map((p) => {
+        const t = week.diet[p].target;
+        return assignNutritionTarget(supabase, {
+          coachId, clientId: client.id, dayType: p.toLowerCase(),
+          kcal: kcalFromMacros(t.p, t.c, t.f), protein: t.p, carbs: t.c, fat: t.f,
+        });
+      }));
+      setDietSaved(true);
+      setTimeout(() => setDietSaved(false), 2500);
+    } catch (err) {
+      console.error("PERFORM: errore salvataggio nutrition_targets", err);
+      setDietError(err.message || "Non sono riuscito a salvare la dieta.");
+    } finally {
+      setDietSaving(false);
+    }
+  };
 
   const updTarget = (k, v) => {
     const target = { ...current.target, [k]: Math.max(0, Number(v) || 0) };
@@ -2217,6 +2249,24 @@ function WeekDietEditor({ week, onChange, client }) {
       <button onClick={addMeal} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 mb-5">
         <Plus size={14} /> Nuovo pasto (nome, orario, alimenti)
       </button>
+
+      {isRealMode && (
+        <div className="c-card mb-5">
+          {dietError && (
+            <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
+              {dietError}
+            </p>
+          )}
+          <button onClick={saveDiet} disabled={dietSaving} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium">
+            {dietSaving ? "Salvataggio…" : "Salva modifiche"}
+          </button>
+          {dietSaved && (
+            <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block mt-3" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
+              ✓ Dieta salvata
+            </p>
+          )}
+        </div>
+      )}
 
       <LiveMicronutrientGrid meals={current.meals} client={client} />
       <RecoveryDashboard client={client} />
