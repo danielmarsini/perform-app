@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, logWorkoutSet } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -2130,7 +2130,10 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const [plates, setPlates] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [videoUrl, setVideoUrl] = useState(null);
-  const [doneRows, setDoneRows] = useState(() => rows.map(() => false));
+  // Le righe già precompilate da workout_sets (vedi hydration nel wrapper)
+  // partono spuntate — altrimenti riaprendo l'app le serie già registrate
+  // apparirebbero non completate anche se i dati sono già salvati davvero.
+  const [doneRows, setDoneRows] = useState(() => rows.map((r) => r.kg !== "" && r.reps !== "" && r.rir !== ""));
   const [timer, setTimer] = useState(null); // { total, remaining } in secondi
 
   const isMaxEffort = index < 2;
@@ -4718,23 +4721,49 @@ export default function HomePreview({
           if (!byDate.has(r.date)) byDate.set(r.date, []);
           byDate.get(r.date).push(r);
         });
+        // Serie già registrate (workout_sets) da precompilare in `sets`, per
+        // esercizio: senza questo il salvataggio funziona ma riaprendo l'app
+        // i campi kg/reps/rir risultano vuoti — i dati ci sono nel DB, la UI
+        // semplicemente non li rileggeva mai all'avvio. Costruito nella STESSA
+        // callback di setAssignedWeek (non in un useEffect separato) apposta:
+        // così arrivano nello stesso render in cui ExerciseCard monta la
+        // prima volta con dati reali, ed è quel render a decidere lo stato
+        // iniziale delle checkbox "serie completata" — un tick dopo sarebbe
+        // troppo tardi, l'useState di ExerciseCard non si aggiorna da solo.
+        const setsPatch = {};
         const week = await Promise.all(weekDates.map(async (date) => {
           const dayRows = byDate.get(date);
           if (!dayRows || dayRows.length === 0) return null;
-          const exercisesForDay = await Promise.all(dayRows.map(async (r) => ({
-            id: r.id,               // id reale della riga workout_logs, serve per salvare il log dopo
-            name: r.exercise_name,
-            sets: r.sets_count ?? 3,
-            reps: r.reps_target || "—",   // prescrizione del coach (SCHEMA_v17); "—" solo se davvero non impostata
-            rirTarget: "—",                // lo schema non ha una colonna di RIR target: solo il rir realmente svolto
-            technique: r.intensity_technique || "",
-            rests: Array.from({ length: r.sets_count ?? 3 }, () => r.rest_seconds ?? 120),
-            history: await fetchExerciseHistory(supabaseProp, userId, r.exercise_name),
-            splitLabel: r.split_label,
-          })));
+          const exercisesForDay = await Promise.all(dayRows.map(async (r) => {
+            const [history, loggedSets] = await Promise.all([
+              fetchExerciseHistory(supabaseProp, userId, r.exercise_name),
+              fetchWorkoutSets(supabaseProp, r.id),
+            ]);
+            if (loggedSets.length > 0) {
+              setsPatch[r.id] = Array.from({ length: r.sets_count ?? 3 }, (_, i) => {
+                const logged = loggedSets.find((s) => s.set_number === i + 1);
+                return logged
+                  ? { kg: logged.load_kg ?? "", reps: logged.reps_completed ?? "", rir: logged.rir ?? "" }
+                  : { kg: "", reps: "", rir: "" };
+              });
+            }
+            return {
+              id: r.id,               // id reale della riga workout_logs, serve per salvare il log dopo
+              name: r.exercise_name,
+              sets: r.sets_count ?? 3,
+              reps: r.reps_target || "—",   // prescrizione del coach (SCHEMA_v17); "—" solo se davvero non impostata
+              rirTarget: "—",                // lo schema non ha una colonna di RIR target: solo il rir realmente svolto
+              technique: r.intensity_technique || "",
+              rests: Array.from({ length: r.sets_count ?? 3 }, () => r.rest_seconds ?? 120),
+              history,
+              splitLabel: r.split_label,
+            };
+          }));
           return { label: dayRows[0].split_label || "Scheda di oggi", exercises: exercisesForDay };
         }));
-        if (!cancelled) setAssignedWeek(week);
+        if (cancelled) return;
+        setAssignedWeek(week);
+        if (Object.keys(setsPatch).length > 0) setSets((prev) => ({ ...setsPatch, ...prev }));
       })
       .catch((err) => {
         console.error("PERFORM: errore lettura workout_logs assegnati", err);
