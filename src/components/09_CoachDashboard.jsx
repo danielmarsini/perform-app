@@ -184,7 +184,7 @@ const STATUS_META = {
 import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
-  assignNutritionTarget,
+  assignNutritionTarget, saveWeekSupplements,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -2277,7 +2277,8 @@ function WeekDietEditor({ week, onChange, client }) {
 /* Timing dell'integrazione: sezioni per momento della giornata, ognuna
    con titolo modificabile (anche personalizzato) e la propria lista di
    integratori con dose. */
-function WeekSuppsEditor({ week, onChange }) {
+function WeekSuppsEditor({ week, onChange, client }) {
+  const { supabase, isRealMode, coachId } = useContext(CoachDataContext);
   const updTitle = (si, v) => onChange({ ...week, supplements: week.supplements.map((s, j) => (j === si ? { ...s, title: v } : s)) });
   const removeSection = (si) => onChange({ ...week, supplements: week.supplements.filter((_, j) => j !== si) });
   const addSection = () => onChange({ ...week, supplements: [...week.supplements, { id: uid(), title: "Nuova sezione", items: [] }] });
@@ -2288,6 +2289,28 @@ function WeekSuppsEditor({ week, onChange }) {
   });
   const removeItem = (si, ii) => onChange({ ...week, supplements: week.supplements.map((s, j) => (j !== si ? s : { ...s, items: s.items.filter((_, k2) => k2 !== ii) })) });
   const addItem = (si) => onChange({ ...week, supplements: week.supplements.map((s, j) => (j !== si ? s : { ...s, items: [...s.items, { id: uid(), name: "", dose: "" }] })) });
+
+  // Sostituisce l'intero protocollo del cliente (delete + insert, vedi nota
+  // in saveWeekSupplements): niente storico da preservare qui, a differenza
+  // dell'allenamento.
+  const [suppSaving, setSuppSaving] = useState(false);
+  const [suppError, setSuppError] = useState("");
+  const [suppSaved, setSuppSaved] = useState(false);
+  const saveSupplements = async () => {
+    if (!isRealMode) return;
+    setSuppSaving(true);
+    setSuppError("");
+    try {
+      await saveWeekSupplements(supabase, coachId, client.id, week.supplements);
+      setSuppSaved(true);
+      setTimeout(() => setSuppSaved(false), 2500);
+    } catch (err) {
+      console.error("PERFORM: errore salvataggio prescribed_supplements", err);
+      setSuppError(err.message || "Non sono riuscito a salvare il protocollo.");
+    } finally {
+      setSuppSaving(false);
+    }
+  };
 
   return (
     <div>
@@ -2316,6 +2339,24 @@ function WeekSuppsEditor({ week, onChange }) {
         <Plus size={14} /> Nuova sezione (mattina, spuntino, pre/intra/post-workout…)
       </button>
       </div>
+
+      {isRealMode && (
+        <div className="c-card mt-5">
+          {suppError && (
+            <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
+              {suppError}
+            </p>
+          )}
+          <button onClick={saveSupplements} disabled={suppSaving} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium">
+            {suppSaving ? "Salvataggio…" : "Salva modifiche"}
+          </button>
+          {suppSaved && (
+            <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block mt-3" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
+              ✓ Protocollo salvato
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2646,7 +2687,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         )
       )}
       {section === "dieta" && <WeekDietEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
-      {section === "integratori" && <WeekSuppsEditor week={week} onChange={(w) => setWeek(() => w)} />}
+      {section === "integratori" && <WeekSuppsEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
     </div>
   );
 }

@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -1262,6 +1262,7 @@ export function HomeDashboard({
   userPlan, // 'free' | 'performance_pack' | 'full_coaching' — letta da Supabase, qui simulata
   remSleep, onSetRemSleep, stressLevel, onSetStressLevel,
   caffeineMg, onSetCaffeineMg, caffeineTime, onSetCaffeineTime,
+  supabase, userId, // solo per il protocollo integratori reale (prescribed_supplements)
 }) {
   const [screen, setScreen] = useState("dash");   // dash | workout | nutrition | recovery
   const [checklistOpen, setChecklistOpen] = useState(false);
@@ -1730,7 +1731,8 @@ export function HomeDashboard({
         {back("Integrazione e Timing")}
         <SupplementsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
                            isPro={!!access.pro} isPaid={!!access.paid} isTrainingDay={isTrainingDay}
-                           onUpgrade={onUpgrade} onCoachSync={onCoachSync} />
+                           onUpgrade={onUpgrade} onCoachSync={onCoachSync}
+                           supabase={supabase} userId={userId} />
       </div>
     );
   }
@@ -4080,9 +4082,9 @@ function NutritionTargetsPanel({ accent, accentSoft, accentText, targetOn, targe
    Integrazione e Timing: FREE → diario libero + wiki; PRO → piano bloccato + XP.
    ------------------------------------------------------------------------- */
 
-function SupplementsPanel({ accent, accentSoft, accentText, isPro, isPaid, isTrainingDay, onUpgrade, onCoachSync }) {
+function SupplementsPanel({ accent, accentSoft, accentText, isPro, isPaid, isTrainingDay, onUpgrade, onCoachSync, supabase, userId }) {
   return isPro
-    ? <SupplementsPlanLocked accent={accent} accentSoft={accentSoft} accentText={accentText} onCoachSync={onCoachSync} />
+    ? <SupplementsPlanLocked accent={accent} accentSoft={accentSoft} accentText={accentText} onCoachSync={onCoachSync} supabase={supabase} userId={userId} />
     : <SupplementsFreeDiary accent={accent} accentSoft={accentSoft} accentText={accentText} isPaid={isPaid} isTrainingDay={isTrainingDay} onUpgrade={onUpgrade} onCoachSync={onCoachSync} />;
 }
 
@@ -4392,17 +4394,57 @@ function SupplementWikiBrowser({ accent }) {
   );
 }
 
-function SupplementsPlanLocked({ accent, accentSoft, accentText, onCoachSync }) {
+function SupplementsPlanLocked({ accent, accentSoft, accentText, onCoachSync, supabase, userId }) {
   const [checked, setChecked] = useState({});
-  const toggle = (momentId, i) => {
-    const key = `${momentId}-${i}`;
+  const isRealMode = Boolean(supabase && userId);
+
+  // Protocollo reale (prescribed_supplements), raggruppato per `moment` come
+  // l'ha scritto il coach — testo libero, non i 4 SUPP_MOMENTS fissi della
+  // demo (il coach può rinominare le sezioni in WeekSuppsEditor). Se
+  // supabase/userId non arrivano (preview isolata), resta la lista demo
+  // SUPP_PLAN_PRO di sempre; se arrivano ma il coach non ha ancora
+  // prescritto nulla, mostra uno stato vuoto esplicito — mai la demo al
+  // posto di un dato reale mancante.
+  const [prescribed, setPrescribed] = useState(null); // null = non ancora caricato (solo isRealMode)
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    fetchPrescribedSupplements(supabase, userId)
+      .then((rows) => { if (!cancelled) setPrescribed(rows); })
+      .catch((err) => {
+        console.error("PERFORM: errore lettura prescribed_supplements", err);
+        if (!cancelled) setPrescribed([]);
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
+
+  const realGroups = useMemo(() => {
+    if (!prescribed) return [];
+    const byMoment = new Map();
+    prescribed.forEach((it) => {
+      if (!byMoment.has(it.moment)) byMoment.set(it.moment, []);
+      byMoment.get(it.moment).push(it);
+    });
+    return Array.from(byMoment.entries()).map(([moment, items]) => ({ id: moment, label: moment, items }));
+  }, [prescribed]);
+
+  const groups = isRealMode
+    ? realGroups
+    : SUPP_MOMENTS.map((m) => ({ id: m.id, label: m.label, icon: m.icon, items: SUPP_PLAN_PRO[m.id].map((it, i) => ({ id: `${m.id}-${i}`, ...it })) }));
+
+  const toggle = (momentId, itemId) => {
+    const key = `${momentId}-${itemId}`;
     setChecked((c) => ({ ...c, [key]: !c[key] }));
-    onCoachSync && onCoachSync({ type: "supplement", momentId, i });
+    onCoachSync && onCoachSync({ type: "supplement", momentId, id: itemId });
   };
-  const totalItems = SUPP_MOMENTS.reduce((n, m) => n + SUPP_PLAN_PRO[m.id].length, 0);
-  const doneItems = Object.values(checked).filter(Boolean).length;
+  const totalItems = groups.reduce((n, g) => n + g.items.length, 0);
+  const doneItems = groups.reduce((n, g) => n + g.items.filter((it) => checked[`${g.id}-${it.id}`]).length, 0);
   const allDone = totalItems > 0 && doneItems === totalItems;
   const xpEarned = allDone ? 50 : 0;
+
+  if (isRealMode && prescribed === null) {
+    return <p className="body px-1">Caricamento protocollo…</p>;
+  }
 
   return (
     <div className="spring-in">
@@ -4414,50 +4456,59 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, onCoachSync }) 
           voce quando l'assumi: gli XP si sbloccano solo completando <b>tutto</b> il protocollo del giorno,
           così chi ha più integratori prescritti non guadagna più punti di chi ne ha meno.
         </p>
-        <div className="inner px-4 py-3.5 flex items-center justify-between gap-3">
-          <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
-            {doneItems} / {totalItems} completate oggi
-          </span>
-          <span className="font-data text-sm" style={{ color: allDone ? accentText : "var(--ink-2)", fontWeight: 700 }}>
-            {allDone ? `+${xpEarned} XP sbloccati` : `+50 XP se completi tutto`}
-          </span>
-        </div>
+        {totalItems > 0 && (
+          <div className="inner px-4 py-3.5 flex items-center justify-between gap-3">
+            <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
+              {doneItems} / {totalItems} completate oggi
+            </span>
+            <span className="font-data text-sm" style={{ color: allDone ? accentText : "var(--ink-2)", fontWeight: 700 }}>
+              {allDone ? `+${xpEarned} XP sbloccati` : `+50 XP se completi tutto`}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="space-y-4">
-        {SUPP_MOMENTS.map((m) => (
-          <div key={m.id} className="card">
-            <p className="h2 flex items-center gap-2.5 mb-3">
-              <span className="inline-flex items-center justify-center rounded-full"
-                    style={{ width: 30, height: 30, backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-                <span style={{ fontSize: "0.95rem", lineHeight: 1, filter: "saturate(0.65) contrast(0.92)" }} aria-hidden="true">{m.icon}</span>
-              </span>
-              <span>{m.label}</span>
-            </p>
-            <div className="space-y-1.5">
-              {SUPP_PLAN_PRO[m.id].map((it, i) => {
-                const key = `${m.id}-${i}`;
-                const done = !!checked[key];
-                return (
-                  <button key={key} onClick={() => toggle(m.id, i)}
-                    className="inner w-full flex items-center gap-3 px-4 py-3 text-left transition-transform active:scale-[0.99]">
-                    {done ? <CheckCircle2 size={18} style={{ color: accentText }} className="shrink-0" />
-                          : <span className="shrink-0 rounded-full" style={{ width: 17, height: 17, border: "1.5px solid var(--ink-2)" }} />}
-                    <span className="min-w-0 flex-1">
-                      <span className="text-sm block truncate" style={{ color: "var(--ink)", fontWeight: 500,
-                              textDecoration: done ? "line-through" : "none", opacity: done ? 0.6 : 1 }}>
-                        {it.name} · {it.dose}
+      {totalItems === 0 ? (
+        <div className="card text-center py-8">
+          <p className="body">Il coach non ha ancora prescritto integratori.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {groups.map((g) => (
+            <div key={g.id} className="card">
+              <p className="h2 flex items-center gap-2.5 mb-3">
+                {g.icon && (
+                  <span className="inline-flex items-center justify-center rounded-full"
+                        style={{ width: 30, height: 30, backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+                    <span style={{ fontSize: "0.95rem", lineHeight: 1, filter: "saturate(0.65) contrast(0.92)" }} aria-hidden="true">{g.icon}</span>
+                  </span>
+                )}
+                <span>{g.label}</span>
+              </p>
+              <div className="space-y-1.5">
+                {g.items.map((it) => {
+                  const done = !!checked[`${g.id}-${it.id}`];
+                  return (
+                    <button key={it.id} onClick={() => toggle(g.id, it.id)}
+                      className="inner w-full flex items-center gap-3 px-4 py-3 text-left transition-transform active:scale-[0.99]">
+                      {done ? <CheckCircle2 size={18} style={{ color: accentText }} className="shrink-0" />
+                            : <span className="shrink-0 rounded-full" style={{ width: 17, height: 17, border: "1.5px solid var(--ink-2)" }} />}
+                      <span className="min-w-0 flex-1">
+                        <span className="text-sm block truncate" style={{ color: "var(--ink)", fontWeight: 500,
+                                textDecoration: done ? "line-through" : "none", opacity: done ? 0.6 : 1 }}>
+                          {it.name}{it.dose ? ` · ${it.dose}` : ""}
+                        </span>
+                        {it.note && <span className="meta block text-xs mt-0.5">{it.note}</span>}
                       </span>
-                      <span className="meta block text-xs mt-0.5">{it.note}</span>
-                    </span>
-                    <Lock size={12} style={{ color: "var(--ink-2)" }} className="shrink-0" />
-                  </button>
-                );
-              })}
+                      <Lock size={12} style={{ color: "var(--ink-2)" }} className="shrink-0" />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       <div className="mt-4">
         <SupplementWikiBrowser accent={accent} />
@@ -5012,6 +5063,7 @@ export default function HomePreview({
           fullHistory={fullHistory}
           weekPlan={weekPlan} musclesOf={MUSCLES_OF} missedDayIdx={-1}
           access={access}
+          supabase={supabaseProp} userId={userId}
           userPlan={planTier === "FREE" ? "free" : planTier === "BASE" ? "performance_pack" : "full_coaching"}
           onSetSleep={(k, v) => setSleep((s) => {
             const next = { ...s, [k]: v };

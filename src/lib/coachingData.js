@@ -70,6 +70,21 @@ export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDat
   return data ?? [];
 }
 
+// Protocollo integratori prescritto dal coach (prescribed_supplements),
+// raggruppato per momento della giornata così com'è già ordinato dal coach
+// (sort_order dentro lo stesso moment). Sola lettura lato cliente — la
+// scrittura vive solo in saveWeekSupplements, lato coach.
+export async function fetchPrescribedSupplements(supabase, userId) {
+  const { data, error } = await supabase
+    .from("prescribed_supplements")
+    .select("id, moment, name, dose, sort_order")
+    .eq("user_id", userId)
+    .order("moment", { ascending: true })
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
 // Storico di un esercizio specifico (per il grafico/cronologia in HomeDashboard),
 // solo le sessioni realmente svolte (status='done'), più recenti prima.
 export async function fetchExerciseHistory(supabase, userId, exerciseName, limit = 8) {
@@ -149,6 +164,29 @@ export async function fetchClientSetHistory(supabase, userId, fromDateISO, toDat
 // Ogni RLS su queste tabelle richiede is_coach() per l'insert su nutrition_targets
 // e per scrivere workout_logs a nome di un altro utente: se chi chiama non è il
 // coach, Supabase stessa rifiuta la scrittura (non serve ricontrollarlo qui).
+
+// Scrive il protocollo integratori di un cliente: cancella tutto quello che
+// c'era prima e reinserisce le sezioni correnti. A differenza di
+// saveWeekWorkout non serve un confronto per-riga: qui non esiste uno storico
+// da preservare (reps_completed/load_kg/rir per gli esercizi), "preso oggi"
+// resta uno stato locale del cliente lato UI, non collegato a questa tabella —
+// quindi un delete+insert pulito è corretto, non distruttivo.
+export async function saveWeekSupplements(supabase, coachId, clientId, sections) {
+  const { error: deleteError } = await supabase.from("prescribed_supplements").delete().eq("user_id", clientId);
+  if (deleteError) throw deleteError;
+
+  const rows = [];
+  (sections ?? []).forEach((sec) => {
+    (sec.items ?? []).forEach((it, i) => {
+      if (!it.name || !it.name.trim()) return;
+      rows.push({ user_id: clientId, coach_id: coachId, moment: sec.title, name: it.name.trim(), dose: it.dose || null, sort_order: i });
+    });
+  });
+  if (rows.length === 0) return;
+
+  const { error: insertError } = await supabase.from("prescribed_supplements").insert(rows);
+  if (insertError) throw insertError;
+}
 
 export async function assignNutritionTarget(supabase, {
   coachId, clientId, dayType, kcal, protein, carbs, fat, effectiveFrom,
