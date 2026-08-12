@@ -291,6 +291,8 @@ export default function App() {
           accountEmail={session.user.email || ""}
           notifications={notifications}
           onToggleNotification={(k) => setNotifications((n) => ({ ...n, [k]: !n[k] }))}
+          supabase={supabase}
+          userId={session.user.id}
           onOpenBillingPortal={() => {
             // TODO produzione: redirect verso la Customer Portal Session di Stripe
             // creata da una Edge Function server-side (mai la secret key sul client).

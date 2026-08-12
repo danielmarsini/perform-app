@@ -39,6 +39,7 @@ import {
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy,
 } from "lucide-react";
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises } from "../lib/coachingData.js";
+import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import { WeeklyCheckModal } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
@@ -1029,10 +1030,36 @@ export function SettingsDrawer({
   currentPlan, planRenewsOn, accountEmail,
   notifications, onToggleNotification,
   onOpenBillingPortal, onChangePlan, onDeleteAccount, onLogout,
+  supabase, userId,   // solo per il toggle reale "Promemoria streak (push)"
 }) {
   const t = translations[lang] || translations.it;
   const [tab, setTab] = useState("aspetto");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const isRealMode = Boolean(supabase && userId);
+
+  // Stato reale del push: letto dal browser (non da Supabase) perché
+  // l'unica fonte di verità su "è davvero attivo qui" è l'abbonamento del
+  // Service Worker di QUESTO dispositivo — una riga su push_subscriptions
+  // potrebbe esistere per un altro device.
+  const [pushState, setPushState] = useState("checking"); // checking | on | off | unsupported | busy
+  useEffect(() => {
+    if (!open || !isRealMode) return;
+    if (!isPushSupported()) { setPushState("unsupported"); return; }
+    let cancelled = false;
+    getBrowserPushSubscription().then((sub) => { if (!cancelled) setPushState(sub ? "on" : "off"); });
+    return () => { cancelled = true; };
+  }, [open, isRealMode]);
+
+  const togglePush = async () => {
+    setPushState("busy");
+    if (pushState === "on") {
+      await unsubscribeFromPush(supabase, userId);
+      setPushState("off");
+      return;
+    }
+    const res = await subscribeToPush(supabase, userId);
+    setPushState(res.ok ? "on" : (res.reason === "denied" ? "off" : "unsupported"));
+  };
 
   if (!open) return null;
 
@@ -1108,6 +1135,20 @@ export function SettingsDrawer({
           {/* ---------------- NOTIFICHE ---------------- */}
           {tab === "notifiche" && (
             <div className="spring-in">
+              {isRealMode && (
+                <div className="card mb-4">
+                  <Toggle
+                    on={pushState === "on"}
+                    onClick={pushState === "busy" || pushState === "checking" || pushState === "unsupported" ? undefined : togglePush}
+                    label="Promemoria streak (push)"
+                    desc={
+                      pushState === "unsupported"
+                        ? "Non supportato su questo browser/dispositivo."
+                        : "Un avviso in serata se rischi di perdere lo streak di oggi — mai più di uno al giorno."
+                    }
+                  />
+                </div>
+              )}
               <p className="label mb-3">{t.notif.title}</p>
               <Toggle on={notifications.meals} onClick={() => onToggleNotification("meals")}
                 label={t.notif.meals} desc={t.notif.mealsDesc} />
@@ -1488,6 +1529,7 @@ export default function ClientProfileViewPreview({
           accountEmail={owner ? OWNER_EMAIL : profile.email}
           notifications={notif}
           onToggleNotification={(k) => setNotif((n) => ({ ...n, [k]: !n[k] }))}
+          supabase={supabase} userId={userId}
           onOpenBillingPortal={() => {}}
           onChangePlan={(id) => setPlan(id)}
           onDeleteAccount={() => {}}
