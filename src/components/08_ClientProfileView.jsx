@@ -38,7 +38,8 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins } from "../lib/coachingData.js";
+import { WeeklyCheckModal } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
    1 · INTERNAZIONALIZZAZIONE
@@ -720,6 +721,7 @@ export function ClientProfileView({
   exercises,                                   // [{ id, name, muscleGroup, compound, sessions:[{week,date,kg,reps}] }]
   favoriteExerciseIds, onToggleFavoriteExercise,
   onSaveProfile, onOpenSettings, nicknameTaken,
+  onOpenManualCheck,   // se passato, mostra il pulsante "Registra ora" nell'Archivio Check
 }) {
   const t = translations[lang] || translations.it;
   const [editing, setEditing] = useState(false);
@@ -856,7 +858,16 @@ export function ClientProfileView({
                title={<GradientText gender={gender}>{t.archive.title}</GradientText>}
                openId={openSection} setOpenId={setOpenSection}
                sub={weightPoints?.length ? t.archive.subReady(weightPoints.length) : t.archive.subEmpty}>
-        <p className="label mb-2">{t.archive.weightTrend}</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="label mb-0">{t.archive.weightTrend}</p>
+          {onOpenManualCheck && (
+            <button onClick={onOpenManualCheck}
+              className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs"
+              style={{ border: `1px solid ${accentText}`, color: accentText, fontWeight: 600 }}>
+              + Registra ora
+            </button>
+          )}
+        </div>
         <WeightChart points={weightPoints} accent={accent} t={t.archive} />
 
         <p className="label mt-6 mb-2">{t.archive.photoGallery}</p>
@@ -1279,14 +1290,32 @@ export default function ClientProfileViewPreview({
   }, [isRealMode, supabase, userId]);
   const realLevelInfo = isRealMode ? xpToLevelInfo(realXpStreak?.xpTotal ?? 0) : null;
 
+  // Trend peso reale: legge i check reali (checkins, coachingData.js) invece
+  // dei 6 punti fissi della demo. Ricaricato dopo ogni "Registra ora" così
+  // il grafico riflette subito il nuovo check senza dover ricaricare la pagina.
+  const [realCheckins, setRealCheckins] = useState(null); // null = non ancora caricato
+  const [showManualCheck, setShowManualCheck] = useState(false);
+  const reloadCheckins = () => {
+    if (!isRealMode) return;
+    fetchCheckins(supabase, userId)
+      .then((rows) => setRealCheckins(rows))
+      .catch((err) => { console.error("PERFORM: errore caricamento check reali", err); setRealCheckins([]); });
+  };
+  useEffect(() => { reloadCheckins(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [isRealMode, supabase, userId]);
+
   // Oro Lucido Vivo per gli account uomo, Rosa Cipria Luminescente per le donne
   const accent = gender === "F" ? "#E5C1CD" : "#D4AF37";
   const accentText = gender === "F" ? "#9D6666" : "#8C6E33";
 
-  const weightPoints = [
+  const demoWeightPoints = [
     { label: "C1", kg: 89.6 }, { label: "C2", kg: 89.1 }, { label: "C3", kg: 88.7 },
     { label: "C4", kg: 88.2 }, { label: "C5", kg: 87.9 }, { label: "C6", kg: 87.4 },
   ];
+  const weightPoints = isRealMode
+    ? (realCheckins ?? [])
+        .filter((c) => c.weight != null)
+        .map((c) => ({ label: c.date.slice(5).replace("-", "/"), kg: Number(c.weight) }))
+    : demoWeightPoints;
   // Una foto al mese dal giorno dell'iscrizione (profile.joined_at: 2023-04-12)
   const checkPhotos = [
     { date: "2026-02-01", front: null, side: null, back: null },
@@ -1399,8 +1428,18 @@ export default function ClientProfileViewPreview({
           onSaveProfile={(d) => setProfile((p) => ({ ...p, ...d }))}
           onOpenSettings={onOpenSettingsProp ?? (() => setSettings(true))}
           nicknameTaken={(n) => ["SaraSteel", "LucaE"].some((x) => x.toLowerCase() === n.toLowerCase())}
+          onOpenManualCheck={isRealMode ? () => setShowManualCheck(true) : undefined}
         />
       </main>
+
+      {showManualCheck && (
+        <WeeklyCheckModal
+          accent={accent} accentText={accentText} gender={gender}
+          supabase={supabase} userId={userId}
+          onClose={() => setShowManualCheck(false)}
+          onSubmit={() => { setShowManualCheck(false); reloadCheckins(); }}
+        />
+      )}
 
       {/* Il drawer locale resta solo per la preview isolata: quando il componente
           è controllato da App.jsx, le Impostazioni globali (tema/lingua/piano/account)

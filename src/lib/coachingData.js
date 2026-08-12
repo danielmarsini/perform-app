@@ -860,6 +860,49 @@ export async function awardXpBonus(supabase, { userId, coachId, amount, reason }
 }
 
 /* ---------------------------------------------------------------------------
+   CHECK (peso/circonferenze/soggettivo) — Archivio Check reale
+   ---------------------------------------------------------------------------
+   Prima di questa funzione, WeeklyCheckModal (05_HomeDashboard.jsx)
+   simulava il salvataggio con un setTimeout: niente arrivava mai su
+   Supabase. Un solo punto di scrittura per sia il check settimanale
+   obbligatorio (domenica/lunedì) sia il pulsante "Registra ora" libero nel
+   Profilo — stesso form, stessa funzione, mai due percorsi diversi per lo
+   stesso dato. Nessun vincolo di unicità per data: un cliente può avere sia
+   il check di lunedì sia una registrazione manuale nello stesso giorno. */
+export async function saveCheckin(supabase, userId, checkin) {
+  const { error } = await supabase.from("checkins").insert({
+    user_id: userId,
+    date: toLocalISODate(),
+    weight: checkin.weight ?? null,
+    waist: checkin.waist ?? null,
+    chest: checkin.chest ?? null,
+    arm: checkin.arm ?? null,
+    thigh: checkin.thigh ?? null,
+    pain: checkin.pain ?? null,
+    stress: checkin.stress ?? null,
+    digestion: checkin.digestion ?? null,
+    sleep_quality: checkin.sleepQuality ?? null,
+    cycle_phase: checkin.cyclePhase ?? null,
+    has_photos: Boolean(checkin.photos?.front || checkin.photos?.side || checkin.photos?.back),
+  });
+  if (error) throw error;
+}
+
+// Cronologia check reali di un cliente, dal più vecchio al più recente (come
+// si aspetta WeightChart) — limite alto perché l'Archivio Check mostra
+// l'intero trend, non solo le ultime settimane.
+export async function fetchCheckins(supabase, userId, limit = 60) {
+  const { data, error } = await supabase
+    .from("checkins")
+    .select("date, weight, waist, chest, arm, thigh, pain, stress, digestion, sleep_quality, cycle_phase, has_photos")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).slice().reverse();
+}
+
+/* ---------------------------------------------------------------------------
    HUB ATLETI — roster reale + anamnesi
    ------------------------------------------------------------------------- */
 

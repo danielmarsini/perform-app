@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -1042,7 +1042,7 @@ const CHECK_SCALE_10 = Array.from({ length: 10 }, (_, i) => i + 1);
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
    parametri biometrici storici su Supabase (legati all'ID utente) e sblocca
    di nuovo la navigazione della Home. */
-function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit }) {
+export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose }) {
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
   const [thigh, setThigh] = useState("");
@@ -1054,6 +1054,8 @@ function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit }) 
   const [cyclePhase, setCyclePhase] = useState("");
   const [photos, setPhotos] = useState({ front: null, side: null, back: null });
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const isRealMode = Boolean(supabase && userId);
 
   const handlePhoto = (key) => (e) => {
     const file = e.target.files?.[0];
@@ -1066,20 +1068,32 @@ function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit }) 
 
   const canSubmit = weight && waist && thigh && arm && pain && stress && digestion && sleepQuality;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return;
     setSaving(true);
-    // simula il salvataggio dei parametri biometrici storici su Supabase,
-    // legati all'ID utente: qui basta un breve delay per dare il feedback
-    // visivo di "sincronizzazione" prima di sbloccare la Home.
-    setTimeout(() => {
-      onSubmit({
-        weight: Number(weight), waist: Number(waist), thigh: Number(thigh), arm: Number(arm),
-        pain: Number(pain), stress: Number(stress), digestion: Number(digestion), sleepQuality: Number(sleepQuality),
-        cyclePhase: cyclePhase || null,
-        photos: { front: !!photos.front, side: !!photos.side, back: !!photos.back },
-      });
-    }, 700);
+    setSaveError("");
+    const data = {
+      weight: Number(weight), waist: Number(waist), thigh: Number(thigh), arm: Number(arm),
+      pain: Number(pain), stress: Number(stress), digestion: Number(digestion), sleepQuality: Number(sleepQuality),
+      cyclePhase: cyclePhase || null,
+      photos: { front: !!photos.front, side: !!photos.side, back: !!photos.back },
+    };
+    // Check reale: scrive su checkins (coachingData.js) — stessa funzione sia
+    // per il check obbligatorio di domenica/lunedì sia per il pulsante
+    // "Registra ora" libero nel Profilo. In demo (!isRealMode) resta il
+    // vecchio comportamento simulato con un breve delay di feedback visivo.
+    if (isRealMode) {
+      try {
+        await saveCheckin(supabase, userId, data);
+        onSubmit(data);
+      } catch (err) {
+        console.error("PERFORM: errore salvataggio check", err);
+        setSaveError(err.message || "Non sono riuscito a salvare il check.");
+        setSaving(false);
+      }
+      return;
+    }
+    setTimeout(() => onSubmit(data), 700);
   };
 
   return (
@@ -1093,15 +1107,22 @@ function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit }) 
              style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.10), rgba(255,255,255,0) 55%)" }} />
 
         <div className="relative">
-          <span className="inline-flex items-center justify-center rounded-full mb-4"
-                style={{ width: 48, height: 48, backgroundColor: accent }}>
-            <Camera size={22} style={{ color: "#FFFFFF" }} />
-          </span>
-          <p className="h1 mb-2">Check settimanale</p>
+          <div className="flex items-start justify-between">
+            <span className="inline-flex items-center justify-center rounded-full mb-4"
+                  style={{ width: 48, height: 48, backgroundColor: accent }}>
+              <Camera size={22} style={{ color: "#FFFFFF" }} />
+            </span>
+            {onClose && (
+              <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+            )}
+          </div>
+          <p className="h1 mb-2">{onClose ? "Registra un check" : "Check settimanale"}</p>
           <p className="body mb-4">
-            Fine settimana: registra le misure e rispondi a quello che l'app non può dedurre da sola da
-            ciò che hai già tracciato durante la settimana. Serve tutto al coach per calibrare dieta e
-            allenamento sui tuoi progressi reali.
+            {onClose
+              ? "Registra misure e stato del momento quando vuoi, non solo di domenica/lunedì: ogni check in più affina il trend che vedi qui e che vede il coach."
+              : "Fine settimana: registra le misure e rispondi a quello che l'app non può dedurre da sola da " +
+                "ciò che hai già tracciato durante la settimana. Serve tutto al coach per calibrare dieta e " +
+                "allenamento sui tuoi progressi reali."}
           </p>
 
           <div className="on-light rounded-2xl px-4 py-3 mb-4" style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
@@ -1202,6 +1223,9 @@ function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit }) 
                   style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
             {saving ? "Salvataggio in corso…" : "Invia Check al Coach"}
           </button>
+          {saveError && (
+            <p className="mt-2 text-center text-sm" style={{ color: "#B91C1C" }}>{saveError}</p>
+          )}
           {!canSubmit && (
             <p className="meta mt-2 text-center" style={{ fontSize: "0.68rem" }}>
               Compila tutti i campi (le foto sono facoltative) per sbloccare l'app.
@@ -1535,6 +1559,7 @@ export function HomeDashboard({
     return (
       <WeeklyCheckModal
         accent={accent} accentText={accentText} accentSoft={accentSoft} gender={profile.gender}
+        supabase={supabase} userId={userId}
         onSubmit={(data) => {
           onCoachSync && onCoachSync({ type: "weekly-check", ...data });
           setWeeklyCheckDone(true);
