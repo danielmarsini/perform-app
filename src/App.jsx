@@ -206,10 +206,11 @@ export default function App() {
               planOverride={userPlan}
             />
           ),
-          // ClassificaView e CoachDashboard non hanno ancora una prop surface:
-          // restano isole autonome finché non viene fatto il refactor dedicato
-          // (vedi nota in cima al file).
-          ranking: <ClassificaView />,
+          // CoachDashboard non ha ancora una prop surface: resta un'isola
+          // autonoma finché non viene fatto il refactor dedicato (vedi nota
+          // in cima al file). ClassificaView ora riceve supabase/meId/gender
+          // per la classifica globale reale.
+          ranking: <ClassificaView supabase={supabase} meId={session.user.id} genderOverride={gender} />,
           profile: (
             <ProfileScreen
               gender={gender}

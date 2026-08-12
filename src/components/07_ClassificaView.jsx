@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { xpToLevelInfo } from '../lib/coachingData.js';
 
 /* ============================================================================
    PERFORM — 08_ClassificaView.jsx
@@ -524,22 +525,84 @@ function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand }) {
 
 /* ---------- Componente principale ---------- */
 
-export default function ClassificaView() {
-  // NB: gender/mode sono SOLO toggle di anteprima per questo modulo standalone.
-  // In produzione: gender da Supabase userGender (AuthView), mode dalla
-  // preferenza tema in Profilo/Impostazioni.
-  const [gender, setGender] = useState(SIMULATED_GENDER);
+export default function ClassificaView({ supabase, meId, genderOverride } = {}) {
+  // NB: mode resta SOLO un toggle di anteprima. gender parte dalla vera
+  // preferenza (genderOverride) quando disponibile, altrimenti dal
+  // placeholder demo — il toggle resta comunque libero in entrambi i casi
+  // perché è solo un tema visivo, non un dato salvato qui.
+  const [gender, setGender] = useState(genderOverride === 'female' ? 'female' : SIMULATED_GENDER);
   const [mode, setMode] = useState('onyx');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [expandedMonthId, setExpandedMonthId] = useState(null);
   const reducedMotion = usePrefersReducedMotion();
 
+  // Classifica globale reale: legge profiles.xp_total/current_streak (la
+  // stessa cache scritta da computeRealXpAndStreak in coachingData.js — mai
+  // un secondo calcolo qui) di TUTTI gli atleti, ordinata per XP. Non esiste
+  // ancora uno snapshot storico mensile reale (servirebbe un job server-side
+  // che non c'è): l'Archivio Storico resta quindi demo-only, segnalato come
+  // tale invece di mostrare mesi passati inventati spacciati per reali.
+  const isRealMode = Boolean(supabase && meId);
+  const [realBoard, setRealBoard] = useState(null); // null = non ancora caricato
+  useEffect(() => {
+    if (!isRealMode) return undefined;
+    let cancelled = false;
+    supabase
+      .from('profiles')
+      .select('id, nickname, full_name, xp_total, current_streak')
+      .eq('role', 'user')
+      .order('xp_total', { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error('PERFORM: errore caricamento classifica reale', error); setRealBoard({ top10: [], userResult: { rank: null, xp: 0, level: 'RECRUIT', streakDays: 0 } }); return; }
+        const rows = data ?? [];
+        const withRank = rows.map((p, idx) => ({
+          rank: idx + 1,
+          nickname: p.full_name || p.nickname || 'Atleta',
+          avatarUrl: null,
+          xp: p.xp_total ?? 0,
+          streakDays: p.current_streak ?? 0,
+          level: xpToLevelInfo(p.xp_total ?? 0).title,
+          isMe: p.id === meId,
+        }));
+        const me = withRank.find((r) => r.isMe);
+        setRealBoard({
+          monthName: 'in corso',
+          isCurrent: true,
+          top10: withRank.slice(0, 10),
+          userResult: me
+            ? { rank: me.rank, xp: me.xp, level: me.level, streakDays: me.streakDays }
+            : { rank: null, xp: 0, level: xpToLevelInfo(0).title, streakDays: 0 },
+        });
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, meId]);
+
   // La board principale mostra SEMPRE il mese corrente. Lo storico si
-  // consulta esclusivamente nel drawer "Archivio Storico Report".
-  const currentMonth = useMemo(() => MONTH_ARCHIVE.find((m) => m.isCurrent), []);
+  // consulta esclusivamente nel drawer "Archivio Storico Report" (demo-only).
+  const demoCurrentMonth = useMemo(() => MONTH_ARCHIVE.find((m) => m.isCurrent), []);
   const pastMonths = useMemo(() => [...MONTH_ARCHIVE.filter((m) => !m.isCurrent), ...GENERATED_HISTORY], []);
 
-  const top10 = currentMonth.top10;
+  if (isRealMode && realBoard === null) {
+    return (
+      <div className={`pc-root pc-theme-${gender} pc-mode-${mode}`} style={{ minHeight: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pc-text-secondary, #888)' }}>
+        Caricamento classifica…
+      </div>
+    );
+  }
+
+  const currentMonth = isRealMode ? realBoard : demoCurrentMonth;
+  // Il podio si aspetta SEMPRE almeno i rank 1/2/3: se ci sono meno di 3
+  // atleti reali (community appena nata), riempiamo gli slot mancanti con
+  // placeholder neutri invece di far crashare PodiumCard su un rank assente.
+  const top10 = [1, 2, 3].every((r) => currentMonth.top10.some((a) => a.rank === r))
+    ? currentMonth.top10
+    : [
+        ...currentMonth.top10,
+        ...[1, 2, 3]
+          .filter((r) => !currentMonth.top10.some((a) => a.rank === r))
+          .map((r) => ({ rank: r, nickname: '—', avatarUrl: null, xp: 0, streakDays: 0, level: 'RECRUIT' })),
+      ];
   const maxXP = top10[0].xp;
   const tenthPlaceXP = top10[top10.length - 1].xp;
   const gapToTop10 = Math.max(0, tenthPlaceXP - currentMonth.userResult.xp + 1);
@@ -1007,27 +1070,35 @@ export default function ClassificaView() {
         ))}
       </div>
 
-      <button type="button" className="pc-archive-btn" onClick={() => setDrawerOpen(true)}>
-        🏛️ Archivio Storico Report
-      </button>
+      {isRealMode ? (
+        <p className="pc-archive-btn" style={{ opacity: 0.6, cursor: 'default' }}>
+          🏛️ Archivio Storico Report — disponibile a breve
+        </p>
+      ) : (
+        <button type="button" className="pc-archive-btn" onClick={() => setDrawerOpen(true)}>
+          🏛️ Archivio Storico Report
+        </button>
+      )}
 
       <StickyUserBar
         isCurrent={currentMonth.isCurrent}
         rank={currentMonth.userResult.rank}
         xp={currentMonth.userResult.xp}
         gapToTop10={gapToTop10}
-        avatarUrl={USER_AVATAR_URL}
+        avatarUrl={isRealMode ? null : USER_AVATAR_URL}
         level={currentMonth.userResult.level}
         streakDays={currentMonth.userResult.streakDays}
       />
 
-      <ArchiveDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        months={pastMonths}
-        expandedId={expandedMonthId}
-        onToggleExpand={handleToggleExpand}
-      />
+      {!isRealMode && (
+        <ArchiveDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          months={pastMonths}
+          expandedId={expandedMonthId}
+          onToggleExpand={handleToggleExpand}
+        />
+      )}
     </div>
   );
 }
