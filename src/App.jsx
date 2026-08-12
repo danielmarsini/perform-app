@@ -220,6 +220,8 @@ export default function App() {
               userPlan={userPlan}
               onOpenSettings={() => setSettingsOpen(true)}
               ownerEmail={COACH_EMAIL}
+              supabase={supabase}
+              userId={session.user.id}
               profileOverride={{
                 name: session.user.user_metadata?.full_name || "Atleta",
                 nickname: session.user.user_metadata?.nickname || session.user.email?.split("@")[0],

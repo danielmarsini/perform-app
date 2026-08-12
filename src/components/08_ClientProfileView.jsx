@@ -38,6 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy,
 } from "lucide-react";
+import { computeRealXpAndStreak, xpToLevelInfo } from "../lib/coachingData.js";
 
 /* ============================================================================
    1 · INTERNAZIONALIZZAZIONE
@@ -1235,6 +1236,7 @@ export default function ClientProfileViewPreview({
   onOpenSettings: onOpenSettingsProp,   // se passato, l'Impostazioni globali di App.jsx sostituisce il drawer locale
   profileOverride,        // { name, nickname, email, joined_at } dalla sessione reale
   ownerEmail,
+  supabase, userId,       // solo per XP/livello reale + data di iscrizione reale (VeteranBadge)
 } = {}) {
   const isControlled = genderProp !== undefined;
   const [dark, setDark] = useState(darkProp ?? false);
@@ -1256,6 +1258,26 @@ export default function ClientProfileViewPreview({
     email: "marco.bianchi@email.it",
     ...profileOverride,
   });
+
+  // XP/livello reali + data di iscrizione reale — STESSA formula usata in
+  // Home e Classifica (xpToLevelInfo/computeRealXpAndStreak, coachingData.js
+  // — mai un secondo calcolo). In demo restano i valori fissi già in uso.
+  const isRealMode = Boolean(supabase && userId);
+  const [realXpStreak, setRealXpStreak] = useState(null);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    computeRealXpAndStreak(supabase, userId)
+      .then((r) => { if (!cancelled) setRealXpStreak(r); })
+      .catch((err) => {
+        console.error("PERFORM: errore calcolo XP/livello profilo", err);
+        if (!cancelled) setRealXpStreak({ xpTotal: 0, streak: 0 });
+      });
+    supabase.from("profiles").select("created_at").eq("id", userId).maybeSingle()
+      .then(({ data }) => { if (!cancelled && data?.created_at) setProfile((p) => ({ ...p, joined_at: data.created_at.slice(0, 10) })); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
+  const realLevelInfo = isRealMode ? xpToLevelInfo(realXpStreak?.xpTotal ?? 0) : null;
 
   // Oro Lucido Vivo per gli account uomo, Rosa Cipria Luminescente per le donne
   const accent = gender === "F" ? "#E5C1CD" : "#D4AF37";
@@ -1370,7 +1392,7 @@ export default function ClientProfileViewPreview({
           accent={accent} accentText={accentText} gender={gender} lang={lang}
           onChangeLang={onChangeLangProp ?? setLang}
           profile={{ ...profile, email: owner ? (ownerEmail ?? OWNER_EMAIL) : profile.email }}
-          level={4} xp={4850}
+          level={isRealMode ? realLevelInfo.level : 4} xp={isRealMode ? realLevelInfo.xp : 4850}
           checkPhotos={checkPhotos} weightPoints={weightPoints}
           exercises={exercises} favoriteExerciseIds={favoriteExerciseIds}
           onToggleFavoriteExercise={(id) => setFavoriteExerciseIds((f) => f.includes(id) ? f.filter((x) => x !== id) : [...f, id])}
