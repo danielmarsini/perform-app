@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, fetchDailyMetricsRange, upsertDailyMetrics } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -63,6 +63,20 @@ function weekDatesFromLocal(mondayDate) {
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(mondayDate);
     d.setDate(d.getDate() + i);
+    return toLocalISODate(d);
+  });
+}
+
+// Finestra dello storico sonno/passi in Recupero e Attività — stessa
+// lunghezza della demo simulata (simulateSeries(...,49,...)) così il layout
+// del grafico non cambia, solo la fonte dei numeri.
+const HISTORY_DAYS = 49;
+// I `HISTORY_DAYS` giorni fino a ieri (oggi arriva a parte via liveHistory),
+// dal più vecchio al più recente — stesso ordine che si aspetta CandleChart.
+function pastDatesUntilYesterday(n) {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (n - i));
     return toLocalISODate(d);
   });
 }
@@ -1847,9 +1861,18 @@ export function HomeDashboard({
         <div className="flex items-center gap-3 mb-3">
           <Footprints size={18} style={{ color: accent }} className="shrink-0" />
           <input type="number" min="0" value={steps} onChange={(e) => onSetSteps(e.target.value)}
-                 disabled={autoSteps} placeholder="Passi di oggi"
+                 disabled={isRealMode ? false : autoSteps} placeholder="Passi di oggi"
                  className="input w-full px-4 py-3 font-data disabled:opacity-70" />
         </div>
+        {isRealMode ? (
+          <div className="inner px-4 py-3.5">
+            <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Sincronizzazione automatica</p>
+            <p className="meta mt-0.5 leading-relaxed">
+              Funzionalità disponibile a breve — Apple Salute richiede un'app nativa o un servizio di
+              terze parti; nel frattempo i passi si registrano qui sopra, a mano.
+            </p>
+          </div>
+        ) : (
         <div className="inner px-4 py-3.5 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Sincronizza automaticamente</p>
@@ -1869,6 +1892,7 @@ export function HomeDashboard({
                            backgroundColor: "#FFFFFF", boxShadow: "0 2px 6px rgba(0,0,0,0.22)" }} />
           </button>
         </div>
+        )}
       </div>
       <div className="flex items-center gap-2 mb-1.5">
         <Footprints size={13} style={{ color: accent }} />
@@ -1876,49 +1900,69 @@ export function HomeDashboard({
       </div>
       <div className="mb-4"><Chart3D kind="steps" series={liveHistory.steps} /></div>
 
-      <HrvMatrixWidget hrv={hrv} rhr={rhr} accent={accent} />
-
-      {/* battiti a riposo e HRV, come da smartwatch (Apple Watch / Android) */}
-      <div className="card mb-4">
-        <p className="label mb-3">Battiti a riposo (RHR) e variabilità cardiaca (HRV)</p>
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <label className="block">
-            <span className="label block mb-1.5">RHR (bpm)</span>
-            <input type="number" min="30" max="120" value={rhr} onChange={(e) => onSetRhr(e.target.value)}
-                   placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
-          </label>
-          <label className="block">
-            <span className="label block mb-1.5">HRV (ms)</span>
-            <input type="number" min="10" max="150" value={hrv} onChange={(e) => onSetHrv(e.target.value)}
-                   placeholder="es. 62" className="input w-full px-4 py-3 font-data" />
-          </label>
+      {isRealMode ? (
+        // HRV/RHR richiedono un device che li misuri davvero (smartwatch/anello):
+        // nessuna via gratuita per leggerli qui, un aggregatore terzo è a
+        // pagamento e non ancora attivato — meglio un avviso onesto che un
+        // finto input manuale che nessun cliente può compilare con un dato vero.
+        <div className="card mb-4 text-center py-6">
+          <p className="h2 mb-1">RHR e HRV in arrivo</p>
+          <p className="body max-w-xs mx-auto">
+            Richiedono uno smartwatch o un anello che li misuri: il collegamento è in valutazione.
+            Sonno e passi restano già disponibili qui sopra.
+          </p>
+          <span className="inline-block mt-3 rounded-full px-3 py-1.5 text-xs font-medium"
+                style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+            Disponibile a breve
+          </span>
         </div>
-        <p className="meta leading-relaxed" style={{ fontSize: "0.68rem" }}>
-          Prova a cambiare i valori: il widget HRV Matrix qui sopra e i grafici qui sotto si aggiornano subito.
-        </p>
-      </div>
-      <div className="flex items-center gap-2 mb-1.5">
-        <span aria-hidden="true" style={{ fontSize: "13px", lineHeight: 1 }}>💓</span>
-        <p className="label" style={{ margin: 0 }}>HRV · rosso &lt;40ms · arancione 40-60ms · verde &gt;60ms</p>
-      </div>
-      <div className="mb-4">
-        {userPlan === "free"
-          ? <LockedChartOverlay gender={profile.gender} onUpgrade={onUpgrade} />
-          : <Chart3D kind="hrv" series={liveHistory.hrv} />}
-      </div>
-      <div className="flex items-center gap-2 mb-1.5">
-        <span aria-hidden="true" style={{ fontSize: "13px", lineHeight: 1 }}>❤️</span>
-        <p className="label" style={{ margin: 0 }}>RHR a riposo · verde &lt;65bpm · arancione 65-75bpm · rosso &gt;75bpm</p>
-      </div>
-      <div className="mb-4">
-        {userPlan === "free"
-          ? <LockedChartOverlay gender={profile.gender} onUpgrade={onUpgrade} />
-          : <Chart3D kind="rhr" series={liveHistory.rhr} />}
-      </div>
-      <p className="meta font-data mb-4 leading-relaxed" style={{ fontSize: "0.68rem" }}>
-        I passi si sincronizzano ogni mezzanotte dai sensori del telefono. Il sonno si calcola
-        dagli orari di addormentamento e sveglia. RHR e HRV arrivano dal sensore ottico del polso.
-      </p>
+      ) : (
+        <>
+          <HrvMatrixWidget hrv={hrv} rhr={rhr} accent={accent} />
+
+          {/* battiti a riposo e HRV, come da smartwatch (Apple Watch / Android) */}
+          <div className="card mb-4">
+            <p className="label mb-3">Battiti a riposo (RHR) e variabilità cardiaca (HRV)</p>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <label className="block">
+                <span className="label block mb-1.5">RHR (bpm)</span>
+                <input type="number" min="30" max="120" value={rhr} onChange={(e) => onSetRhr(e.target.value)}
+                       placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
+              </label>
+              <label className="block">
+                <span className="label block mb-1.5">HRV (ms)</span>
+                <input type="number" min="10" max="150" value={hrv} onChange={(e) => onSetHrv(e.target.value)}
+                       placeholder="es. 62" className="input w-full px-4 py-3 font-data" />
+              </label>
+            </div>
+            <p className="meta leading-relaxed" style={{ fontSize: "0.68rem" }}>
+              Prova a cambiare i valori: il widget HRV Matrix qui sopra e i grafici qui sotto si aggiornano subito.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span aria-hidden="true" style={{ fontSize: "13px", lineHeight: 1 }}>💓</span>
+            <p className="label" style={{ margin: 0 }}>HRV · rosso &lt;40ms · arancione 40-60ms · verde &gt;60ms</p>
+          </div>
+          <div className="mb-4">
+            {userPlan === "free"
+              ? <LockedChartOverlay gender={profile.gender} onUpgrade={onUpgrade} />
+              : <Chart3D kind="hrv" series={liveHistory.hrv} />}
+          </div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span aria-hidden="true" style={{ fontSize: "13px", lineHeight: 1 }}>❤️</span>
+            <p className="label" style={{ margin: 0 }}>RHR a riposo · verde &lt;65bpm · arancione 65-75bpm · rosso &gt;75bpm</p>
+          </div>
+          <div className="mb-4">
+            {userPlan === "free"
+              ? <LockedChartOverlay gender={profile.gender} onUpgrade={onUpgrade} />
+              : <Chart3D kind="rhr" series={liveHistory.rhr} />}
+          </div>
+          <p className="meta font-data mb-4 leading-relaxed" style={{ fontSize: "0.68rem" }}>
+            I passi si sincronizzano ogni mezzanotte dai sensori del telefono. Il sonno si calcola
+            dagli orari di addormentamento e sveglia. RHR e HRV arrivano dal sensore ottico del polso.
+          </p>
+        </>
+      )}
 
       {/* Cruscotto Recupero Neurale: sonno REM, stress, caffeina con emivita */}
       {userPlan === "free" ? (
@@ -4776,6 +4820,12 @@ export default function HomePreview({
   const [sets, setSets] = useState({});
   const [sleep, setSleep] = useState({ start: "23:30", end: "07:00", hours: 7.5 });
   const [steps, setSteps] = useState("6400");
+  // Sonno/passi reali: seed di "oggi" (se già registrato) e storico dal DB.
+  // useState({}) invece di null: distingue "non ancora caricato" (nessuna
+  // chiave) da "caricato, niente di registrato in questi 49 giorni" (chiavi
+  // presenti con array di zeri) — la seconda condizione è quella che deve
+  // arrivare a fullHistory, mai un momentaneo array vuoto scambiato per dati.
+  const [realHistory, setRealHistory] = useState(null); // null finché non caricato (solo isRealMode)
   const [water, setWater] = useState(1500);
   const [autoSteps, setAutoSteps] = useState(false);
   const [isTrainingDay, setIsTrainingDay] = useState(true);
@@ -4865,18 +4915,75 @@ export default function HomePreview({
       });
     return () => { cancelled = true; };
   }, [supabaseProp, userId]);
+
+  // Sonno/passi reali (daily_metrics): un'unica fetch su una finestra di
+  // HISTORY_DAYS+1 giorni (storico + oggi) — seed lo stato di "oggi" se il
+  // cliente l'aveva già registrato in questa stessa giornata, e costruisce
+  // l'array per i grafici a candela con dati veri, 0 = giorno non tracciato
+  // (mai un numero inventato per riempire un buco).
+  useEffect(() => {
+    if (!supabaseProp || !userId) return;
+    let cancelled = false;
+    const today = toLocalISODate();
+    const pastDates = pastDatesUntilYesterday(HISTORY_DAYS);
+    fetchDailyMetricsRange(supabaseProp, userId, pastDates[0], today)
+      .then((rows) => {
+        if (cancelled) return;
+        const byDate = new Map(rows.map((r) => [r.date, r]));
+        const todayRow = byDate.get(today);
+        if (todayRow) {
+          if (todayRow.sleep_start || todayRow.sleep_end) {
+            setSleep({ start: todayRow.sleep_start?.slice(0, 5) || "", end: todayRow.sleep_end?.slice(0, 5) || "", hours: Number(todayRow.sleep_hours) || 0 });
+          }
+          if (todayRow.steps != null) setSteps(String(todayRow.steps));
+        }
+        setRealHistory({
+          sleep: pastDates.map((d) => Number(byDate.get(d)?.sleep_hours) || 0),
+          steps: pastDates.map((d) => Number(byDate.get(d)?.steps) || 0),
+          hrv: pastDates.map((d) => Number(byDate.get(d)?.hrv_ms) || 0),
+          rhr: pastDates.map((d) => Number(byDate.get(d)?.rhr_bpm) || 0),
+        });
+      })
+      .catch((err) => console.error("PERFORM: errore lettura daily_metrics", err));
+    return () => { cancelled = true; };
+  }, [supabaseProp, userId]);
+
+  // Salvataggio reale di sonno/passi: debounced (900ms, stesso principio già
+  // usato per l'anamnesi) per non scrivere a ogni singolo tasto/click. Scrive
+  // solo dopo il primo caricamento (realHistory !== null): altrimenti il seed
+  // di "oggi" qui sopra si ri-salverebbe da solo un istante dopo averlo letto.
+  useEffect(() => {
+    if (!supabaseProp || !userId || realHistory === null) return undefined;
+    const t = setTimeout(() => {
+      upsertDailyMetrics(supabaseProp, userId, toLocalISODate(), {
+        sleep_start: sleep.start || null,
+        sleep_end: sleep.end || null,
+        sleep_hours: sleep.hours || null,
+        steps: steps !== "" ? Number(steps) : null,
+      }).catch((err) => console.error("PERFORM: errore salvataggio daily_metrics", err));
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sleep.start, sleep.end, sleep.hours, steps, supabaseProp, userId, realHistory]);
+
   const [rhr, setRhr] = useState("58");
   const [hrv, setHrv] = useState("62");
   const [remSleep, setRemSleep] = useState("1.5");
   const [stressLevel, setStressLevel] = useState("");
   const [caffeineMg, setCaffeineMg] = useState("");
   const [caffeineTime, setCaffeineTime] = useState("");
-  const [fullHistory] = useState(() => ({
+  const [demoFullHistory] = useState(() => ({
     sleep: simulateSeries(101, 49, 5.5, 8.4, 1),
     steps: simulateSeries(202, 49, 4200, 13200, 0),
     hrv: simulateSeries(303, 49, 36, 74, 0),
     rhr: simulateSeries(404, 49, 52, 79, 0),
   }));
+  // In modalità reale: storico vero da daily_metrics (0 = giorno non
+  // tracciato). Finché non è ancora arrivato (realHistory === null), array di
+  // zeri della stessa lunghezza — mai la demo al posto di un caricamento.
+  const fullHistory = Boolean(supabaseProp && userId)
+    ? (realHistory ?? { sleep: Array(HISTORY_DAYS).fill(0), steps: Array(HISTORY_DAYS).fill(0), hrv: Array(HISTORY_DAYS).fill(0), rhr: Array(HISTORY_DAYS).fill(0) })
+    : demoFullHistory;
   const [waterTarget, setWaterTarget] = useState(4000);
 
   /* Simula la sincronizzazione in tempo reale con il pannello del coach (in

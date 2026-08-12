@@ -185,6 +185,7 @@ import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
+  fetchDailyMetricsRange,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3201,8 +3202,42 @@ function RecoveryDashboard({ client }) {
 
 function BioritmiGrafici({ client }) {
   const { supabase, isRealMode } = useContext(CoachDataContext);
-  const bio = useMemo(() => buildBioHistory(client), [client]);
+  const demoBio = useMemo(() => buildBioHistory(client), [client]);
   const fmtWeek = (p) => { const d = new Date(p.date); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
+
+  // Sonno/passi reali (daily_metrics), mediati per settimana sulle ultime 8
+  // settimane — stessa cadenza a 8 punti che il grafico si aspetta già,
+  // solo con numeri veri invece di buildBioHistory (storico simulato). HRV
+  // resta 0/bloccato qui come lato cliente: nessuna fonte reale ancora.
+  const [realBio, setRealBio] = useState(null);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    const todayMonday = mondayOf(new Date());
+    const rangeStart = addWeeksToDate(todayMonday, -7);
+    fetchDailyMetricsRange(supabase, client.id, toLocalISODate(rangeStart), toLocalISODate(new Date()))
+      .then((rows) => {
+        if (cancelled) return;
+        const points = Array.from({ length: 8 }, (_, i) => {
+          const weekStart = addWeeksToDate(todayMonday, i - 7);
+          const weekStartISO = toLocalISODate(weekStart);
+          const weekEndISO = toLocalISODate(addWeeksToDate(weekStart, 1)); // esclusivo
+          const weekRows = rows.filter((r) => r.date >= weekStartISO && r.date < weekEndISO);
+          const sleepVals = weekRows.map((r) => Number(r.sleep_hours) || 0).filter((v) => v > 0);
+          const stepsVals = weekRows.map((r) => Number(r.steps) || 0).filter((v) => v > 0);
+          return {
+            date: weekStart,
+            sonno: sleepVals.length ? Math.round((sleepVals.reduce((a, b) => a + b, 0) / sleepVals.length) * 10) / 10 : 0,
+            passi: stepsVals.length ? Math.round(stepsVals.reduce((a, b) => a + b, 0) / stepsVals.length) : 0,
+            hrv: 0,
+          };
+        });
+        setRealBio(points);
+      })
+      .catch((err) => console.error("PERFORM: errore lettura daily_metrics", err));
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+  const bio = isRealMode ? (realBio ?? []) : demoBio;
 
   // Cerchio Allenamento reale: STESSA formula di Home cliente (05_HomeDashboard.jsx),
   // mai calcolata due volte — vedi computeTrainingCompliance in coachingData.js.

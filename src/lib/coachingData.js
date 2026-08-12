@@ -32,7 +32,7 @@ function toLocalISODate(date = new Date()) {
 // Target macro/kcal attivi oggi per un giorno ON o OFF: la riga più recente
 // con effective_from <= oggi. Ritorna null se il coach non ha ancora assegnato nulla.
 export async function fetchActiveNutritionTarget(supabase, userId, dayType) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toLocalISODate();
   const { data, error } = await supabase
     .from("nutrition_targets")
     .select("kcal, protein, carbs, fat, effective_from")
@@ -53,6 +53,37 @@ export async function fetchBothNutritionTargets(supabase, userId) {
     fetchActiveNutritionTarget(supabase, userId, "off"),
   ]);
   return { targetOn: on, targetOff: off };
+}
+
+// Sonno/passi reali di un intervallo di date (daily_metrics), un giorno = una
+// riga. Righe mancanti restano assenti nell'array: il chiamante decide come
+// trattare un giorno mai registrato (di norma 0, "non tracciato" — MAI un
+// valore inventato).
+export async function fetchDailyMetricsRange(supabase, userId, fromDateISO, toDateISO) {
+  const { data, error } = await supabase
+    .from("daily_metrics")
+    .select("date, sleep_start, sleep_end, sleep_hours, steps, hrv_ms, rhr_bpm")
+    .eq("user_id", userId)
+    .gte("date", fromDateISO)
+    .lte("date", toDateISO)
+    .order("date", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Scrive (o aggiorna) sonno/passi di UN giorno specifico. Upsert su
+// (user_id, date): riaprire la Home lo stesso giorno e correggere un valore
+// aggiorna la stessa riga, non ne crea una seconda. `patch` è parziale: passa
+// solo i campi che stai scrivendo in questo momento (es. solo `steps`),
+// quelli assenti restano quello che erano già nella riga — perché l'upsert è
+// su tutta la riga, il chiamante deve unire lo stato precedente col nuovo
+// prima di chiamare questa funzione se vuole preservare un campo che non sta
+// toccando ora (stesso principio già usato per saveAnamnesis).
+export async function upsertDailyMetrics(supabase, userId, dateISO, patch) {
+  const { error } = await supabase
+    .from("daily_metrics")
+    .upsert({ user_id: userId, date: dateISO, updated_at: new Date().toISOString(), ...patch }, { onConflict: "user_id,date" });
+  if (error) throw error;
 }
 
 // Scheda assegnata dal coach per un intervallo di date: righe is_read_only=true.
