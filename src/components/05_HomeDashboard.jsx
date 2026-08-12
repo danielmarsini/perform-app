@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, fetchDailyMetricsRange, upsertDailyMetrics } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, fetchDailyMetricsRange, upsertDailyMetrics } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -1394,8 +1394,29 @@ export function HomeDashboard({
 
   const trainPct = isRealMode ? (realTrainCompliance?.pct ?? null) : (trainOverride ?? trainPctComputed);
   const nutriPct = nutriOverride ?? nutriPctComputed;
-  const recoveryPct = recoveryOverride ?? recoveryPctComputed;
-  const recoveryTrackedDays = recoverySleep7.filter((h) => h > 0).length;
+
+  // Cerchio Recupero reale: STESSA formula di ClientDetail (coach), mai
+  // calcolata due volte — vedi computeRecoveryCompliance in coachingData.js.
+  // Legge solo daily_metrics già salvato, non lo stato locale del form: si
+  // calcola all'apertura della Home, non in diretta a ogni tasto — se il
+  // cliente modifica sonno/passi lo vedrà aggiornato al prossimo ricaricamento,
+  // stesso comportamento già scelto per il cerchio Allenamento. È il prezzo
+  // di avere lo STESSO numero che vede il coach, non un mix stato-locale+DB.
+  const [realRecoveryCompliance, setRealRecoveryCompliance] = useState(null);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    computeRecoveryCompliance(supabase, userId)
+      .then((r) => { if (!cancelled) setRealRecoveryCompliance(r); })
+      .catch((err) => {
+        console.error("PERFORM: errore calcolo cerchio Recupero", err);
+        if (!cancelled) setRealRecoveryCompliance({ status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0 });
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
+
+  const recoveryPct = isRealMode ? (realRecoveryCompliance?.pct ?? null) : (recoveryOverride ?? recoveryPctComputed);
+  const recoveryTrackedDays = isRealMode ? (realRecoveryCompliance?.trackedDays ?? 0) : recoverySleep7.filter((h) => h > 0).length;
 
   const progressionLabel = { positive: "In crescita", negative: "In calo", neutral: "Stabile" };
 
@@ -1423,11 +1444,17 @@ export function HomeDashboard({
     },
     {
       id: "recovery", label: "Recupero", icon: BedDouble, pct: recoveryPct,
-      details: [
-        { label: "Sonno medio (7g)", value: `${(recoverySleep7.reduce((a, b) => a + b, 0) / 7).toFixed(1)} h` },
-        { label: "Passi medi (7g)", value: Math.round(recoverySteps7.reduce((a, b) => a + b, 0) / 7).toLocaleString("it-IT") },
-        { label: "Notti tracciate", value: `${recoveryTrackedDays} / 7` },
-      ],
+      details: isRealMode
+        ? [
+            { label: "Sonno medio (7g)", value: realRecoveryCompliance?.sleepAvg != null ? `${realRecoveryCompliance.sleepAvg} h` : "…" },
+            { label: "Passi medi (7g)", value: realRecoveryCompliance?.stepsAvg != null ? realRecoveryCompliance.stepsAvg.toLocaleString("it-IT") : "…" },
+            { label: "Giorni tracciati", value: `${recoveryTrackedDays} / 7` },
+          ]
+        : [
+            { label: "Sonno medio (7g)", value: `${(recoverySleep7.reduce((a, b) => a + b, 0) / 7).toFixed(1)} h` },
+            { label: "Passi medi (7g)", value: Math.round(recoverySteps7.reduce((a, b) => a + b, 0) / 7).toLocaleString("it-IT") },
+            { label: "Notti tracciate", value: `${recoveryTrackedDays} / 7` },
+          ],
     },
   ];
 

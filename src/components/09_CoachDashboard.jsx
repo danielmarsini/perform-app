@@ -185,7 +185,7 @@ import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
-  fetchDailyMetricsRange,
+  computeRecoveryCompliance, fetchDailyMetricsRange,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3259,6 +3259,24 @@ function BioritmiGrafici({ client }) {
     ? (trainCompliance?.pct != null ? trainCompliance.pct / 100 : null)
     : client.rings.allenamento;
 
+  // Cerchio Recupero reale: STESSA formula di Home cliente — vedi
+  // computeRecoveryCompliance in coachingData.js.
+  const [recoveryCompliance, setRecoveryCompliance] = useState(null);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    computeRecoveryCompliance(supabase, client.id)
+      .then((r) => { if (!cancelled) setRecoveryCompliance(r); })
+      .catch((err) => {
+        console.error("PERFORM: errore calcolo cerchio Recupero", err);
+        if (!cancelled) setRecoveryCompliance({ status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0 });
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+  const recoveryRingValue = isRealMode
+    ? (recoveryCompliance?.pct != null ? recoveryCompliance.pct / 100 : null)
+    : client.rings.recupero;
+
   return (
     <div className="space-y-4">
       {client.evening.doloreGrado > 0 && (
@@ -3277,7 +3295,7 @@ function BioritmiGrafici({ client }) {
         <div className="grid grid-cols-3 gap-3">
           <ComplianceRing label="Allenamento" value={trainRingValue} />
           <ComplianceRing label="Alimentazione" value={client.rings.alimentazione} />
-          <ComplianceRing label="Recupero" value={client.rings.recupero} />
+          <ComplianceRing label="Recupero" value={recoveryRingValue} />
         </div>
       </div>
 

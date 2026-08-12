@@ -86,6 +86,61 @@ export async function upsertDailyMetrics(supabase, userId, dateISO, patch) {
   if (error) throw error;
 }
 
+// Cerchio Recupero reale — STESSA funzione chiamata sia da Home cliente sia
+// da ClientDetail (coach), come computeTrainingCompliance qui sopra: legge
+// SOLO daily_metrics già salvato (mai stato locale non ancora scritto), così
+// il numero è identico ovunque venga calcolato, non un mix di dato live +
+// storico persistito.
+//
+// Media dei 7 giorni più recenti (oggi incluso) di SOLO passi e sonno — non
+// il dolore (nessun check-in reale collegato ancora) e non HRV/RHR (nessuna
+// fonte reale finché non c'è un device collegato: colonne già pronte in
+// daily_metrics, semplicemente vuote). Soglie: 7h di sonno e 8.000 passi =
+// punteggio pieno per quel giorno, lineare sotto soglia. Un giorno non
+// tracciato vale 0, quindi già pesa come "non hai recuperato bene" senza
+// bisogno di una penalità di frequenza a parte. Se TUTTI e 7 i giorni sono
+// completamente vuoti, torna null — stato neutro esplicito, mai uno 0% che
+// sembra un allarme.
+function recoverySleepScore(hours) {
+  if (!hours || hours <= 0) return 0;
+  return Math.min(100, Math.round((hours / 7) * 100));
+}
+function recoveryStepsScore(steps) {
+  if (!steps || steps <= 0) return 0;
+  return Math.min(100, Math.round((steps / 8000) * 100));
+}
+export async function computeRecoveryCompliance(supabase, userId) {
+  const today = toLocalISODate();
+  const sevenAgo = new Date(`${today}T00:00:00`);
+  sevenAgo.setDate(sevenAgo.getDate() - 6);
+  const { data, error } = await supabase
+    .from("daily_metrics")
+    .select("date, sleep_hours, steps")
+    .eq("user_id", userId)
+    .gte("date", toLocalISODate(sevenAgo))
+    .lte("date", today);
+  if (error) throw error;
+
+  const byDate = new Map((data ?? []).map((r) => [r.date, r]));
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sevenAgo);
+    d.setDate(d.getDate() + i);
+    return toLocalISODate(d);
+  });
+  const sleepVals = days.map((d) => Number(byDate.get(d)?.sleep_hours) || 0);
+  const stepsVals = days.map((d) => Number(byDate.get(d)?.steps) || 0);
+
+  const allUntracked = sleepVals.every((h) => !h) && stepsVals.every((s) => !s);
+  if (allUntracked) return { status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0 };
+
+  const total = sleepVals.reduce((sum, h, i) => sum + (recoverySleepScore(h) + recoveryStepsScore(stepsVals[i])) / 2, 0);
+  const pct = Math.max(0, Math.min(100, Math.round(total / 7)));
+  const trackedDays = sleepVals.filter((h) => h > 0).length;
+  const sleepAvg = Math.round((sleepVals.reduce((a, b) => a + b, 0) / 7) * 10) / 10;
+  const stepsAvg = Math.round(stepsVals.reduce((a, b) => a + b, 0) / 7);
+  return { status: "ok", pct, sleepAvg, stepsAvg, trackedDays };
+}
+
 // Scheda assegnata dal coach per un intervallo di date: righe is_read_only=true.
 // Le raggruppa per data così da poter costruire il weekPlan di HomeDashboard.
 export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDateISO) {
