@@ -3129,6 +3129,15 @@ export const SUPP_WIKI = [
       "per la risintesi di ATP negli sforzi brevi e intensi. Non serve una fase di carico: 3-5 g al giorno saturano " +
       "i depositi in 3-4 settimane con la stessa efficacia. È tra gli integratori con più letteratura a supporto " +
       "per forza e massa magra, ed è sicura per reni e fegato in soggetti sani a queste dosi.",
+    deepDive: "Chimicamente è un acido metilguanidinoacetico sintetizzato endogenamente da fegato, reni e pancreas " +
+      "a partire da arginina, glicina e metionina, e immagazzinato per il 95% nel tessuto muscolare scheletrico, " +
+      "in parte come fosfocreatina. La creatina-chinasi trasferisce rapidamente il gruppo fosfato dalla " +
+      "fosfocreatina all'ADP, rigenerando ATP in millisecondi: è il tampone energetico che copre i primi 8-10 " +
+      "secondi di uno sforzo massimale, prima che glicolisi e fosforilazione ossidativa prendano il sopravvento. " +
+      "Un effetto secondario ben documentato è il richiamo osmotico di acqua intracellulare, che aumenta il volume " +
+      "cellulare (cell swelling) e sembra agire anche come segnale anabolico. Livello di evidenza: molto alto " +
+      "(centinaia di RCT, meta-analisi convergenti); tra gli integratori sportivi più studiati in assoluto, con " +
+      "profilo di sicurezza consolidato anche su cicli pluriennali in soggetti sani.",
   },
   {
     id: "caffeina", name: "Caffeina", icon: "☕",
@@ -3137,6 +3146,15 @@ export const SUPP_WIKI = [
       "l'attivazione del sistema nervoso centrale. L'effetto ergogenico su forza e resistenza è ben documentato a " +
       "queste dosi. Oltre i 6 mg/kg i benefici non aumentano in proporzione, mentre crescono ansia e disturbi del " +
       "sonno se assunta troppo tardi nel pomeriggio.",
+    deepDive: "Molecola xantinica che attraversa liberamente la barriera emato-encefalica e blocca competitivamente " +
+      "i recettori dell'adenosina A1 e A2A: l'adenosina si accumula durante la veglia e inibisce l'attività " +
+      "neuronale, quindi bloccarla si traduce in maggiore rilascio di dopamina e noradrenalina, vigilanza e ridotta " +
+      "percezione dello sforzo (RPE). A livello muscolare periferico contribuisce anche a una maggiore " +
+      "mobilizzazione di calcio dal reticolo sarcoplasmatico. Il fegato la metabolizza tramite il citocromo CYP1A2 " +
+      "in paraxantina, teobromina e teofillina; l'emivita (3-7 ore, molto variabile su base genetica tra " +
+      "metabolizzatori rapidi e lenti) spiega perché la stessa dose serale può compromettere il sonno di alcuni e " +
+      "non di altri. Evidenza: alta, con effetto ergogenico riproducibile su forza, potenza e resistenza; la " +
+      "tolleranza si sviluppa con l'uso cronico, motivo per cui molti protocolli prevedono cicli di scarico.",
   },
   {
     id: "whey", name: "Whey Protein", icon: "🥛",
@@ -3145,6 +3163,16 @@ export const SUPP_WIKI = [
       "rende comoda per raggiungere la quota proteica giornaliera quando il cibo solido non basta. Non esiste " +
       "un'urgenza di assunzione entro 30 minuti dall'allenamento: la sintesi proteica muscolare resta elevata per " +
       "diverse ore, quindi il totale proteico della giornata conta più del timing preciso.",
+    deepDive: "Sottoprodotto della caseificazione, ricco di aminoacidi essenziali e in particolare di leucina " +
+      "(circa 10-11% del totale), l'aminoacido che attiva più direttamente il complesso mTORC1, il principale " +
+      "regolatore della sintesi proteica muscolare (MPS). La rapida digestione e il picco aminoacidemico precoce " +
+      "distinguono la whey dalla caseina (digestione lenta, effetto anti-catabolico prolungato): per questo le " +
+      "due si integrano bene in momenti diversi della giornata. Esistono tre forme principali — concentrato " +
+      "(WPC, 70-80% proteine, con più lattosio e grassi), isolato (WPI, 90%+, quasi privo di lattosio) e " +
+      "idrolizzato (WPH, pre-digerito enzimaticamente, assorbimento ancora più rapido) — con costo e velocità " +
+      "d'assorbimento crescenti. Evidenza: molto alta sul ruolo della proteina totale/die nella sintesi proteica " +
+      "netta; l'evidenza sul timing preciso rispetto alla sessione di allenamento è più debole di quanto il " +
+      "marketing storico abbia suggerito.",
   },
   {
     id: "omega3", name: "Omega 3 (EPA/DHA)", icon: "🐟",
@@ -3152,6 +3180,16 @@ export const SUPP_WIKI = [
     body: "EPA e DHA sono acidi grassi essenziali con effetti documentati su infiammazione sistemica, salute " +
       "cardiovascolare e funzione cognitiva. Non hanno un effetto acuto sulla performance in allenamento: il " +
       "beneficio è cumulativo nel tempo, motivo per cui la costanza giornaliera conta più della singola dose.",
+    deepDive: "EPA (acido eicosapentaenoico) e DHA (acido docosaesaenoico) sono acidi grassi polinsaturi omega-3 a " +
+      "catena lunga che si incorporano nei fosfolipidi di membrana, alterandone fluidità e funzione, e competono " +
+      "con l'acido arachidonico (omega-6) come substrato delle ciclossigenasi: il risultato è la produzione di " +
+      "eicosanoidi (prostaglandine, trombossani, leucotrieni) meno infiammatori. Il DHA è inoltre un componente " +
+      "strutturale primario delle membrane neuronali e retiniche. Nel contesto sportivo l'interesse riguarda la " +
+      "riduzione dell'infiammazione da sovraccarico e del DOMS, con dati preliminari anche su un possibile " +
+      "supporto alla sintesi proteica in soggetti anziani. Il rapporto omega-6/omega-3 tipico della dieta " +
+      "occidentale è spesso squilibrato (10:1 o peggio) a favore dei pro-infiammatori, da cui il razionale " +
+      "dell'integrazione quando il pesce grasso è scarso in dieta. Evidenza: alta su cardiovascolare e " +
+      "infiammazione sistemica, moderata sul recupero sportivo specifico.",
   },
   {
     id: "citrullina", name: "Citrullina Malato", icon: "💧",
@@ -3160,6 +3198,16 @@ export const SUPP_WIKI = [
       "muscoli attivi, con un possibile beneficio nelle serie ad alte ripetizioni e nella percezione di fatica " +
       "muscolare locale. L'effetto è più marcato in protocolli di volume alto (12+ ripetizioni) che nelle serie " +
       "pesanti a basse ripetizioni.",
+    deepDive: "La L-citrullina, a differenza dell'arginina assunta per via orale, sfugge quasi completamente al " +
+      "metabolismo epatico di primo passaggio (arginasi intestinale ed epatica) e viene convertita in arginina " +
+      "nei reni, alzando i livelli plasmatici di arginina in modo più efficiente dell'arginina stessa assunta " +
+      "direttamente. L'arginina è il substrato della ossido nitrico sintasi (NOS), che produce NO — un potente " +
+      "vasodilatatore che rilassa la muscolatura liscia vascolare attivando la guanilato ciclasi. Il malato, " +
+      "intermedio del ciclo di Krebs, viene aggiunto per un possibile contributo al metabolismo aerobico e al " +
+      "tamponamento dell'ammoniaca prodotta durante lo sforzo. Il beneficio pratico riportato è soprattutto un " +
+      "aumento del numero di ripetizioni eseguibili prima del cedimento in protocolli ad alto volume, coerente " +
+      "con una migliore perfusione muscolare. Evidenza: moderata, dose-dipendente, con maggiore consistenza sopra " +
+      "i 6-8 g.",
   },
   {
     id: "bcaa", name: "BCAA", icon: "🧬",
@@ -3168,6 +3216,16 @@ export const SUPP_WIKI = [
       "proteica completa. Se l'apporto proteico giornaliero è già adeguato, il beneficio aggiuntivo è marginale. " +
       "Diventano più sensati per chi si allena a digiuno o segue una dieta molto ipocalorica con proteine ai " +
       "limiti minimi.",
+    deepDive: "I tre aminoacidi ramificati (leucina, isoleucina, valina) condividono una via metabolica insolita: " +
+      "a differenza degli altri aminoacidi, non vengono degradati dal fegato ma direttamente dal muscolo " +
+      "scheletrico, tramite l'enzima BCKD (branched-chain alpha-keto acid dehydrogenase), il che li rende " +
+      "disponibili molto rapidamente come substrato energetico e segnale anabolico locale. La leucina in " +
+      "particolare è l'attivatore più potente di mTORC1 tra tutti gli aminoacidi, ma da sola — senza gli altri " +
+      "aminoacidi essenziali che una proteina completa fornisce — innesca la sintesi proteica senza garantire i " +
+      "\"mattoni\" necessari per completarla, un limite noto della supplementazione isolata di BCAA rispetto a " +
+      "una fonte proteica completa. Evidenza: bassa/moderata come integrazione isolata in soggetti con apporto " +
+      "proteico già adeguato; più solida come substrato energetico anti-catabolico in allenamento prolungato a " +
+      "digiuno.",
   },
   {
     id: "beta_alanina", name: "Beta-Alanina", icon: "🔋",
@@ -3176,6 +3234,15 @@ export const SUPP_WIKI = [
       "sforzi intensi tra 1 e 4 minuti (es. serie da 8-15 ripetizioni). Il beneficio emerge dopo alcune settimane " +
       "di uso costante. Il formicolio cutaneo (parestesia) che alcuni avvertono è innocuo e dipende dalla dose " +
       "singola, non cumulativo.",
+    deepDive: "La beta-alanina è l'aminoacido limitante nella sintesi endogena della carnosina (un dipeptide di " +
+      "beta-alanina e istidina), sintetizzata nel muscolo dalla carnosina sintetasi: integrarla alza le riserve " +
+      "muscolari di carnosina fino al 40-60% dopo 4-10 settimane d'uso costante. La carnosina agisce come tampone " +
+      "intracellulare degli ioni idrogeno (H+) prodotti dalla glicolisi anaerobica durante sforzi intensi, " +
+      "rallentando la caduta del pH muscolare che contribuisce alla fatica in sforzi di 60-240 secondi — la " +
+      "\"zona\" tipica di serie da 8-15 ripetizioni o sprint ripetuti. La parestesia (formicolio a viso, collo, " +
+      "mani) è mediata dai recettori MrgprD delle fibre nervose cutanee, dose-dipendente e transitoria: " +
+      "frazionare la dose (es. 800 mg-1,6 g più volte al giorno) la riduce senza intaccare l'efficacia. Evidenza: " +
+      "alta per sforzi ripetuti di media durata, scarsa per sforzi brevissimi (<60s) o molto prolungati (>4 min).",
   },
   {
     id: "glutammina", name: "Glutammina", icon: "🌿",
@@ -3183,6 +3250,15 @@ export const SUPP_WIKI = [
     body: "Nell'atleta sano con un apporto proteico già sufficiente, l'evidenza a supporto di un effetto diretto " +
       "su crescita muscolare o recupero è debole. Il suo ruolo più solido riguarda la salute intestinale e il " +
       "supporto immunitario in periodi di carico di allenamento molto elevato, più che la performance in sé.",
+    deepDive: "È l'aminoacido libero più abbondante nel plasma e nel tessuto muscolare, e il principale substrato " +
+      "energetico per gli enterociti (le cellule della mucosa intestinale) e per i linfociti: da qui il suo " +
+      "ruolo ben documentato nel supportare la barriera intestinale e la funzione immunitaria, specialmente nei " +
+      "periodi di sovraccarico da allenamento in cui i livelli plasmatici di glutammina calano fisiologicamente " +
+      "(il cosiddetto \"glutamine drop\" osservato negli atleti di endurance overtrained). Nel muscolo scheletrico " +
+      "sano l'organismo la sintetizza autonomamente in quantità sufficiente tramite la glutammina sintetasi, il " +
+      "che spiega perché l'integrazione aggiunga poco quando dieta e recupero sono già adeguati. Evidenza: solida " +
+      "su immunità e integrità intestinale in carichi di allenamento molto elevati o in condizioni cataboliche " +
+      "(es. post-chirurgia); debole su ipertrofia o performance nell'atleta sano ben nutrito.",
   },
   {
     id: "zma", name: "ZMA (Zinco-Magnesio-B6)", icon: "💤",
@@ -3190,6 +3266,16 @@ export const SUPP_WIKI = [
     body: "Ha senso soprattutto per chi ha un apporto di zinco o magnesio ai limiti minimi: in quel caso può " +
       "migliorare qualità del sonno e status minerale. In chi non è carente, l'evidenza di un effetto ormonale " +
       "diretto su testosterone o forza è scarsa: non è un anabolizzante naturale.",
+    deepDive: "Combinazione di zinco monometionina, magnesio aspartato e vitamina B6, nata da uno studio degli " +
+      "anni '90 su football americano che ne suggeriva un aumento di testosterone e forza, mai replicato in modo " +
+      "convincente in soggetti con status minerale normale. Lo zinco è cofattore di centinaia di enzimi e " +
+      "coinvolto nella sintesi degli ormoni steroidei, il magnesio nella trasmissione neuromuscolare e nella " +
+      "regolazione del GABA (da cui il possibile effetto rilassante/sul sonno), la B6 nel metabolismo degli " +
+      "aminoacidi e nella sintesi di serotonina e melatonina. Il razionale reale dell'integrazione è correggere " +
+      "una carenza subclinica, comune in diete ipocaloriche o povere di carne rossa e semi: in quel contesto " +
+      "specifico l'effetto su sonno e recupero è plausibile. Va assunto lontano da calcio e fibre, che ne " +
+      "riducono l'assorbimento. Evidenza: solida solo come correzione di carenza, non come booster ormonale " +
+      "indipendente dallo status di partenza.",
   },
   {
     id: "multivitaminico", name: "Multivitaminico", icon: "🧪",
@@ -3197,6 +3283,17 @@ export const SUPP_WIKI = [
     body: "Funziona come rete di sicurezza contro micro-carenze, utile soprattutto in fase di deficit calorico " +
       "prolungato o con un'alimentazione poco varia. Non sostituisce una dieta varia ricca di verdura e frutta, " +
       "che resta la fonte primaria di micronutrienti e fitocomposti.",
+    deepDive: "Copre un paniere di vitamine idrosolubili (gruppo B, C) e liposolubili (A, D, E, K) più oligoelementi " +
+      "(zinco, selenio, rame, iodio...), ciascuno cofattore di vie metaboliche specifiche: le B, ad esempio, sono " +
+      "coenzimi centrali nel metabolismo energetico di carboidrati, grassi e proteine (glicolisi, ciclo di Krebs, " +
+      "beta-ossidazione), mentre le liposolubili richiedono la presenza di grassi alimentari per essere assorbite " +
+      "a livello intestinale tramite le micelle biliari. Il deficit calorico prolungato riduce quasi " +
+      "meccanicamente l'apporto di micronutrienti insieme alle calorie, anche a parità di qualità della dieta, " +
+      "rendendo il periodo di definizione muscolare il contesto in cui il razionale d'uso è più solido. Le " +
+      "formulazioni ad alto dosaggio di vitamine liposolubili (A, D, E, K) vanno gestite con attenzione perché, " +
+      "a differenza delle idrosolubili in eccesso (eliminate con le urine), si accumulano nel tessuto adiposo ed " +
+      "epatico. Evidenza: alta come rete di sicurezza in deficit calorico o dieta poco varia, nulla come " +
+      "\"potenziatore\" oltre la correzione di una carenza.",
   },
   {
     id: "collagene", name: "Collagene Idrolizzato", icon: "🦴",
@@ -3204,6 +3301,16 @@ export const SUPP_WIKI = [
     body: "Alcuni studi preliminari mostrano un possibile beneficio sulla salute di tendini e articolazioni quando " +
       "l'assunzione precede un carico meccanico specifico. L'evidenza è ancora meno solida rispetto a creatina o " +
       "proteine, ma il profilo di sicurezza è molto buono.",
+    deepDive: "Il collagene idrolizzato è collagene animale scisso enzimaticamente in peptidi corti " +
+      "(oligopeptidi), assorbiti a livello intestinale più efficientemente della proteina intera e in parte " +
+      "ritrovati intatti nel plasma come dipeptidi caratteristici (es. prolina-idrossiprolina), che sembrano " +
+      "fungere da segnale per i fibroblasti dei tessuti connettivi (tendini, legamenti, cartilagine) stimolandone " +
+      "la sintesi di collagene endogeno. La vitamina C è cofattore essenziale degli enzimi prolil- e " +
+      "lisil-idrossilasi che stabilizzano la tripla elica del collagene neoformato: senza di essa la sintesi è " +
+      "meno efficiente, da cui il razionale di abbinarli. Il protocollo studiato con maggiore consistenza prevede " +
+      "l'assunzione 30-60 minuti prima di un carico meccanico specifico sul tessuto target (es. prima di un " +
+      "allenamento di salto per i tendini rotulei), non un consumo generico distribuito nella giornata. Evidenza: " +
+      "preliminare ma in crescita, più solida su tendinopatie da sovraccarico che su cartilagine articolare.",
   },
   {
     id: "ashwagandha", name: "Ashwagandha", icon: "🌱",
@@ -3211,6 +3318,16 @@ export const SUPP_WIKI = [
     body: "Diversi studi mostrano una riduzione percepita dello stress e, in alcuni casi, un lieve incremento di " +
       "forza o testosterone. La letteratura è in crescita ma non ancora definitiva quanto quella su creatina o " +
       "caffeina: non sostituisce la gestione di sonno e stress, che restano le leve principali.",
+    deepDive: "Withania somnifera è una pianta adattogena il cui principio attivo principale sono i withanolidi, " +
+      "steroidi vegetali che sembrano modulare l'asse ipotalamo-ipofisi-surrene (HPA), l'asse centrale della " +
+      "risposta allo stress: diversi trial ne mostrano un effetto di riduzione del cortisolo salivare/plasmatico " +
+      "del 20-30% dopo 6-8 settimane d'uso costante, coerente con l'effetto soggettivo su ansia percepita. Un " +
+      "cortisolo cronicamente elevato è catabolico (favorisce la proteolisi muscolare) e interferisce con il " +
+      "sonno profondo, il che spiega l'interesse anche in ambito sportivo oltre che nella gestione dello stress " +
+      "generale. Gli studi standardizzano l'estratto sulla percentuale di withanolidi (tipicamente 5%): estratti " +
+      "non standardizzati hanno concentrazioni molto variabili e risultati meno prevedibili. Evidenza: moderata e " +
+      "in crescita su cortisolo, ansia e sonno; più preliminare sull'effetto diretto su forza e testosterone, " +
+      "riportato solo in un sottogruppo di studi.",
   },
   {
     id: "melatonina", name: "Melatonina", icon: "🌙",
@@ -3218,6 +3335,16 @@ export const SUPP_WIKI = [
     body: "Serve soprattutto a risincronizzare il ritmo circadiano (jet lag, turni di lavoro, orari irregolari), " +
       "più che a sedare. Dosi basse sono spesso efficaci quanto dosi alte, con meno effetto di intontimento al " +
       "risveglio: non è un sonnifero nel senso classico del termine.",
+    deepDive: "Ormone prodotto dalla ghiandola pineale in risposta al buio, che agisce sui recettori MT1 e MT2 " +
+      "del nucleo soprachiasmatico dell'ipotalamo — il \"pacemaker\" circadiano centrale — segnalando all'organismo " +
+      "che è notte, senza un'azione sedativa diretta sul sistema nervoso come le benzodiazepine. La sua secrezione " +
+      "endogena è fortemente inibita dalla luce blu (schermi, illuminazione artificiale intensa la sera), motivo " +
+      "per cui l'igiene del sonno (luce, orari) resta l'intervento con il maggiore impatto, e l'integrazione " +
+      "funziona meglio come complemento che come sostituto. Dosi fisiologiche basse (0.3-1 mg) replicano più " +
+      "fedelmente il picco naturale e mostrano spesso pari efficacia rispetto a dosi farmacologiche (3-10 mg), " +
+      "con minore rischio di sonnolenza residua al risveglio (hangover da melatonina) legato a un'emivita più " +
+      "lunga alle dosi alte. Evidenza: molto alta per la risincronizzazione circadiana (jet lag, turnisti), " +
+      "moderata come generico aiuto al sonno in chi non ha un disallineamento circadiano di base.",
   },
   {
     id: "elettroliti", name: "Elettroliti / Sali Minerali", icon: "🧂",
@@ -3225,6 +3352,17 @@ export const SUPP_WIKI = [
     body: "Utili a prevenire crampi e cali di performance in sedute prolungate o in ambienti caldi, dove la " +
       "perdita di sodio e altri minerali con il sudore è significativa. Per sedute brevi in ambienti freschi " +
       "l'acqua da sola è quasi sempre sufficiente.",
+    deepDive: "Il sudore non è acqua pura: contiene soprattutto sodio (circa 460-1.840 mg/litro, molto variabile " +
+      "da persona a persona) più potassio, magnesio e cloro in quantità minori. Sodio e potassio sono gli ioni " +
+      "che mantengono il gradiente elettrochimico attraverso la membrana delle cellule nervose e muscolari " +
+      "(pompa sodio-potassio ATPasi): una loro deplezione significativa altera l'eccitabilità della placca " +
+      "neuromuscolare, un meccanismo candidato — insieme all'affaticamento neuromuscolare locale — nella genesi " +
+      "dei crampi da sforzo prolungato. Reintegrare solo acqua senza elettroliti in sedute molto lunghe e sudate " +
+      "può inoltre diluire il sodio plasmatico (iponatriemia da sforzo), un rischio raro ma reale in eventi di " +
+      "endurance di più ore. La quantità di sodio perso varia molto su base individuale e climatica, motivo per " +
+      "cui non esiste una dose universale: il colore/sapore del sudore secco sulla pelle (chi suda molto sale " +
+      "spesso nota residui bianchi) è un indicatore grezzo ma utile. Evidenza: alta per sforzi lunghi (>90 min) o " +
+      "in ambiente caldo-umido, marginale per sedute brevi in ambiente fresco.",
   },
   {
     id: "vitamina_d", name: "Vitamina D3", icon: "🌤️",
@@ -3232,6 +3370,18 @@ export const SUPP_WIKI = [
     body: "Fondamentale per la salute ossea, la funzione immunitaria e, indirettamente, per la performance: " +
       "la carenza è molto comune nei mesi invernali e in chi si allena prevalentemente al chiuso. Un dosaggio " +
       "del sangue prima di integrare aiuta a capire la dose realmente necessaria, invece di andare a caso.",
+    deepDive: "Nonostante il nome, non è una vitamina in senso stretto ma un pro-ormone: la pelle la sintetizza a " +
+      "partire dal colesterolo (7-deidrocolesterolo) sotto l'azione dei raggi UVB, poi il fegato la converte in " +
+      "25-idrossivitamina D (la forma misurata negli esami del sangue) e il rene nella forma attiva " +
+      "1,25-diidrossivitamina D (calcitriolo), un vero ormone steroideo che si lega a recettori nucleari (VDR) " +
+      "presenti praticamente in ogni tessuto, incluso il muscolo scheletrico. Regola l'assorbimento intestinale " +
+      "di calcio e fosforo (da cui il ruolo osseo), modula centinaia di geni del sistema immunitario e sembra " +
+      "influenzare direttamente la funzione contrattile delle fibre muscolari attraverso i VDR muscolari. Essendo " +
+      "liposolubile, si accumula nel tessuto adiposo: per questo il sovrappeso è un fattore di rischio " +
+      "indipendente per la carenza, e l'assunzione con un pasto grasso ne migliora l'assorbimento. Solo un esame " +
+      "del sangue (25-OH-D) distingue una reale carenza da un livello già adeguato, evitando sia il sotto- che il " +
+      "sovra-dosaggio. Evidenza: molto alta su osso e immunità, in crescita ma meno definitiva su performance " +
+      "muscolare diretta.",
   },
   {
     id: "magnesio", name: "Magnesio", icon: "🌾",
@@ -3239,6 +3389,17 @@ export const SUPP_WIKI = [
     body: "Coinvolto in centinaia di reazioni enzimatiche, incluso il rilassamento muscolare e la qualità del " +
       "sonno. Molte diete moderne ne forniscono meno del necessario. Le forme ossido/solfato sono economiche " +
       "ma assorbite peggio e più lassative; bisglicinato e citrato sono generalmente meglio tollerati.",
+    deepDive: "È cofattore di oltre 300 enzimi, incluse tutte le reazioni che usano ATP (l'ATP biologicamente " +
+      "attivo è in realtà un complesso Mg-ATP): interviene quindi direttamente nella glicolisi, nella " +
+      "fosforilazione ossidativa e nella sintesi proteica. A livello neuromuscolare agisce come antagonista " +
+      "fisiologico del calcio nei canali NMDA e nei recettori della giunzione neuromuscolare, contribuendo al " +
+      "rilassamento muscolare dopo la contrazione — da cui l'uso tradizionale contro i crampi notturni, anche se " +
+      "l'evidenza specifica sui crampi è mista. La forma chimica cambia molto la biodisponibilità: ossido e " +
+      "solfato hanno una solubilità intestinale bassa (l'ossido non assorbito richiama acqua nel lume intestinale, " +
+      "da cui l'effetto lassativo), mentre le forme chelate agli aminoacidi (bisglicinato) o legate ad acidi " +
+      "organici (citrato, malato) sono assorbite tramite trasportatori intestinali diversi e più efficienti. " +
+      "Evidenza: alta sul ruolo enzimatico generale e sulla correzione di carenza (molto comune con diete povere " +
+      "di legumi/frutta secca/verdure a foglia verde), moderata sull'effetto specifico su qualità del sonno.",
   },
   {
     id: "hmb", name: "HMB", icon: "🧱",
@@ -3246,6 +3407,16 @@ export const SUPP_WIKI = [
     body: "Metabolita della leucina studiato per il suo possibile effetto anti-catabolico, soprattutto in fase " +
       "di deficit calorico marcato o in soggetti non allenati. Nell'atleta già ben allenato con proteine " +
       "adeguate, il beneficio aggiuntivo rispetto alla sola dieta è modesto.",
+    deepDive: "Il beta-idrossi-beta-metilbutirrato è un metabolita della leucina prodotto in piccola parte " +
+      "endogenamente (circa il 5% della leucina assunta viene convertita in HMB via alfa-chetoisocaproato). A " +
+      "differenza della leucina, il cui effetto principale è stimolare la sintesi proteica via mTORC1, l'HMB " +
+      "sembra agire soprattutto sul fronte opposto: inibisce la via ubiquitina-proteasoma, il principale sistema " +
+      "di degradazione proteica muscolare, riducendo quindi il catabolismo più che aumentando l'anabolismo. " +
+      "Questo lo rende teoricamente più interessante in condizioni cataboliche marcate (deficit calorico severo, " +
+      "immobilizzazione, soggetti anziani sarcopenici, principianti non adattati al carico) che nell'atleta " +
+      "avanzato in surplus o mantenimento con proteine già adeguate, dove il catabolismo di base è già contenuto. " +
+      "Evidenza: moderata e più consistente nei soggetti non allenati o in condizioni cataboliche marcate, debole " +
+      "negli atleti allenati con dieta proteica già ottimizzata.",
   },
   {
     id: "taurina", name: "Taurina", icon: "🐂",
@@ -3253,6 +3424,16 @@ export const SUPP_WIKI = [
     body: "Amminoacido coinvolto nella regolazione cellulare e nella contrazione muscolare, spesso presente " +
       "negli energy drink insieme alla caffeina. Le evidenze su un effetto ergogenico diretto sono meno solide " +
       "rispetto a creatina o caffeina, ma il profilo di sicurezza alle dosi comuni è buono.",
+    deepDive: "Aminoacido solforato (tecnicamente un acido amminosolfonico, non incorporato nelle proteine) " +
+      "presente in altissima concentrazione nel muscolo scheletrico e cardiaco, dove regola il volume cellulare e " +
+      "il flusso di calcio nel reticolo sarcoplasmatico durante il ciclo contrazione-rilassamento, oltre ad avere " +
+      "un'azione antiossidante diretta sui radicali liberi generati dall'esercizio intenso. Modula anche i " +
+      "recettori GABA-A, il che spiega un possibile effetto calmante/ansiolitico a dosi più alte — paradossale " +
+      "nelle formulazioni pre-workout dove viene abbinata a stimolanti come la caffeina, con cui l'interazione " +
+      "netta sulla performance non è del tutto chiarita. È sintetizzata endogenamente da cisteina e metionina in " +
+      "quantità solitamente sufficiente nei soggetti sani, motivo per cui il beneficio aggiuntivo " +
+      "dell'integrazione resta meno prevedibile rispetto ad altri ergogenici. Evidenza: moderata su resistenza e " +
+      "riduzione del danno ossidativo da esercizio, debole/inconsistente su forza massimale.",
   },
   {
     id: "curcuma", name: "Curcuma (Curcumina)", icon: "🟠",
@@ -3260,6 +3441,17 @@ export const SUPP_WIKI = [
     body: "Composto con proprietà antinfiammatorie studiate soprattutto per il recupero articolare e la " +
       "gestione dell'infiammazione da sovraccarico. Da solo è assorbito molto male dall'intestino: la piperina " +
       "(estratto di pepe nero) ne aumenta significativamente la biodisponibilità.",
+    deepDive: "La curcumina è il principale curcuminoide della radice di curcuma e agisce come inibitore " +
+      "pleiotropico della via NF-kB, il regolatore centrale della trascrizione di citochine pro-infiammatorie " +
+      "(TNF-alfa, IL-6, IL-1beta) attivate dal danno muscolare da esercizio intenso — lo stesso bersaglio " +
+      "molecolare, a valle, di molti FANS, ma con un profilo di effetti collaterali gastrointestinali molto più " +
+      "favorevole. Il suo limite pratico maggiore è la biodisponibilità orale quasi nulla: viene rapidamente " +
+      "glucuronidata e solfatata nell'intestino e nel fegato ed eliminata prima di raggiungere concentrazioni " +
+      "plasmatiche utili. La piperina, alcaloide del pepe nero, inibisce questi enzimi di coniugazione " +
+      "(in particolare la glucuronidazione epatica) aumentando la biodisponibilità della curcumina fino al " +
+      "2.000%, il che spiega perché quasi tutti gli integratori efficaci la includano (o usino formulazioni " +
+      "alternative come nanoparticelle o fosfolipidi complessati). Evidenza: da moderata ad alta su marcatori " +
+      "infiammatori e dolore muscolare percepito post-esercizio (DOMS), se assunta in forma bioottimizzata.",
   },
   {
     id: "proteine_vegetali", name: "Proteine Vegetali (pisello/riso)", icon: "🌱",
@@ -3267,6 +3459,17 @@ export const SUPP_WIKI = [
     body: "Alternativa per chi segue una dieta vegetale o ha intolleranze al lattosio: da sola la proteina di " +
       "riso è carente di lisina e quella di pisello di metionina, ma combinate (come in molti prodotti in " +
       "commercio) offrono un profilo aminoacidico completo, paragonabile a whey o uova.",
+    deepDive: "Ogni proteina vegetale isolata ha un \"aminoacido limitante\" — quello presente in quantità " +
+      "insufficiente rispetto al fabbisogno umano — che ne riduce il punteggio di qualità proteica (DIAAS): nel " +
+      "riso è la lisina, nel pisello la metionina/cisteina. Combinando le due fonti in proporzioni studiate " +
+      "(tipicamente 60-70% pisello, 30-40% riso) i profili si completano a vicenda, avvicinando il DIAAS " +
+      "complessivo a quello della whey. La leucina, l'aminoacido chiave per l'attivazione di mTORC1, è presente " +
+      "in quantità leggermente inferiore rispetto alla whey a parità di grammi di proteina, motivo per cui alcuni " +
+      "protocolli con proteine vegetali usano porzioni leggermente più alte (o leucina aggiunta) per equiparare " +
+      "lo stimolo anabolico per pasto. La digeribilità è generalmente buona ma leggermente inferiore alle " +
+      "proteine animali per la presenza di fattori antinutrizionali residui (es. inibitori della tripsina), " +
+      "ridotti dai processi di lavorazione industriale. Evidenza: alta sull'equivalenza pratica con whey/caseina " +
+      "quando le fonti sono combinate correttamente e la dose per pasto è adeguata (25-30 g+).",
   },
   {
     id: "probiotici", name: "Probiotici", icon: "🦠",
@@ -3274,6 +3477,18 @@ export const SUPP_WIKI = [
     body: "Supportano l'equilibrio della flora intestinale, utile soprattutto dopo cicli di antibiotici, in " +
       "periodi di stress digestivo o con diete molto ricche di proteine. L'effetto è specifico per ceppo: non " +
       "tutti i probiotici fanno la stessa cosa, e la costanza d'uso conta più della singola assunzione.",
+    deepDive: "I probiotici sono microrganismi vivi (soprattutto specie di Lactobacillus e Bifidobacterium) che, " +
+      "assunti in quantità adeguata (misurata in unità formanti colonia, UFC), competono con i patogeni per siti " +
+      "di adesione sull'epitelio intestinale, producono acidi grassi a catena corta (butirrato, propionato, " +
+      "acetato) che nutrono direttamente le cellule del colon e modulano la risposta immunitaria mucosale " +
+      "tramite l'interazione con le cellule dendritiche dell'intestino. L'effetto è marcatamente ceppo-specifico: " +
+      "il Lactobacillus rhamnosus GG e il Saccharomyces boulardii (un lievito probiotico) hanno evidenza solida " +
+      "per la diarrea associata ad antibiotici, mentre altri ceppi sono studiati per gonfiore o sindrome " +
+      "dell'intestino irritabile — risultati di uno studio su un ceppo non si estrapolano automaticamente ad " +
+      "altri. Nell'atleta con dieta iperproteica il razionale d'uso riguarda il carico fermentativo aggiuntivo " +
+      "sul colon dalle proteine non digerite che raggiungono l'intestino crasso. Evidenza: alta ma " +
+      "ceppo-dipendente; leggere sempre quale ceppo specifico (non solo il genere) è stato usato negli studi di " +
+      "riferimento del prodotto.",
   },
   {
     id: "tongkat_ali", name: "Tongkat Ali", icon: "🌳",
@@ -3283,6 +3498,16 @@ export const SUPP_WIKI = [
       "ormonalmente attivo poco conosciuto fuori dagli ambienti più specializzati: proprio per questo va " +
       "usato con consapevolezza, verificando la qualità dell'estratto e, idealmente, i propri valori ormonali " +
       "prima e dopo un ciclo d'uso.",
+    deepDive: "Eurycoma longifolia contiene quassinoidi ed eurypeptidi il cui meccanismo proposto è una riduzione " +
+      "della conversione del testosterone in estrogeni (inibizione dell'aromatasi) e del legame " +
+      "testosterone-SHBG (sex hormone-binding globulin), la proteina che tiene il testosterone \"legato\" e non " +
+      "biologicamente attivo: meno SHBG occupata significa più testosterone libero disponibile ai tessuti, senza " +
+      "necessariamente alzare il testosterone totale. Questo spiega perché l'effetto sia più marcato in soggetti " +
+      "con livelli bassi o sotto stress cronico (dove il cortisolo elevato sopprime l'asse " +
+      "ipotalamo-ipofisi-gonadi) che in soggetti già eutrofici. Essendo ormonalmente attivo, interagisce con lo " +
+      "stesso asse regolato da terapie ormonali o farmaci che modulano SHBG/aromatasi. Evidenza: moderata su " +
+      "libido e umore, preliminare ma promettente su testosterone libero in soggetti con livelli sub-ottimali; " +
+      "gli studi di alta qualità sono ancora relativamente pochi.",
   },
   {
     id: "fadogia", name: "Fadogia Agrestis", icon: "🌿",
@@ -3291,6 +3516,17 @@ export const SUPP_WIKI = [
       "letteratura scientifica su esseri umani è ancora molto limitata: la maggior parte dei dati viene da " +
       "studi animali. È uno degli integratori più \"underground\" in circolazione: l'entusiasmo online supera " +
       "di gran lunga l'evidenza reale, motivo in più per non usarlo a cuor leggero e senza controlli periodici.",
+    deepDive: "Gli studi disponibili — quasi tutti su roditori, non su esseri umani — suggeriscono un possibile " +
+      "meccanismo di stimolazione diretta delle cellule di Leydig testicolari (le cellule che producono " +
+      "testosterone) tramite un'azione simil-LH (ormone luteinizzante), oltre a un effetto sull'asse " +
+      "ipotalamo-ipofisi-gonadi a dosaggi più alti che, negli animali, ha mostrato anche segnali di potenziale " +
+      "tossicità testicolare a lungo termine — un dato che rende prudente non estrapolare acriticamente le dosi " +
+      "\"efficaci\" animali all'uomo. La composizione chimica esatta dei principi attivi (saponine, alcaloidi) " +
+      "responsabili dell'effetto non è ancora del tutto caratterizzata, e la qualità/standardizzazione degli " +
+      "estratti in commercio varia enormemente da un produttore all'altro. È tra gli integratori con il divario " +
+      "più ampio tra popolarità sui social media e reale solidità scientifica alle spalle. Evidenza: molto bassa " +
+      "sull'uomo (pochissimi trial clinici piccoli), motivo per cui va trattato come sperimentale e non come " +
+      "protocollo consolidato.",
   },
   {
     id: "ecdisterone", name: "Ecdisterone (Beta-Ecdisterone)", icon: "🦗",
@@ -3300,6 +3536,16 @@ export const SUPP_WIKI = [
       "anabolizzanti). I risultati preliminari su forza e massa magra sono interessanti ma provengono da pochi " +
       "studi: resta un composto di nicchia, poco conosciuto rispetto a creatina o proteine, da trattare come " +
       "sperimentale più che come un pilastro consolidato.",
+    deepDive: "Gli ecdisteroidi sono ormoni steroidei degli insetti e di alcune piante (fitoecdisteroidi) " +
+      "strutturalmente simili al colesterolo ma privi di attività sui recettori androgeni umani: il meccanismo " +
+      "d'azione proposto negli studi preliminari coinvolge invece il legame a un recettore estrogenico " +
+      "(ERbeta) nel tessuto muscolare, con conseguente attivazione della via PI3K/Akt/mTOR — la stessa cascata " +
+      "finale di segnalazione che porta a sintesi proteica e ipertrofia, ma raggiunta con un ligando e un " +
+      "recettore diversi da testosterone e recettore androgeno. Questo spiegherebbe perché negli studi disponibili " +
+      "non altera i marcatori ormonali tipici degli anabolizzanti (LH, testosterone, SHBG) pur mostrando, in " +
+      "alcuni piccoli trial, incrementi di forza e massa magra superiori al placebo. Il numero di studi controllati " +
+      "sull'uomo resta comunque limitato e alcuni con metodologia discussa. Evidenza: preliminare/moderata, in " +
+      "crescita ma non ancora al livello di consenso scientifico di creatina o proteine.",
   },
   {
     id: "rodiola", name: "Rhodiola Rosea", icon: "🌸",
@@ -3308,6 +3554,16 @@ export const SUPP_WIKI = [
       "studi mostrano un miglioramento della resistenza percepita e della lucidità mentale in condizioni di " +
       "affaticamento, con un profilo di sicurezza favorevole. È meno conosciuta di ashwagandha ma altrettanto " +
       "interessante per chi gestisce carichi di lavoro e allenamento elevati insieme.",
+    deepDive: "I principi attivi principali, rosavine e salidroside, agiscono su più fronti: modulano l'attività " +
+      "delle proteine da shock termico (HSP70), coinvolte nella risposta cellulare allo stress ossidativo e " +
+      "metabolico dell'esercizio, e influenzano i livelli di monoamine cerebrali (serotonina, dopamina, " +
+      "noradrenalina) implicate nella percezione soggettiva di fatica mentale. A differenza degli adattogeni ad " +
+      "azione più lenta come l'ashwagandha, la rodiola mostra spesso un effetto acuto misurabile già dopo una " +
+      "singola dose in test di fatica cognitiva e fisica, oltre a un effetto cronico dopo settimane d'uso — un " +
+      "doppio profilo temporale relativamente insolito tra gli adattogeni. Il dosaggio efficace dipende molto " +
+      "dallo standardize su rosavine e salidroside piuttosto che dal peso grezzo dell'estratto, motivo per cui " +
+      "prodotti non standardizzati hanno risultati inconsistenti. Evidenza: moderata su fatica mentale acuta e " +
+      "resistenza percepita, più preliminare sull'effetto cronico su performance fisica pura.",
   },
   {
     id: "lions_mane", name: "Lion's Mane (Hericium Erinaceus)", icon: "🦁",
@@ -3316,6 +3572,17 @@ export const SUPP_WIKI = [
       "(tramite la stimolazione del fattore di crescita nervoso, NGF), con interesse crescente per la lucidità " +
       "mentale e la salute cognitiva a lungo termine. Gli studi sull'uomo sono ancora pochi ma promettenti: " +
       "un integratore di nicchia, tipico del mondo della longevità più che di quello sportivo classico.",
+    deepDive: "Contiene due classi di composti bioattivi unici tra i funghi medicinali: le erinacine (che " +
+      "attraversano la barriera emato-encefalica) e le ericenoni, entrambe capaci di stimolare la sintesi di " +
+      "NGF (nerve growth factor), una neurotrofina che promuove la sopravvivenza, la crescita e la " +
+      "differenziazione dei neuroni, in particolare nell'ippocampo (l'area cerebrale centrale per memoria e " +
+      "apprendimento). L'ipotesi alla base dell'interesse per la salute cognitiva a lungo termine è che livelli " +
+      "più alti di NGF possano favorire la plasticità sinaptica e rallentare il declino neuronale legato all'età, " +
+      "un meccanismo distinto da quello degli stimolanti (caffeina) o degli adattogeni da stress " +
+      "(ashwagandha/rodiola): non dà una spinta acuta, ma lavora su tempi lunghi sulla \"manutenzione\" del " +
+      "tessuto nervoso. Gli studi controllati sull'uomo sono ancora numericamente pochi e per lo più su soggetti " +
+      "anziani con lieve declino cognitivo, non su popolazione sportiva sana. Evidenza: preliminare ma coerente " +
+      "sul meccanismo, insufficiente per conclusioni definitive sulla popolazione generale.",
   },
   {
     id: "urolitina_a", name: "Urolitina A", icon: "🍇",
@@ -3325,6 +3592,18 @@ export const SUPP_WIKI = [
       "l'integrazione diretta. Studiata per il suo ruolo nella mitofagia (il \"riciclo\" dei mitocondri " +
       "danneggiati nelle cellule), è uno dei composti più discussi nel mondo della longevità e del recupero " +
       "muscolare legato all'età, anche se resta poco conosciuto fuori da quell'ambito.",
+    deepDive: "Le ellagitannine del melograno e delle noci vengono convertite in acido ellagico e poi in " +
+      "urolitine dal microbiota del colon; solo una minoranza della popolazione (stimata attorno al 40%, i " +
+      "cosiddetti \"metabolizzatori di tipo B\") ospita i batteri intestinali necessari a completare questa " +
+      "conversione in quantità significative, il che rende l'integrazione diretta di urolitina A pura molto più " +
+      "affidabile del semplice consumo di melograno. A livello cellulare l'urolitina A attiva la mitofagia — il " +
+      "processo con cui la cellula identifica e degrada selettivamente i mitocondri danneggiati o disfunzionali " +
+      "tramite le vie PINK1/Parkin — mantenendo così una popolazione mitocondriale più efficiente. L'efficienza " +
+      "mitocondriale del muscolo scheletrico declina fisiologicamente con l'età ed è centrale sia per la " +
+      "produzione di energia (ATP) sia per la resistenza alla fatica, da cui l'interesse crescente per il " +
+      "recupero muscolare in atleti master oltre che nella ricerca sulla longevità in senso stretto. Evidenza: " +
+      "preliminare ma con un meccanismo cellulare ben caratterizzato (a differenza di molti composti \"di moda\"), " +
+      "supportata da alcuni trial clinici su forza e biomarcatori mitocondriali negli adulti.",
   },
   {
     id: "nmn", name: "NMN (Nicotinamide Mononucleotide)", icon: "🧬",
@@ -3333,6 +3612,18 @@ export const SUPP_WIKI = [
       "naturalmente con l'età. L'integrazione con NMN (o il suo parente NR, Nicotinamide Riboside) è uno dei " +
       "temi più caldi nella ricerca sulla longevità, ma gli studi solidi su esseri umani sono ancora limitati " +
       "rispetto all'entusiasmo mediatico: promettente, ma da considerare sperimentale.",
+    deepDive: "Il NAD+ (nicotinammide adenina dinucleotide) è un coenzima essenziale in centinaia di reazioni " +
+      "redox, incluse glicolisi, ciclo di Krebs e catena di trasporto degli elettroni mitocondriale — è " +
+      "letteralmente la molecola che rende possibile la produzione di ATP — e funge anche da substrato per le " +
+      "sirtuine, una famiglia di enzimi collegati alla riparazione del DNA e alla regolazione dell'espressione " +
+      "genica legata all'invecchiamento cellulare. I livelli di NAD+ calano fisiologicamente con l'età (fino al " +
+      "50% tra i 40 e i 60 anni in alcuni tessuti), e l'NMN è l'immediato precursore a monte del NAD+ nella via " +
+      "di salvataggio (salvage pathway) partendo dalla nicotinammide: assunto per via orale, deve prima essere " +
+      "convertito (in parte già nell'intestino, in NR) prima di essere captato dalle cellule e fosforilato a " +
+      "NAD+. Il razionale è quindi ripristinare un pool di NAD+ più giovanile per sostenere metabolismo " +
+      "energetico e funzione mitocondriale. Evidenza: solida sui meccanismi cellulari e sugli studi animali, " +
+      "ancora limitata (pochi trial umani, per lo più piccoli e a breve termine) su outcome clinici concreti " +
+      "come performance o longevità reale.",
   },
   {
     id: "glicina", name: "Glicina", icon: "💤",
@@ -3341,6 +3632,17 @@ export const SUPP_WIKI = [
       "sul miglioramento soggettivo della qualità del sonno profondo, probabilmente tramite un lieve " +
       "abbassamento della temperatura corporea centrale. Spesso trascurato rispetto a melatonina o magnesio, " +
       "merita più attenzione di quanta ne riceva di solito.",
+    deepDive: "È l'aminoacido non essenziale più semplice (un solo atomo di idrogeno come catena laterale) e " +
+      "agisce come neurotrasmettitore inibitorio nel midollo spinale e nel tronco encefalico, oltre a legarsi ai " +
+      "recettori NMDA nel cervello. Il meccanismo proposto per il suo effetto sul sonno è la vasodilatazione " +
+      "periferica che induce, favorendo la dispersione di calore corporeo e quindi il naturale calo della " +
+      "temperatura corporea centrale che precede e accompagna l'addormentamento e l'ingresso nelle fasi di sonno " +
+      "profondo (onde lente) — lo stesso principio fisiologico per cui una doccia calda prima di dormire può " +
+      "aiutare. A differenza della melatonina, non agisce sul ritmo circadiano ma sulla fisiologia " +
+      "termoregolatoria e neuromodulatoria locale, il che la rende complementare (non alternativa) a un eventuale " +
+      "uso di melatonina in caso di disallineamento circadiano concomitante. Evidenza: da moderata ad alta sugli " +
+      "outcome soggettivi di qualità del sonno (tempo per addormentarsi, sonnolenza diurna residua), meno studiata " +
+      "con misure oggettive come la polisonnografia.",
   },
   {
     id: "berberina", name: "Berberina", icon: "🌼",
@@ -3350,6 +3652,18 @@ export const SUPP_WIKI = [
       "il controllo glicemico. Molto meno nota di creatina o proteine ma potenzialmente rilevante per chi " +
       "gestisce composizione corporea e salute metabolica insieme; può interagire con altri farmaci, quindi " +
       "va usata con attenzione se già in terapia.",
+    deepDive: "Alcaloide isochinolinico estratto da diverse piante (Berberis, Coptis), il cui meccanismo " +
+      "principale è l'attivazione dell'AMPK (AMP-activated protein kinase), lo stesso \"sensore energetico\" " +
+      "cellulare attivato dall'esercizio fisico e, farmacologicamente, dalla metformina: l'attivazione dell'AMPK " +
+      "aumenta la traslocazione dei trasportatori del glucosio GLUT4 sulla membrana cellulare (più captazione di " +
+      "glucosio dal sangue indipendente dall'insulina) e inibisce la gluconeogenesi epatica. Agisce inoltre sul " +
+      "microbiota intestinale con un effetto simile agli antibiotici a spettro selettivo, alterando la " +
+      "composizione della flora in modo che sembra contribuire indipendentemente al miglioramento del profilo " +
+      "metabolico. Proprio perché condivide bersagli molecolari con farmaci ipoglicemizzanti, l'uso concomitante " +
+      "con antidiabetici richiede supervisione medica per il rischio di ipoglicemia additiva; inibisce inoltre " +
+      "alcuni enzimi del citocromo P450 (CYP3A4, CYP2D6) coinvolti nel metabolismo di molti farmaci comuni. " +
+      "Evidenza: alta su glicemia post-prandiale e sensibilità insulinica, con diversi trial che la paragonano " +
+      "favorevolmente alla metformina in studi di dimensioni moderate.",
   },
   {
     id: "astaxantina", name: "Astaxantina", icon: "🦐",
@@ -3359,6 +3673,18 @@ export const SUPP_WIKI = [
       "salute della pelle e degli occhi. Resta un integratore di nicchia rispetto ai classici da palestra, ma " +
       "con un profilo interessante per chi si allena molto e pensa anche al recupero a lungo termine, non solo " +
       "alla prestazione immediata.",
+    deepDive: "Carotenoide xantofillico prodotto dalla microalga Haematococcus pluvialis (da cui lo ottiene per " +
+      "via alimentare il salmone selvatico, che gli deve il colore rosa), con una struttura molecolare che gli " +
+      "permette — a differenza di molti altri antiossidanti — di posizionarsi attraverso l'intero spessore del " +
+      "doppio strato lipidico della membrana cellulare, proteggendola dall'ossidazione sia sul lato esterno che " +
+      "su quello interno: un meccanismo che gli conferisce una capacità antiossidante misurata come molto " +
+      "superiore, molecola per molecola, a vitamina C, E o beta-carotene nei test in vitro. L'esercizio intenso " +
+      "genera specie reattive dell'ossigeno (ROS) che, oltre un certo livello, contribuiscono al danno muscolare " +
+      "e al ritardo del recupero: l'astaxantina sembra ridurre questo stress ossidativo senza sopprimere del " +
+      "tutto le ROS, che a dosi fisiologiche sono anche un segnale utile per gli adattamenti all'allenamento " +
+      "(da cui la cautela verso un uso massiccio e indiscriminato di antiossidanti attorno alla sessione). " +
+      "Evidenza: moderata su marcatori di stress ossidativo e affaticamento visivo, preliminare ma coerente su " +
+      "recupero muscolare in sport di endurance.",
   },
 ];
 
@@ -4511,12 +4837,60 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
   );
 }
 
+/* Popup scorrevole di approfondimento: si apre al tap su un integratore
+   della wiki, con il riassunto pratico (dose/timing/body) già presente in
+   cima e l'approfondimento chimico/biologico/fisiologico (deepDive) sotto,
+   dentro un'area che scorre — testo lungo, niente layout che esplode la
+   pagina. Stesso pattern visivo di CompliancePopup (overlay + foglio). */
+function SupplementDetailModal({ supplement, accent, onClose }) {
+  if (!supplement) return null;
+  const w = supplement;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+         style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
+      <div className="spring-in w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 flex flex-col"
+           style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "85vh" }}
+           onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3 shrink-0">
+          <p className="h1 flex items-center gap-2">
+            <span aria-hidden="true" style={{ filter: "saturate(0.65) contrast(0.92)" }}>{w.icon}</span>{w.name}
+          </p>
+          <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+        </div>
+        <div className="overflow-y-auto pr-1" style={{ overflowX: "hidden" }}>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <span className="font-data px-2.5 py-1 rounded-full"
+                  style={{ fontSize: "0.6rem", letterSpacing: "0.08em", backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
+              DOSE · {w.dose}
+            </span>
+            <span className="font-data px-2.5 py-1 rounded-full"
+                  style={{ fontSize: "0.6rem", letterSpacing: "0.08em", backgroundColor: "var(--surface-2)",
+                           border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+              TIMING · {w.timing}
+            </span>
+          </div>
+          <p className="body mb-4">{w.body}</p>
+          {w.deepDive && (
+            <div className="inner p-4">
+              <p className="label mb-2" style={{ letterSpacing: "0.08em" }}>Approfondimento chimico-fisiologico</p>
+              <p className="body" style={{ fontSize: "0.86rem", lineHeight: 1.6 }}>{w.deepDive}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* Wiki integratori condivisa: cercabile, usata sia dal profilo FREE che PRO,
-   così ci si può informare in entrambi i piani allo stesso modo. */
+   così ci si può informare in entrambi i piani allo stesso modo. Il tap su
+   un integratore apre SupplementDetailModal invece di espandersi in linea:
+   l'approfondimento è troppo lungo per stare comodo dentro la card. */
 function SupplementWikiBrowser({ accent }) {
   const [openWiki, setOpenWiki] = useState(null);
   const [wikiQuery, setWikiQuery] = useState("");
   const filteredWiki = SUPP_WIKI.filter((w) => w.name.toLowerCase().includes(wikiQuery.trim().toLowerCase()));
+  const openSupplement = SUPP_WIKI.find((w) => w.id === openWiki) || null;
 
   return (
     <div className="card">
@@ -4532,38 +4906,16 @@ function SupplementWikiBrowser({ accent }) {
         {filteredWiki.length === 0 && (
           <p className="meta text-sm">Nessun integratore trovato per "{wikiQuery}".</p>
         )}
-        {filteredWiki.map((w) => {
-          const on = openWiki === w.id;
-          return (
-            <button key={w.id} onClick={() => setOpenWiki(on ? null : w.id)}
-              className="rounded-full px-3.5 py-2 text-sm flex items-center gap-1.5 transition-all duration-300"
-              style={on ? { backgroundColor: "var(--ink)", color: "var(--page)" }
-                        : { backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
-              <span aria-hidden="true" style={{ filter: "saturate(0.7) brightness(1.15)" }}>{w.icon}</span>{w.name}
-            </button>
-          );
-        })}
+        {filteredWiki.map((w) => (
+          <button key={w.id} onClick={() => setOpenWiki(w.id)}
+            className="rounded-full px-3.5 py-2 text-sm flex items-center gap-1.5 transition-all duration-300"
+            style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
+            <span aria-hidden="true" style={{ filter: "saturate(0.7) brightness(1.15)" }}>{w.icon}</span>{w.name}
+          </button>
+        ))}
       </div>
 
-      {SUPP_WIKI.filter((w) => w.id === openWiki).map((w) => (
-        <article key={w.id} className="inner spring-in p-4 mt-4">
-          <p className="h2 flex items-center gap-2 mb-2">
-            <span aria-hidden="true" style={{ filter: "saturate(0.65) contrast(0.92)" }}>{w.icon}</span>{w.name}
-          </p>
-          <div className="flex flex-wrap gap-2 mb-3">
-            <span className="font-data px-2.5 py-1 rounded-full"
-                  style={{ fontSize: "0.6rem", letterSpacing: "0.08em", backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
-              DOSE · {w.dose}
-            </span>
-            <span className="font-data px-2.5 py-1 rounded-full"
-                  style={{ fontSize: "0.6rem", letterSpacing: "0.08em", backgroundColor: "var(--surface-2)",
-                           border: "1px solid var(--line)", color: "var(--ink-2)" }}>
-              TIMING · {w.timing}
-            </span>
-          </div>
-          <p className="body">{w.body}</p>
-        </article>
-      ))}
+      <SupplementDetailModal supplement={openSupplement} accent={accent} onClose={() => setOpenWiki(null)} />
     </div>
   );
 }
