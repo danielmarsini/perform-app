@@ -38,7 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises } from "../lib/coachingData.js";
 import { WeeklyCheckModal } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
@@ -1326,9 +1326,28 @@ export default function ClientProfileViewPreview({
     { date: "2026-07-01", front: null, side: null, back: null },
   ];
 
-  // Esercizi registrati in Home, sulla scheda impostata dal coach
-  const [favoriteExerciseIds, setFavoriteExerciseIds] = useState(["panca", "squat", "stacco"]);
-  const exercises = [
+  // Esercizi registrati in Home, sulla scheda impostata dal coach. In
+  // isRealMode arrivano da fetchExerciseRecords (storico reale da
+  // workout_sets, carico massimo per sessione) invece dalla lista demo
+  // sotto; i preferiti si leggono/scrivono su profiles.favorite_exercises
+  // (fetchFavoriteExercises/saveFavoriteExercises) così sopravvivono al
+  // logout, non più solo stato locale della sessione.
+  const [realExercises, setRealExercises] = useState(null); // null = non ancora caricato
+  const [realFavoriteIds, setRealFavoriteIds] = useState([]);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    fetchExerciseRecords(supabase, userId)
+      .then((rows) => { if (!cancelled) setRealExercises(rows); })
+      .catch((err) => { console.error("PERFORM: errore caricamento Traguardi reali", err); if (!cancelled) setRealExercises([]); });
+    fetchFavoriteExercises(supabase, userId)
+      .then((ids) => { if (!cancelled) setRealFavoriteIds(ids); })
+      .catch((err) => console.error("PERFORM: errore caricamento preferiti Traguardi", err));
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
+
+  const [demoFavoriteExerciseIds, setDemoFavoriteExerciseIds] = useState(["panca", "squat", "stacco"]);
+  const demoExercises = [
     { id: "panca", name: "Panca Piana Bilanciere", muscleGroup: "Petto", compound: true,
       sessions: [
         { week: "Sett 1", date: "2026-06-01", kg: 72.5, reps: 8 },
@@ -1363,6 +1382,17 @@ export default function ClientProfileViewPreview({
         { week: "Sett 3", date: "2026-07-11", kg: 16, reps: 9 },
       ] },
   ];
+  const exercises = isRealMode ? (realExercises ?? []) : demoExercises;
+  const favoriteExerciseIds = isRealMode ? realFavoriteIds : demoFavoriteExerciseIds;
+  const toggleFavoriteExercise = (id) => {
+    if (isRealMode) {
+      const next = realFavoriteIds.includes(id) ? realFavoriteIds.filter((x) => x !== id) : [...realFavoriteIds, id];
+      setRealFavoriteIds(next); // ottimistico: la UI risponde subito
+      saveFavoriteExercises(supabase, userId, next).catch((err) => console.error("PERFORM: errore salvataggio preferiti", err));
+      return;
+    }
+    setDemoFavoriteExerciseIds((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
+  };
 
   return (
     <div className={isControlled ? "app-root" : "app-root min-h-screen"} data-theme={dark ? "dark" : "light"}
@@ -1424,7 +1454,7 @@ export default function ClientProfileViewPreview({
           level={isRealMode ? realLevelInfo.level : 4} xp={isRealMode ? realLevelInfo.xp : 4850}
           checkPhotos={checkPhotos} weightPoints={weightPoints}
           exercises={exercises} favoriteExerciseIds={favoriteExerciseIds}
-          onToggleFavoriteExercise={(id) => setFavoriteExerciseIds((f) => f.includes(id) ? f.filter((x) => x !== id) : [...f, id])}
+          onToggleFavoriteExercise={toggleFavoriteExercise}
           onSaveProfile={(d) => setProfile((p) => ({ ...p, ...d }))}
           onOpenSettings={onOpenSettingsProp ?? (() => setSettings(true))}
           nicknameTaken={(n) => ["SaraSteel", "LucaE"].some((x) => x.toLowerCase() === n.toLowerCase())}

@@ -295,6 +295,58 @@ export async function fetchExerciseHistory(supabase, userId, exerciseName, limit
   return (data ?? []).reverse().map((r) => ({ kg: Number(r.load_kg), reps: r.reps_completed }));
 }
 
+// "I Miei Traguardi" (profilo): storico REALE di ogni esercizio mai svolto
+// dal cliente, raggruppato per nome, con il carico massimo per sessione (non
+// l'ultima serie salvata: workout_logs.load_kg viene sovrascritto a ogni
+// nuova serie, workout_sets no — da lì il MAX per data). Una sola query,
+// raggruppamento lato client, stesso pattern di fetchWeekWorkout.
+export async function fetchExerciseRecords(supabase, userId) {
+  const { data, error } = await supabase
+    .from("workout_sets")
+    .select("load_kg, reps_completed, workout_logs!inner(date, exercise_name, muscle_target, user_id)")
+    .eq("workout_logs.user_id", userId)
+    .not("load_kg", "is", null);
+  if (error) throw error;
+  // Ordine per data applicato lato client (sotto, per sessione/esercizio):
+  // ordinare su una colonna della tabella joinata non è affidabile via
+  // PostgREST qui, e non serve — il raggruppamento per data lo rifà comunque.
+
+  const byExercise = new Map();
+  (data ?? []).forEach((row) => {
+    const name = row.workout_logs.exercise_name;
+    const date = row.workout_logs.date;
+    if (!byExercise.has(name)) byExercise.set(name, { name, muscleGroup: row.workout_logs.muscle_target, byDate: new Map() });
+    const entry = byExercise.get(name);
+    const existing = entry.byDate.get(date);
+    const kg = Number(row.load_kg);
+    if (!existing || kg > existing.kg) entry.byDate.set(date, { kg, reps: row.reps_completed, date });
+  });
+
+  return Array.from(byExercise.values())
+    .map((entry) => ({
+      id: entry.name,
+      name: entry.name,
+      muscleGroup: entry.muscleGroup,
+      compound: null, // non derivabile dallo schema attuale: nessun tag "multiarticolare" sui reali, mai inventato
+      sessions: Array.from(entry.byDate.values())
+        .sort((a, b) => (a.date < b.date ? -1 : 1))
+        .map((s) => ({ week: s.date.slice(5).replace("-", "/"), date: s.date, kg: s.kg, reps: s.reps })),
+    }))
+    .sort((a, b) => b.sessions.length - a.sessions.length); // più storico prima
+}
+
+// Preferiti dei Traguardi: array di exercise_name su profiles, letto/scritto
+// come xp_total/current_streak — stesso self-update già in uso altrove.
+export async function fetchFavoriteExercises(supabase, userId) {
+  const { data, error } = await supabase.from("profiles").select("favorite_exercises").eq("id", userId).maybeSingle();
+  if (error) throw error;
+  return data?.favorite_exercises ?? [];
+}
+export async function saveFavoriteExercises(supabase, userId, exerciseIds) {
+  const { error } = await supabase.from("profiles").update({ favorite_exercises: exerciseIds }).eq("id", userId);
+  if (error) throw error;
+}
+
 /* ---------------------------------------------------------------------------
    SCRITTURA — lato cliente (compilare la scheda assegnata)
    ------------------------------------------------------------------------- */
