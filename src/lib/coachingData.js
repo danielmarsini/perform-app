@@ -141,6 +141,115 @@ export async function computeRecoveryCompliance(supabase, userId) {
   return { status: "ok", pct, sleepAvg, stepsAvg, trackedDays };
 }
 
+// Diario pasti reale di UN giorno, per il "Diario Libero" della Home.
+export async function fetchNutritionLogsForDate(supabase, userId, dateISO) {
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, created_at")
+    .eq("user_id", userId)
+    .eq("date", dateISO)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Aggiunge UN alimento a un pasto in una data. `item` = {name, grams, kcal,
+// p, c, f} — stessa forma già usata lato client per il preview del food.
+export async function addNutritionLogItem(supabase, userId, dateISO, mealSlot, item) {
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .insert({
+      user_id: userId, date: dateISO, meal_slot: mealSlot,
+      name: item.name, grams: item.grams ?? null,
+      kcal: item.kcal || 0, protein: item.p || 0, carbs: item.c || 0, fat: item.f || 0,
+    })
+    .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, created_at")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Rimuove UN alimento aggiunto per errore — l'unico modo per "correggere" un
+// pasto sbagliato oggi era ricominciare tutto il diario: questo lo risolve.
+export async function removeNutritionLogItem(supabase, logId) {
+  const { error } = await supabase.from("nutrition_logs").delete().eq("id", logId);
+  if (error) throw error;
+}
+
+// Cerchio Alimentazione reale — STESSO principio di computeTrainingCompliance
+// e computeRecoveryCompliance: un'unica funzione, chiamata identica da Home
+// cliente e ClientDetail coach, legge solo dati già salvati (nutrition_logs
+// + nutrition_targets), mai stato locale del form.
+//
+// Per ciascuno degli ultimi 7 giorni: somma kcal/P/C/G registrati quel
+// giorno (nutrition_logs) e li confronta col target attivo per quel giorno
+// (nutrition_targets, effective_from <= quel giorno). Il tipo di giorno
+// (ON/OFF) non è salvato da nessuna parte per una data passata: lo si deduce
+// dalla presenza di workout_logs in quella data (giorno con allenamento
+// assegnato = ON, altrimenti OFF) — stesso segnale che l'app usa già altrove
+// per distinguere le due schede.
+// Scostamento simmetrico: sia sotto sia sopra target penalizzano allo stesso
+// modo (mai punteggio pieno solo perché si è mangiato meno). Un giorno senza
+// alcuna registrazione vale 0 (non "va bene", un buco nel diario è un buco).
+// Se in NESSUno dei 7 giorni c'è un target attivo (il coach non ha ancora
+// assegnato nulla), torna neutro esplicito.
+function dayNutritionScore(logsTotals, target) {
+  if (!target) return null; // nessun target attivo quel giorno: non giudicabile
+  const dims = ["kcal", "p", "c", "f"];
+  const devs = dims.map((d) => (target[d] > 0 ? Math.min(1, Math.abs(logsTotals[d] - target[d]) / target[d]) : 0));
+  return Math.max(0, Math.min(100, Math.round((1 - devs.reduce((a, b) => a + b, 0) / dims.length) * 100)));
+}
+export async function computeNutritionCompliance(supabase, userId) {
+  const today = toLocalISODate();
+  const sevenAgo = new Date(`${today}T00:00:00`);
+  sevenAgo.setDate(sevenAgo.getDate() - 6);
+  const fromISO = toLocalISODate(sevenAgo);
+
+  const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }] = await Promise.all([
+    supabase.from("nutrition_logs").select("date, kcal, protein, carbs, fat").eq("user_id", userId).gte("date", fromISO).lte("date", today),
+    supabase.from("nutrition_targets").select("day_type, kcal, protein, carbs, fat, effective_from").eq("user_id", userId).lte("effective_from", today).order("effective_from", { ascending: true }),
+    supabase.from("workout_logs").select("date").eq("user_id", userId).gte("date", fromISO).lte("date", today),
+  ]);
+  if (logsError) throw logsError;
+  if (targetsError) throw targetsError;
+  if (workoutsError) throw workoutsError;
+
+  const trainingDates = new Set((workouts ?? []).map((w) => w.date));
+  // Per ogni day_type, il target con effective_from più recente <= quella data.
+  const targetFor = (dateISO, dayType) => {
+    const rows = (targets ?? []).filter((t) => t.day_type === dayType && t.effective_from <= dateISO);
+    if (rows.length === 0) return null;
+    const latest = rows[rows.length - 1]; // già ordinati ascending per effective_from
+    return { kcal: Number(latest.kcal), p: Number(latest.protein), c: Number(latest.carbs), f: Number(latest.fat) };
+  };
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sevenAgo);
+    d.setDate(d.getDate() + i);
+    return toLocalISODate(d);
+  });
+
+  const scores = [];
+  let anyTarget = false;
+  days.forEach((dateISO) => {
+    const dayType = trainingDates.has(dateISO) ? "on" : "off";
+    const target = targetFor(dateISO, dayType);
+    if (!target) return; // giorno non giudicabile, non entra nella media
+    anyTarget = true;
+    const dayLogs = (logs ?? []).filter((l) => l.date === dateISO);
+    const totals = dayLogs.reduce((a, l) => ({
+      kcal: a.kcal + Number(l.kcal), p: a.p + Number(l.protein), c: a.c + Number(l.carbs), f: a.f + Number(l.fat),
+    }), { kcal: 0, p: 0, c: 0, f: 0 });
+    scores.push(dayNutritionScore(totals, target));
+  });
+
+  if (!anyTarget || scores.length === 0) {
+    return { status: "neutral", pct: null, daysScored: 0 };
+  }
+  const pct = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  return { status: "ok", pct, daysScored: scores.length };
+}
+
 // Scheda assegnata dal coach per un intervallo di date: righe is_read_only=true.
 // Le raggruppa per data così da poter costruire il weekPlan di HomeDashboard.
 export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDateISO) {

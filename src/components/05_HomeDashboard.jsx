@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, fetchDailyMetricsRange, upsertDailyMetrics } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -1284,7 +1284,7 @@ export function HomeDashboard({
   access,             // { nutrition, recovery }
   onSetSleep, onSetSteps, onToggleAutoSteps, onAddWater, onSetTargetOn, onSetTargetOff, onSetRhr, onSetHrv, onSetWaterTarget,
   targetOn, targetOff, isTrainingDay, onToggleTrainingDay,
-  onAddFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
+  onAddFood, onRemoveFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
   onGenerateSimilar, onApplyReschedule, onDismissReschedule,
   onUpgrade, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
   userPlan, // 'free' | 'performance_pack' | 'full_coaching' — letta da Supabase, qui simulata
@@ -1393,7 +1393,23 @@ export function HomeDashboard({
   }, [isRealMode, supabase, userId]);
 
   const trainPct = isRealMode ? (realTrainCompliance?.pct ?? null) : (trainOverride ?? trainPctComputed);
-  const nutriPct = nutriOverride ?? nutriPctComputed;
+
+  // Cerchio Alimentazione reale: STESSA formula di ClientDetail (coach) — vedi
+  // computeNutritionCompliance in coachingData.js. Legge solo nutrition_logs
+  // + nutrition_targets già salvati, stesso principio degli altri due cerchi.
+  const [realNutritionCompliance, setRealNutritionCompliance] = useState(null);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    computeNutritionCompliance(supabase, userId)
+      .then((r) => { if (!cancelled) setRealNutritionCompliance(r); })
+      .catch((err) => {
+        console.error("PERFORM: errore calcolo cerchio Alimentazione", err);
+        if (!cancelled) setRealNutritionCompliance({ status: "neutral", pct: null, daysScored: 0 });
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
+  const nutriPct = isRealMode ? (realNutritionCompliance?.pct ?? null) : (nutriOverride ?? nutriPctComputed);
 
   // Cerchio Recupero reale: STESSA formula di ClientDetail (coach), mai
   // calcolata due volte — vedi computeRecoveryCompliance in coachingData.js.
@@ -1436,11 +1452,16 @@ export function HomeDashboard({
     },
     {
       id: "nutri", label: "Alimentazione", icon: Salad, pct: nutriPct,
-      details: [
-        { label: "Precisione oggi vs target", value: `${nutriPctToday}%` },
-        { label: "Kcal oggi", value: `${consumed.kcal} / ${target.kcal}` },
-        { label: "Media 7 giorni", value: `${nutriPctComputed}%` },
-      ],
+      details: isRealMode
+        ? [
+            { label: "Kcal oggi", value: `${consumed.kcal} / ${target.kcal}` },
+            { label: "Giorni valutati (7g)", value: `${realNutritionCompliance?.daysScored ?? 0} / 7` },
+          ]
+        : [
+            { label: "Precisione oggi vs target", value: `${nutriPctToday}%` },
+            { label: "Kcal oggi", value: `${consumed.kcal} / ${target.kcal}` },
+            { label: "Media 7 giorni", value: `${nutriPctComputed}%` },
+          ],
     },
     {
       id: "recovery", label: "Recupero", icon: BedDouble, pct: recoveryPct,
@@ -1792,7 +1813,7 @@ export function HomeDashboard({
           accent={accent} accentSoft={accentSoft} accentText={accentText}
           target={target} mealsBySlot={mealsBySlot} foods={foods}
           mealGuide={mealGuide} substitutions={substitutions}
-          onAddFood={onAddFood} onOpenScanner={onOpenScanner} onOpenPhoto={onOpenPhoto} onAddCustomFood={onAddCustomFood}
+          onAddFood={onAddFood} onRemoveFood={onRemoveFood} onOpenScanner={onOpenScanner} onOpenPhoto={onOpenPhoto} onAddCustomFood={onAddCustomFood}
           onCopyYesterday={onCopyYesterday} onShoppingList={onShoppingList}
           onGenerateSimilar={onGenerateSimilar}
           targetOn={targetOn} targetOff={targetOff}
@@ -3337,7 +3358,7 @@ const SCAN_POOL = [
 
 function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide, substitutions,
-  onAddFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
+  onAddFood, onRemoveFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
   onGenerateSimilar, targetOn, targetOff, onSetTargetOn, onSetTargetOff,
   isTrainingDay, onToggleTrainingDay, waterTarget, onSetWaterTarget, fullAccess, onUpgrade,
   userPlan, gender, waterMl, digestValue, onDigestChange,
@@ -3458,7 +3479,15 @@ function NutritionTabs({
                       {items.map((i, k) => (
                         <div key={`${i.name}-${k}`} className="inner flex items-center justify-between gap-3 px-4 py-2.5">
                           <span className="text-sm truncate" style={{ color: "var(--ink)" }}>{i.name}</span>
-                          <span className="meta font-data text-xs shrink-0">{i.grams} g · {i.kcal} kcal</span>
+                          <span className="flex items-center gap-2 shrink-0">
+                            <span className="meta font-data text-xs">{i.grams} g · {i.kcal} kcal</span>
+                            {onRemoveFood && (
+                              <button onClick={() => onRemoveFood(slot.id, k)} aria-label={`Rimuovi ${i.name}`}
+                                      className="p-1 rounded-full" style={{ color: "var(--ink-2)" }}>
+                                <X size={13} />
+                              </button>
+                            )}
+                          </span>
                         </div>
                       ))}
                       <div className="flex justify-end gap-3 pt-1">
@@ -4840,8 +4869,12 @@ export default function HomePreview({
     setPlanTier(planProp === "full_coaching" || planProp === "scheda_personalizzata" || planProp === "training" ? "PRO"
       : planProp === "performance_pack" ? "BASE" : "FREE");
   }, [planProp]);
+  // Diario pasti: in preview isolata parte con un esempio precompilato
+  // (Avena in Fiocchi); in modalità reale parte vuoto — un cliente vero non
+  // deve mai vedere un pasto che non ha registrato lui. Il diario reale di
+  // oggi arriva dal fetch qui sotto appena caricato.
   const [meals, setMeals] = useState(
-    MEAL_SLOTS.reduce((a, s) => ({ ...a, [s.id]: s.id === "colazione"
+    MEAL_SLOTS.reduce((a, s) => ({ ...a, [s.id]: (s.id === "colazione" && !(supabaseProp && userId))
       ? [{ name: "Avena in Fiocchi", grams: 60, kcal: 222, p: 8, c: 36, f: 4 }] : [] }), {})
   );
   const [sets, setSets] = useState({});
@@ -4992,6 +5025,34 @@ export default function HomePreview({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sleep.start, sleep.end, sleep.hours, steps, supabaseProp, userId, realHistory]);
+
+  // Diario pasti reale di oggi (nutrition_logs): se il cliente aveva già
+  // registrato qualcosa oggi (stessa sessione precedente, o riapertura
+  // dell'app), lo ricarica al posto del diario vuoto di default. Ogni item
+  // porta con sé l'id reale della riga, necessario per poterlo rimuovere.
+  useEffect(() => {
+    if (!supabaseProp || !userId) return;
+    let cancelled = false;
+    fetchNutritionLogsForDate(supabaseProp, userId, toLocalISODate())
+      .then((rows) => {
+        if (cancelled || rows.length === 0) return;
+        const bySlot = {};
+        rows.forEach((r) => {
+          if (!bySlot[r.meal_slot]) bySlot[r.meal_slot] = [];
+          bySlot[r.meal_slot].push({
+            id: r.id, name: r.name, grams: Number(r.grams) || 0,
+            kcal: Number(r.kcal), p: Number(r.protein), c: Number(r.carbs), f: Number(r.fat),
+          });
+        });
+        setMeals((m) => {
+          const next = { ...m };
+          MEAL_SLOTS.forEach((slot) => { if (bySlot[slot.id]) next[slot.id] = bySlot[slot.id]; });
+          return next;
+        });
+      })
+      .catch((err) => console.error("PERFORM: errore lettura diario pasti", err));
+    return () => { cancelled = true; };
+  }, [supabaseProp, userId]);
 
   const [rhr, setRhr] = useState("58");
   const [hrv, setHrv] = useState("62");
@@ -5262,7 +5323,26 @@ export default function HomePreview({
           onCoachSync={pushCoachSync} lastCoachSync={coachFeed[coachFeed.length - 1]} coachSyncCount={coachFeed.length}
           coachFeed={coachFeed}
           onSimulateInactivity={simulateInactivity} onResetActivityToday={resetActivityToday}
-          onAddFood={(slot, item) => setMeals((m) => ({ ...m, [slot]: [...m[slot], item] }))}
+          onAddFood={(slot, item) => {
+            const localItem = { ...item };
+            setMeals((m) => ({ ...m, [slot]: [...m[slot], localItem] }));
+            if (supabaseProp && userId) {
+              addNutritionLogItem(supabaseProp, userId, toLocalISODate(), slot, item)
+                .then((saved) => {
+                  setMeals((m) => ({ ...m, [slot]: m[slot].map((it) => (it === localItem ? { ...it, id: saved.id } : it)) }));
+                })
+                .catch((err) => console.error("PERFORM: errore salvataggio pasto", err));
+            }
+          }}
+          onRemoveFood={(slot, index) => {
+            setMeals((m) => {
+              const item = m[slot][index];
+              if (supabaseProp && userId && item?.id) {
+                removeNutritionLogItem(supabaseProp, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto", err));
+              }
+              return { ...m, [slot]: m[slot].filter((_, i) => i !== index) };
+            });
+          }}
           onOpenScanner={() => {}} onOpenPhoto={() => {}} onAddCustomFood={addCustomFood}
           onCopyYesterday={() => {}} onShoppingList={() => {}}
           onGenerateSimilar={generateSimilar}

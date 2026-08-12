@@ -185,7 +185,7 @@ import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
-  computeRecoveryCompliance, fetchDailyMetricsRange,
+  computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3277,6 +3277,24 @@ function BioritmiGrafici({ client }) {
     ? (recoveryCompliance?.pct != null ? recoveryCompliance.pct / 100 : null)
     : client.rings.recupero;
 
+  // Cerchio Alimentazione reale: STESSA formula di Home cliente — vedi
+  // computeNutritionCompliance in coachingData.js.
+  const [nutritionCompliance, setNutritionCompliance] = useState(null);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    computeNutritionCompliance(supabase, client.id)
+      .then((r) => { if (!cancelled) setNutritionCompliance(r); })
+      .catch((err) => {
+        console.error("PERFORM: errore calcolo cerchio Alimentazione", err);
+        if (!cancelled) setNutritionCompliance({ status: "neutral", pct: null, daysScored: 0 });
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+  const nutritionRingValue = isRealMode
+    ? (nutritionCompliance?.pct != null ? nutritionCompliance.pct / 100 : null)
+    : client.rings.alimentazione;
+
   return (
     <div className="space-y-4">
       {client.evening.doloreGrado > 0 && (
@@ -3294,7 +3312,7 @@ function BioritmiGrafici({ client }) {
         <p className="c-label mb-3">Compliance diari</p>
         <div className="grid grid-cols-3 gap-3">
           <ComplianceRing label="Allenamento" value={trainRingValue} />
-          <ComplianceRing label="Alimentazione" value={client.rings.alimentazione} />
+          <ComplianceRing label="Alimentazione" value={nutritionRingValue} />
           <ComplianceRing label="Recupero" value={recoveryRingValue} />
         </div>
       </div>
