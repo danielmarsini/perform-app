@@ -12,8 +12,15 @@
 //
 // Secrets richiesti (supabase secrets set ...), MAI nel client:
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (mailto:coach@...)
+//   CRON_SECRET (stringa a caso scelta da te)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY sono già forniti automaticamente
 // da Supabase ad ogni Edge Function, non vanno impostati a mano.
+//
+// Deployata con --no-verify-jwt (funzione chiamata solo dal cron interno di
+// Postgres, non dal client): la verifica di autenticazione è quindi questo
+// controllo manuale su CRON_SECRET, non il JWT automatico di Supabase — più
+// semplice e affidabile del formato delle nuove chiavi anon/publishable per
+// un job che non ha mai un utente loggato dietro.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
@@ -23,6 +30,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY")!;
 const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY")!;
 const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:coach@perform.app";
+const CRON_SECRET = Deno.env.get("CRON_SECRET")!;
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
@@ -33,7 +41,10 @@ function toLocalISODate(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(date); // en-CA → YYYY-MM-DD
 }
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  if (req.headers.get("x-cron-secret") !== CRON_SECRET) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  }
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const today = toLocalISODate();
 
