@@ -141,9 +141,9 @@ const EX_NAMES = Object.keys(EXERCISE_LIB);
 // EXERCISE_LIB usa nomi brevi per il grafico volumi (Petto, Dorsali, Deltoide
 // Ant/Lat/Post, Addominali...); MUSCLE_TARGETS (coachingData.js) è il check
 // constraint reale di workout_logs.muscle_target, con nomi estesi diversi in
-// 4 casi su 14. Serve solo per risolvere il distretto degli esercizi di
-// libreria (custom === false) al momento del salvataggio reale — i custom lo
-// chiedono a parte, con il select aggiunto in WeekWorkoutEditor qui sotto.
+// 6 casi su 14. Serve per risolvere il distretto degli esercizi di libreria
+// (custom === false) al momento del salvataggio reale — i custom lo chiedono
+// a parte, con il select aggiunto in WeekWorkoutEditor qui sotto.
 const EXERCISE_LIB_MUSCLE_TO_DB = {
   "Petto": "Pettorali",
   "Dorsali": "Gran Dorsale",
@@ -159,6 +159,12 @@ function resolveMuscleTarget(exerciseName) {
   if (!libMuscle) return null;
   return EXERCISE_LIB_MUSCLE_TO_DB[libMuscle] || libMuscle;
 }
+// Inverso della mappa sopra: serve per riportare il muscle_target (nome DB,
+// esteso) scelto per un esercizio CUSTOM al nome breve usato da MUSCLES /
+// computeVolume per il grafico volumi.
+const DB_MUSCLE_TO_CHART = Object.fromEntries(
+  Object.entries(EXERCISE_LIB_MUSCLE_TO_DB).map(([chart, db]) => [db, chart])
+);
 
 /* ------------------------------- STATO CLIENTI ------------------------------
    Sottoinsieme reale di CLIENTS (righe 1298-1316), con l'aggiunta di due
@@ -417,13 +423,24 @@ function simulateAnamnesis(client) {
 function fmtSets(v) { return Number.isInteger(v) ? String(v) : v.toFixed(1).replace(".", ","); }
 function computeVolume(dayList) {
   const vol = {}; MUSCLES.forEach((m) => (vol[m] = { direct: 0, indirect: 0 }));
+  const addSets = (muscle, amount, isDirect) => {
+    if (!vol[muscle]) return; // nome non riconosciuto: ignorato invece di far crashare il grafico
+    vol[muscle][isDirect ? "direct" : "indirect"] += amount;
+  };
   dayList.filter(Boolean).forEach((day) => {
     (day.exercises || []).forEach((ex) => {
-      const lib = EXERCISE_LIB[ex.name];
-      if (!lib) return;
       const sets = Number(ex.sets) || 0;
-      lib.direct.forEach((m) => { vol[m].direct += sets; });
-      lib.indirect.forEach((m) => { vol[m].indirect += sets * 0.5; });
+      const lib = EXERCISE_LIB[ex.name];
+      if (lib) {
+        lib.direct.forEach((m) => addSets(m, sets, true));
+        lib.indirect.forEach((m) => addSets(m, sets * 0.5, false));
+        return;
+      }
+      // Esercizio custom: usa il distretto + sinergici scelti dal coach nel
+      // select, riportati al nome breve del grafico via DB_MUSCLE_TO_CHART.
+      if (!ex.muscleTarget) return;
+      addSets(DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget, sets, true);
+      (ex.synergists || []).forEach((m) => addSets(DB_MUSCLE_TO_CHART[m] || m, sets * 0.5, false));
     });
   });
   return vol;
@@ -1943,9 +1960,12 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   const removeEx = (i) => setDay((d) => ({ ...d, exercises: d.exercises.filter((_, j) => j !== i) }));
   const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, sets: 3, reps: "8-10", rest: 120, rirTarget: "", technique: "Nessuna" }] }));
   const volume = useMemo(() => computeVolume(week.workout), [week.workout]);
+  // Un esercizio custom SENZA distretto scelto è l'unico caso davvero escluso
+  // dal grafico volumi ora — con un distretto impostato (+ eventuali
+  // sinergici) contribuisce come qualunque esercizio di libreria.
   const unmapped = useMemo(() => {
     const names = new Set();
-    week.workout.filter(Boolean).forEach((d) => d.exercises.forEach((e) => { if (e.custom && e.name.trim() && !EXERCISE_LIB[e.name]) names.add(e.name.trim()); }));
+    week.workout.filter(Boolean).forEach((d) => d.exercises.forEach((e) => { if (e.custom && e.name.trim() && !e.muscleTarget) names.add(e.name.trim()); }));
     return [...names];
   }, [week.workout]);
 
@@ -2015,12 +2035,36 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                   </label>
                   {ex.custom && (
                     <label className="flex-1 min-w-[160px]">
-                      <span className="c-label block mb-1">Distretto muscolare</span>
+                      <span className="c-label block mb-1">Distretto muscolare (diretto)</span>
                       <select value={ex.muscleTarget || ""} onChange={(e) => updateEx(i, "muscleTarget", e.target.value)} className="t-input w-full text-sm rounded-md px-2 py-1.5">
                         <option value="">— scegli —</option>
                         {MUSCLE_TARGETS.map((m) => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </label>
+                  )}
+                  {ex.custom && ex.muscleTarget && (
+                    <div className="w-full">
+                      <span className="c-label block mb-1">Muscoli sinergici (indiretto, opzionale)</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {MUSCLE_TARGETS.filter((m) => m !== ex.muscleTarget).map((m) => {
+                          const active = (ex.synergists || []).includes(m);
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                const cur = ex.synergists || [];
+                                const next = active ? cur.filter((x) => x !== m) : [...cur, m];
+                                updateEx(i, "synergists", next);
+                              }}
+                              className={`px-2 py-1 rounded-full text-[11px] border transition-colors ${active ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "c-ghost border-[var(--line)]"}`}
+                            >
+                              {m}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -2579,6 +2623,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         exercises: day.exercises.map((ex) => ({
           ...ex,
           muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name),
+          synergists: ex.custom ? ex.synergists : [],
         })),
       });
       await saveWeekWorkout(supabase, client.id, weekStartISO, resolved);
