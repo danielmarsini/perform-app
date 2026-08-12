@@ -729,7 +729,11 @@ export function ClientProfileView({
   const [bio, setBio] = useState(profile.bio || "");
   const [avatar, setAvatar] = useState(profile.avatar || null);
   const [err, setErr] = useState("");
-  const [openSection, setOpenSection] = useState("archivio");
+  // Entrambe le sezioni partono chiuse: pagina profilo pulita, l'atleta apre
+  // solo quella che gli interessa in quel momento (Section è già un banner
+  // chiudibile — tap per espandere/richiudere, un accordion: mai due aperte
+  // insieme, così la pagina resta sempre corta).
+  const [openSection, setOpenSection] = useState(null);
   const [exFilter, setExFilter] = useState("all"); // "all" | "compound" | "favorites"
   const fileRef = useRef(null);
 
