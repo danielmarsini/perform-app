@@ -469,6 +469,11 @@ const WEEK_DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
    modifica necessaria. */
 const INTENSITY_TECHNIQUES = ["Nessuna", "Drop-set", "Rest-Pause", "Stripping", "Super-set"];
 
+// RIR target prescritto dal coach per un esercizio (workout_logs.rir_target,
+// SCHEMA_v21): testo libero perché deve accettare anche "A cedimento", non
+// solo un numero 1-4. Distinto dall'RIR realmente svolto dal cliente.
+const RIR_TARGET_OPTIONS = ["1", "2", "3", "4", "A cedimento"];
+
 /* Timing dell'integrazione: 4 momenti biologici (non più 9 fasce libere),
    per allinearsi al Master Prompt nutrizionale — HRV al mattino, cortisolo
    la sera, finestra anabolica intorno all'allenamento. Il coach può ancora
@@ -1936,7 +1941,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
     exercises: d.exercises.map((e, j) => (j === i ? { ...e, custom: !e.custom, name: e.custom ? EX_NAMES[0] : "" } : e)),
   }));
   const removeEx = (i) => setDay((d) => ({ ...d, exercises: d.exercises.filter((_, j) => j !== i) }));
-  const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, sets: 3, reps: "8-10", rest: 120, technique: "Nessuna" }] }));
+  const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, sets: 3, reps: "8-10", rest: 120, rirTarget: "", technique: "Nessuna" }] }));
   const volume = useMemo(() => computeVolume(week.workout), [week.workout]);
   const unmapped = useMemo(() => {
     const names = new Set();
@@ -1994,6 +1999,13 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                   <label className="text-center">
                     <span className="c-label block mb-1">Recupero (s)</span>
                     <input type="number" step="15" value={ex.rest} onChange={(e) => updateEx(i, "rest", e.target.value)} className="t-input w-20 text-sm rounded-md px-2 py-1.5 font-data text-center" />
+                  </label>
+                  <label className="text-center">
+                    <span className="c-label block mb-1">RIR target</span>
+                    <select value={ex.rirTarget || ""} onChange={(e) => updateEx(i, "rirTarget", e.target.value)} className="t-input w-24 text-sm rounded-md px-2 py-1.5">
+                      <option value="">—</option>
+                      {RIR_TARGET_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
                   </label>
                   <label className="flex-1 min-w-[160px]">
                     <span className="c-label block mb-1">Tecnica d'intensità</span>

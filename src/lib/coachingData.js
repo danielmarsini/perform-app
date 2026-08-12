@@ -255,7 +255,7 @@ export async function computeNutritionCompliance(supabase, userId) {
 export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDateISO) {
   const { data, error } = await supabase
     .from("workout_logs")
-    .select("id, date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, reps_completed, load_kg, rir, intensity_technique, status, is_read_only")
+    .select("id, date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only")
     .eq("user_id", userId)
     .gte("date", fromDateISO)
     .lte("date", toDateISO)
@@ -503,7 +503,7 @@ export async function assignNutritionTarget(supabase, {
 }
 
 export async function assignWorkoutExercise(supabase, {
-  clientId, date, splitLabel, exerciseName, muscleTarget, setsCount, repsTarget, restSeconds, intensityTechnique,
+  clientId, date, splitLabel, exerciseName, muscleTarget, setsCount, repsTarget, restSeconds, rirTarget, intensityTechnique,
 }) {
   if (!MUSCLE_TARGETS.includes(muscleTarget)) {
     throw new Error(`muscle_target non valido: "${muscleTarget}". Valori ammessi: ${MUSCLE_TARGETS.join(", ")}`);
@@ -517,6 +517,7 @@ export async function assignWorkoutExercise(supabase, {
     sets_count: setsCount,
     reps_target: repsTarget || null,
     rest_seconds: restSeconds ?? null,
+    rir_target: rirTarget || null,
     intensity_technique: intensityTechnique || null,
     status: "missed",       // diventa 'done' quando il cliente compila la sessione
     is_read_only: true,     // è una prescrizione del coach, non un log libero del cliente
@@ -554,7 +555,7 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
   const dates = weekDatesFrom(weekStartDateISO);
   const { data, error } = await supabase
     .from("workout_logs")
-    .select("id, date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, intensity_technique")
+    .select("id, date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, rir_target, intensity_technique")
     .eq("user_id", userId)
     .in("date", dates)
     .order("date", { ascending: true })
@@ -579,6 +580,7 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
         sets: r.sets_count,
         reps: r.reps_target || "",
         rest: r.rest_seconds ?? 0,
+        rirTarget: r.rir_target || "",
         technique: r.intensity_technique || "Nessuna",
         muscleTarget: r.muscle_target,
       })),
@@ -640,6 +642,7 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
         sets_count: ex.sets,
         reps_target: ex.reps || null,
         rest_seconds: ex.rest ?? null,
+        rir_target: ex.rirTarget || null,
         intensity_technique: ex.technique || null,
       };
       const existingId = existingIdByName.get(ex.name);
@@ -680,7 +683,7 @@ export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, tar
 
   const { data: sourceRows, error: fetchError } = await supabase
     .from("workout_logs")
-    .select("date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, intensity_technique")
+    .select("date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, rir_target, intensity_technique")
     .eq("user_id", userId)
     .in("date", sourceDates);
   if (fetchError) throw fetchError;
@@ -703,6 +706,7 @@ export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, tar
         sets: r.sets_count,
         reps: r.reps_target || "",
         rest: r.rest_seconds ?? 0,
+        rirTarget: r.rir_target || "",
         technique: r.intensity_technique || "Nessuna",
       })),
     };
