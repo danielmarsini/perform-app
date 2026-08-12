@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo } from "../lib/coachingData.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -1321,6 +1321,37 @@ export function HomeDashboard({
     return () => clearInterval(id);
   }, []);
 
+  // XP / livello / streak reali: STESSA formula del pannello coach e della
+  // classifica globale — vedi computeRealXpAndStreak/xpToLevelInfo in
+  // coachingData.js. isRealMode dichiarato qui (non più solo sotto, dove
+  // vivono i 3 cerchi di compliance) perché streakXpBonus, subito sotto,
+  // deve già vedere lo streak reale se disponibile.
+  const isRealMode = Boolean(supabase && userId);
+  const [realXpStreak, setRealXpStreak] = useState(null); // null = non ancora calcolato
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    computeRealXpAndStreak(supabase, userId)
+      .then((r) => { if (!cancelled) setRealXpStreak(r); })
+      .catch((err) => {
+        console.error("PERFORM: errore calcolo XP/streak", err);
+        if (!cancelled) setRealXpStreak({ xpTotal: 0, streak: 0 });
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
+  const realLevelInfo = isRealMode ? xpToLevelInfo(realXpStreak?.xpTotal ?? 0) : null;
+  if (isRealMode) {
+    streak = realXpStreak?.streak ?? 0;
+    level = realLevelInfo.level;
+    xp = realLevelInfo.xp;
+    xpInLevel = realLevelInfo.xpInLevel;
+    // Barra di progresso: xpNeeded è l'ampiezza TOTALE del livello corrente
+    // (denominatore di xpInLevel/xpNeeded), non l'XP mancante al prossimo —
+    // stessa convenzione del prop demo che sostituisce. A livello massimo la
+    // barra resta piena (xpNeeded = xpInLevel, mai 0/0).
+    xpNeeded = realLevelInfo.isMaxLevel ? Math.max(1, realLevelInfo.xpInLevel) : realLevelInfo.xpForNextLevel;
+  }
+
   /* Più giorni di streak si accumulano, più in proporzione si guadagnano punti
      sulle task di oggi: +2% di XP per ogni giorno di streak, fino a un tetto
      del +50% per non farlo esplodere con streak molto lunghi. */
@@ -1378,7 +1409,7 @@ export function HomeDashboard({
   // calcolata due volte — vedi computeTrainingCompliance in coachingData.js.
   // Il simulatore di test (trainOverride) resta solo per la preview demo:
   // sovrascrivere un numero reale con uno slider di prova sarebbe fuorviante.
-  const isRealMode = Boolean(supabase && userId);
+  // (isRealMode è già dichiarato più sopra, vicino a XP/livello/streak.)
   const [realTrainCompliance, setRealTrainCompliance] = useState(null); // null = non ancora caricato
   useEffect(() => {
     if (!isRealMode) return;
@@ -1531,7 +1562,7 @@ export function HomeDashboard({
             <div className="flex items-center justify-between gap-3 rounded-full px-4 py-2 mt-3"
                  style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
               <span className="title-shine" style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.02em" }}>
-                {levelTitle(level)}
+                {isRealMode ? `${realLevelInfo.icon} ${realLevelInfo.title}` : levelTitle(level)}
               </span>
               <span className="flex items-center gap-1.5" style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--ink)" }}>
                 <Flame size={15} className={streak >= 15 ? "flame-3" : streak >= 8 ? "flame-2" : streak >= 4 ? "flame-1" : ""}

@@ -192,6 +192,7 @@ import {
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
+  awardXpBonus, computeRealXpAndStreak,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -2885,62 +2886,58 @@ function AnamnesisPanel({ client }) {
 /* ------------------------------- SCHEDA CLIENTE ----------------------------- */
 /* ==========================================================================
    🏆 GAMIFICATION LATO COACH — "Segnala Obiettivo Raggiunto"
-   Due azioni reali eseguite insieme al click:
-   1) Accredita +500 XP sul profilo dell'atleta.
-   2) Pubblica un post automatico in bacheca Avvisi Team.
-
-   TRASPARENZA SULL'ARCHITETTURA — leggi prima di integrare:
-   Questo file è isolato con dati locali (stesso motivo di sempre: anteprima
-   leggera, un file alla volta, nessun client Supabase configurato qui
-   dentro). Quello che il pulsante fa VERAMENTE in questa preview:
-   aggiorna lo stato React condiviso (xpBonuses, teamPosts) così l'XP e il
-   post compaiono a schermo all'istante — non è finto, è la stessa
-   interazione UI che avrà in produzione. Quello che NON può fare da qui:
-   scrivere davvero su Supabase, perché non c'è un client Supabase importato
-   in questo componente isolato.
-   Le due chiamate reali che la produzione deve eseguire (stessi nomi di
-   tabella/RPC già usati nelle chat precedenti su questo progetto):
-
-     // 1) XP — meglio un RPC atomico che un update letto-poi-scritto,
-     //    per evitare race condition se il coach segna due obiettivi
-     //    quasi in contemporanea:
-     await supabase.rpc('increment_client_xp', {
-       p_client_id: client.id,
-       p_amount: 500,
-     });
-     // fallback se l'RPC non esiste ancora:
-     // await supabase.from('client_profiles')
-     //   .update({ xp: currentXp + 500 })
-     //   .eq('id', client.id);
-
-     // 2) Post in bacheca — tabella reale già in uso in NewsTipsView.jsx:
-     //    coach_news_tips, categoria "team" (Avvisi Team), sola scrittura
-     //    coach, visual_kind "trophy" (icona Trophy già mappata lì).
-     await supabase.from('coach_news_tips').insert({
-       category: 'team',
-       visual_kind: 'trophy',
-       title: `${client.name} ha raggiunto l'obiettivo!`,
-       body: goalText,
-       author: 'coach',
-       created_at: new Date().toISOString(),
-     });
-
-   Quando questo file smette di essere un'anteprima isolata e viene montato
-   dentro l'app vera con un client Supabase in contesto, queste due chiamate
-   sostituiscono semplicemente i due `set...` qui sotto — la UI non cambia.
+   Due azioni reali eseguite insieme al click, in isRealMode:
+   1) +500 XP: riga in xp_bonuses (awardXpBonus, coachingData.js) — MAI una
+      scrittura diretta su profiles.xp_total, che è solo una cache
+      ricalcolata da computeRealXpAndStreak (stessa fonte unica dell'Home
+      cliente e della classifica). Dopo l'insert richiamiamo subito
+      computeRealXpAndStreak per il cliente così la cache si aggiorna senza
+      dover aspettare che sia lui ad aprire l'Home, poi reloadRoster() per
+      rinfrescare la card nel pannello coach.
+   2) Post in bacheca Avvisi Team: coach_news_tips, channel "team" (le
+      colonne reali sono channel/eyebrow/title/body/published_at — niente
+      category/visual_kind/author, che non esistono su questa tabella).
+   In demo (!isRealMode) resta lo stato locale xpBonuses/teamPosts di prima,
+   invariato: la preview isolata non cambia comportamento.
    ========================================================================== */
 function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeamPosts }) {
+  const { supabase, isRealMode, coachId, reloadRoster } = useContext(CoachDataContext);
   const [goalText, setGoalText] = useState("");
   const [justPosted, setJustPosted] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState("");
   const bonus = xpBonuses?.[client.id] || 0;
   const totalXp = client.xp + bonus;
   const myPosts = (teamPosts || []).filter((p) => p.clientId === client.id);
 
-  const segnalaObiettivo = () => {
+  const segnalaObiettivo = async () => {
     const text = goalText.trim() || "Obiettivo di mesociclo raggiunto";
-    // 1) Accredito +500 XP — in produzione: supabase.rpc('increment_client_xp', ...)
+    if (isRealMode) {
+      setPosting(true);
+      setPostError("");
+      try {
+        await awardXpBonus(supabase, { userId: client.id, coachId, amount: 500, reason: text });
+        await computeRealXpAndStreak(supabase, client.id);
+        await supabase.from("coach_news_tips").insert({
+          channel: "team",
+          eyebrow: "Traguardo atleta",
+          title: `${client.name} ha raggiunto l'obiettivo! 🏆`,
+          body: text,
+          published_at: new Date().toISOString(),
+        });
+        reloadRoster?.();
+        setGoalText("");
+        setJustPosted(true);
+        setTimeout(() => setJustPosted(false), 2600);
+      } catch (err) {
+        console.error("PERFORM: errore invio obiettivo raggiunto", err);
+        setPostError(err.message || "Non sono riuscito a registrare l'obiettivo.");
+      } finally {
+        setPosting(false);
+      }
+      return;
+    }
     setXpBonuses((prev) => ({ ...prev, [client.id]: (prev[client.id] || 0) + 500 }));
-    // 2) Pubblico il post in Avvisi Team — in produzione: supabase.from('coach_news_tips').insert(...)
     setTeamPosts((prev) => [
       { id: uid(), clientId: client.id, title: `${client.name} ha raggiunto l'obiettivo! 🏆`, body: text, createdAt: new Date().toISOString() },
       ...(prev || []),
@@ -2957,16 +2954,19 @@ function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeam
         <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{totalXp.toLocaleString("it-IT")} XP</p>
       </div>
       <p className="c-muted text-xs mb-4">
-        {bonus > 0 ? `Base ${client.xp.toLocaleString("it-IT")} + ${bonus.toLocaleString("it-IT")} da obiettivi segnalati in questa sessione.` : "Nessun bonus obiettivo ancora segnalato in questa sessione."}
+        {isRealMode
+          ? "L'XP di base cresce da sola con allenamenti/pasti/sonno registrati — questo bonus si aggiunge per un traguardo che il coach vuole premiare a mano."
+          : (bonus > 0 ? `Base ${client.xp.toLocaleString("it-IT")} + ${bonus.toLocaleString("it-IT")} da obiettivi segnalati in questa sessione.` : "Nessun bonus obiettivo ancora segnalato in questa sessione.")}
       </p>
       <label className="block mb-3">
         <span className="c-label block mb-1.5">Descrizione obiettivo (facoltativa, va nel post)</span>
         <input value={goalText} onChange={(e) => setGoalText(e.target.value)} placeholder="es. Primo squat a corpo libero da 100 kg"
           className="t-input w-full text-sm rounded-lg px-3 py-2.5" />
       </label>
-      <button onClick={segnalaObiettivo} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium">
-        🏆 Segnala Obiettivo Raggiunto
+      <button onClick={segnalaObiettivo} disabled={posting} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium disabled:opacity-60">
+        {posting ? "Invio in corso…" : "🏆 Segnala Obiettivo Raggiunto"}
       </button>
+      {postError && <p className="text-xs mt-2" style={{ color: "#B91C1C" }}>{postError}</p>}
       {justPosted && (
         <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block mt-3" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
           ✅ +500 XP accreditati · post pubblicato in Avvisi Team

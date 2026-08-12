@@ -730,6 +730,136 @@ export async function fetchClientList(supabase) {
 }
 
 /* ---------------------------------------------------------------------------
+   XP / LIVELLI / STREAK — formula unica reale
+   ---------------------------------------------------------------------------
+   Prima di questa formula esistevano 3 scale titolo/livello scollegate tra
+   loro (05_HomeDashboard.jsx, 08_ClientProfileView.jsx, 07_ClassificaView.jsx)
+   e zero calcolo reale: XP/streak erano numeri fissi passati come prop.
+   Da qui in avanti UNA sola fonte: XP e streak si ricavano SEMPRE dai dati
+   reali già salvati (mai un contatore incrementato lato client, che sarebbe
+   falsificabile e disallineabile da un doppio salvataggio) — stesso principio
+   delle formule di aderenza (computeTrainingCompliance e affini). Il
+   risultato viene comunque scritto in cache su profiles.xp_total/
+   current_streak (letti altrove: fetchClientList, fetchClientRoster, roster
+   coach) così la classifica globale può leggerli con una sola query invece
+   di ricalcolare la formula per ogni atleta. */
+export const XP_LEVELS = [
+  { level: 0, minXp: 0,     title: "RECRUIT",       icon: "🌱" },
+  { level: 1, minXp: 1000,  title: "HARDWORKER",    icon: "💪" },
+  { level: 2, minXp: 3000,  title: "IRON MIND",     icon: "🧠" },
+  { level: 3, minXp: 7000,  title: "BIO-HACKER",    icon: "🧬" },
+  { level: 4, minXp: 15000, title: "LIVELLO ÉLITE", icon: "🏆" },
+];
+
+// XP totale → { level, title, icon, xpInLevel, xpNeeded, isMaxLevel }. Usata
+// sia in Home che in Profilo che nel pannello coach — mai un secondo calcolo.
+export function xpToLevelInfo(xpTotal) {
+  const xp = Math.max(0, Number(xpTotal) || 0);
+  let idx = 0;
+  for (let i = 0; i < XP_LEVELS.length; i++) { if (xp >= XP_LEVELS[i].minXp) idx = i; }
+  const cur = XP_LEVELS[idx];
+  const next = XP_LEVELS[idx + 1] || null;
+  return {
+    level: cur.level,
+    title: cur.title,
+    icon: cur.icon,
+    xp,
+    xpInLevel: xp - cur.minXp,
+    xpNeeded: next ? next.minXp - xp : 0,
+    xpForNextLevel: next ? next.minXp - cur.minXp : null,
+    isMaxLevel: !next,
+  };
+}
+
+// Una giornata "completa" ai fini dello streak: allenamento fatto SE era
+// previsto (nessuna scheda quel giorno = riposo, non penalizza), più almeno
+// un pasto registrato, più sonno e passi registrati. Le stesse 3 condizioni
+// alimentano sia lo streak (giorni consecutivi) sia un bonus XP per-giorno.
+function isDayComplete(dateISO, { nutritionDays, metricsDays, workoutStatusByDate }) {
+  const status = workoutStatusByDate.get(dateISO);
+  const workoutOk = status === undefined || status === "done";
+  return workoutOk && nutritionDays.has(dateISO) && metricsDays.has(dateISO);
+}
+
+// Ricalcola XP totale e streak corrente di un cliente dai dati reali già
+// salvati (workout_sets, nutrition_logs, daily_metrics, workout_logs,
+// xp_bonuses) e li scrive in cache su profiles. Ritorna sempre il valore
+// appena calcolato, anche se la scrittura di cache fallisce (best-effort: un
+// problema di permessi sulla cache non deve rompere la UI che lo mostra).
+export async function computeRealXpAndStreak(supabase, userId) {
+  const { data: profileRow } = await supabase.from("profiles").select("created_at").eq("id", userId).maybeSingle();
+  const sinceDate = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : "2020-01-01";
+  const today = toLocalISODate();
+
+  const [{ data: setsRows, error: setsError }, { data: nutriRows, error: nutriError },
+    { data: metricsRows, error: metricsError }, { data: workoutRows, error: workoutError },
+    { data: bonusRows, error: bonusError }] = await Promise.all([
+    supabase.from("workout_sets").select("id").eq("user_id", userId).not("reps_completed", "is", null).gte("completed_at", sinceDate),
+    supabase.from("nutrition_logs").select("date").eq("user_id", userId).gte("date", sinceDate),
+    supabase.from("daily_metrics").select("date, sleep_hours, steps").eq("user_id", userId).gte("date", sinceDate),
+    supabase.from("workout_logs").select("date, status").eq("user_id", userId).gte("date", sinceDate),
+    supabase.from("xp_bonuses").select("amount").eq("user_id", userId),
+  ]);
+  if (setsError) throw setsError;
+  if (nutriError) throw nutriError;
+  if (metricsError) throw metricsError;
+  if (workoutError) throw workoutError;
+  if (bonusError) throw bonusError;
+
+  const nutritionDays = new Set((nutriRows ?? []).map((r) => r.date));
+  const metricsDays = new Set((metricsRows ?? []).filter((r) => r.sleep_hours != null && r.steps != null).map((r) => r.date));
+  const workoutStatusByDate = new Map((workoutRows ?? []).map((r) => [r.date, r.status]));
+  const ctx = { nutritionDays, metricsDays, workoutStatusByDate };
+
+  // Streak: giorni consecutivi completi risalendo da oggi. Se oggi non è
+  // ancora completo la giornata è semplicemente "ancora aperta" e non rompe
+  // lo streak — si riparte da ieri, come nel comportamento già in uso prima.
+  let streak = 0;
+  const cursor = new Date(`${today}T00:00:00`);
+  if (!isDayComplete(today, ctx)) cursor.setDate(cursor.getDate() - 1);
+  for (let i = 0; i < 3650; i++) {
+    const d = toLocalISODate(cursor);
+    if (d < sinceDate || !isDayComplete(d, ctx)) break;
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  let completeDays = 0;
+  nutritionDays.forEach((d) => { if (isDayComplete(d, ctx)) completeDays++; });
+  const bonusXp = (bonusRows ?? []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+  const xpTotal = Math.round(
+    (setsRows?.length ?? 0) * 10       // +10 per serie realmente svolta e registrata
+    + nutritionDays.size * 5            // +5 per ogni giorno con almeno un pasto registrato
+    + metricsDays.size * 5              // +5 per ogni giorno con sonno + passi registrati
+    + completeDays * 15                 // bonus giornata piena (allenamento+dieta+recupero)
+    + Math.floor(streak / 7) * 50       // bonus ogni settimana intera di streak
+    + bonusXp                           // bonus manuali assegnati dal coach (xp_bonuses)
+  );
+
+  try {
+    await supabase.from("profiles").update({ xp_total: xpTotal, current_streak: streak }).eq("id", userId);
+  } catch (err) {
+    console.error("PERFORM: impossibile aggiornare la cache XP/streak su profiles", err);
+  }
+
+  return { xpTotal, streak };
+}
+
+// Bonus XP manuale assegnato dal coach (es. "Obiettivo di mesociclo
+// raggiunto"): riga in xp_bonuses, sommata da computeRealXpAndStreak alla
+// prossima ricomputazione — mai una scrittura diretta su profiles.xp_total,
+// che verrebbe sovrascritta dal prossimo ricalcolo.
+export async function awardXpBonus(supabase, { userId, coachId, amount, reason }) {
+  const { error } = await supabase.from("xp_bonuses").insert({
+    user_id: userId,
+    amount,
+    reason: reason || null,
+    awarded_by: coachId || null,
+  });
+  if (error) throw error;
+}
+
+/* ---------------------------------------------------------------------------
    HUB ATLETI — roster reale + anamnesi
    ------------------------------------------------------------------------- */
 
