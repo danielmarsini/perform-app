@@ -1441,8 +1441,8 @@ export function HomeDashboard({
       id: "train", label: "Allenamento", icon: Dumbbell, pct: trainPct,
       details: isRealMode
         ? [
-            { label: "Completamento questa settimana", value: realTrainCompliance?.completionPct != null ? `${realTrainCompliance.completionPct}%` : "…" },
-            { label: "Progressione carichi vs settimana scorsa", value: realTrainCompliance ? progressionLabel[realTrainCompliance.progression] : "…" },
+            { label: "Completamento ultime 7 sessioni", value: realTrainCompliance?.completionPct != null ? `${realTrainCompliance.completionPct}%` : "…" },
+            { label: "Progressione carichi vs 7 sessioni prima", value: realTrainCompliance ? progressionLabel[realTrainCompliance.progression] : "…" },
           ]
         : [
             { label: "Serie completate oggi", value: day.isTraining ? `${todayCompletedSets} / ${todayExpectedSets}` : "Riposo" },

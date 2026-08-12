@@ -352,30 +352,22 @@ export async function fetchClientSetHistory(supabase, userId, fromDateISO, toDat
   return data ?? [];
 }
 
-// Lunedì della settimana di `date` (default oggi), come stringa YYYY-MM-DD
-// locale. Stessa logica di mondayOf/mondayOfLocal già duplicata in
-// 09_CoachDashboard.jsx/05_HomeDashboard.jsx — qui però è la fonte usata
-// direttamente da entrambi tramite computeTrainingCompliance qui sotto, non
-// un'altra copia isolata: è proprio questo che garantisce "mai due calcoli
-// separati" per il cerchio Allenamento.
-function mondayISO(date = new Date()) {
-  const d = new Date(date);
-  const day = (d.getDay() + 6) % 7;
-  d.setDate(d.getDate() - day);
-  return toLocalISODate(d);
-}
-
 // Cerchio "Allenamento" reale — STESSA funzione chiamata sia da Home cliente
 // (05_HomeDashboard.jsx) sia da ClientDetail (09_CoachDashboard.jsx): mai due
 // formule separate che potrebbero disallinearsi.
 //
-//   completionPct = (serie registrate su workout_sets questa settimana,
-//                     tramite l'esercizio a cui appartengono)
-//                    ÷ (somma sets_count assegnato su workout_logs questa
-//                       settimana), capped a 100.
+// Basato sulle ULTIME 7 SESSIONI EFFETTIVE (le 7 date più recenti con almeno
+// un esercizio assegnato), non sulla settimana di calendario: un cliente che
+// si allena 3 volte a settimana copre così ~2 settimane e mezza di storico
+// reale, non conta i giorni di riposo come "buchi". Le 7 sessioni precedenti
+// a queste (posizioni 8-14) sono il blocco di confronto per la progressione.
+//
+//   completionPct = (serie registrate su workout_sets nelle 7 sessioni più
+//                     recenti) ÷ (somma sets_count assegnato in quelle
+//                     stesse 7 sessioni), capped a 100.
 //   progressione  = confronto, esercizio per esercizio (stesso exercise_name
-//                    presente in entrambe le settimane), del carico massimo
-//                    (MAX load_kg) registrato questa settimana vs la scorsa:
+//                    presente in entrambi i blocchi), del carico massimo
+//                    (MAX load_kg) nel blocco recente vs quello precedente:
 //                    "positive" se almeno uno migliorato e non tutti i
 //                    confrontabili sono peggiorati; "negative" se TUTTI i
 //                    confrontabili sono peggiorati; "neutral" altrimenti
@@ -384,59 +376,76 @@ function mondayISO(date = new Date()) {
 //                    progressione è negativa — positiva/neutra non alterano
 //                    il numero (nessun bonus implementato, il tetto resta 100).
 //
-// Se non c'è NULLA assegnato questa settimana (assignedSetsTotal === 0),
-// torna status "neutral" con pct null — mai 0% (sembrerebbe un allarme) né
-// 100% (sembrerebbe completato). Il chiamante decide come rendere il "n/d".
+// Se non c'è MAI stato nulla assegnato (nessuna sessione trovata), torna
+// status "neutral" con pct null — mai 0% (sembrerebbe un allarme) né 100%
+// (sembrerebbe completato). Il chiamante decide come rendere il "n/d".
 //
 // NOTA VOLUTA: il dolore (evening.doloreGrado / check settimanale) NON entra
 // in questo calcolo. Non esiste ancora un check-in reale del cliente
 // collegato a Supabase — è un'omissione intenzionale, non dimenticata: si
 // aggiunge quando costruiamo quel pezzo (checkins reali, non più simulati).
 export async function computeTrainingCompliance(supabase, userId) {
-  const thisMonday = mondayISO();
-  const thisDates = weekDatesFrom(thisMonday);
-  const lastMondayDate = new Date(`${thisMonday}T00:00:00`);
-  lastMondayDate.setDate(lastMondayDate.getDate() - 7);
-  const lastDates = weekDatesFrom(toLocalISODate(lastMondayDate));
+  // Le date più recenti con almeno un esercizio assegnato. PostgREST non fa
+  // "distinct date con limit" in una query sola: fetch generosa (250 righe,
+  // abbondante anche per chi si allena 6 volte a settimana da un anno) e
+  // dedup lato client — l'ordine desc si preserva perché un Set mantiene
+  // l'ordine di primo inserimento.
+  const { data: recentLogs, error: recentError } = await supabase
+    .from("workout_logs")
+    .select("date")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .limit(250);
+  if (recentError) throw recentError;
 
-  const [{ data: assignedThis, error: assignedError }, { data: setsJoined, error: setsError }] = await Promise.all([
-    supabase.from("workout_logs").select("sets_count")
-      .eq("user_id", userId).gte("date", thisDates[0]).lte("date", thisDates[6]),
+  const distinctDates = [...new Set((recentLogs ?? []).map((r) => r.date))];
+  if (distinctDates.length === 0) {
+    return { status: "neutral", pct: null, completionPct: null, progression: "neutral" };
+  }
+
+  const currentDates = distinctDates.slice(0, 7);
+  const priorDates = distinctDates.slice(7, 14);
+  const allDates = [...currentDates, ...priorDates];
+
+  const [{ data: assignedRows, error: assignedError }, { data: setsJoined, error: setsError }] = await Promise.all([
+    supabase.from("workout_logs").select("sets_count").eq("user_id", userId).in("date", currentDates),
     supabase.from("workout_sets")
       .select("load_kg, workout_logs!inner(date, exercise_name, user_id)")
       .eq("workout_logs.user_id", userId)
-      .gte("workout_logs.date", lastDates[0]).lte("workout_logs.date", thisDates[6]),
+      .in("workout_logs.date", allDates),
   ]);
   if (assignedError) throw assignedError;
   if (setsError) throw setsError;
 
-  const assignedSetsTotal = (assignedThis ?? []).reduce((a, r) => a + (Number(r.sets_count) || 0), 0);
+  const assignedSetsTotal = (assignedRows ?? []).reduce((a, r) => a + (Number(r.sets_count) || 0), 0);
   if (assignedSetsTotal === 0) {
     return { status: "neutral", pct: null, completionPct: null, progression: "neutral" };
   }
 
-  const registeredThisCount = (setsJoined ?? []).filter(
-    (r) => r.workout_logs.date >= thisDates[0] && r.workout_logs.date <= thisDates[6]
-  ).length;
+  const currentDateSet = new Set(currentDates);
+  const priorDateSet = new Set(priorDates);
+  const registeredThisCount = (setsJoined ?? []).filter((r) => currentDateSet.has(r.workout_logs.date)).length;
   const completionPct = Math.max(0, Math.min(100, Math.round((registeredThisCount / assignedSetsTotal) * 100)));
 
   const maxThis = new Map();
-  const maxLast = new Map();
+  const maxPrior = new Map();
   (setsJoined ?? []).forEach((r) => {
     const kg = Number(r.load_kg) || 0;
     if (kg <= 0) return;
-    const bucket = r.workout_logs.date >= thisDates[0] ? maxThis : maxLast;
+    const date = r.workout_logs.date;
+    const bucket = currentDateSet.has(date) ? maxThis : priorDateSet.has(date) ? maxPrior : null;
+    if (!bucket) return;
     const name = r.workout_logs.exercise_name;
     bucket.set(name, Math.max(bucket.get(name) ?? 0, kg));
   });
 
   let improved = 0, worsened = 0, comparable = 0;
   maxThis.forEach((kgThis, name) => {
-    if (!maxLast.has(name)) return;
+    if (!maxPrior.has(name)) return;
     comparable++;
-    const kgLast = maxLast.get(name);
-    if (kgThis > kgLast) improved++;
-    else if (kgThis < kgLast) worsened++;
+    const kgPrior = maxPrior.get(name);
+    if (kgThis > kgPrior) improved++;
+    else if (kgThis < kgPrior) worsened++;
   });
 
   let progression = "neutral";
