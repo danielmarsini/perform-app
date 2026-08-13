@@ -925,6 +925,27 @@ function MesocicloBadge({ mesociclo, week, weeks }) {
   );
 }
 
+// Stima del sonno profondo (REM) senza dispositivo reale a monte: parte da
+// una quota fisiologica media (~22% delle ore totali dormite) e la corregge
+// con i 4 segnali che il cliente PUÒ davvero riferire a occhio — stress
+// percepito, risvegli notturni, caffeina ancora in circolo a letto (stessa
+// stima di emivita già usata per l'avviso caffeina qui sopra) ed energia al
+// risveglio. Non è una misura clinica: è dichiarata come stima nel testo
+// che la accompagna, mai spacciata per un dato reale da polisonnografia.
+function computeRemSleepEstimate({ sleepHours, stressLevel, nightWakeups, caffeineResidualMg, morningEnergy }) {
+  const hours = Number(sleepHours) || 0;
+  if (hours <= 0) return null;
+
+  let pct = 0.22; // quota REM media in un adulto sano
+  if (stressLevel) pct -= ((Number(stressLevel) - 5) / 5) * 0.04;   // stress alto → meno REM
+  if (nightWakeups) pct -= Math.min(Number(nightWakeups), 4) * 0.015; // ogni risveglio frammenta il sonno
+  if (caffeineResidualMg) pct -= Math.min(caffeineResidualMg / 50, 1) * 0.03; // caffeina residua sopprime REM
+  if (morningEnergy) pct += ((Number(morningEnergy) - 5) / 5) * 0.03; // energia al risveglio come proxy di qualità
+
+  pct = Math.max(0.10, Math.min(0.30, pct));
+  return +(hours * pct).toFixed(1);
+}
+
 function computeStreak(referenceDateStr = "2026-07-19", baseStreak = 12, lastActivityDateStr) {
   const ref = new Date(referenceDateStr); ref.setHours(0, 0, 0, 0);
   const now = new Date(); now.setHours(0, 0, 0, 0);
@@ -1249,7 +1270,7 @@ export function HomeDashboard({
   onGenerateSimilar, onApplyReschedule, onDismissReschedule,
   onUpgrade, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
   userPlan, // 'free' | 'performance_pack' | 'full_coaching' — letta da Supabase, qui simulata
-  remSleep, onSetRemSleep, stressLevel, onSetStressLevel,
+  stressLevel, onSetStressLevel, nightWakeups, onSetNightWakeups, morningEnergy, onSetMorningEnergy,
   caffeineMg, onSetCaffeineMg, caffeineTime, onSetCaffeineTime,
   supabase, userId, // solo per il protocollo integratori reale (prescribed_supplements)
 }) {
@@ -1975,7 +1996,7 @@ export function HomeDashboard({
         </>
       )}
 
-      {/* Cruscotto Recupero Neurale: sonno REM, stress, caffeina con emivita */}
+      {/* Cruscotto Recupero Neurale: sonno REM stimato, stress, caffeina con emivita */}
       {userPlan === "free" ? (
         <div className="mb-4">
           <p className="label mb-3">Cruscotto Recupero Neurale</p>
@@ -1992,22 +2013,42 @@ export function HomeDashboard({
           const residual = Math.round(mg * Math.pow(0.5, hoursElapsed / 5));
           if (hoursElapsed < 6) caffAlert = { hoursElapsed, residual };
         }
+        const remEstimate = computeRemSleepEstimate({
+          sleepHours: sleep.hours, stressLevel, nightWakeups,
+          caffeineResidualMg: caffAlert?.residual, morningEnergy,
+        });
         return (
           <div className="card mb-4">
             <p className="label mb-1">Cruscotto Recupero Neurale</p>
             <p className="h1 mb-1">Sonno REM, stress e stimolanti</p>
-            <p className="body mb-4">Tutto si aggiorna in diretta e incide sul cerchio Recupero.</p>
+
+            <div className="inner flex items-center justify-between px-4 py-3 mb-3">
+              <span className="text-sm" style={{ color: "var(--ink)" }}>Sonno profondo stimato</span>
+              <span className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>
+                {remEstimate != null ? `~${remEstimate} h` : "n/d"}
+              </span>
+            </div>
 
             <div className="grid grid-cols-2 gap-3 mb-3">
               <label className="block">
-                <span className="label block mb-1.5">Sonno profondo (REM, h)</span>
-                <input type="text" inputMode="decimal" value={remSleep}
-                       onChange={(e) => onSetRemSleep(e.target.value.replace(",", "."))}
-                       placeholder="es. 1.5" className="input w-full px-4 py-3 font-data" />
-              </label>
-              <label className="block">
                 <span className="label block mb-1.5">Stress mentale (1-10)</span>
                 <select value={stressLevel} onChange={(e) => onSetStressLevel(e.target.value)}
+                        className="input w-full px-4 py-3 text-sm">
+                  <option value="">— valuta —</option>
+                  {CHECK_SCALE_10.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="label block mb-1.5">Risvegli notturni</span>
+                <select value={nightWakeups} onChange={(e) => onSetNightWakeups(e.target.value)}
+                        className="input w-full px-4 py-3 text-sm">
+                  <option value="">— valuta —</option>
+                  {[0, 1, 2, 3, 4].map((n) => <option key={n} value={n}>{n === 4 ? "4+" : n}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="label block mb-1.5">Energia al risveglio (1-10)</span>
+                <select value={morningEnergy} onChange={(e) => onSetMorningEnergy(e.target.value)}
                         className="input w-full px-4 py-3 text-sm">
                   <option value="">— valuta —</option>
                   {CHECK_SCALE_10.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -5370,10 +5411,17 @@ export default function HomePreview({
 
   const [rhr, setRhr] = useState("58");
   const [hrv, setHrv] = useState("62");
-  const [remSleep, setRemSleep] = useState("1.5");
   const [stressLevel, setStressLevel] = useState("");
   const [caffeineMg, setCaffeineMg] = useState("");
   const [caffeineTime, setCaffeineTime] = useState("");
+  // Sonno REM: nessun dispositivo reale a monte (HRV/RHR restano bloccati
+  // "disponibile a breve"), quindi non è una misura ma una STIMA calcolata
+  // da noi da ore dormite + stress + risvegli notturni + caffeina + energia
+  // al risveglio — vedi computeRemSleepEstimate qui sotto. Sostituisce il
+  // vecchio campo manuale "inserisci le tue ore di REM", che chiedeva al
+  // cliente un dato che nessuno sa davvero misurare a occhio.
+  const [nightWakeups, setNightWakeups] = useState("");
+  const [morningEnergy, setMorningEnergy] = useState("");
   const [demoFullHistory] = useState(() => ({
     sleep: simulateSeries(101, 49, 5.5, 8.4, 1),
     steps: simulateSeries(202, 49, 4200, 13200, 0),
@@ -5637,7 +5685,8 @@ export default function HomePreview({
           onToggleAutoSteps={() => { setAutoSteps((v) => !v); if (!autoSteps) setSteps("7250"); }}
           onAddWater={() => setWater((w) => Math.min(5000, w + 250))}
           onSetRhr={setRhr} onSetHrv={setHrv}
-          remSleep={remSleep} onSetRemSleep={setRemSleep}
+          nightWakeups={nightWakeups} onSetNightWakeups={setNightWakeups}
+          morningEnergy={morningEnergy} onSetMorningEnergy={setMorningEnergy}
           stressLevel={stressLevel} onSetStressLevel={setStressLevel}
           caffeineMg={caffeineMg} onSetCaffeineMg={setCaffeineMg}
           caffeineTime={caffeineTime} onSetCaffeineTime={setCaffeineTime}
