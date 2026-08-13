@@ -583,18 +583,20 @@ export default function ClassificaView({ supabase, meId, genderOverride } = {}) 
   const demoCurrentMonth = useMemo(() => MONTH_ARCHIVE.find((m) => m.isCurrent), []);
   const pastMonths = useMemo(() => [...MONTH_ARCHIVE.filter((m) => !m.isCurrent), ...GENERATED_HISTORY], []);
 
-  if (isRealMode && realBoard === null) {
-    return (
-      <div className={`pc-root pc-theme-${gender} pc-mode-${mode}`} style={{ minHeight: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pc-text-secondary, #888)' }}>
-        Caricamento classifica…
-      </div>
-    );
-  }
-
-  const currentMonth = isRealMode ? realBoard : demoCurrentMonth;
+  // Placeholder neutro finché i dati reali non sono arrivati: MAI un return
+  // anticipato prima degli hook qui sotto (useMemo incluso) — un return che
+  // salta un hook al primo render e lo esegue al secondo è esattamente la
+  // causa della pagina bianca: React vede un numero di hook diverso tra un
+  // render e l'altro e va in crash. Il "Caricamento…" resta quindi solo
+  // nella JSX finale, mai come return anticipato della funzione.
+  const isLoadingRealBoard = isRealMode && realBoard === null;
+  const currentMonth = isRealMode
+    ? (realBoard ?? { top10: [], userResult: { rank: null, xp: 0, level: 'RECRUIT', streakDays: 0 }, isCurrent: true, monthName: '' })
+    : demoCurrentMonth;
   // Il podio si aspetta SEMPRE almeno i rank 1/2/3: se ci sono meno di 3
-  // atleti reali (community appena nata), riempiamo gli slot mancanti con
-  // placeholder neutri invece di far crashare PodiumCard su un rank assente.
+  // atleti reali (community appena nata, o dati non ancora caricati),
+  // riempiamo gli slot mancanti con placeholder neutri invece di far
+  // crashare PodiumCard su un rank assente.
   const top10 = [1, 2, 3].every((r) => currentMonth.top10.some((a) => a.rank === r))
     ? currentMonth.top10
     : [
@@ -621,6 +623,14 @@ export default function ClassificaView({ supabase, meId, genderOverride } = {}) 
   const restOfList = top10.filter((a) => a.rank > 3);
 
   const handleToggleExpand = (id) => setExpandedMonthId((cur) => (cur === id ? null : id));
+
+  if (isLoadingRealBoard) {
+    return (
+      <div className={`pc-root pc-theme-${gender} pc-mode-${mode}`} style={{ minHeight: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pc-text-secondary, #888)' }}>
+        Caricamento classifica…
+      </div>
+    );
+  }
 
   return (
     <div className={`pc-root pc-theme-${gender} pc-mode-${mode}`}>
