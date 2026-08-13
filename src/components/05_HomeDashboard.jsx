@@ -4275,18 +4275,22 @@ function NutritionTargetsPanel({ accent, accentSoft, accentText, targetOn, targe
 
   return (
     <div className="spring-in">
-      {/* toggle di test: simula un giorno ON o OFF per vedere il target cambiare da solo */}
+      {/* Il pulsante "Simula" esiste SOLO in preview demo (onToggleTrainingDay
+          null in isRealMode): il tipo di giornata reale si legge dalla scheda
+          assegnata dal coach, non si simula più a mano in produzione. */}
       <div className="card mb-4">
         <p className="label mb-1">Oggi</p>
         <div className="flex items-center justify-between gap-3">
           <p className="h1" style={{ margin: 0 }}>
             {isTrainingDay ? "🏋️ Giorno ON — Allenamento" : "🧘 Giorno OFF — Riposo"}
           </p>
-          <button onClick={onToggleTrainingDay}
-                  className="shrink-0 rounded-full px-3.5 py-2 text-xs"
-                  style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
-            Simula {isTrainingDay ? "OFF" : "ON"}
-          </button>
+          {onToggleTrainingDay && (
+            <button onClick={onToggleTrainingDay}
+                    className="shrink-0 rounded-full px-3.5 py-2 text-xs"
+                    style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
+              Simula {isTrainingDay ? "OFF" : "ON"}
+            </button>
+          )}
         </div>
         <p className="body mt-2">
           Il target si aggiorna da solo ogni giorno in base al tipo di giornata: {target.kcal} kcal oggi
@@ -5196,10 +5200,12 @@ export default function HomePreview({
   const [realHistory, setRealHistory] = useState(null); // null finché non caricato (solo isRealMode)
   const [water, setWater] = useState(1500);
   const [autoSteps, setAutoSteps] = useState(false);
-  const [isTrainingDay, setIsTrainingDay] = useState(true);
+  // isTrainingDay REALE si calcola più sotto da weekPlan (la scheda vera
+  // assegnata dal coach) appena è disponibile — questo stato resta solo per
+  // il toggle manuale "Simula ON/OFF" della preview demo.
+  const [manualTrainingDay, setManualTrainingDay] = useState(true);
   const [targetOn, setTargetOn] = useState({ kcal: 3000, p: 200, c: 380, f: 75 });   // giorno ON (allenamento)
   const [targetOff, setTargetOff] = useState({ kcal: 2550, p: 200, c: 230, f: 85 }); // giorno OFF (riposo)
-  const target = isTrainingDay ? targetOn : targetOff; // il target attivo "oggi" si sceglie da solo
 
   // Dati reali: se supabase+userId sono passati (da App.jsx), sovrascrive i target
   // finti con quelli assegnati davvero dal coach (nutrition_targets). Se il coach
@@ -5464,6 +5470,13 @@ export default function HomePreview({
   const todayWeekdayIdx = isoWeekdayOf(new Date());
   const exercises = isRealMode ? (weekPlan[todayWeekdayIdx]?.exercises ?? []) : demoExercises;
 
+  // ON/OFF alimentazione sincronizzato con la scheda vera: giorno assegnato
+  // dal coach (weekPlan[oggi] non null) = ON, riposo (null) = OFF. Prima era
+  // solo un toggle manuale mai collegato alla scheda reale — "Simula ON/OFF"
+  // resta ma solo come test per la preview demo (isRealMode lo ignora).
+  const isTrainingDay = isRealMode ? weekPlan[todayWeekdayIdx] != null : manualTrainingDay;
+  const target = isTrainingDay ? targetOn : targetOff; // il target attivo "oggi" si sceglie da solo
+
   // Stesso principio di exercises/weekPlan qui sopra: in modalità reale niente
   // numeri inventati. isTraining/sessionLabel riflettono la scheda vera di
   // oggi; weekNumber/dayNumber/mesociclo/mesocicloWeeks restano null — non
@@ -5599,7 +5612,7 @@ export default function HomePreview({
           targetOn={targetOn} targetOff={targetOff}
           onSetTargetOn={(patch) => setTargetOn((t) => ({ ...t, ...patch }))}
           onSetTargetOff={(patch) => setTargetOff((t) => ({ ...t, ...patch }))}
-          isTrainingDay={isTrainingDay} onToggleTrainingDay={() => setIsTrainingDay((v) => !v)}
+          isTrainingDay={isTrainingDay} onToggleTrainingDay={isRealMode ? null : () => setManualTrainingDay((v) => !v)}
           streak={computeStreak("2026-07-19", 12, lastActivityDate)} level={4} xp={1840} xpInLevel={340} xpNeeded={590}
           mealsBySlot={meals} foods={allFoods} mealGuide={GUIDE} substitutions={SUBS}
           exercises={exercises} setsFor={setsFor} onSetField={onSetField}
