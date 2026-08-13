@@ -827,10 +827,33 @@ export function xpToLevelInfo(xpTotal) {
 // previsto (nessuna scheda quel giorno = riposo, non penalizza), più almeno
 // un pasto registrato, più sonno e passi registrati. Le stesse 3 condizioni
 // alimentano sia lo streak (giorni consecutivi) sia un bonus XP per-giorno.
-function isDayComplete(dateISO, { nutritionDays, metricsDays, workoutStatusByDate }) {
+// Un giorno coperto da un pause_periods attivo (vacanza o riposo forzato
+// concordato col coach) conta SEMPRE come completo ai fini dello streak: è
+// un riposo sanzionato, non un'assenza — non deve rompere lo streak, ma non
+// genera nemmeno il bonus XP "giornata piena" (quel conteggio, più sotto in
+// computeRealXpAndStreak, guarda solo i giorni con un pasto REALMENTE
+// registrato, quindi i giorni di pausa restano naturalmente esclusi da lì).
+function isDayComplete(dateISO, { nutritionDays, metricsDays, workoutStatusByDate, pauseDates }) {
+  if (pauseDates?.has(dateISO)) return true;
   const status = workoutStatusByDate.get(dateISO);
   const workoutOk = status === undefined || status === "done";
   return workoutOk && nutritionDays.has(dateISO) && metricsDays.has(dateISO);
+}
+
+// Espande le righe pause_periods (start_date/end_date) in un Set di singole
+// date ISO — più comodo per isDayComplete che deve solo chiedere "oggi è
+// coperto?" senza rifare il confronto di range ogni volta.
+function expandPauseDates(periods) {
+  const dates = new Set();
+  (periods ?? []).forEach((p) => {
+    const cursor = new Date(`${p.start_date}T00:00:00`);
+    const end = new Date(`${p.end_date}T00:00:00`);
+    while (cursor <= end) {
+      dates.add(toLocalISODate(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+  return dates;
 }
 
 // Ricalcola XP totale e streak corrente di un cliente dai dati reali già
@@ -845,23 +868,26 @@ export async function computeRealXpAndStreak(supabase, userId) {
 
   const [{ data: setsRows, error: setsError }, { data: nutriRows, error: nutriError },
     { data: metricsRows, error: metricsError }, { data: workoutRows, error: workoutError },
-    { data: bonusRows, error: bonusError }] = await Promise.all([
+    { data: bonusRows, error: bonusError }, { data: pauseRows, error: pauseError }] = await Promise.all([
     supabase.from("workout_sets").select("id").eq("user_id", userId).not("reps_completed", "is", null).gte("completed_at", sinceDate),
     supabase.from("nutrition_logs").select("date").eq("user_id", userId).gte("date", sinceDate),
     supabase.from("daily_metrics").select("date, sleep_hours, steps").eq("user_id", userId).gte("date", sinceDate),
     supabase.from("workout_logs").select("date, status").eq("user_id", userId).gte("date", sinceDate),
     supabase.from("xp_bonuses").select("amount").eq("user_id", userId),
+    supabase.from("pause_periods").select("start_date, end_date").eq("user_id", userId),
   ]);
   if (setsError) throw setsError;
   if (nutriError) throw nutriError;
   if (metricsError) throw metricsError;
   if (workoutError) throw workoutError;
   if (bonusError) throw bonusError;
+  if (pauseError) throw pauseError;
 
   const nutritionDays = new Set((nutriRows ?? []).map((r) => r.date));
   const metricsDays = new Set((metricsRows ?? []).filter((r) => r.sleep_hours != null && r.steps != null).map((r) => r.date));
   const workoutStatusByDate = new Map((workoutRows ?? []).map((r) => [r.date, r.status]));
-  const ctx = { nutritionDays, metricsDays, workoutStatusByDate };
+  const pauseDates = expandPauseDates(pauseRows);
+  const ctx = { nutritionDays, metricsDays, workoutStatusByDate, pauseDates };
 
   // Streak: giorni consecutivi completi risalendo da oggi. Se oggi non è
   // ancora completo la giornata è semplicemente "ancora aperta" e non rompe
@@ -895,6 +921,50 @@ export async function computeRealXpAndStreak(supabase, userId) {
   }
 
   return { xpTotal, streak };
+}
+
+// Vacanza (2-14 giorni) o riposo forzato singolo (motivo obbligatorio): una
+// riga in pause_periods, letta da isDayComplete/computeRealXpAndStreak qui
+// sopra per non penalizzare streak/XP nei giorni coperti.
+export async function requestPause(supabase, userId, { type, startDate, endDate, reason, note }) {
+  if (type === "vacation") {
+    const days = (new Date(`${endDate}T00:00:00`) - new Date(`${startDate}T00:00:00`)) / 86400000 + 1;
+    if (days < 2 || days > 14) throw new Error("La vacanza deve durare tra 2 e 14 giorni.");
+  }
+  if (type === "forced_rest" && !reason) throw new Error("Indica il motivo del riposo forzato.");
+  const { error } = await supabase.from("pause_periods").insert({
+    user_id: userId, type, start_date: startDate, end_date: endDate, reason: reason || null, note: note || null,
+  });
+  if (error) throw error;
+}
+
+// Il periodo di pausa che copre OGGI, se esiste — usato per mostrare in Home
+// "sei in vacanza fino al..." invece delle normali card di allenamento/dieta.
+export async function fetchActivePause(supabase, userId) {
+  const today = toLocalISODate();
+  const { data, error } = await supabase
+    .from("pause_periods")
+    .select("id, type, start_date, end_date, reason, note")
+    .eq("user_id", userId)
+    .lte("start_date", today)
+    .gte("end_date", today)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// Storico pause di un cliente, per il coach (motivo compreso) — più recenti prima.
+export async function fetchClientPauses(supabase, userId, limit = 10) {
+  const { data, error } = await supabase
+    .from("pause_periods")
+    .select("id, type, start_date, end_date, reason, note, created_at")
+    .eq("user_id", userId)
+    .order("start_date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
 }
 
 // Push immediato al cliente quando il coach salva una modifica reale al suo

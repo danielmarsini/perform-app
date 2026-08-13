@@ -192,7 +192,7 @@ import {
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
-  awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange,
+  awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange, fetchClientPauses,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3006,6 +3006,47 @@ function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeam
   );
 }
 
+/* Vacanze e riposi forzati richiesti dal cliente (pause_periods), col
+   motivo per i riposi forzati — il coach le vede qui per capire il perché
+   di un buco nel programma e reagire (modificare il piano, dare supporto),
+   invece di scoprirlo solo da un'aderenza calata senza contesto. */
+function ClientPausesCard({ client }) {
+  const { supabase, isRealMode } = useContext(CoachDataContext);
+  const [pauses, setPauses] = useState(null); // null = non ancora caricato
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    fetchClientPauses(supabase, client.id)
+      .then((rows) => { if (!cancelled) setPauses(rows); })
+      .catch((err) => { console.error("PERFORM: errore lettura pause cliente", err); if (!cancelled) setPauses([]); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+
+  if (!isRealMode || !pauses || pauses.length === 0) return null;
+
+  return (
+    <div className="c-card">
+      <p className="c-heading font-display font-bold mb-3">🏖️ Vacanze e riposi forzati</p>
+      <div className="space-y-2">
+        {pauses.map((p) => (
+          <div key={p.id} className="inner px-3.5 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>
+                {p.type === "vacation" ? "Vacanza" : "Riposo forzato"}
+              </span>
+              <span className="c-muted font-data text-xs">
+                {p.start_date}{p.end_date !== p.start_date ? ` → ${p.end_date}` : ""}
+              </span>
+            </div>
+            {p.reason && <p className="c-muted text-xs mt-1">Motivo: {p.reason}</p>}
+            {p.note && <p className="c-muted text-xs mt-0.5">"{p.note}"</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses, setXpBonuses, teamPosts, setTeamPosts, initialTab = "anamnesi" }) {
   const { supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const status = computeStatus(client);
@@ -3075,6 +3116,7 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
       {tab === "check" && (
         <div className="space-y-4">
           <GoalAchievedPanel client={client} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} />
+          <ClientPausesCard client={client} />
           <CheckDetail client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} onSwitchToEditor={() => setTab("editor")} />
         </div>
       )}

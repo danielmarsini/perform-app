@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, requestPause, fetchActivePause } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 
@@ -1231,6 +1231,152 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
   );
 }
 
+const PAUSE_REASONS = ["Stress", "Impegni personali", "Dolori/infortunio", "Malattia", "Altro"];
+
+/* Vacanza (2-14 giorni) o riposo forzato singolo (motivo obbligatorio):
+   mostra un banner se oggi è già coperto da una pausa attiva, altrimenti un
+   link discreto per richiederne una. Il coach vede motivo e date in
+   ClientDetail (09_CoachDashboard.jsx) — stessa tabella, mai due fonti. */
+function PauseSection({ supabase, userId, accent, accentText }) {
+  const [activePause, setActivePause] = useState(undefined); // undefined = non ancora caricato, null = nessuna
+  const [showModal, setShowModal] = useState(false);
+
+  const reload = () => {
+    fetchActivePause(supabase, userId)
+      .then((p) => setActivePause(p ?? null))
+      .catch((err) => { console.error("PERFORM: errore lettura pausa attiva", err); setActivePause(null); });
+  };
+  useEffect(reload, [supabase, userId]);
+
+  if (activePause === undefined) return null;
+
+  return (
+    <>
+      {activePause ? (
+        <div className="rounded-2xl px-4 py-3.5 mb-4 flex items-center gap-3"
+             style={{ backgroundColor: "var(--surface-2)", border: `1px solid ${accent}` }}>
+          <span style={{ fontSize: "1.3rem" }}>{activePause.type === "vacation" ? "🏖️" : "🛌"}</span>
+          <div className="min-w-0">
+            <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>
+              {activePause.type === "vacation" ? "Sei in vacanza" : "Riposo forzato di oggi"}
+              {" "}fino al {activePause.end_date.slice(8, 10)}/{activePause.end_date.slice(5, 7)}
+            </p>
+            <p className="meta mt-0.5">Streak e obiettivi non vengono penalizzati in questi giorni.</p>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setShowModal(true)} className="text-xs mb-4" style={{ color: "var(--ink-2)" }}>
+          🏖️ Vai in vacanza o chiedi un riposo forzato
+        </button>
+      )}
+      {showModal && (
+        <PauseRequestModal supabase={supabase} userId={userId} accent={accent} accentText={accentText}
+          onClose={() => setShowModal(false)}
+          onSaved={() => { setShowModal(false); reload(); }} />
+      )}
+    </>
+  );
+}
+
+function PauseRequestModal({ supabase, userId, accent, accentText, onClose, onSaved }) {
+  const [type, setType] = useState("vacation");
+  const [startDate, setStartDate] = useState(toLocalISODate());
+  const [endDate, setEndDate] = useState(toLocalISODate());
+  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await requestPause(supabase, userId, {
+        type, startDate,
+        endDate: type === "forced_rest" ? startDate : endDate,
+        reason: type === "forced_rest" ? reason : null,
+        note: note || null,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.message || "Non sono riuscito a registrare la richiesta.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const canSubmit = type === "vacation" ? (startDate && endDate && endDate >= startDate) : (startDate && reason);
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+           style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
+        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6" onClick={(e) => e.stopPropagation()}
+             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}>
+          <div className="flex items-center justify-between mb-4">
+            <p className="h1">Pausa dal programma</p>
+            <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 mb-4">
+            {[["vacation", "Vacanza"], ["forced_rest", "Riposo forzato"]].map(([id, lab]) => (
+              <button key={id} onClick={() => setType(id)}
+                className="rounded-xl px-1 py-2.5 text-center"
+                style={type === id ? { backgroundColor: accent, color: "#FFFFFF" } : { border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                <span style={{ fontSize: "0.78rem", fontWeight: 600 }}>{lab}</span>
+              </button>
+            ))}
+          </div>
+
+          {type === "vacation" ? (
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <label className="block">
+                <span className="label block mb-1.5">Dal</span>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input w-full px-3 py-2.5 text-sm font-data" />
+              </label>
+              <label className="block">
+                <span className="label block mb-1.5">Al</span>
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="input w-full px-3 py-2.5 text-sm font-data" />
+              </label>
+            </div>
+          ) : (
+            <>
+              <label className="block mb-3">
+                <span className="label block mb-1.5">Giorno</span>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input w-full px-3 py-2.5 text-sm font-data" />
+              </label>
+              <label className="block mb-3">
+                <span className="label block mb-1.5">Motivo (obbligatorio, lo vede il coach)</span>
+                <select value={reason} onChange={(e) => setReason(e.target.value)} className="input w-full px-3 py-2.5 text-sm">
+                  <option value="">— scegli —</option>
+                  {PAUSE_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+            </>
+          )}
+
+          <label className="block mb-4">
+            <span className="label block mb-1.5">Note per il coach (facoltative)</span>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+              className="input w-full px-3 py-2.5 text-sm" style={{ resize: "vertical" }} />
+          </label>
+
+          {error && <p className="mb-3 text-sm" style={{ color: "#B91C1C" }}>{error}</p>}
+
+          <button onClick={handleSubmit} disabled={!canSubmit || saving}
+                  className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40"
+                  style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
+            {saving ? "Invio…" : "Conferma"}
+          </button>
+          {type === "vacation" && (
+            <p className="meta mt-2 text-center" style={{ fontSize: "0.68rem" }}>La vacanza deve durare tra 2 e 14 giorni.</p>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 /* Widget lussuoso HRV Matrix: gauge radiale + badge di prontezza del sistema
    nervoso, basato sul valore di HRV simulato/inserito dall'utente. */
 function HrvMatrixWidget({ hrv, rhr, accent }) {
@@ -1651,6 +1797,8 @@ export function HomeDashboard({
           )}
           </div>
         </div>
+
+        {isRealMode && <PauseSection supabase={supabase} userId={userId} accent={accent} accentText={accentText} />}
 
         {/* simulatore di test: solo per provare rapidamente i colori/soglie —
             nascosto in modalità reale, non serve (e non avrebbe più effetto

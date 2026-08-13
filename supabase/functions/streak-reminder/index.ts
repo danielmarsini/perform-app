@@ -71,11 +71,15 @@ Deno.serve(async (req) => {
   });
   if (candidateUserIds.length === 0) return new Response(JSON.stringify({ sent: 0, reason: "nothing-to-check" }));
 
-  const [{ data: workoutRows }, { data: nutritionRows }, { data: metricsRows }] = await Promise.all([
+  const [{ data: workoutRows }, { data: nutritionRows }, { data: metricsRows }, { data: pauseRows }] = await Promise.all([
     supabase.from("workout_logs").select("user_id, status").eq("date", today).in("user_id", candidateUserIds),
     supabase.from("nutrition_logs").select("user_id").eq("date", today).in("user_id", candidateUserIds),
     supabase.from("daily_metrics").select("user_id, sleep_hours, steps").eq("date", today).in("user_id", candidateUserIds),
+    // Chi è in vacanza o riposo forzato oggi non va avvisato: è un riposo
+    // sanzionato col coach, non un'assenza da segnalare.
+    supabase.from("pause_periods").select("user_id").lte("start_date", today).gte("end_date", today).in("user_id", candidateUserIds),
   ]);
+  const pausedUserIds = new Set((pauseRows ?? []).map((r) => r.user_id));
 
   const workoutStatusByUser = new Map();
   (workoutRows ?? []).forEach((r) => {
@@ -88,6 +92,7 @@ Deno.serve(async (req) => {
   const metricsSet = new Set((metricsRows ?? []).filter((r) => r.sleep_hours != null && r.steps != null).map((r) => r.user_id));
 
   const isDayComplete = (userId) => {
+    if (pausedUserIds.has(userId)) return true;
     const workoutStatus = workoutStatusByUser.get(userId);
     const workoutOk = workoutStatus === undefined || workoutStatus === true; // nessuna scheda oggi = riposo, ok
     return workoutOk && nutritionSet.has(userId) && metricsSet.has(userId);
