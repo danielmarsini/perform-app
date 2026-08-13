@@ -170,7 +170,7 @@ function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3 }) {
     if (real) {
       let query = supabase
         .from("coach_news_tips")
-        .select("id, channel, eyebrow, title, body, body_extended, source_query, like_count, published_at")
+        .select("id, channel, eyebrow, title, body, body_extended, source_query, like_count, published_at, photo_before_url, photo_after_url, weight_achieved")
         .eq("channel", channel);
       /* Gli Avvisi Team non hanno finestra di scadenza: nessun filtro temporale. */
       if (expires) query = query.gte("published_at", new Date(Date.now() - EXPIRY_MS).toISOString());
@@ -380,6 +380,28 @@ function FeedCard({ item, channel, isLatest, gender, accent, liked, likeCount, s
       <p className="teaser-clamp" style={{ fontSize: "0.96rem", fontWeight: 400, color: "var(--satin-gray)", lineHeight: 1.8 }}>
         {item.body}
       </p>
+
+      {(item.photo_before_url || item.photo_after_url) && (
+        <div className="mt-4 grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
+          {item.photo_before_url && (
+            <div className="relative rounded-xl overflow-hidden">
+              <img src={item.photo_before_url} alt="Prima" className="w-full h-32 object-cover" />
+              <span className="absolute bottom-1.5 left-1.5 rounded-full px-2 py-0.5" style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "rgba(9,9,11,0.65)", color: "#FFFFFF" }}>PRIMA</span>
+            </div>
+          )}
+          {item.photo_after_url && (
+            <div className="relative rounded-xl overflow-hidden">
+              <img src={item.photo_after_url} alt="Dopo" className="w-full h-32 object-cover" />
+              <span className="absolute bottom-1.5 left-1.5 rounded-full px-2 py-0.5" style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "rgba(9,9,11,0.65)", color: "#FFFFFF" }}>DOPO</span>
+            </div>
+          )}
+        </div>
+      )}
+      {item.weight_achieved != null && (
+        <p className="mt-3 font-data" style={{ fontSize: "0.82rem", fontWeight: 700, color: accent }}>
+          🎯 Peso raggiunto: {item.weight_achieved} kg
+        </p>
+      )}
 
       <span style={{ display: "inline-block", marginTop: "0.9rem", fontSize: "0.78rem", fontWeight: 600, color: accent }}>
         Approfondisci →

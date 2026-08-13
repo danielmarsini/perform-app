@@ -2912,9 +2912,22 @@ function AnamnesisPanel({ client }) {
    In demo (!isRealMode) resta lo stato locale xpBonuses/teamPosts di prima,
    invariato: la preview isolata non cambia comportamento.
    ========================================================================== */
+// Carica una foto prima/dopo sul bucket pubblico team-photos (sola scrittura
+// coach, vedi SCHEMA_v29) e torna l'URL pubblico da salvare sul post.
+async function uploadTeamPhoto(supabase, file, clientId, label) {
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${clientId}/${Date.now()}-${label}.${ext}`;
+  const { error } = await supabase.storage.from("team-photos").upload(path, file, { upsert: false });
+  if (error) throw error;
+  return supabase.storage.from("team-photos").getPublicUrl(path).data.publicUrl;
+}
+
 function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeamPosts }) {
   const { supabase, isRealMode, coachId, reloadRoster } = useContext(CoachDataContext);
   const [goalText, setGoalText] = useState("");
+  const [weightAchieved, setWeightAchieved] = useState("");
+  const [photoBefore, setPhotoBefore] = useState(null);
+  const [photoAfter, setPhotoAfter] = useState(null);
   const [justPosted, setJustPosted] = useState(false);
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState("");
@@ -2928,6 +2941,10 @@ function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeam
       setPosting(true);
       setPostError("");
       try {
+        const [photoBeforeUrl, photoAfterUrl] = await Promise.all([
+          photoBefore ? uploadTeamPhoto(supabase, photoBefore, client.id, "before") : null,
+          photoAfter ? uploadTeamPhoto(supabase, photoAfter, client.id, "after") : null,
+        ]);
         await awardXpBonus(supabase, { userId: client.id, coachId, amount: 500, reason: text });
         await computeRealXpAndStreak(supabase, client.id);
         await supabase.from("coach_news_tips").insert({
@@ -2936,9 +2953,12 @@ function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeam
           title: `${client.name} ha raggiunto l'obiettivo! 🏆`,
           body: text,
           published_at: new Date().toISOString(),
+          photo_before_url: photoBeforeUrl,
+          photo_after_url: photoAfterUrl,
+          weight_achieved: weightAchieved ? Number(weightAchieved) : null,
         });
         reloadRoster?.();
-        setGoalText("");
+        setGoalText(""); setWeightAchieved(""); setPhotoBefore(null); setPhotoAfter(null);
         setJustPosted(true);
         setTimeout(() => setJustPosted(false), 2600);
       } catch (err) {
@@ -2975,6 +2995,24 @@ function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeam
         <input value={goalText} onChange={(e) => setGoalText(e.target.value)} placeholder="es. Primo squat a corpo libero da 100 kg"
           className="t-input w-full text-sm rounded-lg px-3 py-2.5" />
       </label>
+      {isRealMode && (
+        <>
+          <label className="block mb-3">
+            <span className="c-label block mb-1.5">Peso raggiunto, kg (facoltativo)</span>
+            <input type="number" step="0.1" value={weightAchieved} onChange={(e) => setWeightAchieved(e.target.value)}
+              placeholder="es. 78.5" className="t-input w-full text-sm rounded-lg px-3 py-2.5 font-data" />
+          </label>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {[["before", "Foto prima", photoBefore, setPhotoBefore], ["after", "Foto dopo", photoAfter, setPhotoAfter]].map(([key, lab, file, setFile]) => (
+              <label key={key} className="rounded-lg flex flex-col items-center justify-center gap-1 py-4 cursor-pointer"
+                style={file ? { backgroundColor: "#C5A059", color: "#FFFFFF" } : { border: "1px dashed var(--line)", color: "var(--ink-2)" }}>
+                <span style={{ fontSize: "0.72rem", fontWeight: 600 }}>{file ? `✓ ${lab}` : lab}</span>
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+              </label>
+            ))}
+          </div>
+        </>
+      )}
       <button onClick={segnalaObiettivo} disabled={posting} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium disabled:opacity-60">
         {posting ? "Invio in corso…" : "🏆 Segnala Obiettivo Raggiunto"}
       </button>
