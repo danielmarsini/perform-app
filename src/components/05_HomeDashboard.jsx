@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
+import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -253,6 +254,42 @@ function Chart3D({ kind, series }) {
           {t.fmt(series[series.length - 1] || 0)}
         </span>
       </div>
+    </div>
+  );
+}
+
+/* Sync passi reale da Google Fit, solo Android — vedi googleFit.js per il
+   perché non è "automatica" al 100% (token in sessionStorage, non un
+   refresh token lato server): un tap per sessione, non un numero da
+   digitare a mano ogni giorno. */
+function GoogleFitStepsSync({ accent, onSetSteps }) {
+  const [connected, setConnected] = useState(() => isGoogleFitConnected());
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState("");
+
+  const doSync = () => {
+    setSyncing(true);
+    setError("");
+    syncTodayStepsFromGoogleFit()
+      .then((steps) => { onSetSteps(String(steps)); setConnected(true); })
+      .catch((err) => setError(err.message || "Sincronizzazione non riuscita."))
+      .finally(() => setSyncing(false));
+  };
+
+  return (
+    <div className="inner px-4 py-3.5 mt-3 flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Google Fit</p>
+        <p className="meta mt-0.5 leading-relaxed">
+          {connected ? "Collegato — tocca per aggiornare i passi di oggi" : "Un tap per leggere i passi di oggi, senza inserirli a mano"}
+        </p>
+        {error && <p className="mt-1" style={{ fontSize: "0.72rem", color: "#B91C1C" }}>{error}</p>}
+      </div>
+      <button onClick={doSync} disabled={syncing}
+              className="shrink-0 rounded-full px-3.5 py-2 text-xs disabled:opacity-60"
+              style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
+        {syncing ? "…" : connected ? "Aggiorna" : "Collega"}
+      </button>
     </div>
   );
 }
@@ -1879,13 +1916,19 @@ export function HomeDashboard({
         </div>
         <Chart3D kind="steps" series={liveHistory.steps} />
         {isRealMode ? (
-          <div className="inner px-4 py-3.5 mt-3">
-            <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Sincronizzazione automatica</p>
-            <p className="meta mt-0.5 leading-relaxed">
-              Funzionalità disponibile a breve — Apple Salute richiede un'app nativa o un servizio di
-              terze parti; nel frattempo i passi si registrano qui sopra, a mano.
-            </p>
-          </div>
+          isAndroid() && isGoogleFitConfigured() ? (
+            <GoogleFitStepsSync accent={accent} onSetSteps={onSetSteps} />
+          ) : (
+            <div className="inner px-4 py-3.5 mt-3">
+              <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Sincronizzazione automatica</p>
+              <p className="meta mt-0.5 leading-relaxed">
+                {isAndroid()
+                  ? "Google Fit non ancora configurato per questo account."
+                  : "Funzionalità disponibile a breve — Apple Salute richiede un'app nativa o un servizio di terze parti."}
+                {" "}Nel frattempo i passi si registrano qui sopra, a mano.
+              </p>
+            </div>
+          )
         ) : (
         <div className="inner px-4 py-3.5 mt-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
