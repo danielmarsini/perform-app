@@ -20,7 +20,7 @@ import React, { useState, useMemo, useEffect, useId, useRef } from "react";
 import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
-  CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
+  CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
@@ -248,11 +248,10 @@ function Chart3D({ kind, series }) {
           );
         })}
       </div>
-      <div className="flex items-baseline justify-between mt-3">
+      <div className="mt-3">
         <span className="font-data" style={{ fontSize: "0.95rem", fontWeight: 800, color: "var(--ink)" }}>
           {t.fmt(series[series.length - 1] || 0)}
         </span>
-        <span className="label" style={{ margin: 0 }}>Trascina per lo storico</span>
       </div>
     </div>
   );
@@ -1853,51 +1852,34 @@ export function HomeDashboard({
     <div className="spring-in">
       {back("Recupero e Attività")}
 
-      {/* sonno */}
-      <div className="card mb-4">
-        <p className="label mb-3">Sonno di questa notte</p>
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <label className="block">
-            <span className="label block mb-1.5">Addormentato</span>
-            <input type="time" value={sleep.start || ""} onChange={(e) => onSetSleep("start", e.target.value)}
-                   className="input w-full px-4 py-3 font-data" />
-          </label>
-          <label className="block">
-            <span className="label block mb-1.5">Sveglia</span>
-            <input type="time" value={sleep.end || ""} onChange={(e) => onSetSleep("end", e.target.value)}
-                   className="input w-full px-4 py-3 font-data" />
-          </label>
-        </div>
-        {sleep.hours > 0 && (
-          <div className="inner px-4 py-3 flex items-center gap-2.5">
-            <Moon size={15} style={{ color: accent }} />
-            <span className="text-sm" style={{ color: "var(--ink)" }}>
-              {sleep.hours.toFixed(1)} ore ·{" "}
-              <span style={{ color: CANDLE[grade("sleep", sleep.hours)].label, fontWeight: 600 }}>
-                {grade("sleep", sleep.hours) === "good" ? "nel range"
-                  : grade("sleep", sleep.hours) === "warn" ? "al limite" : "insufficiente"}
-              </span>
+      {/* sonno: casella pulita sopra al grafico, niente card/etichette/legenda colori attorno */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <input type="time" value={sleep.start || ""} onChange={(e) => onSetSleep("start", e.target.value)}
+                 aria-label="Ora in cui ti sei addormentato" className="input flex-1 px-3 py-2 text-sm font-data" />
+          <span className="meta" style={{ fontSize: "0.7rem" }}>→</span>
+          <input type="time" value={sleep.end || ""} onChange={(e) => onSetSleep("end", e.target.value)}
+                 aria-label="Ora della sveglia" className="input flex-1 px-3 py-2 text-sm font-data" />
+          {sleep.hours > 0 && (
+            <span className="font-data shrink-0" style={{ fontSize: "0.85rem", fontWeight: 800, color: "var(--ink)" }}>
+              {sleep.hours.toFixed(1)}h
             </span>
-          </div>
-        )}
+          )}
+        </div>
+        <Chart3D kind="sleep" series={liveHistory.sleep} />
       </div>
-      <div className="flex items-center gap-2 mb-1.5">
-        <Moon size={13} style={{ color: accent }} />
-        <p className="label" style={{ margin: 0 }}>Sonno · rosso &lt;6h · arancione 6-7,5h · verde &gt;7,5h</p>
-      </div>
-      <div className="mb-4"><Chart3D kind="sleep" series={liveHistory.sleep} /></div>
 
-      {/* passi */}
-      <div className="card mb-4">
-        <p className="label mb-3">Passi di oggi</p>
-        <div className="flex items-center gap-3 mb-3">
-          <Footprints size={18} style={{ color: accent }} className="shrink-0" />
+      {/* passi: stessa casella pulita sopra al grafico */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Footprints size={16} style={{ color: accent }} className="shrink-0" />
           <input type="number" min="0" value={steps} onChange={(e) => onSetSteps(e.target.value)}
                  disabled={isRealMode ? false : autoSteps} placeholder="Passi di oggi"
-                 className="input w-full px-4 py-3 font-data disabled:opacity-70" />
+                 aria-label="Passi di oggi" className="input flex-1 px-3 py-2 text-sm font-data disabled:opacity-70" />
         </div>
+        <Chart3D kind="steps" series={liveHistory.steps} />
         {isRealMode ? (
-          <div className="inner px-4 py-3.5">
+          <div className="inner px-4 py-3.5 mt-3">
             <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Sincronizzazione automatica</p>
             <p className="meta mt-0.5 leading-relaxed">
               Funzionalità disponibile a breve — Apple Salute richiede un'app nativa o un servizio di
@@ -1905,7 +1887,7 @@ export function HomeDashboard({
             </p>
           </div>
         ) : (
-        <div className="inner px-4 py-3.5 flex items-center justify-between gap-3">
+        <div className="inner px-4 py-3.5 mt-3 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Sincronizza automaticamente</p>
             <p className="meta mt-0.5 leading-relaxed">
@@ -1926,11 +1908,6 @@ export function HomeDashboard({
         </div>
         )}
       </div>
-      <div className="flex items-center gap-2 mb-1.5">
-        <Footprints size={13} style={{ color: accent }} />
-        <p className="label" style={{ margin: 0 }}>Passi · rosso &lt;6k · arancione 6-10k · verde &gt;10k</p>
-      </div>
-      <div className="mb-4"><Chart3D kind="steps" series={liveHistory.steps} /></div>
 
       {isRealMode ? (
         // HRV/RHR richiedono un device che li misuri davvero (smartwatch/anello):
