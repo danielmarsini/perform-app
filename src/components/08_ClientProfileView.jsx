@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises } from "../lib/coachingData.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
+import Portal from "./Portal.jsx";
 import { WeeklyCheckModal } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
@@ -1076,6 +1077,7 @@ export function SettingsDrawer({
   };
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex justify-end" style={{ backgroundColor: "rgba(9,9,11,0.4)" }}
          role="dialog" aria-modal="true" aria-label={t.settingsTitle}>
       <button className="absolute inset-0" onClick={onClose} aria-label="close" />
@@ -1276,6 +1278,7 @@ export function SettingsDrawer({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 

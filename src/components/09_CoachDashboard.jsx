@@ -3973,7 +3973,12 @@ export default function CoachDashboard({ supabase, coachId } = {}) {
     <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode, reloadRoster }}>
       <div className={`coach-root${isDark ? " dark" : ""}`}>
         <GlobalStyle />
-        <main className="max-w-6xl mx-auto px-4 py-8 pb-24">
+        {/* max-w-2xl su mobile: stessa larghezza fissa "da app" delle altre
+            schermate (Home/Profilo/Classifica), niente contenuto più largo
+            dello schermo che obbliga il browser a permettere zoom/spostamento.
+            Più largo solo da tablet in su (md:), dove il coach lavora più
+            spesso da desktop e beneficia dello spazio extra per le tabelle. */}
+        <main className="max-w-2xl md:max-w-6xl mx-auto px-4 py-8 pb-24" style={{ overflowX: "hidden" }}>
           <CoachContextBar isDark={isDark} onToggleDark={() => setIsDark((v) => !v)} />
           {selectedId != null ? (
             <ClientDetail client={client} onBack={() => { setSelectedId(null); setClientInitialTab("anamnesi"); }} quickTargets={quickTargets} setQuickTargets={setQuickTargets} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} initialTab={clientInitialTab} />

@@ -23,6 +23,7 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Moon, Pill, Lock,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin } from "../lib/coachingData.js";
+import Portal from "./Portal.jsx";
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -857,29 +858,31 @@ function CompliancePopup({ ring, onClose }) {
   const isNeutral = ring.pct == null;
   const tier = isNeutral ? { color: "var(--ink-2)", label: "Nessun dato" } : complianceTier(ring.pct);
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-         style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
-      <div className="spring-in w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-6"
-           style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}
-           onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <p className="h1 flex items-center gap-2">
-            <ring.icon size={18} style={{ color: tier.color }} /> {ring.label}
-          </p>
-          <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
-        </div>
-        <p style={{ fontSize: "2.6rem", fontWeight: 700, color: tier.color, lineHeight: 1 }}>{isNeutral ? "n/d" : `${ring.pct}%`}</p>
-        <p className="meta mb-4 mt-1">{isNeutral ? tier.label : `${tier.label} · media ultimi 7 giorni`}</p>
-        <div className="space-y-2">
-          {ring.details.map((d) => (
-            <div key={d.label} className="inner flex items-center justify-between px-4 py-2.5">
-              <span className="text-sm" style={{ color: "var(--ink)" }}>{d.label}</span>
-              <span className="text-sm" style={{ color: "var(--ink-2)", fontWeight: 700 }}>{d.value}</span>
-            </div>
-          ))}
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+           style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
+        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6"
+             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}
+             onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-4">
+            <p className="h1 flex items-center gap-2">
+              <ring.icon size={18} style={{ color: tier.color }} /> {ring.label}
+            </p>
+            <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+          </div>
+          <p style={{ fontSize: "2.6rem", fontWeight: 700, color: tier.color, lineHeight: 1 }}>{isNeutral ? "n/d" : `${ring.pct}%`}</p>
+          <p className="meta mb-4 mt-1">{isNeutral ? tier.label : `${tier.label} · media ultimi 7 giorni`}</p>
+          <div className="space-y-2">
+            {ring.details.map((d) => (
+              <div key={d.label} className="inner flex items-center justify-between px-4 py-2.5">
+                <span className="text-sm" style={{ color: "var(--ink)" }}>{d.label}</span>
+                <span className="text-sm" style={{ color: "var(--ink-2)", fontWeight: 700 }}>{d.value}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </Portal>
   );
 }
 
@@ -933,13 +936,11 @@ function computeStreak(referenceDateStr = "2026-07-19", baseStreak = 12, lastAct
   return gapDays > 1 ? 0 : grown; // più di 24h senza registrare nulla → streak azzerato
 }
 
-/* Bio-sintomi: valutazione rapida da 1 a 5 con emoji, sempre facoltativa.
-   Digestione/Gonfiore vive nell'ultima parte dell'Alimentazione; Energia,
-   DOMS e Dolori vivono nel Recupero, insieme alle note di fine giornata. */
+/* Bio-sintomo Digestione/Gonfiore: valutazione rapida da 1 a 5 con emoji,
+   sempre facoltativa, nell'ultima parte dell'Alimentazione. Energia/DOMS/
+   Dolori vivevano nel check-in di fine giornata, rimosso su richiesta
+   (poco utile, verrà reintrodotto altrove se serve). */
 const DIGEST_EMOJIS = ["🤢", "😖", "😐", "🙂", "✨"];
-const ENERGY_EMOJIS = ["😴", "😪", "😐", "🙂", "⚡"];
-const DOMS_EMOJIS   = ["😩", "🥴", "😐", "🙂", "💪"];
-const PAIN_EMOJIS   = ["🚨", "😣", "😐", "🙂", "✅"];
 
 function EmojiRating({ label, icon, emojis, value, onChange }) {
   return (
@@ -963,72 +964,6 @@ function EmojiRating({ label, icon, emojis, value, onChange }) {
             </button>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-/* Check-in di fine giornata nel Recupero: Energia, DOMS, Dolori a emoji +
-   note libere, tutto facoltativo. */
-function EveningCheckIn({ onCoachSync }) {
-  const [energy, setEnergy] = useState(0);
-  const [doms, setDoms] = useState(0);
-  const [pain, setPain] = useState(0);
-  const [note, setNote] = useState("");
-
-  const rate = (setter, symptom) => (v) => {
-    setter(v);
-    onCoachSync && onCoachSync({ type: "bio-symptom", symptom, value: v });
-  };
-
-  return (
-    <div className="card mb-4">
-      <p className="label mb-1">Check-in di fine giornata</p>
-      <p className="body mb-4">Facoltativo: valuta solo quello che ti interessa tracciare.</p>
-      <div className="space-y-5">
-        <EmojiRating label="Energia / Focus" icon="⚡" emojis={ENERGY_EMOJIS} value={energy} onChange={rate(setEnergy, "energy")} />
-        <EmojiRating label="Livello DOMS" icon="🤕" emojis={DOMS_EMOJIS} value={doms} onChange={rate(setDoms, "doms")} />
-        <EmojiRating label="Segnalazione Dolori" icon="⚠️" emojis={PAIN_EMOJIS} value={pain} onChange={rate(setPain, "pain")} />
-      </div>
-      <div className="mt-5">
-        <p className="label mb-1.5">Note (facoltative)</p>
-        <textarea value={note} rows={3}
-          onChange={(e) => { setNote(e.target.value); onCoachSync && onCoachSync({ type: "bio-note", value: e.target.value }); }}
-          placeholder="Qualcosa da segnalare al coach? Scrivilo qui…"
-          className="input w-full px-4 py-3 text-sm" style={{ resize: "vertical" }} />
-      </div>
-    </div>
-  );
-}
-
-/* Pop-up serale bloccante ed elegante: ricorda il check-in di fine giornata
-   insieme a passi e sonno. */
-function EveningReminderModal({ accent, accentText, onDismiss, onGoToForm }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-5"
-         style={{ backgroundColor: "rgba(9,9,11,0.55)", backdropFilter: "blur(3px)" }}>
-      <div className="spring-in rounded-3xl p-6 w-full" style={{ maxWidth: 380, backgroundColor: "var(--surface)",
-              border: `1.5px solid ${accent}`, boxShadow: "0 24px 60px -12px rgba(0,0,0,0.35)" }}>
-        <span className="inline-flex items-center justify-center rounded-full mb-4"
-              style={{ width: 48, height: 48, backgroundColor: accent }}>
-          <Moon size={22} style={{ color: "#FFFFFF" }} />
-        </span>
-        <p className="h1 mb-2">È ora del check-in serale</p>
-        <p className="body mb-5">
-          Prima di chiudere la giornata, ricordati di registrare i passi di oggi e il sonno di questa notte.
-          Il check-in su energia, DOMS e dolori resta facoltativo: compilalo solo se vuoi. Servono al coach
-          per leggere i tuoi pattern nel tempo.
-        </p>
-        <div className="flex flex-col gap-2">
-          <button onClick={onGoToForm} className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98]"
-                  style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
-            Compila ora
-          </button>
-          <button onClick={onDismiss} className="w-full rounded-full px-4 py-3 text-sm"
-                  style={{ border: "1px solid var(--line)", color: "var(--ink-2)" }}>
-            Più tardi
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -1097,6 +1032,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
   };
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
          style={{ backgroundColor: "rgba(9,9,11,0.65)", backdropFilter: "blur(6px)" }}>
       <div className="spring-in relative w-full overflow-y-auto rounded-2xl p-6"
@@ -1234,6 +1170,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 
@@ -1318,7 +1255,6 @@ export function HomeDashboard({
 }) {
   const [screen, setScreen] = useState("dash");   // dash | workout | nutrition | recovery
   const [checklistOpen, setChecklistOpen] = useState(false);
-  const [showEveningReminder, setShowEveningReminder] = useState(false);
   const [digestValue, setDigestValue] = useState(0);
 
   /* Check Domenica/Lunedì: si attiva da solo a fine settimana e blocca la
@@ -1380,13 +1316,6 @@ export function HomeDashboard({
      sulle task di oggi: +2% di XP per ogni giorno di streak, fino a un tetto
      del +50% per non farlo esplodere con streak molto lunghi. */
   const streakXpBonus = Math.min(0.5, streak * 0.02);
-
-  /* Controllo automatico: a fine giornata (dalle 21:00) propone il check-in
-     serale, se non è già stato chiuso in questa sessione — solo nei piani
-     PRO (Coaching Allenamento / Full Coaching). */
-  useEffect(() => {
-    if (new Date().getHours() >= 21 && access.pro) setShowEveningReminder(true);
-  }, [access.pro]);
 
   const remaining = {
     kcal: Math.max(0, target.kcal - consumed.kcal),
@@ -1903,28 +1832,6 @@ export function HomeDashboard({
     <div className="spring-in">
       {back("Recupero e Attività")}
 
-      {showEveningReminder && (
-        <EveningReminderModal accent={accent} accentText={accentText}
-          onDismiss={() => setShowEveningReminder(false)}
-          onGoToForm={() => setShowEveningReminder(false)} />
-      )}
-
-      {access.pro && (
-        <button onClick={() => setShowEveningReminder(true)}
-                className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full mb-3"
-                style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 500 }}>
-          🔔 Prova il promemoria del check-in serale
-        </button>
-      )}
-
-      {access.pro && (
-        <button onClick={() => setShowWeeklyCheck(true)}
-                className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full mb-4"
-                style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 500 }}>
-          📸 Prova il check Domenica/Lunedì
-        </button>
-      )}
-
       {/* sonno */}
       <div className="card mb-4">
         <p className="label mb-3">Sonno di questa notte</p>
@@ -2135,15 +2042,6 @@ export function HomeDashboard({
           </div>
         );
       })()}
-
-      {access.pro ? (
-        <EveningCheckIn onCoachSync={onCoachSync} />
-      ) : (
-        <div className="mb-4">
-          <LockedPanel onUpgrade={onUpgrade} accent={accent}
-            text="Il check-in di fine giornata (energia, DOMS, dolori e note per il coach) è parte del Full Coaching: fatti aiutare da un professionista del settore che lo legge ogni sera." />
-        </div>
-      )}
 
       {!access.pro && <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
         text="Sonno e passi dicono molto, ma solo se qualcuno li legge nel contesto giusto. Fatti aiutare da un professionista del settore che li integra nel tuo piano completo: vedi gli abbonamenti per iniziare." />}
@@ -4871,9 +4769,10 @@ function SupplementDetailModal({ supplement, accent, onClose }) {
   if (!supplement) return null;
   const w = supplement;
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+    <Portal>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
          style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
-      <div className="spring-in w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 flex flex-col"
+      <div className="spring-in w-full sm:max-w-md rounded-3xl p-6 flex flex-col"
            style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "85vh" }}
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3 shrink-0">
@@ -4904,6 +4803,7 @@ function SupplementDetailModal({ supplement, accent, onClose }) {
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 

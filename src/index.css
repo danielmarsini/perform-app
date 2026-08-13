@@ -10,3 +10,22 @@ body {
   margin: 0;
   background-color: #ffffff;
 }
+
+/* Sfondo iniziale coerente col sistema ANCORA PRIMA che React monti: senza
+   questo, chi ha il telefono in modalità scura vede comunque un lampo bianco
+   nell'istante tra il primo paint HTML/CSS e il primo render React (che
+   sceglie il tema giusto, vedi App.jsx). Pura CSS, nessun JS necessario. */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #09090B;
+  }
+}
+
+/* App "fissa" come un'app nativa, non un sito zoomabile: niente doppio-tap
+   zoom (touch-action), niente rimbalzo elastico ai bordi (overscroll-behavior)
+   — il meta viewport in index.html gestisce già il pinch-zoom. */
+html, body {
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}

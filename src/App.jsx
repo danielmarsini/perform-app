@@ -52,7 +52,25 @@ export default function App() {
   const [profileLoading, setProfileLoading] = useState(true);
 
   // --- Stato condiviso tra TUTTE le schermate ---------------------------------
-  const [dark, setDark] = useState(true);
+  // Tema: prima una scelta manuale salvata (localStorage), poi la preferenza
+  // di sistema del telefono, "Onyx" solo come ultimissimo default. Prima
+  // partiva sempre su Onyx: chi aveva il telefono impostato su chiaro vedeva
+  // un lampo di banner bianco in alto al caricamento — nient'affatto
+  // professionale. Letto in una funzione (non in un useEffect) così è già
+  // corretto al PRIMO render, non dopo un lampo.
+  const [dark, setDark] = useState(() => {
+    try {
+      const saved = localStorage.getItem("perform-dark-mode");
+      if (saved === "true") return true;
+      if (saved === "false") return false;
+    } catch (err) { /* localStorage non disponibile: si passa alla preferenza di sistema */ }
+    return typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : true;
+  });
+  useEffect(() => {
+    try { localStorage.setItem("perform-dark-mode", String(dark)); } catch (err) { /* best-effort */ }
+  }, [dark]);
   const [gender, setGender] = useState("M");           // 'M' | 'F' — da profiles.gender
   const [lang, setLang] = useState("it");               // 'it' | 'en' | 'es' | 'fr'
   const [userPlan, setUserPlan] = useState("free");      // 'free' | 'performance_pack' | 'full_coaching'
