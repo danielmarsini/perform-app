@@ -1,5 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { xpToLevelInfo } from '../lib/coachingData.js';
+import { xpToLevelInfo, fetchMonthlyLeaderboard } from '../lib/coachingData.js';
+
+const ITALIAN_MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+function monthKeyLabel(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  return { monthName: ITALIAN_MONTHS[m - 1], label: `${ITALIAN_MONTHS[m - 1][0].toUpperCase()}${ITALIAN_MONTHS[m - 1].slice(1)} ${y}` };
+}
+function shiftMonthKey(monthKey, delta) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const total = y * 12 + (m - 1) + delta;
+  return `${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`;
+}
+// Board di un mese (reale) nella stessa forma { top10, userResult } che il
+// resto del componente già consuma per la board demo — mappa xpThisMonth su
+// "xp" (il nome che podio/lista/sticky bar si aspettano).
+function toBoardShape(rows, meId) {
+  const withXp = rows.map((r) => ({ ...r, xp: r.xpThisMonth }));
+  const me = withXp.find((r) => r.id === meId);
+  return {
+    top10: withXp.slice(0, 10),
+    userResult: me
+      ? { rank: me.rank, xp: me.xp, level: me.level, streakDays: me.streakDays }
+      : { rank: null, xp: 0, level: xpToLevelInfo(0).title, streakDays: 0 },
+  };
+}
 
 /* ============================================================================
    PERFORM — 08_ClassificaView.jsx
@@ -470,7 +494,7 @@ function ArchiveMonthRow({ month, expanded, onToggle }) {
   );
 }
 
-function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand }) {
+function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand, loading, empty, showLaunchLabel = true }) {
   const [visibleCount, setVisibleCount] = useState(4);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -510,11 +534,13 @@ function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand }) {
           </button>
         </div>
         <div className="pc-drawer-body" onScroll={handleScroll}>
+          {loading && <div className="pc-drawer-loading">Caricamento archivio…</div>}
+          {empty && <div className="pc-drawer-end">Ancora nessun mese chiuso da consultare — torna qui dal mese prossimo.</div>}
           {visibleMonths.map((m) => (
             <ArchiveMonthRow key={m.id} month={m} expanded={expandedId === m.id} onToggle={onToggleExpand} />
           ))}
           {loadingMore && <div className="pc-drawer-loading">Caricamento mesi precedenti…</div>}
-          {!hasMore && (
+          {!loading && !hasMore && visibleMonths.length > 0 && showLaunchLabel && (
             <div className="pc-drawer-end">📍 {APP_LAUNCH_LABEL} — primo mese di PERFORM, archivio completo</div>
           )}
         </div>
@@ -536,52 +562,63 @@ export default function ClassificaView({ supabase, meId, genderOverride } = {}) 
   const [expandedMonthId, setExpandedMonthId] = useState(null);
   const reducedMotion = usePrefersReducedMotion();
 
-  // Classifica globale reale: legge profiles.xp_total/current_streak (la
-  // stessa cache scritta da computeRealXpAndStreak in coachingData.js — mai
-  // un secondo calcolo qui) di TUTTI gli atleti, ordinata per XP. Non esiste
-  // ancora uno snapshot storico mensile reale (servirebbe un job server-side
-  // che non c'è): l'Archivio Storico resta quindi demo-only, segnalato come
-  // tale invece di mostrare mesi passati inventati spacciati per reali.
+  // Classifica globale reale: XP guadagnato NEL MESE (non più il totale
+  // lifetime), da fetchMonthlyLeaderboard — diff fra due snapshot mensili
+  // scritti dalla Edge Function monthly-xp-snapshot (cron il 1° di ogni
+  // mese, SCHEMA_v27). Se il cron non è mai girato per un mese, quel mese
+  // torna null e non è consultabile — mai un mese storico inventato.
   const isRealMode = Boolean(supabase && meId);
+  const currentMonthKey = useMemo(() => new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit' }).format(new Date()).replace('/', '-'), []);
   const [realBoard, setRealBoard] = useState(null); // null = non ancora caricato
   useEffect(() => {
     if (!isRealMode) return undefined;
     let cancelled = false;
-    supabase
-      .from('profiles')
-      .select('id, nickname, full_name, xp_total, current_streak')
-      .eq('role', 'user')
-      .order('xp_total', { ascending: false })
-      .then(({ data, error }) => {
+    fetchMonthlyLeaderboard(supabase, currentMonthKey)
+      .then((rows) => {
         if (cancelled) return;
-        if (error) { console.error('PERFORM: errore caricamento classifica reale', error); setRealBoard({ top10: [], userResult: { rank: null, xp: 0, level: 'RECRUIT', streakDays: 0 } }); return; }
-        const rows = data ?? [];
-        const withRank = rows.map((p, idx) => ({
-          rank: idx + 1,
-          nickname: p.full_name || p.nickname || 'Atleta',
-          avatarUrl: null,
-          xp: p.xp_total ?? 0,
-          streakDays: p.current_streak ?? 0,
-          level: xpToLevelInfo(p.xp_total ?? 0).title,
-          isMe: p.id === meId,
-        }));
-        const me = withRank.find((r) => r.isMe);
-        setRealBoard({
-          monthName: 'in corso',
-          isCurrent: true,
-          top10: withRank.slice(0, 10),
-          userResult: me
-            ? { rank: me.rank, xp: me.xp, level: me.level, streakDays: me.streakDays }
-            : { rank: null, xp: 0, level: xpToLevelInfo(0).title, streakDays: 0 },
-        });
+        const { monthName } = monthKeyLabel(currentMonthKey);
+        setRealBoard({ monthName, isCurrent: true, ...toBoardShape(rows ?? [], meId) });
+      })
+      .catch((err) => {
+        console.error('PERFORM: errore caricamento classifica reale', err);
+        if (!cancelled) setRealBoard({ monthName: '', isCurrent: true, top10: [], userResult: { rank: null, xp: 0, level: 'RECRUIT', streakDays: 0 } });
       });
     return () => { cancelled = true; };
-  }, [isRealMode, supabase, meId]);
+  }, [isRealMode, supabase, meId, currentMonthKey]);
+
+  // Archivio Storico reale: caricato SOLO all'apertura del drawer (non alla
+  // board principale), risalendo un mese alla volta finché
+  // fetchMonthlyLeaderboard non torna null (il cron non era ancora attivo
+  // quel mese, o l'app non esisteva) — cresce da solo un mese in più ogni
+  // volta che passa un mese reale, mai una lista fissa.
+  const [realPastMonths, setRealPastMonths] = useState(null); // null = non ancora caricato
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const loadRealArchive = async () => {
+    if (!isRealMode || realPastMonths !== null || archiveLoading) return;
+    setArchiveLoading(true);
+    const months = [];
+    let cursor = shiftMonthKey(currentMonthKey, -1);
+    for (let i = 0; i < 11; i++) { // fino a 11 mesi indietro, si ferma prima se un mese torna null
+      try {
+        const rows = await fetchMonthlyLeaderboard(supabase, cursor);
+        if (!rows) break;
+        const { label, monthName } = monthKeyLabel(cursor);
+        months.push({ id: cursor, label, monthName, isCurrent: false, ...toBoardShape(rows, meId) });
+      } catch (err) {
+        console.error('PERFORM: errore caricamento archivio classifica', cursor, err);
+        break;
+      }
+      cursor = shiftMonthKey(cursor, -1);
+    }
+    setRealPastMonths(months);
+    setArchiveLoading(false);
+  };
 
   // La board principale mostra SEMPRE il mese corrente. Lo storico si
-  // consulta esclusivamente nel drawer "Archivio Storico Report" (demo-only).
+  // consulta esclusivamente nel drawer "Archivio Storico Report".
   const demoCurrentMonth = useMemo(() => MONTH_ARCHIVE.find((m) => m.isCurrent), []);
-  const pastMonths = useMemo(() => [...MONTH_ARCHIVE.filter((m) => !m.isCurrent), ...GENERATED_HISTORY], []);
+  const demoPastMonths = useMemo(() => [...MONTH_ARCHIVE.filter((m) => !m.isCurrent), ...GENERATED_HISTORY], []);
+  const pastMonths = isRealMode ? (realPastMonths ?? []) : demoPastMonths;
 
   // Placeholder neutro finché i dati reali non sono arrivati: MAI un return
   // anticipato prima degli hook qui sotto (useMemo incluso) — un return che
@@ -1080,15 +1117,10 @@ export default function ClassificaView({ supabase, meId, genderOverride } = {}) 
         ))}
       </div>
 
-      {isRealMode ? (
-        <p className="pc-archive-btn" style={{ opacity: 0.6, cursor: 'default' }}>
-          🏛️ Archivio Storico Report — disponibile a breve
-        </p>
-      ) : (
-        <button type="button" className="pc-archive-btn" onClick={() => setDrawerOpen(true)}>
-          🏛️ Archivio Storico Report
-        </button>
-      )}
+      <button type="button" className="pc-archive-btn"
+              onClick={() => { setDrawerOpen(true); if (isRealMode) loadRealArchive(); }}>
+        🏛️ Archivio Storico Report
+      </button>
 
       <StickyUserBar
         isCurrent={currentMonth.isCurrent}
@@ -1100,15 +1132,16 @@ export default function ClassificaView({ supabase, meId, genderOverride } = {}) 
         streakDays={currentMonth.userResult.streakDays}
       />
 
-      {!isRealMode && (
-        <ArchiveDrawer
-          open={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          months={pastMonths}
-          expandedId={expandedMonthId}
-          onToggleExpand={handleToggleExpand}
-        />
-      )}
+      <ArchiveDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        months={pastMonths}
+        expandedId={expandedMonthId}
+        onToggleExpand={handleToggleExpand}
+        loading={isRealMode && archiveLoading}
+        empty={isRealMode && !archiveLoading && pastMonths.length === 0}
+        showLaunchLabel={!isRealMode}
+      />
     </div>
   );
 }

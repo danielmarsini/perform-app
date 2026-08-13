@@ -914,6 +914,54 @@ export async function notifyClientPlanChange(supabase, userId, { title, body, ur
   }
 }
 
+// Classifica di UN mese specifico (formato 'YYYY-MM', es. '2026-08'): il
+// guadagno XP di ciascun atleta in quel mese, non il totale lifetime.
+// Calcolato come differenza fra due snapshot consecutivi scritti dalla Edge
+// Function monthly-xp-snapshot (cron il 1° di ogni mese) — per il mese IN
+// CORSO usa profiles.xp_total attuale al posto dello snapshot di fine mese,
+// che ovviamente non esiste ancora. Se manca anche lo snapshot di INIZIO
+// mese (il cron non è ancora girato quella volta, o l'atleta non era
+// iscritto) ritorna null: quel mese non è ancora consultabile, mai un
+// numero inventato.
+export async function fetchMonthlyLeaderboard(supabase, monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const nextMonthKey = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}`;
+  const isCurrentMonth = monthKey === toLocalISODate().slice(0, 7);
+
+  const [{ data: profiles, error: profilesError }, { data: startSnaps, error: startError }, endResult] = await Promise.all([
+    supabase.from("profiles").select("id, nickname, full_name, xp_total, current_streak").eq("role", "user"),
+    supabase.from("monthly_xp_snapshots").select("user_id, xp_total_at_snapshot").eq("month", monthKey),
+    isCurrentMonth ? Promise.resolve({ data: [] }) : supabase.from("monthly_xp_snapshots").select("user_id, xp_total_at_snapshot").eq("month", nextMonthKey),
+  ]);
+  if (profilesError) throw profilesError;
+  if (startError) throw startError;
+  if (endResult.error) throw endResult.error;
+
+  const startMap = new Map((startSnaps ?? []).map((s) => [s.user_id, s.xp_total_at_snapshot]));
+  if (startMap.size === 0) return null; // il cron non è mai girato per questo mese: non consultabile
+
+  const endMap = new Map((endResult.data ?? []).map((s) => [s.user_id, s.xp_total_at_snapshot]));
+  if (!isCurrentMonth && endMap.size === 0) return null; // mese chiuso ma senza snapshot finale: non consultabile
+
+  const rows = (profiles ?? [])
+    .filter((p) => startMap.has(p.id))
+    .map((p) => {
+      const start = startMap.get(p.id);
+      const end = isCurrentMonth ? (p.xp_total ?? 0) : (endMap.get(p.id) ?? start);
+      return {
+        id: p.id,
+        nickname: p.full_name || p.nickname || "Atleta",
+        xpThisMonth: Math.max(0, end - start),
+        streakDays: p.current_streak ?? 0,
+        level: xpToLevelInfo(p.xp_total ?? 0).title, // livello LIFETIME, non del singolo mese
+      };
+    })
+    .sort((a, b) => b.xpThisMonth - a.xpThisMonth)
+    .map((r, i) => ({ ...r, rank: i + 1 }));
+
+  return rows;
+}
+
 // Bonus XP manuale assegnato dal coach (es. "Obiettivo di mesociclo
 // raggiunto"): riga in xp_bonuses, sommata da computeRealXpAndStreak alla
 // prossima ricomputazione — mai una scrittura diretta su profiles.xp_total,
