@@ -897,6 +897,23 @@ export async function computeRealXpAndStreak(supabase, userId) {
   return { xpTotal, streak };
 }
 
+// Push immediato al cliente quando il coach salva una modifica reale al suo
+// piano (allenamento/dieta/integratori) — invoca la Edge Function
+// notify-client (supabase/functions/notify-client), che verifica lato
+// server che il chiamante sia davvero un coach prima di spedire qualunque
+// cosa. Best-effort: se il cliente non ha mai attivato le notifiche push
+// (nessuna riga in push_subscriptions) la funzione risponde comunque 200
+// con sent:0, quindi qui non serve gestire quel caso come errore — un
+// fallimento di rete/funzione viene solo loggato, non blocca il salvataggio
+// che l'ha generato.
+export async function notifyClientPlanChange(supabase, userId, { title, body, url }) {
+  try {
+    await supabase.functions.invoke("notify-client", { body: { userId, title, body, url } });
+  } catch (err) {
+    console.error("PERFORM: errore invio notifica push al cliente", err);
+  }
+}
+
 // Bonus XP manuale assegnato dal coach (es. "Obiettivo di mesociclo
 // raggiunto"): riga in xp_bonuses, sommata da computeRealXpAndStreak alla
 // prossima ricomputazione — mai una scrittura diretta su profiles.xp_total,

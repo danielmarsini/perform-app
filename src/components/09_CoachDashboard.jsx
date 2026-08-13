@@ -192,7 +192,7 @@ import {
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
-  awardXpBonus, computeRealXpAndStreak,
+  awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -2192,6 +2192,10 @@ function WeekDietEditor({ week, onChange, client }) {
       }));
       setDietSaved(true);
       setTimeout(() => setDietSaved(false), 2500);
+      notifyClientPlanChange(supabase, client.id, {
+        title: "Il tuo coach ha aggiornato la dieta",
+        body: "Controlla i nuovi target nella tua scheda alimentazione.",
+      });
     } catch (err) {
       console.error("PERFORM: errore salvataggio nutrition_targets", err);
       setDietError(err.message || "Non sono riuscito a salvare la dieta.");
@@ -2367,6 +2371,10 @@ function WeekSuppsEditor({ week, onChange, client }) {
       await saveWeekSupplements(supabase, coachId, client.id, week.supplements);
       setSuppSaved(true);
       setTimeout(() => setSuppSaved(false), 2500);
+      notifyClientPlanChange(supabase, client.id, {
+        title: "Il tuo coach ha aggiornato gli integratori",
+        body: "Controlla il nuovo protocollo nella tua scheda.",
+      });
     } catch (err) {
       console.error("PERFORM: errore salvataggio prescribed_supplements", err);
       setSuppError(err.message || "Non sono riuscito a salvare il protocollo.");
@@ -2631,6 +2639,10 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       setRealWorkout(resolved);
       setWorkoutSaved(true);
       setTimeout(() => setWorkoutSaved(false), 2500);
+      notifyClientPlanChange(supabase, client.id, {
+        title: "Il tuo coach ha modificato l'allenamento",
+        body: "Controlla la scheda: potrebbero esserci esercizi nuovi o cambiati.",
+      });
     } catch (err) {
       console.error("PERFORM: errore salvataggio allenamento reale", err);
       setWorkoutError(err.message || "Non sono riuscito a salvare l'allenamento.");
