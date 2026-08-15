@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, createContext, useContext } from "react";
 import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
-  AlertTriangle, Dumbbell, Salad, Pill, Copy, MessageCircle, Plus,
+  AlertTriangle, Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
   Trash2, ArrowLeft, CalendarDays, Wallet, Server,
 } from "lucide-react";
 
@@ -1425,6 +1425,45 @@ function PasswordViewer({ password, onRegenerate }) {
 }
 
 /* ------------------------------- CATALOGO CLIENTI --------------------------- */
+// I 3 cerchi di compliance (STESSA formula di Home cliente/Bioritmi — mai
+// calcolata due volte) accanto al nome: scorrendo l'elenco il coach vede
+// subito chi sta andando bene/male senza aprire ogni scheda una per una.
+function ClientComplianceBadges({ clientId }) {
+  const { supabase, isRealMode } = useContext(CoachDataContext);
+  const [pcts, setPcts] = useState(null); // null = non ancora caricato
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    Promise.all([
+      computeTrainingCompliance(supabase, clientId).catch(() => ({ pct: null })),
+      computeNutritionCompliance(supabase, clientId).catch(() => ({ pct: null })),
+      computeRecoveryCompliance(supabase, clientId).catch(() => ({ pct: null })),
+    ]).then(([t, n, r]) => { if (!cancelled) setPcts({ train: t.pct, nutri: n.pct, recovery: r.pct }); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, clientId]);
+
+  if (!isRealMode || !pcts) return null;
+
+  const badge = (Icon, pct, label) => {
+    const color = pct == null ? "var(--ink-tertiary)" : pct >= 80 ? "#047857" : pct >= 60 ? "#92400E" : "#B91C1C";
+    const bg = pct == null ? "var(--surface-2)" : pct >= 80 ? "#D1FAE5" : pct >= 60 ? "#FEF3C7" : "#FEE2E2";
+    return (
+      <span key={label} title={label} className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5" style={{ backgroundColor: bg, color }}>
+        <Icon size={9} />
+        <span className="font-data" style={{ fontSize: "0.58rem", fontWeight: 700 }}>{pct != null ? `${pct}%` : "—"}</span>
+      </span>
+    );
+  };
+
+  return (
+    <div className="flex items-center gap-1 mt-1.5">
+      {badge(Dumbbell, pcts.train, "Allenamento")}
+      {badge(Salad, pcts.nutri, "Alimentazione")}
+      {badge(BedDouble, pcts.recovery, "Recupero")}
+    </div>
+  );
+}
+
 function ClientRow({ client, onOpen }) {
   const status = computeStatus(client);
   const grado = client.evening.doloreGrado;
@@ -1438,8 +1477,9 @@ function ClientRow({ client, onOpen }) {
         <button onClick={onOpen} className="flex-1 min-w-0 text-left">
           <p className="truncate" style={{ color: (critical || warning) ? "#27272A" : "var(--ink)", fontSize: "1rem", fontWeight: 500 }}>{client.name}</p>
           <p className="font-data mt-0.5 truncate" style={{ color: (critical || warning) ? "#3F3F46" : "var(--ink-soft)", fontSize: "0.68rem", letterSpacing: "0.04em" }}>
-            {client.plan === "full" ? "Full Coaching" : client.plan === "training" ? "Solo Allenamento" : "Scheda Personalizzata"} · aderenza {client.adherence != null ? `${client.adherence}%` : "n/d"}
+            {client.plan === "full" ? "Full Coaching" : client.plan === "training" ? "Solo Allenamento" : "Scheda Personalizzata"}
           </p>
+          <ClientComplianceBadges clientId={client.id} />
         </button>
         {(critical || warning) && (
           <a href={waLink(client, `Ciao ${client.name.split(" ")[0]}, ho visto il dolore Grado ${grado} che hai segnalato ieri sera. Modifico subito il piano: dimmi come sta adesso.`)}
