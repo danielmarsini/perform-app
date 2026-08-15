@@ -206,6 +206,7 @@ import {
   assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
   awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange, fetchClientPauses,
+  fetchMesocycleWeeksRange, saveMesocycleWeek,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -857,6 +858,17 @@ function weekRangeLabel(offset) {
   return `${fmt(start)}–${fmt(end)}`;
 }
 const MAX_FORWARD_WEEKS = 12;
+
+// Etichetta di fase del mesociclo che il coach assegna a una settimana —
+// puramente descrittiva, non guida alcun calcolo (kcal/volume restano quelli
+// che coach imposta a mano in dieta/allenamento). Serve solo a rendere
+// leggibile a colpo d'occhio la programmazione nel calendario.
+const PHASE_META = {
+  bulk: { label: "Bulk", color: "#2563EB" },
+  cut: { label: "Cut", color: "#DC2626" },
+  maintenance: { label: "Mantenimento", color: "#6B7280" },
+  deload: { label: "Scarico", color: "#F59E0B" },
+};
 
 /* Reparto colore del pallino settimana:
    giallo  = settimana passata (storico, sempre navigabile)
@@ -2706,6 +2718,48 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
 
   const pills = Array.from({ length: 7 }, (_, i) => windowStart + i);
 
+  // --- MESOCICLI (nome + fase bulk/cut/mantenimento/scarico) ------------
+  // Carico una sola volta un range ampio (un anno indietro, il massimo in
+  // avanti) così la striscia di pallini può mostrare l'indicatore di fase
+  // senza una fetch per pallino. mesoMap è indicizzata sul lunedì ISO.
+  const [mesoMap, setMesoMap] = useState({});
+  const [mesoName, setMesoName] = useState("");
+  const [mesoPhase, setMesoPhase] = useState(null);
+  const [mesoBusy, setMesoBusy] = useState(false);
+  const [mesoSaved, setMesoSaved] = useState(false);
+
+  useEffect(() => {
+    if (!isRealMode) return undefined;
+    let cancelled = false;
+    fetchMesocycleWeeksRange(supabase, client.id, weekKeyForOffset(-52), weekKeyForOffset(MAX_FORWARD_WEEKS))
+      .then((map) => { if (!cancelled) setMesoMap(map); })
+      .catch((err) => console.error("PERFORM: errore caricamento mesocicli", err));
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+
+  useEffect(() => {
+    const entry = mesoMap[weekStartISO];
+    setMesoName(entry?.name || "");
+    setMesoPhase(entry?.phase || null);
+    setMesoSaved(false);
+  }, [weekStartISO, mesoMap]);
+
+  const saveMeso = async () => {
+    if (!isRealMode) return;
+    setMesoBusy(true);
+    try {
+      const trimmed = mesoName.trim();
+      await saveMesocycleWeek(supabase, client.id, weekStartISO, { name: trimmed, phase: mesoPhase });
+      setMesoMap((m) => ({ ...m, [weekStartISO]: { name: trimmed || null, phase: mesoPhase } }));
+      setMesoSaved(true);
+      setTimeout(() => setMesoSaved(false), 2200);
+    } catch (err) {
+      console.error("PERFORM: errore salvataggio mesociclo", err);
+    } finally {
+      setMesoBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
@@ -2717,10 +2771,16 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
               const color = weekDeptColor(offset, wk, client.plan);
               const dot = color === "yellow" ? "#F0A020" : color === "green" ? "#10B981" : "#DC2626";
               const on = selOffset === offset;
+              const meso = mesoMap[weekKeyForOffset(offset)];
+              const phaseMeta = meso?.phase ? PHASE_META[meso.phase] : null;
+              const tooltip = [weekRangeLabel(offset), meso?.name, phaseMeta?.label].filter(Boolean).join(" · ");
               return (
                 <button key={offset} onClick={() => goTo(offset)} className="relative w-11 h-11 rounded-full font-data text-[11px] font-bold flex flex-col items-center justify-center leading-none"
-                  style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}
-                  title={weekRangeLabel(offset)}>
+                  style={{
+                    ...(on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }),
+                    ...(phaseMeta ? { boxShadow: `0 0 0 2px ${phaseMeta.color}` } : {}),
+                  }}
+                  title={tooltip}>
                   <span className="absolute top-1 right-1 rounded-full" style={{ width: 6, height: 6, backgroundColor: dot }} />
                   {offset === 0 ? "OGGI" : offset > 0 ? `S+${offset}` : `S${offset}`}
                 </button>
@@ -2746,6 +2806,30 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
           Settimana clonata · rifinisci solo le variazioni
         </p>
       )}
+
+      <div className="c-card rounded-xl p-3.5 mb-5">
+        <div className="flex items-center justify-between gap-2 mb-2.5">
+          <p className="c-label">Mesociclo di questa settimana</p>
+          {mesoSaved && <span className="font-data text-[11px] font-semibold" style={{ color: "#10B981" }}>Salvato ✓</span>}
+        </div>
+        <input value={mesoName} onChange={(e) => setMesoName(e.target.value)} placeholder="Es. Bulk Estate 2026" maxLength={60}
+          className="t-input w-full px-3 py-2 rounded-lg text-sm mb-2.5" />
+        <div className="flex items-center gap-1.5 flex-wrap mb-3">
+          {Object.entries(PHASE_META).map(([key, meta]) => {
+            const on = mesoPhase === key;
+            return (
+              <button key={key} onClick={() => setMesoPhase(on ? null : key)} type="button"
+                className="px-3 py-1.5 rounded-full text-xs font-data font-semibold uppercase"
+                style={on ? { backgroundColor: meta.color, color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+                {meta.label}
+              </button>
+            );
+          })}
+        </div>
+        <button onClick={saveMeso} disabled={mesoBusy || !isRealMode} className="c-btn px-4 py-2 rounded-lg text-xs font-medium">
+          {mesoBusy ? "Salvo…" : "Salva mesociclo"}
+        </button>
+      </div>
 
       <div className="grid grid-cols-3 gap-1.5 mb-5">
         {[["allenamento", "Allenamento", Dumbbell], ["dieta", "Dieta", Salad], ["integratori", "Integratori", Pill]].map(([id, lab, Ico]) => {

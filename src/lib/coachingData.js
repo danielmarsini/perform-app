@@ -967,6 +967,37 @@ export async function fetchClientPauses(supabase, userId, limit = 10) {
   return data ?? [];
 }
 
+// Etichette mesociclo (nome + fase bulk/cut/mantenimento/scarico) per un
+// intervallo di settimane di un cliente — usato per colorare/etichettare la
+// striscia di pallini settimana nella timeline del coach. Ritorna una mappa
+// { "YYYY-MM-DD": { name, phase } } indicizzata sul lunedì di ciascuna
+// settimana, così il chiamante fa solo un lookup per offset.
+export async function fetchMesocycleWeeksRange(supabase, userId, fromDateISO, toDateISO) {
+  const { data, error } = await supabase
+    .from("mesocycle_weeks")
+    .select("week_start, mesocycle_name, phase")
+    .eq("user_id", userId)
+    .gte("week_start", fromDateISO)
+    .lte("week_start", toDateISO);
+  if (error) throw error;
+  const map = {};
+  for (const row of data ?? []) map[row.week_start] = { name: row.mesocycle_name, phase: row.phase };
+  return map;
+}
+
+// Il coach imposta/aggiorna nome e fase di UNA settimana specifica. name/phase
+// null cancella quel campo (non la riga: una settimana senza fase ma con nome
+// resta comunque utile in vista).
+export async function saveMesocycleWeek(supabase, userId, weekStartISO, { name, phase }) {
+  const { error } = await supabase
+    .from("mesocycle_weeks")
+    .upsert(
+      { user_id: userId, week_start: weekStartISO, mesocycle_name: name || null, phase: phase || null, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,week_start" }
+    );
+  if (error) throw error;
+}
+
 // Push immediato al cliente quando il coach salva una modifica reale al suo
 // piano (allenamento/dieta/integratori) — invoca la Edge Function
 // notify-client (supabase/functions/notify-client), che verifica lato
