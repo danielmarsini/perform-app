@@ -21,6 +21,12 @@ body {
   }
 }
 
+/* Spinner di caricamento discreto per le schermate lazy (Classifica,
+   Pannello Coach) — mai un flash bianco con "Caricamento…", solo un anello
+   che ruota sullo sfondo giusto del tema. */
+@keyframes app-loading-spin { to { transform: rotate(360deg); } }
+.app-loading-pulse { animation: app-loading-spin 0.7s linear infinite; }
+
 /* App "fissa" come un'app nativa, non un sito zoomabile: niente doppio-tap
    zoom (touch-action), niente rimbalzo elastico ai bordi (overscroll-behavior)
    — il meta viewport in index.html gestisce già il pinch-zoom. */

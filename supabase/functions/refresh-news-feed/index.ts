@@ -1,11 +1,17 @@
 // PERFORM — Edge Function: refresh-news-feed
 // ============================================================================
-// Chiamata una volta al giorno da un job pg_cron (stesso pattern
-// x-cron-secret di streak-reminder/monthly-xp-snapshot). Pesca studi REALI e
-// recenti da PubMed (l'archivio pubblico di letteratura biomedica del NIH
-// americano, gratuito, senza chiave API) su una rotazione di argomenti
-// allenamento/alimentazione/integrazione/recupero/farmacologia sportiva, e
-// pubblica due righe in coach_news_tips per ogni studio nuovo trovato:
+// Chiamata dal cron ogni 2 ore (non più una volta al giorno alle 7, vedi
+// istruzioni fornite a parte per il nuovo cron.schedule): niente client
+// loggato dietro, stesso pattern x-cron-secret di streak-reminder/
+// monthly-xp-snapshot. Ogni chiamata ha solo il 40% di probabilità di
+// pubblicare davvero (POST_PROBABILITY sotto) — con 12 chiamate al giorno
+// diventano in media 4-5 pubblicazioni, a orari che sembrano naturali/
+// casuali invece di un post fisso alla stessa ora, più vicino a un feed
+// social vero. Pesca studi REALI e recenti da PubMed (l'archivio pubblico
+// di letteratura biomedica del NIH americano, gratuito, senza chiave API)
+// su una rotazione di argomenti allenamento/alimentazione/integrazione/
+// recupero/farmacologia sportiva, e pubblica due righe in coach_news_tips
+// per ogni studio nuovo trovato:
 //   - channel 'news'  → il titolo e l'abstract riassunti, come una notizia
 //   - channel 'tips'  → lo stesso studio riformulato come applicazione pratica
 // source_query resta il link "leggi lo studio originale" verso PubMed (vedi
@@ -18,10 +24,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
+const POST_PROBABILITY = 0.4;
 
 // Una rotazione di argomenti reali per i 5 temi richiesti: allenamento,
 // alimentazione, integrazione, recupero atleti, farmacologia sportiva.
-// Un giorno dell'anno = un argomento, per non ripescare sempre lo stesso.
+// L'argomento cambia ogni 2 ore (stessa cadenza del cron), non più una
+// volta al giorno — con più chiamate al giorno serve più varietà.
 const TOPICS = [
   { query: "resistance training hypertrophy randomized", eyebrow: "Allenamento" },
   { query: "resistance training program variables strength", eyebrow: "Allenamento" },
@@ -43,10 +51,13 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CRON_SECRET = Deno.env.get("CRON_SECRET")!;
 
-function dayOfYear() {
+// Slot di 2 ore da inizio anno: cambia argomento ad ogni chiamata del cron
+// (ogni 2 ore) invece che una volta al giorno, altrimenti con 12 chiamate al
+// giorno si ripeterebbe sempre lo stesso argomento per 12 tentativi di fila.
+function twoHourSlot() {
   const now = new Date();
   const start = new Date(now.getFullYear(), 0, 0);
-  return Math.floor((now - start) / 86400000);
+  return Math.floor((now - start) / (2 * 3600 * 1000));
 }
 
 async function esearch(query) {
@@ -83,9 +94,16 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
   }
 
+  // Dado casuale ad ogni chiamata: solo il 40% delle 12 chiamate giornaliere
+  // pubblica davvero, così l'orario di uscita non è mai lo stesso — niente
+  // "sempre alle 7", più simile a un feed che vive tutto il giorno.
+  if (Math.random() > POST_PROBABILITY) {
+    return new Response(JSON.stringify({ inserted: 0, reason: "skipped-this-round" }));
+  }
+
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-  const topic = TOPICS[dayOfYear() % TOPICS.length];
+  const topic = TOPICS[twoHourSlot() % TOPICS.length];
   let pmids = [];
   try {
     pmids = await esearch(topic.query);

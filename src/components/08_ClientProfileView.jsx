@@ -41,7 +41,7 @@ import {
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises } from "../lib/coachingData.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
-import { WeeklyCheckModal } from "./05_HomeDashboard.jsx";
+import { WeeklyCheckModal, PauseSection } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
    1 · INTERNAZIONALIZZAZIONE
@@ -724,6 +724,7 @@ export function ClientProfileView({
   favoriteExerciseIds, onToggleFavoriteExercise,
   onSaveProfile, onOpenSettings, nicknameTaken,
   onOpenManualCheck,   // se passato, mostra il pulsante "Registra ora" nell'Archivio Check
+  supabase, userId,    // solo per "Vai in vacanza / chiedi riposo forzato" (PauseSection)
 }) {
   const t = translations[lang] || translations.it;
   const [editing, setEditing] = useState(false);
@@ -858,6 +859,12 @@ export function ClientProfileView({
         </div>
       </div>
       </div>
+
+      {supabase && userId && (
+        <div className="mb-4">
+          <PauseSection supabase={supabase} userId={userId} accent={accent} accentText={accentText} />
+        </div>
+      )}
 
       {/* ---------- Il Mio Archivio Check ---------- */}
       <Section id="archivio" icon={TrendingDown}
@@ -1507,6 +1514,7 @@ export default function ClientProfileViewPreview({
           onOpenSettings={onOpenSettingsProp ?? (() => setSettings(true))}
           nicknameTaken={(n) => ["SaraSteel", "LucaE"].some((x) => x.toLowerCase() === n.toLowerCase())}
           onOpenManualCheck={isRealMode ? () => setShowManualCheck(true) : undefined}
+          supabase={isRealMode ? supabase : undefined} userId={isRealMode ? userId : undefined}
         />
       </main>
 

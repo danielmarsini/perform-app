@@ -1,14 +1,29 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, Suspense, lazy } from "react";
 
 import { supabase, makeAuth, AuthScreen } from "./components/03_AuthView.jsx";
 import { AppShell, COACH_EMAIL, accentFor } from "./components/04_AppShell.jsx";
 import HomeScreen from "./components/05_HomeDashboard.jsx";
 import { NewsTipsView, NewsTipsViewStyles } from "./components/06_NewsTipsView.jsx";
-import ClassificaView from "./components/07_ClassificaView.jsx";
 import ProfileScreen, { SettingsDrawer } from "./components/08_ClientProfileView.jsx";
-import CoachDashboard from "./components/09_CoachDashboard.jsx";
-import CoachAssignPanel from "./components/10_CoachAssignPanel.jsx";
 import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
+
+// Caricati solo quando servono davvero (React.lazy → chunk separato), non
+// nel bundle iniziale: sono schermate secondarie (CoachDashboard esiste solo
+// per l'account del coach) — ogni cliente che apre l'app non dovrebbe dover
+// scaricare quel codice solo per vedere la Home. NewsTipsView/ProfileScreen
+// restano eager: le loro esportazioni SettingsDrawer/NewsTipsViewStyles sono
+// montate sempre, a prescindere dalla tab attiva, quindi il loro modulo
+// verrebbe comunque scaricato subito — lazy-caricarle non risparmierebbe nulla.
+const ClassificaView = lazy(() => import("./components/07_ClassificaView.jsx"));
+// NOTA: per CoachDashboard questo lazy() è corretto ma oggi NON produce
+// ancora un chunk separato — 11_OnboardingFlow.jsx importa staticamente
+// (GlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection) dallo STESSO
+// file 09_CoachDashboard.jsx, quindi Vite deve comunque includerlo nel
+// bundle principale. La soluzione pulita è spostare quei 4 export condivisi
+// in un file a parte — file da 3000+ righe con parecchio codice intrecciato
+// in mezzo, un refactor che merita il suo giro dedicato invece di farlo di
+// fretta a fine sessione. Il lazy() resta comunque innocuo nel frattempo.
+const CoachDashboard = lazy(() => import("./components/09_CoachDashboard.jsx"));
 
 /* ============================================================================
    APP.JSX — punto di innesto reale dei 7 moduli PERFORM
@@ -36,6 +51,22 @@ import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
      restano isole a sé — è il prossimo passo di integrazione, non un bug di
      oggi.
    ========================================================================== */
+
+// Fallback per lo Suspense di ClassificaView/CoachDashboard (caricate solo
+// al primo accesso a quella tab, vedi lazy() sopra): un pulse discreto sullo
+// sfondo giusto del tema, MAI un flash bianco con la scritta "Caricamento…"
+// al centro — è la stessa categoria di schermata di caricamento invadente
+// già tolta altrove nell'app su richiesta esplicita.
+function ScreenFallback({ dark }) {
+  return (
+    <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center",
+                  backgroundColor: dark ? "#09090B" : "#FFFFFF" }}>
+      <div className="app-loading-pulse" style={{ width: 40, height: 40, borderRadius: "50%",
+             border: `2.5px solid ${dark ? "rgba(250,250,250,0.15)" : "rgba(17,17,17,0.1)"}`,
+             borderTopColor: dark ? "#FAFAFA" : "#111111" }} />
+    </div>
+  );
+}
 
 const SEED_NEWS_TIPS = {
   news: [],
@@ -71,12 +102,23 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem("perform-dark-mode", String(dark)); } catch (err) { /* best-effort */ }
   }, [dark]);
+  // I popup montati via Portal (src/components/Portal.jsx) escono dall'albero
+  // React e finiscono come figli diretti di <body> — se il tema (classe
+  // app-root + data-theme, da cui vengono lette --surface/--line/--ink...)
+  // è applicato solo su un <div> annidato dentro l'app, un popup portalato
+  // non lo eredita più e appare trasparente (il bug delle Impostazioni "di
+  // lato"). Applicandolo anche su <html>, che è SEMPRE un antenato reale di
+  // qualunque contenuto — portalato o no — il problema sparisce alla radice,
+  // invece di dover ricordarsi di avvolgere ogni singolo popup a mano.
+  useEffect(() => {
+    document.documentElement.classList.add("app-root");
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  }, [dark]);
   const [gender, setGender] = useState("M");           // 'M' | 'F' — da profiles.gender
   const [lang, setLang] = useState("it");               // 'it' | 'en' | 'es' | 'fr'
   const [userPlan, setUserPlan] = useState("free");      // 'free' | 'performance_pack' | 'full_coaching'
   const [tab, setTab] = useState("home");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [coachView, setCoachView] = useState("dashboard"); // 'dashboard' | 'assign'
   const [notifications, setNotifications] = useState({
     meals: true, steps: true, sleep: true, motivation: true,
   });
@@ -192,6 +234,7 @@ export default function App() {
       {/* CSS scoped del modulo News/Tips: va montata una sola volta a livello App */}
       <NewsTipsViewStyles />
 
+      <Suspense fallback={<ScreenFallback dark={dark} />}>
       <AppShell
         gender={gender}
         dark={dark}
@@ -247,44 +290,14 @@ export default function App() {
               }}
             />
           ),
-          coach: isCoach ? (
-            <div>
-              {/* Selettore aggiunto in App.jsx: non fa parte di 09_CoachDashboard.jsx.
-                  Fondere questo toggle nell'estetica gi\u00e0 rifinita del Coach Panel
-                  \u00e8 un lavoro di styling successivo, non di collegamento dati. */}
-              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                <button
-                  onClick={() => setCoachView("dashboard")}
-                  style={{
-                    padding: "0.5rem 1rem", borderRadius: 999, border: "none", cursor: "pointer",
-                    fontWeight: 600, fontSize: "0.85rem",
-                    background: coachView === "dashboard" ? accent : "transparent",
-                    color: coachView === "dashboard" ? "#111" : "var(--ink, inherit)",
-                  }}
-                >
-                  Pannello Coach
-                </button>
-                <button
-                  onClick={() => setCoachView("assign")}
-                  style={{
-                    padding: "0.5rem 1rem", borderRadius: 999, border: "none", cursor: "pointer",
-                    fontWeight: 600, fontSize: "0.85rem",
-                    background: coachView === "assign" ? accent : "transparent",
-                    color: coachView === "assign" ? "#111" : "var(--ink, inherit)",
-                  }}
-                >
-                  Assegna scheda/target
-                </button>
-              </div>
-              {coachView === "dashboard" ? (
-                <CoachDashboard supabase={supabase} coachId={session.user.id} />
-              ) : (
-                <CoachAssignPanel supabase={supabase} coachId={session.user.id} accent={accent} />
-              )}
-            </div>
-          ) : null,
+          // Il toggle "Assegna scheda/target" (CoachAssignPanel) \u00e8 stato
+          // rimosso: era ridondante con l'editor gi\u00e0 raggiungibile cliccando
+          // il nome di un cliente dentro il Pannello Coach (ClientDetail \u2192
+          // tab "editor"), due percorsi per la stessa azione.
+          coach: isCoach ? <CoachDashboard supabase={supabase} coachId={session.user.id} /> : null,
         }}
       />
+      </Suspense>
 
       {/* Impostazioni globali: UNA sola istanza per tutta l'app, aperta
           dall'icona ingranaggio nell'header (AppHeader) o dalla card

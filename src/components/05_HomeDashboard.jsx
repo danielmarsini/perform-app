@@ -1237,7 +1237,7 @@ const PAUSE_REASONS = ["Stress", "Impegni personali", "Dolori/infortunio", "Mala
    mostra un banner se oggi è già coperto da una pausa attiva, altrimenti un
    link discreto per richiederne una. Il coach vede motivo e date in
    ClientDetail (09_CoachDashboard.jsx) — stessa tabella, mai due fonti. */
-function PauseSection({ supabase, userId, accent, accentText }) {
+export function PauseSection({ supabase, userId, accent, accentText }) {
   const [activePause, setActivePause] = useState(undefined); // undefined = non ancora caricato, null = nessuna
   const [showModal, setShowModal] = useState(false);
 
@@ -1798,7 +1798,8 @@ export function HomeDashboard({
           </div>
         </div>
 
-        {isRealMode && <PauseSection supabase={supabase} userId={userId} accent={accent} accentText={accentText} />}
+        {/* "Vai in vacanza / chiedi riposo forzato" vive ora nel Profilo
+            personale (08_ClientProfileView.jsx), non più qui in Home. */}
 
         {/* simulatore di test: solo per provare rapidamente i colori/soglie —
             nascosto in modalità reale, non serve (e non avrebbe più effetto
