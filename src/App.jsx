@@ -83,21 +83,17 @@ export default function App() {
   const [profileLoading, setProfileLoading] = useState(true);
 
   // --- Stato condiviso tra TUTTE le schermate ---------------------------------
-  // Tema: prima una scelta manuale salvata (localStorage), poi la preferenza
-  // di sistema del telefono, "Onyx" solo come ultimissimo default. Prima
-  // partiva sempre su Onyx: chi aveva il telefono impostato su chiaro vedeva
-  // un lampo di banner bianco in alto al caricamento — nient'affatto
-  // professionale. Letto in una funzione (non in un useEffect) così è già
-  // corretto al PRIMO render, non dopo un lampo.
+  // Tema: Onyx (nero) è il default per TUTTI i dispositivi, a prescindere dal
+  // sistema — scelta esplicita del brand, non più dedotta da
+  // prefers-color-scheme. L'unica cosa che può cambiarlo è una scelta
+  // manuale salvata (il toggle nelle Impostazioni), mai il tema del telefono.
   const [dark, setDark] = useState(() => {
     try {
       const saved = localStorage.getItem("perform-dark-mode");
       if (saved === "true") return true;
       if (saved === "false") return false;
-    } catch (err) { /* localStorage non disponibile: si passa alla preferenza di sistema */ }
-    return typeof window !== "undefined" && window.matchMedia
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-      : true;
+    } catch (err) { /* localStorage non disponibile: resta il default Onyx sotto */ }
+    return true;
   });
   useEffect(() => {
     try { localStorage.setItem("perform-dark-mode", String(dark)); } catch (err) { /* best-effort */ }
@@ -271,7 +267,7 @@ export default function App() {
           // autonoma finché non viene fatto il refactor dedicato (vedi nota
           // in cima al file). ClassificaView ora riceve supabase/meId/gender
           // per la classifica globale reale.
-          ranking: <ClassificaView supabase={supabase} meId={session.user.id} genderOverride={gender} />,
+          ranking: <ClassificaView supabase={supabase} meId={session.user.id} genderOverride={gender} dark={dark} />,
           profile: (
             <ProfileScreen
               gender={gender}
@@ -294,7 +290,7 @@ export default function App() {
           // rimosso: era ridondante con l'editor gi\u00e0 raggiungibile cliccando
           // il nome di un cliente dentro il Pannello Coach (ClientDetail \u2192
           // tab "editor"), due percorsi per la stessa azione.
-          coach: isCoach ? <CoachDashboard supabase={supabase} coachId={session.user.id} /> : null,
+          coach: isCoach ? <CoachDashboard supabase={supabase} coachId={session.user.id} dark={dark} /> : null,
         }}
       />
       </Suspense>

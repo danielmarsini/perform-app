@@ -19,8 +19,10 @@
   <rect width="512" height="512" rx="112" fill="url(#sheen)"/>
   <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#D4AF37" stroke-opacity="0.18" stroke-width="2"/>
 
-  <!-- pulse / heartbeat mark, stessa icona (Activity) usata nel logo dell'app -->
-  <polyline points="118 262 190 262 222 356 290 156 330 262 394 262"
+  <!-- pulse / heartbeat mark, stessa icona lucide "Activity" usata nel logo
+       reale dell'app (BrandMark, 04_AppShell.jsx): picco PRIMA, poi valle —
+       la prima versione li aveva invertiti rispetto all'originale. -->
+  <polyline points="118 262 190 262 222 156 290 356 330 262 394 262"
             fill="none" stroke="url(#gold)" stroke-width="26"
             stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

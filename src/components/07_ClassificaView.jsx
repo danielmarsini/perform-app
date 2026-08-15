@@ -331,26 +331,6 @@ function AvatarCircle({ avatarUrl, className = '' }) {
   );
 }
 
-function GenderPreviewToggle({ gender, onToggle }) {
-  return (
-    <button type="button" onClick={onToggle} className="pc-pill-toggle" aria-label="Cambia tema anteprima Oro / Rosa">
-      <span className={gender === 'male' ? 'pc-pill-active' : ''}>Oro</span>
-      <span className="pc-pill-sep">/</span>
-      <span className={gender === 'female' ? 'pc-pill-active' : ''}>Rosa</span>
-    </button>
-  );
-}
-
-function ModeToggle({ mode, onToggle }) {
-  return (
-    <button type="button" onClick={onToggle} className="pc-pill-toggle" aria-label="Cambia modalità Onyx / Light">
-      <span className={mode === 'onyx' ? 'pc-pill-active' : ''}>Onyx</span>
-      <span className="pc-pill-sep">/</span>
-      <span className={mode === 'light' ? 'pc-pill-active' : ''}>Light</span>
-    </button>
-  );
-}
-
 const METAL_FOR_RANK = { 1: 'gold', 2: 'silver', 3: 'bronze' };
 
 function PodiumCard({ athlete: a, position, delay }) {
@@ -551,13 +531,13 @@ function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand, load
 
 /* ---------- Componente principale ---------- */
 
-export default function ClassificaView({ supabase, meId, genderOverride } = {}) {
-  // NB: mode resta SOLO un toggle di anteprima. gender parte dalla vera
-  // preferenza (genderOverride) quando disponibile, altrimenti dal
-  // placeholder demo — il toggle resta comunque libero in entrambi i casi
-  // perché è solo un tema visivo, non un dato salvato qui.
-  const [gender, setGender] = useState(genderOverride === 'female' ? 'female' : SIMULATED_GENDER);
-  const [mode, setMode] = useState('onyx');
+export default function ClassificaView({ supabase, meId, genderOverride, dark = true } = {}) {
+  // mode e gender seguono lo stato REALE dell'app (dark/genderOverride, da
+  // App.jsx) — prima erano un toggle locale scollegato ("Onyx/Light",
+  // "Oro/Rosa" in alto a destra) rimasto in produzione per errore, lo stesso
+  // bug del pannello coach che restava bianco fuori posto.
+  const gender = genderOverride === 'female' ? 'female' : SIMULATED_GENDER;
+  const mode = dark ? 'onyx' : 'light';
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [expandedMonthId, setExpandedMonthId] = useState(null);
   const reducedMotion = usePrefersReducedMotion();
@@ -1094,11 +1074,6 @@ export default function ClassificaView({ supabase, meId, genderOverride } = {}) 
           .pc-title-line1 { font-size: 19px; letter-spacing: 0.03em; }
         }
       `}</style>
-
-      <div className="pc-toggles-float">
-        <ModeToggle mode={mode} onToggle={() => setMode((m) => (m === 'onyx' ? 'light' : 'onyx'))} />
-        <GenderPreviewToggle gender={gender} onToggle={() => setGender((g) => (g === 'male' ? 'female' : 'male'))} />
-      </div>
 
       <div className="pc-header-center">
         <div className="pc-title-line1">Classifica Globale</div>

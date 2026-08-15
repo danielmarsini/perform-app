@@ -6,19 +6,13 @@ html, body, #root {
   height: 100%;
 }
 
+/* Onyx (nero) è il default per tutti, non più dedotto dal sistema — vedi
+   App.jsx. Sfondo scuro già nel CSS statico, ANCORA PRIMA che React monti:
+   senza, chiunque vedrebbe comunque un lampo bianco nell'istante tra il
+   primo paint HTML/CSS e il primo render React. */
 body {
   margin: 0;
-  background-color: #ffffff;
-}
-
-/* Sfondo iniziale coerente col sistema ANCORA PRIMA che React monti: senza
-   questo, chi ha il telefono in modalità scura vede comunque un lampo bianco
-   nell'istante tra il primo paint HTML/CSS e il primo render React (che
-   sceglie il tema giusto, vedi App.jsx). Pura CSS, nessun JS necessario. */
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #09090B;
-  }
+  background-color: #09090B;
 }
 
 /* Spinner di caricamento discreto per le schermate lazy (Classifica,

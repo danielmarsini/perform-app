@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, createContext, useCon
 import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
   AlertTriangle, Dumbbell, Salad, Pill, Copy, MessageCircle, Plus,
-  Trash2, ArrowLeft, ShieldCheck, CalendarDays, Wallet, Server,
+  Trash2, ArrowLeft, CalendarDays, Wallet, Server,
 } from "lucide-react";
 
 /* ============================================================================
@@ -1389,31 +1389,6 @@ function PerformAIDietGenerator({ client, targetON, targetOFF, onApply }) {
           <button onClick={approve} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium mt-2">✅ Approva e sostituisci pasti ON + OFF</button>
         </div>
       )}
-    </div>
-  );
-}
-
-/* --------------------------------- HEADER ----------------------------------
-   Rimosso su tua richiesta: nome app e logo li porta già l'AppShell che
-   ospiterà questa schermata. Lascio solo una barra di contesto sottile
-   (badge ruolo + nome coach), senza alcun elemento di brand — così non
-   duplichiamo il wordmark quando la incastri dentro 04_AppShell.jsx.       */
-function CoachContextBar({ isDark, onToggleDark }) {
-  return (
-    <div className="flex items-center justify-between gap-3 mb-6">
-      <p className="font-data uppercase" style={{ color: "var(--ink-soft)", fontSize: "0.62rem", letterSpacing: "0.18em" }}>
-        Pannello amministrativo · Coach Daniel Marsini
-      </p>
-      <div className="flex items-center gap-2">
-        <button onClick={onToggleDark} className="font-data text-[10px] uppercase px-3 py-1.5 rounded-full flex items-center gap-1.5"
-          style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line-strong)", color: "var(--ink)", letterSpacing: "0.1em" }}>
-          {isDark ? "☀️ Light" : "🌑 Onyx"}
-        </button>
-        <span className="font-data text-[10px] uppercase px-3 py-1.5 rounded-full" style={{ backgroundColor: "#111111", color: "#C5A059", letterSpacing: "0.14em" }}>
-          <ShieldCheck size={11} className="inline mr-1" style={{ verticalAlign: "-2px" }} />
-          Accesso Coach
-        </span>
-      </div>
     </div>
   );
 }
@@ -4014,7 +3989,7 @@ const TABS = [
   { id: "rete", label: "Hub Rete & Accessi", icon: Server },
 ];
 
-export default function CoachDashboard({ supabase, coachId } = {}) {
+export default function CoachDashboard({ supabase, coachId, dark = true } = {}) {
   const isRealMode = Boolean(supabase && coachId);
   const [realClients, setRealClients] = useState(null); // null = non ancora caricato
 
@@ -4057,9 +4032,11 @@ export default function CoachDashboard({ supabase, coachId } = {}) {
     const newPass = `${name.split(" ")[0]}-${Math.floor(1000 + Math.random() * 9000)}`;
     setPasswordOverrides((prev) => ({ ...prev, [clientId]: newPass }));
   };
-  // Modalità Onyx: tema scuro reale e attivabile, non solo decorativo — vedi
-  // le variabili CSS in GlobalStyle (.coach-root.dark) per cosa cambia.
-  const [isDark, setIsDark] = useState(false);
+  // Il tema Onyx/Light non è più un toggle locale scollegato: segue lo
+  // stesso stato globale del resto dell'app (dark, passato da App.jsx) —
+  // prima restava sempre "Light" di default anche quando l'app era in
+  // Onyx, il bug del pannello coach bianco fuori posto.
+  const isDark = dark;
 
   return (
     <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode, reloadRoster }}>
@@ -4071,7 +4048,6 @@ export default function CoachDashboard({ supabase, coachId } = {}) {
             Più largo solo da tablet in su (md:), dove il coach lavora più
             spesso da desktop e beneficia dello spazio extra per le tabelle. */}
         <main className="max-w-2xl md:max-w-6xl mx-auto px-4 py-8 pb-24" style={{ overflowX: "hidden" }}>
-          <CoachContextBar isDark={isDark} onToggleDark={() => setIsDark((v) => !v)} />
           {selectedId != null ? (
             <ClientDetail client={client} onBack={() => { setSelectedId(null); setClientInitialTab("anamnesi"); }} quickTargets={quickTargets} setQuickTargets={setQuickTargets} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} initialTab={clientInitialTab} />
           ) : (

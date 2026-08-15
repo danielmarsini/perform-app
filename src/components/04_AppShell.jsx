@@ -305,6 +305,11 @@ export function AppHeader({ dark, accent, userLabel, onOpenSettings }) {
         backdropFilter: "blur(18px) saturate(140%)",
         WebkitBackdropFilter: "blur(18px) saturate(140%)",
         borderBottom: `1px solid ${dark ? "rgba(255,255,255,0.09)" : "rgba(17,17,17,0.06)"}`,
+        // viewport-fit=cover (index.html) fa disegnare la pagina fin sotto la
+        // notch/isola dinamica su iPhone: senza questo padding, logo e
+        // ingranaggio finivano sotto l'orologio/batteria del sistema invece
+        // che sotto. env() torna 0 su schermi senza notch, innocuo ovunque.
+        paddingTop: "env(safe-area-inset-top)",
       }}
     >
       <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3">
