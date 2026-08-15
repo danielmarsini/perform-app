@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="ink" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F0F11"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F0DCA0"/>
+      <stop offset="45%" stop-color="#D4AF37"/>
+      <stop offset="100%" stop-color="#8C6E33"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="28%" cy="20%" r="75%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#ink)"/>
+  <rect width="512" height="512" rx="112" fill="url(#sheen)"/>
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#D4AF37" stroke-opacity="0.18" stroke-width="2"/>
+
+  <!-- pulse / heartbeat mark, stessa icona (Activity) usata nel logo dell'app -->
+  <polyline points="118 262 190 262 222 356 290 156 330 262 394 262"
+            fill="none" stroke="url(#gold)" stroke-width="26"
+            stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
