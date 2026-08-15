@@ -832,7 +832,7 @@ export function ClientProfileView({
                 </label>
                 {err && <p className="text-xs mb-2.5" style={{ color: "#DC2626" }}>{err}</p>}
                 <div className="flex gap-2">
-                  <button onClick={save} className="flex-1 rounded-full px-4 py-2.5 text-sm flex items-center justify-center gap-1.5"
+                  <button onClick={save} className="flex-1 rounded-full px-4 py-2.5 text-sm flex items-center justify-center gap-1.5 btn-3d"
                     style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
                     <Check size={14} style={{ color: accent }} /> {t.save}
                   </button>
@@ -1192,7 +1192,7 @@ export function SettingsDrawer({
                 </p>
                 {activePlan.billing !== "none" && !(isOwner && activePlan.id === "full") && (
                   <button onClick={onOpenBillingPortal}
-                    className="w-full rounded-full px-4 py-3 text-sm mt-4 flex items-center justify-center gap-2"
+                    className="w-full rounded-full px-4 py-3 text-sm mt-4 flex items-center justify-center gap-2 btn-3d"
                     style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
                     <CreditCard size={15} style={{ color: accent }} />
                     {t.plan.manageBilling}

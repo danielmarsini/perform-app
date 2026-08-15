@@ -121,7 +121,10 @@ export function DesignSystem() {
       .font-data  { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
       .font-nav   { font-family: var(--font-sans); }
 
-      .h1 { color: var(--ink); font-size: 1.45rem; font-weight: 400; letter-spacing: 0.02em; }
+      /* Filo di profondità sui titoli grandi — appena percettibile, non un
+         drop-shadow vistoso: la differenza fra "scritto" e "inciso". */
+      .h1 { color: var(--ink); font-size: 1.45rem; font-weight: 400; letter-spacing: 0.02em; text-shadow: 0 1px 0 rgba(255,255,255,0.4); }
+      .app-root[data-theme="dark"] .h1 { text-shadow: 0 1px 1px rgba(0,0,0,0.4); }
       .h2 { color: var(--ink); font-size: 1.12rem; font-weight: 500; letter-spacing: 0.01em; }
       .body { color: var(--ink-3); font-size: 0.9rem; line-height: 1.6; }
       .meta { color: var(--ink-2); font-size: 0.82rem; }
@@ -135,12 +138,19 @@ export function DesignSystem() {
       }
 
       /* --- superfici ---------------------------------------------------- */
+      /* Profondità reale invece di un bordo piatto: ombra a due strati
+         (contatto stretto + alone ampio) più un filo di luce in cima, lo
+         stesso principio che rende "solide" le card iOS/Instagram invece
+         che ritagli di carta. Sempre CSS puro: nessuna funzionalità tocca. */
       .card {
         background-color: var(--surface);
         border: 1px solid var(--line);
-        box-shadow: var(--shadow);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.5) inset, 0 1px 2px rgba(17,17,17,0.04), var(--shadow);
         border-radius: 1rem;
         padding: 1.5rem;
+      }
+      .app-root[data-theme="dark"] .card {
+        box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 2px rgba(0,0,0,0.3), var(--shadow);
       }
       .card-tap { transition: transform 0.2s ease, box-shadow 0.25s ease; }
       .card-tap:active { transform: scale(0.985); }
@@ -155,8 +165,29 @@ export function DesignSystem() {
         color: var(--ink);
         border-radius: 0.7rem;
         font-size: 0.95rem;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
       }
       .input::placeholder { color: var(--ink-2); }
+      .input:focus { outline: none; border-color: var(--ink-2); box-shadow: 0 0 0 3px rgba(197,160,89,0.16); }
+
+      /* --- bottoni con rilievo reale -------------------------------------
+         Un solo posto da cui discendono TUTTI i pulsanti pieni scuri
+         dell'app cliente (Invia check, Conferma, Salva, Segnala…): rilievo
+         a riposo, si "solleva" leggermente all'hover, si schiaccia davvero
+         al tap invece del solo scale() secco che c'era prima. */
+      .btn-3d {
+        position: relative;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 4px 10px rgba(0,0,0,0.16), 0 1px 3px rgba(0,0,0,0.12);
+        transition: transform 0.14s cubic-bezier(0.22,1,0.36,1), box-shadow 0.14s ease, opacity 0.15s ease;
+      }
+      .btn-3d:active {
+        transform: translateY(1px) scale(0.98);
+        box-shadow: 0 1px 2px rgba(0,0,0,0.18) inset;
+      }
+      @media (hover: hover) {
+        .btn-3d:hover { transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 7px 16px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.14); }
+      }
+      @media (prefers-reduced-motion: reduce) { .btn-3d, .btn-3d:active, .btn-3d:hover { transition: none; transform: none; } }
 
       /* Campo di ricerca alimenti: nero pieno, mai grigio */
       .search-strong { color: #111111 !important; font-weight: 600; }

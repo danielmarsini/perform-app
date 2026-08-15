@@ -77,14 +77,27 @@ export const GlobalStyle = () => (
        colore grigio satinato del brand, tracking leggermente APERTO. */
     .c-muted { color: var(--ink-soft); font-weight: 400; letter-spacing: 0.02em; }
     .c-label { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.02em; color: #A1A1AA; font-weight: 500; }
-    .c-card { background-color: var(--surface); border: 1px solid var(--line); box-shadow: var(--card-shadow); border-radius: 1rem; padding: 1.5rem; }
-    .c-btn { background-color: #111111; color: #FFFFFF; border-radius: 0.6rem; }
-    .c-btn:hover:not(:disabled) { opacity: 0.85; }
+    /* Profondità reale invece di un bordo piatto — stesso principio del
+       lato cliente (04_AppShell.jsx .card): un filo di luce in cima più
+       ombra a due strati, così le card sembrano sollevate dalla pagina. */
+    .c-card { background-color: var(--surface); border: 1px solid var(--line); box-shadow: 0 1px 0 rgba(255,255,255,0.5) inset, var(--card-shadow); border-radius: 1rem; padding: 1.5rem; }
+    .coach-root.dark .c-card { box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, var(--card-shadow); }
+    .c-btn {
+      background-color: #111111; color: #FFFFFF; border-radius: 0.6rem;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 4px 10px rgba(0,0,0,0.16), 0 1px 3px rgba(0,0,0,0.12);
+      transition: transform 0.14s cubic-bezier(0.22,1,0.36,1), box-shadow 0.14s ease, opacity 0.15s ease;
+    }
+    .c-btn:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 7px 16px rgba(0,0,0,0.2); }
+    .c-btn:active:not(:disabled) { transform: translateY(1px) scale(0.98); box-shadow: 0 1px 2px rgba(0,0,0,0.18) inset; }
     .c-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-    .c-ghost { border: 1px solid var(--line); color: var(--ink-soft); background-color: var(--surface); border-radius: 0.6rem; }
+    .c-ghost { border: 1px solid var(--line); color: var(--ink-soft); background-color: var(--surface); border-radius: 0.6rem; transition: transform 0.12s ease, background-color 0.15s ease; }
     .c-ghost:hover { background-color: #F8F9FA; }
-    .t-input { background-color: var(--surface); border: 1px solid var(--line); color: var(--ink); transition: border-color 0.2s ease; border-radius: 0.6rem; }
+    .c-ghost:active { transform: scale(0.98); }
+    .coach-root.dark .c-ghost:active { background-color: #27272A; }
+    .t-input { background-color: var(--surface); border: 1px solid var(--line); color: var(--ink); transition: border-color 0.2s ease, box-shadow 0.15s ease; border-radius: 0.6rem; }
     .t-input::placeholder { color: #ADB5BD; }
+    .t-input:focus { box-shadow: 0 0 0 3px rgba(197,160,89,0.16); }
+    @media (prefers-reduced-motion: reduce) { .c-btn, .c-btn:hover, .c-btn:active, .c-ghost, .c-ghost:active { transition: none !important; transform: none !important; } }
     .t-input:focus { border-color: #C5A059; outline: none; }
     .t-inner { background-color: var(--surface-2); border: 1px solid var(--line); border-radius: 0.85rem; }
     @keyframes springIn { 0% { opacity: 0; transform: translateY(10px) scale(0.985); } 55% { opacity: 1; transform: translateY(-2px) scale(1.004); } 100% { opacity: 1; transform: translateY(0) scale(1); } }

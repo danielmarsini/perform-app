@@ -390,7 +390,7 @@ function LockedChartOverlay({ gender, onUpgrade, title, text }) {
         <p className="body mb-4" style={{ fontSize: "0.8rem", maxWidth: 300 }}>
           {text || "Passa al Performance Pack (€5/mese) per analizzare i tuoi grafici storici stile Apple Salute e monitorare il recupero del Sistema Nervoso."}
         </p>
-        <button onClick={onUpgrade} className="rounded-full px-5 py-2.5 text-sm transition-transform active:scale-95"
+        <button onClick={onUpgrade} className="rounded-full px-5 py-2.5 text-sm transition-transform active:scale-95 btn-3d"
                 style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
           Scopri il Performance Pack →
         </button>
@@ -1212,7 +1212,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           </div>
 
           <button onClick={handleSubmit} disabled={!canSubmit || saving}
-                  className="w-full rounded-full px-4 py-3.5 text-sm transition-transform active:scale-[0.98] disabled:opacity-40"
+                  className="w-full rounded-full px-4 py-3.5 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
                   style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
             {saving ? "Salvataggio in corso…" : "Invia Check al Coach"}
           </button>
@@ -1364,7 +1364,7 @@ function PauseRequestModal({ supabase, userId, accent, accentText, onClose, onSa
           {error && <p className="mb-3 text-sm" style={{ color: "#B91C1C" }}>{error}</p>}
 
           <button onClick={handleSubmit} disabled={!canSubmit || saving}
-                  className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40"
+                  className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
                   style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
             {saving ? "Invio…" : "Conferma"}
           </button>
@@ -1873,7 +1873,7 @@ export function HomeDashboard({
             </p>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => onApplyReschedule(reschedule)}
-                      className="rounded-full px-4 py-2.5 text-sm"
+                      className="rounded-full px-4 py-2.5 text-sm btn-3d"
                       style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
                 Sposta a {WEEK_DAYS[reschedule.to]}
               </button>
@@ -2966,7 +2966,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                 {WEEK_DAYS[day.weekday]} risulta come riposo nella tua routine, oppure non l'hai ancora
                 impostata. Vai su "La Mia Routine" per costruirla.
               </p>
-              <button onClick={() => setInnerTab("routine")} className="rounded-full px-5 py-3 text-sm"
+              <button onClick={() => setInnerTab("routine")} className="rounded-full px-5 py-3 text-sm btn-3d"
                       style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
                 Costruisci la routine
               </button>
@@ -3014,7 +3014,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
               </label>
             </div>
             <button onClick={applyDateRange} disabled={!weeksFromDates}
-              className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40"
+              className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
               style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
               {weeksFromDates ? `Imposta ${weeksFromDates} settiman${weeksFromDates === 1 ? "a" : "e"}` : "Scegli data inizio e fine"}
             </button>
@@ -4064,7 +4064,7 @@ function NutritionTabs({
                                   ))}
                                 </div>
                                 <button onMouseDown={saveManualFood}
-                                  className="w-full rounded-full px-4 py-2.5 text-sm"
+                                  className="w-full rounded-full px-4 py-2.5 text-sm btn-3d"
                                   style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
                                   Salva nel catalogo e usa
                                 </button>
@@ -4106,7 +4106,7 @@ function NutritionTabs({
                       <div className="flex gap-2">
                         <button onClick={() => { if (preview) { onAddFood(slot.id, preview); reset(); setOpenSlot(null); } }}
                           disabled={!preview}
-                          className="flex-1 rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40"
+                          className="flex-1 rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
                           style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
                           Aggiungi a {slot.label}
                         </button>
@@ -4224,7 +4224,7 @@ function UpsellFooter({ accent, accentSoft, accentText, onUpgrade, text }) {
         <p className="text-sm leading-relaxed min-w-0" style={{ color: "var(--ink)", fontWeight: 500, flex: "1 1 220px" }}>
           {body}
         </p>
-        <button onClick={onUpgrade} className="rounded-full px-5 py-2.5 text-sm shrink-0 transition-transform active:scale-95"
+        <button onClick={onUpgrade} className="rounded-full px-5 py-2.5 text-sm shrink-0 transition-transform active:scale-95 btn-3d"
                 style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
           Scopri il Full Coaching →
         </button>
@@ -4277,7 +4277,7 @@ function SubsPanel({ substitutions, accent, accentSoft, accentText, onGenerateSi
             placeholder="es. 150 g di petto di pollo"
             className="input flex-1 min-w-0 px-4 py-3 text-sm" aria-label="Alimento da sostituire" />
           <button onClick={run} disabled={loading}
-            className="shrink-0 px-4 rounded-xl flex items-center gap-2 text-sm transition-transform active:scale-95 disabled:opacity-50"
+            className="shrink-0 px-4 rounded-xl flex items-center gap-2 text-sm transition-transform active:scale-95 disabled:opacity-50 btn-3d"
             style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
             <Sparkles size={15} style={{ color: accent }} />
             Genera
@@ -4521,7 +4521,7 @@ function NutritionTargetsPanel({ accent, accentSoft, accentText, targetOn, targe
             onChange={(e) => setWaterDraft(e.target.value)}
             className="input flex-1 min-w-0 px-4 py-3 font-data" aria-label="Obiettivo acqua in ml" />
           <button onClick={() => onSetWaterTarget && onSetWaterTarget(Number(waterDraft) || waterTarget)}
-            className="shrink-0 rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98]"
+            className="shrink-0 rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] btn-3d"
             style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
             Salva
           </button>
@@ -4598,7 +4598,7 @@ function NutritionTargetsPanel({ accent, accentSoft, accentText, targetOn, targe
 
           <button onClick={() => onSetTargetForType && onSetTargetForType({
               kcal: computedKcal, p: Number(draft.p) || 0, c: Number(draft.c) || 0, f: Number(draft.f) || 0 })}
-            className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98]"
+            className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] btn-3d"
             style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
             Salva il giorno {dayType === "on" ? "ON" : "OFF"}
           </button>
@@ -4702,7 +4702,7 @@ function NutritionTargetsPanel({ accent, accentSoft, accentText, targetOn, targe
               setMode("manual");
             }}
             disabled={!cycling}
-            className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40"
+            className="w-full rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
             style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
             Applica la ciclizzazione ON/OFF automatica
           </button>
