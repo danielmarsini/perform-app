@@ -58,25 +58,25 @@ Deno.serve(async (req) => {
   }
   const mode = ONE_TIME_PRICES.has(priceId) ? "payment" : "subscription";
 
-  const { data: profile } = await admin
-    .from("profiles")
-    .select("stripe_customer_id, full_name, nickname")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  let customerId = profile?.stripe_customer_id;
-  if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: user.email,
-      name: profile?.full_name || profile?.nickname || undefined,
-      metadata: { supabase_user_id: user.id },
-    });
-    customerId = customer.id;
-    await admin.from("profiles").update({ stripe_customer_id: customerId }).eq("id", user.id);
-  }
-
-  const base = resolveBase(origin);
   try {
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("stripe_customer_id, full_name, nickname")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    let customerId = profile?.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        name: profile?.full_name || profile?.nickname || undefined,
+        metadata: { supabase_user_id: user.id },
+      });
+      customerId = customer.id;
+      await admin.from("profiles").update({ stripe_customer_id: customerId }).eq("id", user.id);
+    }
+
+    const base = resolveBase(origin);
     const session = await stripe.checkout.sessions.create({
       mode,
       customer: customerId,
@@ -89,6 +89,6 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ url: session.url }), { headers: { "Content-Type": "application/json" } });
   } catch (err) {
     console.error("PERFORM: errore creazione Checkout Session Stripe", err);
-    return new Response(JSON.stringify({ error: "Non sono riuscito ad avviare il pagamento." }), { status: 500 });
+    return new Response(JSON.stringify({ error: err?.message || "Non sono riuscito ad avviare il pagamento." }), { status: 500 });
   }
 });

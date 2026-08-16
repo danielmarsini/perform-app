@@ -1069,13 +1069,19 @@ export function SettingsDrawer({
     setPushState(res.ok ? "on" : (res.reason === "denied" ? "off" : "unsupported"));
   };
 
+  // Questi due DEVONO stare prima dell'early return "if (!open) return null"
+  // qui sotto, insieme agli altri hook — altrimenti il conteggio di hook
+  // chiamati cambia fra un render a drawer chiuso e uno a drawer aperto,
+  // React va in crash (schermata nera): è lo stesso bug delle Rules of Hooks
+  // già preso e risolto una volta in ClassificaView, non ripeterlo qui.
+  const [checkoutBusyId, setCheckoutBusyId] = useState(null);
+  const [checkoutError, setCheckoutError] = useState("");
+
   if (!open) return null;
 
   const TABS = [["aspetto", t.tabs.aspetto], ["notifiche", t.tabs.notifiche], ["piano", t.tabs.piano], ["privacy", t.tabs.privacy]];
   const activePlan = STRIPE_PLANS.find((p) => p.id === currentPlan) || STRIPE_PLANS[0];
   const isOwner = accountEmail === OWNER_EMAIL;
-  const [checkoutBusyId, setCheckoutBusyId] = useState(null);
-  const [checkoutError, setCheckoutError] = useState("");
 
   // Piano gratuito: nessun pagamento, scrittura diretta come sempre. Piano a
   // pagamento: apre una vera Stripe Checkout Session e redirige lì — plan/
