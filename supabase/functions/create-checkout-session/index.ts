@@ -41,20 +41,31 @@ function resolveBase(origin) {
   return APP_URL;
 }
 
+// Chiamata dal browser (supabase.functions.invoke), origine diversa da
+// *.supabase.co: senza questi header il browser blocca la richiesta già alla
+// preflight OPTIONS, prima ancora che la funzione la veda — bug preso durante
+// il primo test reale del checkout, non ripeterlo nelle prossime function.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405 });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
+  if (req.method !== "POST") return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: CORS_HEADERS });
 
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (!token) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  if (!token) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
-  if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
   const { priceId, origin } = await req.json().catch(() => ({}));
   if (!priceId || !ALLOWED_PRICES.has(priceId)) {
-    return new Response(JSON.stringify({ error: "priceId non valido" }), { status: 400 });
+    return new Response(JSON.stringify({ error: "priceId non valido" }), { status: 400, headers: CORS_HEADERS });
   }
   const mode = ONE_TIME_PRICES.has(priceId) ? "payment" : "subscription";
 
@@ -86,9 +97,9 @@ Deno.serve(async (req) => {
       metadata: { supabase_user_id: user.id, price_id: priceId },
       ...(mode === "subscription" ? { subscription_data: { metadata: { supabase_user_id: user.id } } } : {}),
     });
-    return new Response(JSON.stringify({ url: session.url }), { headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ url: session.url }), { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
   } catch (err) {
     console.error("PERFORM: errore creazione Checkout Session Stripe", err);
-    return new Response(JSON.stringify({ error: err?.message || "Non sono riuscito ad avviare il pagamento." }), { status: 500 });
+    return new Response(JSON.stringify({ error: err?.message || "Non sono riuscito ad avviare il pagamento." }), { status: 500, headers: CORS_HEADERS });
   }
 });

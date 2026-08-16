@@ -26,20 +26,30 @@ function resolveBase(origin) {
   return APP_URL;
 }
 
+// Chiamata dal browser (supabase.functions.invoke), origine diversa da
+// *.supabase.co: senza questi header il browser blocca la richiesta già alla
+// preflight OPTIONS (vedi stesso fix in create-checkout-session).
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405 });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
+  if (req.method !== "POST") return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: CORS_HEADERS });
 
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (!token) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  if (!token) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
-  if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
   const { data: profile } = await admin.from("profiles").select("stripe_customer_id").eq("id", user.id).maybeSingle();
   if (!profile?.stripe_customer_id) {
-    return new Response(JSON.stringify({ error: "Nessun pagamento associato a questo account ancora." }), { status: 400 });
+    return new Response(JSON.stringify({ error: "Nessun pagamento associato a questo account ancora." }), { status: 400, headers: CORS_HEADERS });
   }
 
   const { origin } = await req.json().catch(() => ({}));
@@ -48,9 +58,9 @@ Deno.serve(async (req) => {
       customer: profile.stripe_customer_id,
       return_url: `${resolveBase(origin)}/`,
     });
-    return new Response(JSON.stringify({ url: portalSession.url }), { headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ url: portalSession.url }), { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
   } catch (err) {
     console.error("PERFORM: errore creazione Billing Portal Session Stripe", err);
-    return new Response(JSON.stringify({ error: "Non sono riuscito ad aprire la gestione abbonamento." }), { status: 500 });
+    return new Response(JSON.stringify({ error: "Non sono riuscito ad aprire la gestione abbonamento." }), { status: 500, headers: CORS_HEADERS });
   }
 });
