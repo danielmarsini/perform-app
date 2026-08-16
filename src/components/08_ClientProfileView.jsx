@@ -942,10 +942,10 @@ export const OWNER_EMAIL = "danielmarsini@coach.com";
    currentPlan arriva da Supabase: tabella `subscriptions`, colonna `plan_id`. */
 export const STRIPE_PLANS = [
   { id: "free",        emoji: "🆓", price: 0,  billing: "none",      priceId: null },
-  { id: "performance", emoji: "⚡", price: 5,  billing: "recurring", priceId: "price_performance_pack_placeholder" },
-  { id: "scheda",      emoji: "🏋️", price: 40, billing: "one_time",  priceId: "price_scheda_personalizzata_placeholder" },
-  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_solo_allenamento_placeholder" },
-  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_full_coaching_supremo_placeholder", highlight: true, recommended: true },
+  { id: "performance", emoji: "⚡", price: 5,  billing: "recurring", priceId: "price_1U54KfFifatHRNX6dYk49FCG" },
+  { id: "scheda",      emoji: "🏋️", price: 40, billing: "one_time",  priceId: "price_1U54KFFifatHRNX6Zmofauly" },
+  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_1U54JnFifatHRNX6ZnlVa2JX" },
+  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_1U54JOFifatHRNX67Z2r6bzw", highlight: true, recommended: true },
 ];
 
 function Toggle({ on, onClick, label, desc }) {
@@ -1074,13 +1074,29 @@ export function SettingsDrawer({
   const TABS = [["aspetto", t.tabs.aspetto], ["notifiche", t.tabs.notifiche], ["piano", t.tabs.piano], ["privacy", t.tabs.privacy]];
   const activePlan = STRIPE_PLANS.find((p) => p.id === currentPlan) || STRIPE_PLANS[0];
   const isOwner = accountEmail === OWNER_EMAIL;
+  const [checkoutBusyId, setCheckoutBusyId] = useState(null);
+  const [checkoutError, setCheckoutError] = useState("");
 
-  const startStripeCheckout = (plan) => {
+  // Piano gratuito: nessun pagamento, scrittura diretta come sempre. Piano a
+  // pagamento: apre una vera Stripe Checkout Session e redirige lì — plan/
+  // client_status si aggiornano SOLO dopo la conferma del webhook lato
+  // server (vedi supabase/functions/stripe-webhook), mai qui in ottimistico.
+  const startStripeCheckout = async (plan) => {
     if (plan.billing === "none") { onChangePlan(plan.id); return; }
-    // In produzione: POST a una Supabase Edge Function che crea la Stripe
-    // Checkout Session (mode: plan.billing === "one_time" ? "payment" : "subscription")
-    // e restituisce session.url per il redirect. priceId è il price_... reale di Stripe.
-    onChangePlan(plan.id, plan.priceId);
+    if (!isRealMode) return;
+    setCheckoutError("");
+    setCheckoutBusyId(plan.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-checkout-session", {
+        body: { priceId: plan.priceId, origin: window.location.origin },
+      });
+      if (error || !data?.url) throw error || new Error("URL di pagamento non disponibile");
+      window.location.href = data.url;
+    } catch (err) {
+      console.error("PERFORM: errore avvio checkout piano", err);
+      setCheckoutError("Non sono riuscito ad avviare il pagamento. Riprova.");
+      setCheckoutBusyId(null);
+    }
   };
 
   return (
@@ -1203,11 +1219,21 @@ export function SettingsDrawer({
               </div>
 
               <p className="label mb-3">{t.plan.chooseTitle}</p>
+              {checkoutError && (
+                <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
+                  {checkoutError}
+                </p>
+              )}
               {STRIPE_PLANS.map((p) => (
                 <PlanCard key={p.id} plan={p} active={p.id === activePlan.id}
                           accent={accent} accentText={accentText} gender={gender} dark={dark} t={t}
-                          onChangePlan={startStripeCheckout} isOwner={isOwner} />
+                          onChangePlan={checkoutBusyId ? () => {} : startStripeCheckout} isOwner={isOwner} />
               ))}
+              {checkoutBusyId && (
+                <p className="flex items-center justify-center gap-2 text-xs mt-1" style={{ color: "var(--ink-2)" }}>
+                  Un attimo…
+                </p>
+              )}
             </div>
           )}
 

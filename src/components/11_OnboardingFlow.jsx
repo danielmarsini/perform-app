@@ -7,10 +7,15 @@
    App.jsx monta questo componente al posto di AppShell.
 
      1. Piano  → le 5 card ufficiali (STRIPE_PLANS/PlanCard, già costruite in
-        08_ClientProfileView.jsx: nessuna copy duplicata). La scelta scrive
-        subito profiles.plan — non c'è ancora un vero checkout Stripe (vedi
-        TODO in SettingsDrawer), quindi qui il piano si attiva senza addebito
-        reale, esattamente come fa già SettingsDrawer.onChangePlan.
+        08_ClientProfileView.jsx: nessuna copy duplicata). Il piano Free
+        scrive subito profiles.plan, nessun pagamento. Gli altri 4 aprono una
+        vera Stripe Checkout Session (create-checkout-session) e redirigono
+        lì: profiles.plan si scrive SOLO dopo la conferma del webhook lato
+        server (supabase/functions/stripe-webhook), mai in ottimistico prima
+        del pagamento. Al ritorno da Stripe (App.jsx, redirect su
+        ?checkout=success) questo componente rimonta con initialPlan già
+        aggiornato e riprende da dove serve (anamnesi per i piani coaching,
+        chiusura diretta per Performance Pack).
      2. Anamnesi → SOLO se il piano scelto è a coaching (scheda/training/full):
         le stesse 56 domande del pannello coach (ANAM_QUESTIONS/AnamAreaSection,
         esportate da 09_CoachDashboard.jsx), compilate stavolta dall'atleta
@@ -24,7 +29,7 @@
    nessun coach li assegna): dopo la scelta si entra subito in Home.
    ========================================================================== */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 
 import { DesignSystem } from "./04_AppShell.jsx";
@@ -42,7 +47,6 @@ const UI_TO_DB_PLAN = {
   full: "full",
 };
 
-const COACHING_PLAN_IDS = new Set(["scheda", "training", "full"]);
 const DB_TO_UI_PLAN = { scheda_personalizzata: "scheda", training: "training", full: "full" };
 
 const ANAM_FILLABLE = ANAM_QUESTIONS.filter((q) => q.t !== "photos");
@@ -58,6 +62,12 @@ const ANAM_REQUIRED = ANAM_FILLABLE.filter((q) => q.req);
 // fargli rifare la scelta e perdere quello che aveva già iniziato a scrivere.
 export default function OnboardingFlow({ supabase, userId, gender = "M", dark = true, lang = "it", accent, initialPlan, onComplete }) {
   const resumedPlanId = DB_TO_UI_PLAN[initialPlan];
+  // Performance Pack è pagato ma non a coaching: tornando da Stripe con
+  // initialPlan già confermato dal webhook non va in anamnesi (non richiesta,
+  // vedi nota in testa al file), ma l'onboarding va comunque chiuso — lo fa
+  // l'effect subito sotto, "step" resta 'plan' solo per il breve istante in
+  // cui quell'effect gira (isFinishingPack copre quel caso a schermo).
+  const isResumedPerformancePack = initialPlan === "performance_pack";
   const [step, setStep] = useState(resumedPlanId ? "anamnesi" : "plan"); // 'plan' | 'anamnesi'
   const [chosenPlan, setChosenPlan] = useState(
     resumedPlanId ? { id: resumedPlanId, dbValue: initialPlan } : null
@@ -65,6 +75,19 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [answers, setAnswers] = useState({});
+
+  useEffect(() => {
+    if (!isResumedPerformancePack) return undefined;
+    let cancelled = false;
+    supabase.from("profiles").update({ onboarding_completed: true }).eq("id", userId)
+      .then(({ error: doneError }) => {
+        if (cancelled) return;
+        if (doneError) { console.error("PERFORM: errore chiusura onboarding Performance Pack", doneError); return; }
+        onComplete({ plan: initialPlan });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const t = translations[lang] || translations.it;
   const setField = (k, v) => setAnswers((a) => ({ ...a, [k]: v }));
@@ -74,21 +97,29 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
     setBusy(true);
     const dbValue = UI_TO_DB_PLAN[plan.id];
     try {
-      const { error: planError } = await supabase.from("profiles").update({ plan: dbValue }).eq("id", userId);
-      if (planError) throw planError;
-
-      if (COACHING_PLAN_IDS.has(plan.id)) {
-        setChosenPlan({ id: plan.id, dbValue });
-        setStep("anamnesi");
-      } else {
+      if (plan.billing === "none") {
+        // Free: nessun pagamento, si scrive subito e si entra — invariato.
+        const { error: planError } = await supabase.from("profiles").update({ plan: dbValue }).eq("id", userId);
+        if (planError) throw planError;
         const { error: doneError } = await supabase.from("profiles").update({ onboarding_completed: true }).eq("id", userId);
         if (doneError) throw doneError;
         onComplete({ plan: dbValue });
+        return;
       }
+      // Piano a pagamento: vero checkout Stripe. profiles.plan si scrive SOLO
+      // dopo la conferma del webhook lato server — questo componente non
+      // scrive mai un piano a coaching prima che sia stato davvero pagato.
+      // Al ritorno da Stripe (App.jsx, redirect su ?checkout=success) questo
+      // stesso componente rimonta con initialPlan già aggiornato e
+      // resumedPlanId salta dritto qui sotto all'anamnesi.
+      const { data, error: fnError } = await supabase.functions.invoke("create-checkout-session", {
+        body: { priceId: plan.priceId, origin: window.location.origin },
+      });
+      if (fnError || !data?.url) throw fnError || new Error("URL di pagamento non disponibile");
+      window.location.href = data.url;
     } catch (e) {
-      console.error("PERFORM: errore salvataggio piano scelto", e);
-      setError("Non sono riuscito a salvare il piano scelto. Controlla la connessione e riprova.");
-    } finally {
+      console.error("PERFORM: errore avvio pagamento piano", e);
+      setError("Non sono riuscito ad avviare il pagamento. Controlla la connessione e riprova.");
       setBusy(false);
     }
   };
@@ -114,6 +145,17 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
       setBusy(false);
     }
   };
+
+  if (isResumedPerformancePack) {
+    return (
+      <div className="app-root min-h-screen flex items-center justify-center" data-theme={dark ? "dark" : "light"} style={{ backgroundColor: "var(--page)" }}>
+        <DesignSystem />
+        <p className="flex items-center gap-2 text-sm" style={{ color: "var(--ink-2)" }}>
+          <Loader2 size={15} className="animate-spin" /> Pagamento confermato, un attimo…
+        </p>
+      </div>
+    );
+  }
 
   if (step === "anamnesi") {
     return (

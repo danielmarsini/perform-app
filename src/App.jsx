@@ -145,27 +145,46 @@ export default function App() {
     if (!session) { setProfile(null); setProfileLoading(false); return undefined; }
     let cancelled = false;
     setProfileLoading(true);
-    supabase
-      .from("profiles")
-      .select("gender, plan, onboarding_completed, nickname, full_name")
-      .eq("id", session.user.id)
-      .single()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          console.error("PERFORM: errore caricamento profilo", error);
+    // Se si torna da un pagamento Stripe (?checkout=success), il webhook che
+    // scrive profiles.plan potrebbe non aver ancora fatto in tempo rispetto
+    // al redirect del browser: ripeto la lettura per qualche secondo prima
+    // di arrendermi, invece di rimandare subito l'atleta alla scelta del
+    // piano che ha appena pagato (vedi resumedPlanId in OnboardingFlow, che
+    // salta dritto all'anamnesi non appena profiles.plan è un piano coaching).
+    const justPaid = new URLSearchParams(window.location.search).get("checkout") === "success";
+    const loadProfile = (attempt = 0) => {
+      supabase
+        .from("profiles")
+        .select("gender, plan, onboarding_completed, nickname, full_name")
+        .eq("id", session.user.id)
+        .single()
+        .then(({ data, error }) => {
+          if (cancelled) return;
+          if (error) {
+            console.error("PERFORM: errore caricamento profilo", error);
+            setProfileLoading(false);
+            return;
+          }
+          if (justPaid && data.plan === "free" && attempt < 6) {
+            setTimeout(() => { if (!cancelled) loadProfile(attempt + 1); }, 1500);
+            return;
+          }
+          if (justPaid) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("checkout");
+            window.history.replaceState({}, "", url);
+          }
+          // NB: profiles.gender è 'male'/'female' nel DB, l'app usa 'M'/'F'.
+          // profiles.plan usa 'full' (check constraint SCHEMA_v14), il resto
+          // dell'app (05_HomeDashboard, gating AI) confronta 'full_coaching':
+          // stessa normalizzazione già applicata in SettingsDrawer.onChangePlan.
+          setGender(data.gender === "female" ? "F" : "M");
+          setUserPlan(data.plan === "full" ? "full_coaching" : data.plan || "free");
+          setProfile(data);
           setProfileLoading(false);
-          return;
-        }
-        // NB: profiles.gender è 'male'/'female' nel DB, l'app usa 'M'/'F'.
-        // profiles.plan usa 'full' (check constraint SCHEMA_v14), il resto
-        // dell'app (05_HomeDashboard, gating AI) confronta 'full_coaching':
-        // stessa normalizzazione già applicata in SettingsDrawer.onChangePlan.
-        setGender(data.gender === "female" ? "F" : "M");
-        setUserPlan(data.plan === "full" ? "full_coaching" : data.plan || "free");
-        setProfile(data);
-        setProfileLoading(false);
-      });
+        });
+    };
+    loadProfile();
     return () => { cancelled = true; };
   }, [session]);
 
@@ -320,15 +339,26 @@ export default function App() {
           onToggleNotification={(k) => setNotifications((n) => ({ ...n, [k]: !n[k] }))}
           supabase={supabase}
           userId={session.user.id}
-          onOpenBillingPortal={() => {
-            // TODO produzione: redirect verso la Customer Portal Session di Stripe
-            // creata da una Edge Function server-side (mai la secret key sul client).
+          onOpenBillingPortal={async () => {
+            try {
+              const { data, error } = await supabase.functions.invoke("create-billing-portal-session", {
+                body: { origin: window.location.origin },
+              });
+              if (error || !data?.url) throw error || new Error("URL del portale non disponibile");
+              window.location.href = data.url;
+            } catch (err) {
+              console.error("PERFORM: errore apertura Billing Portal", err);
+            }
           }}
           onChangePlan={(id) => {
+            // A questo punto arriva solo la scelta del piano gratuito: i
+            // piani a pagamento passano da startStripeCheckout (redirect a
+            // Stripe) e non chiamano mai questa funzione — vedi
+            // 08_ClientProfileView.jsx.
             const mapped = id === "full" ? "full_coaching" : id === "performance" ? "performance_pack" : "free";
             setUserPlan(mapped);
-            // TODO produzione: qui va la vera chiamata di checkout Stripe, non
-            // solo l'aggiornamento dello stato locale.
+            supabase.from("profiles").update({ plan: "free" }).eq("id", session.user.id)
+              .then(({ error }) => { if (error) console.error("PERFORM: errore salvataggio piano gratuito", error); });
           }}
           onDeleteAccount={() => {
             // TODO produzione: cancellazione account reale (Supabase Auth admin
