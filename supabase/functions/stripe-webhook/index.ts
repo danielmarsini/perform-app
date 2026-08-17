@@ -29,10 +29,10 @@ const cryptoProvider = Stripe.createSubtleCryptoProvider();
 // QUESTA mappa, il client non può mai far scrivere un piano diverso da
 // quello che ha davvero pagato.
 const PRICE_TO_PLAN: Record<string, string> = {
-  "price_1U54JOFifatHRNX67Z2r6bzw": "full",
-  "price_1U54JnFifatHRNX6ZnlVa2JX": "training",
-  "price_1U54KFFifatHRNX6Zmofauly": "scheda_personalizzata",
-  "price_1U54KfFifatHRNX6dYk49FCG": "performance_pack",
+  "price_1U53tlFifatHRNX6fVb5k9HC": "full",
+  "price_1U53vHFifatHRNX6O2Y6fT5n": "training",
+  "price_1U53w5FifatHRNX6KFotJfnc": "scheda_personalizzata",
+  "price_1U53wlFifatHRNX6tkJAV4ni": "performance_pack",
 };
 const COACHING_PLANS = new Set(["scheda_personalizzata", "training", "full"]);
 

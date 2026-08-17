@@ -20,12 +20,12 @@ const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20", httpCli
 // I 4 Price ID reali creati nel catalogo Stripe (v. SCHEMA_v31 + STRIPE_PLANS
 // in 08_ClientProfileView.jsx, stessi valori). scheda_personalizzata è
 // l'unico pagamento singolo, gli altri 3 sono abbonamenti mensili.
-const ONE_TIME_PRICES = new Set(["price_1U54KFFifatHRNX6Zmofauly"]); // scheda_personalizzata
+const ONE_TIME_PRICES = new Set(["price_1U53w5FifatHRNX6KFotJfnc"]); // scheda_personalizzata
 const ALLOWED_PRICES = new Set([
-  "price_1U54JOFifatHRNX67Z2r6bzw", // full
-  "price_1U54JnFifatHRNX6ZnlVa2JX", // training
-  "price_1U54KFFifatHRNX6Zmofauly", // scheda_personalizzata
-  "price_1U54KfFifatHRNX6dYk49FCG", // performance_pack
+  "price_1U53tlFifatHRNX6fVb5k9HC", // full
+  "price_1U53vHFifatHRNX6O2Y6fT5n", // training
+  "price_1U53w5FifatHRNX6KFotJfnc", // scheda_personalizzata
+  "price_1U53wlFifatHRNX6tkJAV4ni", // performance_pack
 ]);
 
 // Il redirect dopo il pagamento deve tornare SOLO a un'origine nostra (prod

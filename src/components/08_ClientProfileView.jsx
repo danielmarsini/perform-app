@@ -942,10 +942,10 @@ export const OWNER_EMAIL = "danielmarsini@coach.com";
    currentPlan arriva da Supabase: tabella `subscriptions`, colonna `plan_id`. */
 export const STRIPE_PLANS = [
   { id: "free",        emoji: "🆓", price: 0,  billing: "none",      priceId: null },
-  { id: "performance", emoji: "⚡", price: 5,  billing: "recurring", priceId: "price_1U54KfFifatHRNX6dYk49FCG" },
-  { id: "scheda",      emoji: "🏋️", price: 40, billing: "one_time",  priceId: "price_1U54KFFifatHRNX6Zmofauly" },
-  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_1U54JnFifatHRNX6ZnlVa2JX" },
-  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_1U54JOFifatHRNX67Z2r6bzw", highlight: true, recommended: true },
+  { id: "performance", emoji: "⚡", price: 5,  billing: "recurring", priceId: "price_1U53wlFifatHRNX6tkJAV4ni" },
+  { id: "scheda",      emoji: "🏋️", price: 40, billing: "one_time",  priceId: "price_1U53w5FifatHRNX6KFotJfnc" },
+  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_1U53vHFifatHRNX6O2Y6fT5n" },
+  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_1U53tlFifatHRNX6fVb5k9HC", highlight: true, recommended: true },
 ];
 
 function Toggle({ on, onClick, label, desc }) {
