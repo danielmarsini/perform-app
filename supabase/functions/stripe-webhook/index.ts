@@ -52,11 +52,19 @@ Deno.serve(async (req) => {
   }
 
   // Idempotenza: se questo event.id è già stato processato (Stripe ha
-  // ritentato la spedizione), l'insert fallisce per la primary key e ci
-  // fermiamo qui, senza aggiornare due volte lo stesso profilo.
+  // ritentato la spedizione), l'insert fallisce con una violazione di
+  // chiave primaria (23505) e ci fermiamo qui, senza aggiornare due volte
+  // lo stesso profilo. QUALSIASI ALTRO errore (tabella mancante, problema di
+  // rete verso Postgres...) NON è un duplicato: va loggato forte e la
+  // richiesta deve proseguire comunque, altrimenti un problema come quello
+  // scambierebbe silenziosamente ogni pagamento reale per un doppione senza
+  // mai sbloccare il piano — bug preso durante il primo test end-to-end.
   const { error: dupError } = await admin.from("stripe_webhook_events").insert({ id: event.id });
   if (dupError) {
-    return new Response(JSON.stringify({ received: true, duplicate: true }), { headers: { "Content-Type": "application/json" } });
+    if (dupError.code === "23505") {
+      return new Response(JSON.stringify({ received: true, duplicate: true }), { headers: { "Content-Type": "application/json" } });
+    }
+    console.error("PERFORM: errore inatteso nel controllo idempotenza (NON trattato come duplicato)", dupError);
   }
 
   try {
