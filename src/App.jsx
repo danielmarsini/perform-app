@@ -57,9 +57,9 @@ const CoachDashboard = lazy(() => import("./components/09_CoachDashboard.jsx"));
 // sfondo giusto del tema, MAI un flash bianco con la scritta "Caricamento…"
 // al centro — è la stessa categoria di schermata di caricamento invadente
 // già tolta altrove nell'app su richiesta esplicita.
-function ScreenFallback({ dark }) {
+function ScreenFallback({ dark, minHeight = "50vh" }) {
   return (
-    <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center",
+    <div style={{ minHeight, display: "flex", alignItems: "center", justifyContent: "center",
                   backgroundColor: dark ? "#09090B" : "#FFFFFF" }}>
       <div className="app-loading-pulse" style={{ width: 40, height: 40, borderRadius: "50%",
              border: `2.5px solid ${dark ? "rgba(250,250,250,0.15)" : "rgba(17,17,17,0.1)"}`,
@@ -195,12 +195,7 @@ export default function App() {
     userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : "free";
 
   if (authLoading) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-                     backgroundColor: "#09090B", color: "#FAFAFA", fontFamily: "system-ui" }}>
-        Caricamento…
-      </div>
-    );
+    return <ScreenFallback dark minHeight="100vh" />;
   }
 
   if (!session) {
@@ -214,12 +209,7 @@ export default function App() {
   }
 
   if (profileLoading) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-                     backgroundColor: dark ? "#09090B" : "#FFFFFF", color: dark ? "#FAFAFA" : "#111111", fontFamily: "system-ui" }}>
-        Caricamento…
-      </div>
-    );
+    return <ScreenFallback dark={dark} minHeight="100vh" />;
   }
 
   // Gate di onboarding (SPECIFICA_FUNZIONALE.md § 1, 5): dopo la registrazione,
