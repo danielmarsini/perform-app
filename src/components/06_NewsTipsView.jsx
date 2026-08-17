@@ -434,7 +434,7 @@ function EndOfFeed() {
    6 · LETTURA PROFONDA — ESPANSIONE A TUTTO SCHERMO + CHAT PERFORM AI (con paywall)
    ========================================================================== */
 
-function PerformAIChat({ item, accent, endpoint }) {
+function PerformAIChat({ item, accent, supabase }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -447,7 +447,7 @@ function PerformAIChat({ item, accent, endpoint }) {
 
   const ask = async () => {
     const question = input.trim();
-    if (!question || loading) return;
+    if (!question || loading || !supabase) return;
     setInput("");
     setError(false);
     const nextMessages = [...messages, { role: "user", text: question }];
@@ -455,27 +455,22 @@ function PerformAIChat({ item, accent, endpoint }) {
     setLoading(true);
     try {
       const context = `Titolo: ${item.title}\nSintesi: ${item.body}\nApprofondimento: ${(item.bodyExtended || []).join(" ")}`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 500,
-          system: "Sei PERFORM AI, l'assistente scientifico dell'app PERFORM. Rispondi sempre in italiano, in modo preciso, sobrio e mai sensazionalistico, in massimo 120 parole, basandoti sul contesto dell'articolo fornito. Se la domanda riguarda una situazione medica o di salute personale, ricorda che non sostituisci un medico o il coach e invita a rivolgersi a loro per decisioni individuali.",
-          messages: [
-            ...messages.map((m) => ({ role: m.role, content: m.text })),
-            { role: "user", content: `Contesto dell'articolo:\n${context}\n\nDomanda dell'atleta: ${question}` },
-          ],
-        }),
+      // Il system prompt e il controllo del piano vivono SOLO server-side
+      // (Edge Function ask-perform-ai) — qui si manda solo il contesto
+      // dell'articolo e la cronologia, mai la chiave Anthropic né un
+      // system prompt modificabile dal client.
+      const { data, error: fnError } = await supabase.functions.invoke("ask-perform-ai", {
+        body: {
+          context,
+          question,
+          history: messages.map((m) => ({ role: m.role, text: m.text })),
+        },
       });
-      const data = await res.json();
-      const text = (data?.content || [])
-        .filter((b) => b.type === "text")
-        .map((b) => b.text)
-        .join("\n")
-        .trim();
+      if (fnError) throw fnError;
+      const text = (data?.text || "").trim();
       setMessages((m) => [...m, { role: "assistant", text: text || "Non sono riuscito a elaborare una risposta. Riprova tra poco." }]);
     } catch (e) {
+      console.error("PERFORM: errore chat PERFORM AI", e);
       setError(true);
       setMessages((m) => [...m, { role: "assistant", text: "Connessione non disponibile in questo momento. Riprova tra poco." }]);
     } finally {
@@ -550,7 +545,7 @@ function AIChatPaywall({ accent }) {
   );
 }
 
-function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, saved, onToggleLike, onToggleSave, onClose, aiEndpoint, zIndex = 100 }) {
+function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, saved, onToggleLike, onToggleSave, onClose, supabase, zIndex = 100 }) {
   const showChat = AI_CHAT_CHANNELS.has(channel);
   const expires = channelExpires(channel);
   const aiUnlocked = hasAIAccess(plan);
@@ -598,7 +593,7 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
           </div>
 
           {showChat && (aiUnlocked
-            ? <PerformAIChat item={item} accent={accent} endpoint={aiEndpoint} />
+            ? <PerformAIChat item={item} accent={accent} supabase={supabase} />
             : <AIChatPaywall accent={accent} />)}
         </div>
       </div>
@@ -708,7 +703,7 @@ function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave
    9 · CONTENITORE PRINCIPALE
    ========================================================================== */
 
-export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride, aiEndpoint = "https://api.anthropic.com/v1/messages" }) {
+export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride }) {
   const [active, setActive] = useState("news");
   const [expanded, setExpanded] = useState(null);          // { channel, id } | null
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -797,7 +792,7 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
           onToggleLike={() => feeds[expanded.channel].toggleLike(expandedItem.id)}
           onToggleSave={() => toggleSave(expandedItem, expanded.channel, !!feeds[expanded.channel].likedMine[expandedItem.id])}
           onClose={() => setExpanded(null)}
-          aiEndpoint={aiEndpoint}
+          supabase={supabase}
         />
       )}
 
@@ -819,7 +814,7 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
           onToggleLike={() => toggleVaultLike(readingVaultId)}
           onToggleSave={() => { removeFromVault(readingVaultId); setReadingVaultId(null); }}
           onClose={() => setReadingVaultId(null)}
-          aiEndpoint={aiEndpoint}
+          supabase={supabase}
           zIndex={110}
         />
       )}

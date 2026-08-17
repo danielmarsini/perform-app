@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback, createContext, useContext } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef, createContext, useContext } from "react";
 import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
   AlertTriangle, Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
@@ -2590,6 +2590,112 @@ function AICoPilot({ client, quickTargets, setQuickTargets }) {
   );
 }
 
+/* Editor AI vero (Claude via Edge Function generate-plan) — a differenza del
+   Co-Pilota sopra (regole deterministiche fisse) e di PerformAIDietGenerator
+   più sotto (motore matematico), questa è l'unica sezione che chiama
+   davvero un modello linguistico: il coach descrive in linguaggio libero
+   un feedback/imprevisto/stallo e riceve un consiglio informato dai dati
+   reali del cliente (anamnesi, check, storico peso) e dai Master Prompt del
+   metodo. Non scrive MAI da sola sul piano — il coach legge e applica a
+   mano con ClientTimeline qui sotto, esattamente come richiesto dal punto 6
+   del Master Prompt allenamento ("mai sovrascrivere senza approvazione
+   esplicita"). */
+function AIAdvisorChat({ client }) {
+  const { supabase } = useContext(CoachDataContext);
+  const [kind, setKind] = useState("general");
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const threadRef = useRef(null);
+
+  useEffect(() => {
+    threadRef.current?.scrollTo?.({ top: threadRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, busy]);
+
+  const ask = async () => {
+    const question = input.trim();
+    if (!question || busy || !supabase) return;
+    setInput("");
+    setError("");
+    setMessages((m) => [...m, { role: "user", text: question }]);
+    setBusy(true);
+    try {
+      const clientContext = {
+        nome: client.name,
+        genere: client.gender,
+        piano: client.plan,
+        obiettivo: client.goal,
+        pesoAttuale: client.lastCheck?.weight ?? null,
+        storicoPeso: client.weightHistory ?? [],
+        anamnesi: client._anamnesisAnswers ?? {},
+      };
+      const { data, error: fnError } = await supabase.functions.invoke("generate-plan", {
+        body: { kind, clientContext, question, history: messages.map((m) => ({ role: m.role, text: m.text })) },
+      });
+      if (fnError) throw fnError;
+      setMessages((m) => [...m, { role: "assistant", text: (data?.text || "").trim() || "Non sono riuscito a elaborare una risposta. Riprova." }]);
+    } catch (err) {
+      console.error("PERFORM: errore editor AI coach", err);
+      setError("Non sono riuscito a contattare l'editor AI. Riprova.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="c-card mb-5" style={{ border: "1.5px solid #C5A059" }}>
+      <p className="c-heading font-display font-bold mb-1">💬 Editor AI — chiedi consiglio</p>
+      <p className="c-muted text-xs mb-3">
+        Descrivi un feedback, uno stallo o un imprevisto: risponde con i dati reali di {client.name} e i Master Prompt del metodo.
+        Non applica nulla da sola — leggi e regola tu con l'editor qui sotto.
+      </p>
+
+      <div className="flex gap-1.5 mb-3">
+        {[["general", "Generale"], ["nutrition", "Alimentazione"], ["training", "Allenamento"]].map(([id, lab]) => {
+          const on = kind === id;
+          return (
+            <button key={id} onClick={() => setKind(id)} type="button"
+              className="px-3 py-1.5 rounded-full text-xs font-data font-semibold uppercase"
+              style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+              {lab}
+            </button>
+          );
+        })}
+      </div>
+
+      {messages.length > 0 && (
+        <div ref={threadRef} className="space-y-2 mb-3" style={{ maxHeight: 320, overflowY: "auto" }}>
+          {messages.map((m, i) => (
+            <div key={i} className="text-sm px-3 py-2 rounded-lg" style={m.role === "user"
+              ? { backgroundColor: "#111111", color: "#FFFFFF", marginLeft: "15%" }
+              : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)", marginRight: "5%", whiteSpace: "pre-wrap" }}>
+              {m.text}
+            </div>
+          ))}
+          {busy && (
+            <div className="text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-soft)" }}>
+              Sto pensando…
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</p>}
+
+      <div className="flex gap-2">
+        <input value={input} onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
+          placeholder="Es. Il cliente è fermo da 3 settimane, aderenza alta, cosa faccio?"
+          className="t-input flex-1 px-3 py-2 rounded-lg text-sm" />
+        <button onClick={ask} disabled={busy || !input.trim()} className="c-btn px-4 py-2 rounded-lg text-sm font-medium">
+          Chiedi
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const { supabase, isRealMode } = useContext(CoachDataContext);
   const myQuickTarget = quickTargets?.[client.id];
@@ -3276,6 +3382,7 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
       {tab === "editor" && (
         <div>
           <AICoPilot client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
+          <AIAdvisorChat client={client} />
           <ClientTimeline client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
         </div>
       )}
