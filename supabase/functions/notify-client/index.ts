@@ -35,8 +35,13 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
   if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
-  const { data: callerProfile } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (callerProfile?.role !== "coach") {
+  // NOTA: profiles.role non distingue mai il coach — handle_new_user()
+  // (SCHEMA_v14) scrive sempre 'user' per ogni account, coach incluso: il
+  // controllo sotto tornava SEMPRE 403, anche per il vero coach — bug preso
+  // durante il primo test reale dell'editor AI (stesso schema di
+  // autorizzazione copiato qui). L'unico riconoscimento reale nell'app è
+  // l'email, la stessa costante COACH_EMAIL di 04_AppShell.jsx/App.jsx.
+  if ((user.email || "").trim().toLowerCase() !== "danielmarsini@coach.com") {
     return new Response(JSON.stringify({ error: "forbidden — solo il coach può inviare notifiche" }), { status: 403 });
   }
 

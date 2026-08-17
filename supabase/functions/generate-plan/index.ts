@@ -72,8 +72,11 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
   if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
-  const { data: callerProfile } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (callerProfile?.role !== "coach") {
+  // NOTA: profiles.role non distingue mai il coach — handle_new_user()
+  // (SCHEMA_v14) scrive sempre 'user' per ogni account, coach incluso.
+  // L'unico riconoscimento reale nell'app è l'email, la stessa costante
+  // COACH_EMAIL usata in 04_AppShell.jsx/App.jsx (isCoach).
+  if ((user.email || "").trim().toLowerCase() !== "danielmarsini@coach.com") {
     return new Response(JSON.stringify({ error: "forbidden — solo il coach può usare l'editor AI" }), { status: 403, headers: CORS_HEADERS });
   }
 
