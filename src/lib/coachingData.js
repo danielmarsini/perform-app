@@ -1066,16 +1066,25 @@ export async function fetchMonthlyLeaderboard(supabase, monthKey) {
   if (startError) throw startError;
   if (endResult.error) throw endResult.error;
 
+  // BUG PRESO: prima escludeva dalla classifica chiunque non avesse uno
+  // snapshot di INIZIO mese — ma un cliente iscritto DOPO il cron del 1°
+  // (il caso normale per chi si registra a metà mese) non ha mai quello
+  // snapshot, quindi spariva del tutto dalla classifica del mese in corso
+  // pur guadagnando XP vero in questo momento. Per il mese in corso non
+  // serve nessuno snapshot per essere consultabile: si usa sempre
+  // xp_total live, e chi non ha uno snapshot di partenza parte da 0 (tutto
+  // il suo XP di questo mese è guadagno vero da quando si è iscritto).
   const startMap = new Map((startSnaps ?? []).map((s) => [s.user_id, s.xp_total_at_snapshot]));
-  if (startMap.size === 0) return null; // il cron non è mai girato per questo mese: non consultabile
-
   const endMap = new Map((endResult.data ?? []).map((s) => [s.user_id, s.xp_total_at_snapshot]));
-  if (!isCurrentMonth && endMap.size === 0) return null; // mese chiuso ma senza snapshot finale: non consultabile
+  // Solo un mese CHIUSO senza nemmeno uno snapshot di fine mese resta
+  // davvero non consultabile: senza quello non si può ricostruire nessun
+  // delta storico (il cron di fine mese non è mai girato per quel mese).
+  if (!isCurrentMonth && endMap.size === 0) return null;
 
   const rows = (profiles ?? [])
-    .filter((p) => startMap.has(p.id))
+    .filter((p) => isCurrentMonth || endMap.has(p.id))
     .map((p) => {
-      const start = startMap.get(p.id);
+      const start = startMap.get(p.id) ?? 0;
       const end = isCurrentMonth ? (p.xp_total ?? 0) : (endMap.get(p.id) ?? start);
       return {
         id: p.id,
