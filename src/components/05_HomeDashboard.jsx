@@ -2016,7 +2016,7 @@ export function HomeDashboard({
           onSetTargetOn={onSetTargetOn} onSetTargetOff={onSetTargetOff}
           isTrainingDay={isTrainingDay} onToggleTrainingDay={onToggleTrainingDay}
           waterTarget={waterTarget} onSetWaterTarget={onSetWaterTarget}
-          fullAccess={access.pro} onUpgrade={onUpgrade}
+          fullAccess={access.pro} subsAccess={access.paid} onUpgrade={onUpgrade}
           userPlan={userPlan} gender={profile.gender} waterMl={water}
           digestValue={digestValue}
           onDigestChange={(v) => { setDigestValue(v); onCoachSync && onCoachSync({ type: "bio-symptom", symptom: "digest", value: v }); }}
@@ -3855,7 +3855,7 @@ function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide, substitutions,
   onAddFood, onRemoveFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
   onGenerateSimilar, targetOn, targetOff, onSetTargetOn, onSetTargetOff,
-  isTrainingDay, onToggleTrainingDay, waterTarget, onSetWaterTarget, fullAccess, onUpgrade,
+  isTrainingDay, onToggleTrainingDay, waterTarget, onSetWaterTarget, fullAccess, subsAccess, onUpgrade,
   userPlan, gender, waterMl, digestValue, onDigestChange,
 }) {
   const [tab, setTab] = useState("diary");        // diary è il default
@@ -4197,12 +4197,17 @@ function NutritionTabs({
         </div>
       )}
 
-      {/* ---------------- SOSTITUZIONI + AI (solo Full Coaching) ---------------- */}
+      {/* ---------------- SOSTITUZIONI (Premium e superiori) ----------------
+          A differenza degli altri tab qui sopra (piano scritto dal coach
+          reale, target precisi) le sostituzioni sono un calcolo, non lavoro
+          del coach — su richiesta esplicita, sbloccate anche per chi ha solo
+          Performance Pack, non solo Full Coaching (subsAccess invece di
+          fullAccess, unico tab con questa soglia più bassa). */}
       {tab === "subs" && (
         <div className="spring-in">
-          {!fullAccess ? (
+          {!subsAccess ? (
             <LockedPanel onUpgrade={onUpgrade} accent={accent}
-              text="Le sostituzioni intelligenti e il generatore AI sono parte del Full Coaching: fatti aiutare da un professionista del settore che verifica che ogni scambio rispetti davvero i tuoi macro." />
+              text="Le sostituzioni intelligenti sono incluse dal Performance Pack in su: passa a un piano superiore per sbloccarle." />
           ) : (
             <SubsPanel substitutions={substitutions} accent={accent} accentSoft={accentSoft}
                        accentText={accentText} onGenerateSimilar={onGenerateSimilar} />
@@ -5298,6 +5303,18 @@ function parseGrams(text) {
 /* Genera alternative sempre entro la stessa categoria macro dell'alimento
    richiesto (proteica→proteica, carbo→carbo, lipidica→lipidica), pareggiando
    la grammatura sulla quota del macro dominante. */
+// Sostituzione precisa al grammo: per ogni alternativa nel pool calcola la
+// grammatura ESATTA (arrotondata a 1 g, non più a 5 g) che pareggia la
+// macro dominante dell'alimento originale — è il modo corretto in nutrizione
+// clinica di sostituire una fonte proteica/di carboidrati/di grassi (stessa
+// quota della macro che conta per quella categoria, non le 4 macro a caso:
+// due alimenti diversi hanno rapporti macro diversi, nessuna grammatura di
+// UN SOLO alimento alternativo può pareggiare tutte e 4 le macro insieme a
+// meno che i due alimenti abbiano lo stesso identico rapporto). Fra le
+// alternative possibili, ordina per chi si avvicina di più anche alle
+// CALORIE totali dell'originale — il criterio in più richiesto esplicitamente,
+// non solo la macro dominante — così le prime proposte sono le migliori su
+// entrambi i fronti, non solo le prime del pool in ordine casuale.
 function generateSimilarFood(sourceText) {
   const grams = parseGrams(sourceText);
   const matched = findFoodInText(sourceText);
@@ -5305,25 +5322,37 @@ function generateSimilarFood(sourceText) {
 
   const pool = category === "p" ? PROTEIN_FOODS : category === "c" ? CARB_FOODS : FAT_FOODS;
   const refFood = matched || pool[0];
-  const alternatives = pool.filter((f) => f.name !== refFood.name).slice(0, 3);
-
   const dominantKey = category;
   const refDominantGrams = (refFood[dominantKey] * grams) / 100;
+  const sourceKcal = (refFood.kcal * grams) / 100;
 
-  return alternatives.map((alt) => {
-    const altPer100Dominant = alt[dominantKey];
-    const altGrams = altPer100Dominant > 0
-      ? Math.max(5, Math.round((refDominantGrams / altPer100Dominant) * 100 / 5) * 5)
-      : 100;
-    const scale = altGrams / 100;
+  const candidates = pool
+    .filter((f) => f.name !== refFood.name)
+    .map((alt) => {
+      const altPer100Dominant = alt[dominantKey];
+      const altGrams = altPer100Dominant > 0
+        ? Math.max(1, Math.round((refDominantGrams / altPer100Dominant) * 100))
+        : 100;
+      const scale = altGrams / 100;
+      const altKcal = alt.kcal * scale;
+      return { alt, altGrams, scale, altKcal, kcalDiff: Math.abs(altKcal - sourceKcal) };
+    })
+    .sort((a, b) => a.kcalDiff - b.kcalDiff)
+    .slice(0, 3);
+
+  return candidates.map(({ alt, altGrams, scale, altKcal }) => {
+    const kcalDeltaPct = sourceKcal > 0 ? Math.round((Math.abs(altKcal - sourceKcal) / sourceKcal) * 100) : 0;
+    const kcalNote = kcalDeltaPct <= 3
+      ? "calorie praticamente identiche"
+      : `${Math.round(altKcal)} kcal contro ${Math.round(sourceKcal)} kcal originali`;
     const note = category === "p"
-      ? `Stessa quota proteica (~${Math.round(refDominantGrams)} g), macro secondari leggermente diversi.`
+      ? `Stessa quota proteica (~${Math.round(refDominantGrams)} g), ${kcalNote}. Macro secondari leggermente diversi.`
       : category === "c"
-      ? `Stessa quota di carboidrati (~${Math.round(refDominantGrams)} g), fibre e indice glicemico diversi.`
-      : `Stessa quota di grassi (~${Math.round(refDominantGrams)} g), profilo di grassi (saturi/insaturi) diverso.`;
+      ? `Stessa quota di carboidrati (~${Math.round(refDominantGrams)} g), ${kcalNote}. Fibre e indice glicemico diversi.`
+      : `Stessa quota di grassi (~${Math.round(refDominantGrams)} g), ${kcalNote}. Profilo di grassi (saturi/insaturi) diverso.`;
     return {
       name: alt.name, grams: altGrams,
-      kcal: Math.round(alt.kcal * scale), p: Math.round(alt.p * scale),
+      kcal: Math.round(altKcal), p: Math.round(alt.p * scale),
       c: Math.round(alt.c * scale), f: Math.round(alt.f * scale), note,
     };
   });
