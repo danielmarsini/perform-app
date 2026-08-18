@@ -45,3 +45,38 @@ input, textarea, [contenteditable="true"], [contenteditable=""] {
   user-select: text;
   -webkit-touch-callout: default;
 }
+
+/* Effetto tocco stile iPhone su OGNI pulsante dell'app, non solo quelli già
+   rifiniti a mano (.btn-3d/.c-btn) — una velatura grigia che compare
+   all'istante alla pressione e sparisce al rilascio, come i controlli nativi
+   iOS, invece del rettangolo blu di evidenziazione default del browser.
+   -webkit-tap-highlight-color:transparent toglie quel rettangolo, ::after
+   fornisce la velatura vera: parte da opacity 0, diventa visibile SOLO su
+   :active (mai un flash permanente), sopra al contenuto del bottone ma senza
+   intercettare i click (pointer-events:none). Bottoni che già gestiscono un
+   proprio stato :active via style inline (i pulsanti "on/off" con
+   backgroundColor calcolato a mano) restano intatti: la velatura si somma
+   sopra, non sostituisce nulla sotto. */
+button, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  isolation: isolate;
+}
+button::after, [role="button"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+button:active::after, [role="button"]:active::after {
+  opacity: 0.12;
+  transition: opacity 0.05s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  button::after, [role="button"]::after { transition: none; }
+}
