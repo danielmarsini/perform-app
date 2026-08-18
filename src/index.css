@@ -29,3 +29,19 @@ html, body {
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
 }
+
+/* Il cursore di testo/la selezione non devono poter finire fuori dai campi
+   veri (dita che scivolano su testo statico durante la compilazione di
+   anamnesi/moduli, o il menu "Copia" a comparsa su iPhone con una
+   pressione prolungata su una scritta qualunque). Selezionabile SOLO dentro
+   i campi di input reali — mai sul resto dell'interfaccia. */
+* {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input, textarea, [contenteditable="true"], [contenteditable=""] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
