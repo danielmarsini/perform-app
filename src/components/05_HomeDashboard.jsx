@@ -16,7 +16,7 @@
    Dipende dai token CSS del File 4 (AppShell / DesignSystem).
    ========================================================================== */
 
-import React, { useState, useMemo, useEffect, useId, useRef } from "react";
+import React, { useState, useMemo, useEffect, useId, useRef, useCallback } from "react";
 import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
