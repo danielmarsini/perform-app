@@ -2600,6 +2600,20 @@ function AICoPilot({ client, quickTargets, setQuickTargets }) {
    mano con ClientTimeline qui sotto, esattamente come richiesto dal punto 6
    del Master Prompt allenamento ("mai sovrascrivere senza approvazione
    esplicita"). */
+/* Identità visiva propria di PERFORM AI — stesso simbolo pulse/battito del
+   logo dell'app (public/favicon.svg), oro su nero: stessa icona usata anche
+   in 06_NewsTipsView.jsx (chat clienti), duplicata qui per lo stesso motivo
+   di isolamento file di tutto il resto di questo componente. */
+function PerformAIAvatar({ size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 512 512" style={{ flexShrink: 0 }} aria-hidden="true">
+      <rect width="512" height="512" rx="112" fill="#111111" />
+      <polyline points="118 262 190 262 222 156 290 356 330 262 394 262"
+        fill="none" stroke="#C5A059" strokeWidth="30" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function AIAdvisorChat({ client }) {
   const { supabase } = useContext(CoachDataContext);
   const [kind, setKind] = useState("general");
@@ -2637,7 +2651,14 @@ function AIAdvisorChat({ client }) {
       setMessages((m) => [...m, { role: "assistant", text: (data?.text || "").trim() || "Non sono riuscito a elaborare una risposta. Riprova." }]);
     } catch (err) {
       console.error("PERFORM: errore editor AI coach", err);
-      setError("Non sono riuscito a contattare l'editor AI. Riprova.");
+      // Come per la chat clienti: la Edge Function distingue casi reali
+      // (tetto di sicurezza, domanda troppo lunga) da un errore generico.
+      let friendly = "Non sono riuscito a contattare l'editor AI. Riprova.";
+      try {
+        const body = await err?.context?.json?.();
+        if (body?.error) friendly = body.error;
+      } catch { /* mantieni il messaggio generico */ }
+      setError(friendly);
     } finally {
       setBusy(false);
     }
@@ -2645,7 +2666,9 @@ function AIAdvisorChat({ client }) {
 
   return (
     <div className="c-card mb-5" style={{ border: "1.5px solid #C5A059" }}>
-      <p className="c-heading font-display font-bold mb-1">💬 Editor AI — chiedi consiglio</p>
+      <p className="c-heading font-display font-bold mb-1 flex items-center gap-2">
+        <PerformAIAvatar size={20} /> Editor AI — chiedi consiglio
+      </p>
       <p className="c-muted text-xs mb-3">
         Descrivi un feedback, uno stallo o un imprevisto: risponde con i dati reali di {client.name} e i Master Prompt del metodo.
         Non applica nulla da sola — leggi e regola tu con l'editor qui sotto.
@@ -2667,15 +2690,16 @@ function AIAdvisorChat({ client }) {
       {messages.length > 0 && (
         <div ref={threadRef} className="space-y-2 mb-3" style={{ maxHeight: 320, overflowY: "auto" }}>
           {messages.map((m, i) => (
-            <div key={i} className="text-sm px-3 py-2 rounded-lg" style={m.role === "user"
+            <div key={i} className="text-sm px-3 py-2 rounded-lg flex items-start gap-2" style={m.role === "user"
               ? { backgroundColor: "#111111", color: "#FFFFFF", marginLeft: "15%" }
               : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)", marginRight: "5%", whiteSpace: "pre-wrap" }}>
-              {m.text}
+              {m.role === "assistant" && <PerformAIAvatar size={18} />}
+              <span>{m.text}</span>
             </div>
           ))}
           {busy && (
-            <div className="text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-soft)" }}>
-              Sto pensando…
+            <div className="text-sm px-3 py-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-soft)" }}>
+              <PerformAIAvatar size={18} /> Sto pensando…
             </div>
           )}
         </div>

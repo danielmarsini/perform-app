@@ -60,6 +60,21 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Prezzi reali Claude Sonnet 5 (platform.claude.com/docs, agosto 2026):
+// $2/MTok input, $10/MTok output — stesso tracciamento di ask-perform-ai
+// (SCHEMA_v33), ma qui il tetto è solo una rete di sicurezza contro un
+// loop/bug, non un limite pensato per l'uso normale del coach.
+const COST_PER_INPUT_TOKEN = 2 / 1_000_000;
+const COST_PER_OUTPUT_TOKEN = 10 / 1_000_000;
+const SAFETY_CAP_USD = 10.0;
+const MAX_QUESTION_CHARS = 3000;
+const MAX_HISTORY_MESSAGES = 10;
+
+function currentMonthKey() {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: CORS_HEADERS });
@@ -84,13 +99,26 @@ Deno.serve(async (req) => {
   if (!question || typeof question !== "string") {
     return new Response(JSON.stringify({ error: "question mancante" }), { status: 400, headers: CORS_HEADERS });
   }
+  if (question.length > MAX_QUESTION_CHARS) {
+    return new Response(JSON.stringify({ error: `Domanda troppo lunga (massimo ${MAX_QUESTION_CHARS} caratteri) — riformulala in modo più diretto.` }), { status: 400, headers: CORS_HEADERS });
+  }
   const system = kind === "nutrition" ? NUTRITION_MASTER_PROMPT : kind === "training" ? TRAINING_MASTER_PROMPT : GENERAL_MASTER_PROMPT;
+
+  // Tetto di sicurezza generoso (nessun costo per il cliente qui, è uno
+  // strumento del coach) — serve solo a bloccare un loop/bug che chiamasse
+  // Claude senza controllo, non a limitare l'uso normale.
+  const month = currentMonthKey();
+  const { data: usageRow } = await admin.from("ai_usage_monthly").select("cost_usd, requests").eq("user_id", user.id).eq("month", month).maybeSingle();
+  const spentSoFar = Number(usageRow?.cost_usd ?? 0);
+  if (spentSoFar >= SAFETY_CAP_USD) {
+    return new Response(JSON.stringify({ error: `Raggiunto il tetto di sicurezza mensile dell'editor AI (${SAFETY_CAP_USD}$) — si azzera il 1° del prossimo mese.` }), { status: 429, headers: CORS_HEADERS });
+  }
 
   try {
     const messages = [
-      ...(Array.isArray(history) ? history : []).slice(-10).map((m) => ({
+      ...(Array.isArray(history) ? history : []).slice(-MAX_HISTORY_MESSAGES).map((m) => ({
         role: m.role === "assistant" ? "assistant" : "user",
-        content: String(m.text || ""),
+        content: String(m.text || "").slice(0, MAX_QUESTION_CHARS),
       })),
       {
         role: "user",
@@ -110,6 +138,12 @@ Deno.serve(async (req) => {
       .map((b) => b.text)
       .join("\n")
       .trim();
+
+    const cost = response.usage.input_tokens * COST_PER_INPUT_TOKEN + response.usage.output_tokens * COST_PER_OUTPUT_TOKEN;
+    await admin.from("ai_usage_monthly").upsert(
+      { user_id: user.id, month, cost_usd: spentSoFar + cost, requests: Number(usageRow?.requests ?? 0) + 1, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,month" }
+    );
 
     return new Response(JSON.stringify({ text }), { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
   } catch (err) {

@@ -434,6 +434,20 @@ function EndOfFeed() {
    6 · LETTURA PROFONDA — ESPANSIONE A TUTTO SCHERMO + CHAT PERFORM AI (con paywall)
    ========================================================================== */
 
+/* Identità visiva propria di PERFORM AI — stesso simbolo pulse/battito del
+   logo dell'app (public/favicon.svg), oro su nero: anche se sotto gira
+   Anthropic, in chat non deve mai sembrare un widget generico "powered by
+   Claude", ma un prodotto PERFORM con la sua faccia. */
+function PerformAIAvatar({ size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 512 512" style={{ flexShrink: 0 }} aria-hidden="true">
+      <rect width="512" height="512" rx="112" fill="#111111" />
+      <polyline points="118 262 190 262 222 156 290 356 330 262 394 262"
+        fill="none" stroke="#C5A059" strokeWidth="30" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function PerformAIChat({ item, accent, supabase }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -471,8 +485,17 @@ function PerformAIChat({ item, accent, supabase }) {
       setMessages((m) => [...m, { role: "assistant", text: text || "Non sono riuscito a elaborare una risposta. Riprova tra poco." }]);
     } catch (e) {
       console.error("PERFORM: errore chat PERFORM AI", e);
+      // La Edge Function distingue casi reali (limite mensile raggiunto,
+      // domanda troppo lunga) da un errore generico — recupero il messaggio
+      // vero dal corpo della risposta invece di mostrare sempre lo stesso
+      // "riprova tra poco" anche quando il motivo è chiaro e diverso.
+      let friendly = "Connessione non disponibile in questo momento. Riprova tra poco.";
+      try {
+        const body = await e?.context?.json?.();
+        if (body?.error) friendly = body.error;
+      } catch { /* mantieni il messaggio generico */ }
       setError(true);
-      setMessages((m) => [...m, { role: "assistant", text: "Connessione non disponibile in questo momento. Riprova tra poco." }]);
+      setMessages((m) => [...m, { role: "assistant", text: friendly }]);
     } finally {
       setLoading(false);
     }
@@ -480,17 +503,19 @@ function PerformAIChat({ item, accent, supabase }) {
 
   return (
     <div className="ai-chat" onClick={(e) => e.stopPropagation()}>
-      <p className="ai-chat-label">💬 Fai una domanda a PERFORM AI su questo studio</p>
+      <p className="ai-chat-label"><PerformAIAvatar size={16} /> Fai una domanda a PERFORM AI su questo studio</p>
 
       {messages.length > 0 && (
         <div className="ai-chat-thread" ref={threadRef}>
           {messages.map((m, i) => (
             <div key={i} className={`ai-bubble ${m.role}`} style={m.role === "user" ? { "--accent": accent } : undefined}>
-              {m.text}
+              {m.role === "assistant" && <PerformAIAvatar size={18} />}
+              <span>{m.text}</span>
             </div>
           ))}
           {loading && (
             <div className="ai-bubble assistant ai-typing" aria-label="PERFORM AI sta scrivendo">
+              <PerformAIAvatar size={18} />
               <span /><span /><span />
             </div>
           )}
@@ -965,9 +990,9 @@ export function NewsTipsViewStyles() {
 
       /* PERFORM AI — chat minimale coordinata (sbloccata) */
       .ai-chat { margin-top: 2rem; padding-top: 1.6rem; border-top: 1px solid var(--line); }
-      .ai-chat-label { font-size: 0.82rem; font-weight: 600; color: var(--ink); margin-bottom: 0.9rem; }
+      .ai-chat-label { font-size: 0.82rem; font-weight: 600; color: var(--ink); margin-bottom: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
       .ai-chat-thread { display: flex; flex-direction: column; gap: 0.6rem; max-height: 260px; overflow-y: auto; margin-bottom: 0.9rem; }
-      .ai-bubble { font-size: 0.88rem; line-height: 1.6; padding: 0.7rem 1rem; border-radius: 1rem; max-width: 88%; }
+      .ai-bubble { font-size: 0.88rem; line-height: 1.6; padding: 0.7rem 1rem; border-radius: 1rem; max-width: 88%; display: flex; align-items: flex-start; gap: 0.55rem; }
       .ai-bubble.user {
         align-self: flex-end; background: color-mix(in srgb, var(--accent, #D4AF37) 16%, transparent);
         color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent, #D4AF37) 40%, transparent);
