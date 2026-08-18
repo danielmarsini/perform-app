@@ -5400,8 +5400,17 @@ export default function HomePreview({
       ? [{ name: "Avena in Fiocchi", grams: 60, kcal: 222, p: 8, c: 36, f: 4 }] : [] }), {})
   );
   const [sets, setSets] = useState({});
-  const [sleep, setSleep] = useState({ start: "23:30", end: "07:00", hours: 7.5 });
-  const [steps, setSteps] = useState("6400");
+  // BUG PRESO: questi due partivano sempre con un seed plausibile (7.5h,
+  // 6400 passi) anche in modalità reale — il salvataggio automatico qui
+  // sotto (riga ~5540) li scriveva nel database come se il cliente li
+  // avesse davvero inseriti, ogni giorno, a prescindere. Ora il seed vive
+  // SOLO in anteprima isolata (nessun supabase/userId reali); un account
+  // vero parte vuoto finché non arriva un dato vero (manuale o dal fetch
+  // sotto) — coerente con "mai un numero inventato" già scritto qui sotto.
+  const [sleep, setSleep] = useState(
+    (supabaseProp && userId) ? { start: "", end: "", hours: 0 } : { start: "23:30", end: "07:00", hours: 7.5 }
+  );
+  const [steps, setSteps] = useState((supabaseProp && userId) ? "" : "6400");
   // Sonno/passi reali: seed di "oggi" (se già registrato) e storico dal DB.
   // useState({}) invece di null: distingue "non ancora caricato" (nessuna
   // chiave) da "caricato, niente di registrato in questi 49 giorni" (chiavi

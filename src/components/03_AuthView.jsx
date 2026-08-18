@@ -577,9 +577,15 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
           boxShadow: cardShadow,
         }}
       >
+        {/* Firma discreta lungo il bordo, non più un sottotitolo in cima alla
+            card — leggibile inclinando la testa, presenza minima. */}
         <span
           className="absolute uppercase"
-          style={{ top: 16, right: 20, color: soft, fontSize: "0.5rem", fontWeight: 300, fontStyle: "italic", letterSpacing: "0.04em" }}
+          style={{
+            top: "50%", right: 6, color: soft, fontSize: "0.46rem", fontWeight: 300, fontStyle: "italic",
+            letterSpacing: "0.08em", writingMode: "vertical-rl", transform: "translateY(-50%) rotate(180deg)",
+            whiteSpace: "nowrap", opacity: 0.55,
+          }}
         >
           Evidence-Based Method by D. Marsini
         </span>
@@ -857,9 +863,15 @@ export function LegalConsents({ dark = false, onAccept, onBack }) {
         }
       `}</style>
       <div className="max-w-lg mx-auto spring-in relative">
+        {/* Firma discreta lungo il bordo, non più un sottotitolo in cima alla
+            card — leggibile inclinando la testa, presenza minima. */}
         <span
           className="absolute uppercase"
-          style={{ top: 0, right: 8, color: soft, fontSize: "0.5rem", fontWeight: 300, fontStyle: "italic", letterSpacing: "0.04em" }}
+          style={{
+            top: "50%", right: 6, color: soft, fontSize: "0.46rem", fontWeight: 300, fontStyle: "italic",
+            letterSpacing: "0.08em", writingMode: "vertical-rl", transform: "translateY(-50%) rotate(180deg)",
+            whiteSpace: "nowrap", opacity: 0.55,
+          }}
         >
           Evidence-Based Method by D. Marsini
         </span>
