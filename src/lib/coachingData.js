@@ -795,31 +795,59 @@ export async function fetchClientList(supabase) {
    current_streak (letti altrove: fetchClientList, fetchClientRoster, roster
    coach) così la classifica globale può leggerli con una sola query invece
    di ricalcolare la formula per ogni atleta. */
-export const XP_LEVELS = [
-  { level: 0, minXp: 0,     title: "RECRUIT",       icon: "🌱" },
-  { level: 1, minXp: 1000,  title: "HARDWORKER",    icon: "💪" },
-  { level: 2, minXp: 3000,  title: "IRON MIND",     icon: "🧠" },
-  { level: 3, minXp: 7000,  title: "BIO-HACKER",    icon: "🧬" },
-  { level: 4, minXp: 15000, title: "LIVELLO ÉLITE", icon: "🏆" },
+// Livelli INFINITI (non più un tetto fisso a 5): la soglia XP di ogni
+// livello RADDOPPIA rispetto all'incremento precedente — stessa identica
+// progressione già in uso prima (1000/3000/7000/15000, incrementi
+// 1000/2000/4000/8000, ognuno il doppio del precedente), qui estesa
+// all'infinito con la formula chiusa 1000·(2^n − 1) invece di fermarsi al
+// 5° livello. Un cliente già a livello 4 vede lo stesso identico numero di
+// prima; da lì in poi il livello continua a salire, sempre più lentamente
+// in termini di XP-per-livello percepito, mai un tetto raggiunto.
+function levelMinXp(level) {
+  return level <= 0 ? 0 : Math.round(1000 * (2 ** level - 1));
+}
+
+// Nomi raggruppati in "tier" da 5 sotto-livelli ciascuno (Recluta 1..5,
+// Costruttore 1..5, ...); una volta esaurito l'ultimo tier (Immortale) il
+// numero continua a crescere all'infinito invece di richiedere un nome
+// nuovo per ogni livello possibile — è così che restano davvero infiniti.
+const LEVEL_TIERS = [
+  { title: "Recluta", icon: "🌱" },
+  { title: "Costruttore", icon: "🔨" },
+  { title: "Combattente", icon: "🥊" },
+  { title: "Guerriero", icon: "⚔️" },
+  { title: "Atleta d'Élite", icon: "🏆" },
+  { title: "Predatore", icon: "🐺" },
+  { title: "Leggenda", icon: "👑" },
+  { title: "Immortale", icon: "⚡" },
 ];
+const LEVELS_PER_TIER = 5;
+function levelTitleAndIcon(level) {
+  const tierIdx = Math.min(Math.floor(level / LEVELS_PER_TIER), LEVEL_TIERS.length - 1);
+  const tier = LEVEL_TIERS[tierIdx];
+  const subLevel = level - tierIdx * LEVELS_PER_TIER + 1;
+  return { title: `${tier.title} ${subLevel}`, icon: tier.icon };
+}
 
 // XP totale → { level, title, icon, xpInLevel, xpNeeded, isMaxLevel }. Usata
 // sia in Home che in Profilo che nel pannello coach — mai un secondo calcolo.
+// isMaxLevel resta sempre false: non c'è più un livello massimo.
 export function xpToLevelInfo(xpTotal) {
   const xp = Math.max(0, Number(xpTotal) || 0);
-  let idx = 0;
-  for (let i = 0; i < XP_LEVELS.length; i++) { if (xp >= XP_LEVELS[i].minXp) idx = i; }
-  const cur = XP_LEVELS[idx];
-  const next = XP_LEVELS[idx + 1] || null;
+  let level = 0;
+  while (levelMinXp(level + 1) <= xp) level++;
+  const { title, icon } = levelTitleAndIcon(level);
+  const curMin = levelMinXp(level);
+  const nextMin = levelMinXp(level + 1);
   return {
-    level: cur.level,
-    title: cur.title,
-    icon: cur.icon,
+    level,
+    title,
+    icon,
     xp,
-    xpInLevel: xp - cur.minXp,
-    xpNeeded: next ? next.minXp - xp : 0,
-    xpForNextLevel: next ? next.minXp - cur.minXp : null,
-    isMaxLevel: !next,
+    xpInLevel: xp - curMin,
+    xpNeeded: nextMin - xp,
+    xpForNextLevel: nextMin - curMin,
+    isMaxLevel: false,
   };
 }
 
