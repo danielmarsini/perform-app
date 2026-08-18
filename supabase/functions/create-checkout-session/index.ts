@@ -35,7 +35,7 @@ function resolveBase(origin) {
   if (origin) {
     try {
       const u = new URL(origin);
-      if (u.hostname === "localhost" || u.hostname.endsWith(".vercel.app")) return origin;
+      if (u.hostname === "localhost" || u.hostname.endsWith(".vercel.app") || u.hostname === "performlab.it" || u.hostname === "www.performlab.it") return origin;
     } catch { /* origin non valido, ignora e usa il default */ }
   }
   return APP_URL;
