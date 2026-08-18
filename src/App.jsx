@@ -255,6 +255,7 @@ export default function App() {
               gender={gender}
               dark={dark}
               planTier={userPlan}
+              isOwner={isCoach}
               supabase={supabase}
               userId={session.user.id}
               profileOverride={{
@@ -269,7 +270,7 @@ export default function App() {
               supabase={supabase}
               seeds={SEED_NEWS_TIPS}
               genderOverride={gender}
-              planOverride={userPlan}
+              planOverride={isCoach ? "full_coaching" : userPlan}
             />
           ),
           // CoachDashboard non ha ancora una prop surface: resta un'isola

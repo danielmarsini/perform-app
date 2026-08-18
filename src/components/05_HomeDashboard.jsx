@@ -6016,6 +6016,7 @@ export default function HomePreview({
   dark: darkProp,
   onToggleDark: onToggleDarkProp,
   planTier: planProp,      // 'free' | 'performance_pack' | 'full_coaching' — mappato da App.jsx (Supabase, qui simulato)
+  isOwner,                 // true solo per danielmarsini@coach.com (App.jsx) — il proprietario non ha bisogno di abbonamenti
   profileOverride,         // { name, nickname } dalla sessione reale, sostituisce i valori di preview
   supabase: supabaseProp,  // se passato insieme a userId, sostituisce scheda/target finti con quelli reali assegnati dal coach
   userId,
@@ -6364,7 +6365,11 @@ export default function HomePreview({
     ? { weekday: todayWeekdayIdx, weekNumber: null, isTraining: exercises.length > 0, sessionLabel: exercises[0]?.splitLabel || "", dayNumber: null, mesociclo: null, mesocicloWeeks: null }
     : { weekday: 0, weekNumber: 3, isTraining: isTrainingDay, sessionLabel: "Upper A — Spinta", dayNumber: 15, mesociclo: 2, mesocicloWeeks: 4 };
 
-  const access = { nutrition: true, recovery: true, pro: planTier === "PRO", paid: planTier === "BASE" || planTier === "PRO" };
+  // Il proprietario (danielmarsini@coach.com) vede sempre tutto sbloccato:
+  // non è un cliente, non ha un piano da rispettare, ogni gate va bypassato.
+  const access = isOwner
+    ? { nutrition: true, recovery: true, pro: true, paid: true }
+    : { nutrition: true, recovery: true, pro: planTier === "PRO", paid: planTier === "BASE" || planTier === "PRO" };
 
   const generateSimilar = (sourceText) =>
     new Promise((res) => setTimeout(() => res(generateSimilarFood(sourceText)), 900));
