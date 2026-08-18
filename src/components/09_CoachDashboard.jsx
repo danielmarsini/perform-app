@@ -208,6 +208,7 @@ import {
   awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange, fetchClientPauses,
   fetchMesocycleWeeksRange, saveMesocycleWeek,
   renameClient, adminResetPassword, adminDeleteAccount,
+  fetchCheckins, saveCheckin, getCheckinPhotoUrl,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3996,40 +3997,46 @@ function predictiveBadge(client, history) {
   return null;
 }
 
-/* Contorno di verdura fisso, foto Fronte/Lato/Retro a sinistra (check di
-   circa un mese fa, offset -4 settimane) e a destra (oggi). Placeholder
-   onesto come sempre: nessuna foto reale caricata in questa anteprima. */
+/* Slot singolo foto (silhouette vuota se il check non ha quella foto). */
+function PhotoCompareSlot({ shot, angle, fieldKey, accentBorder }) {
+  const url = shot?.[fieldKey];
+  return (
+    <div className="t-inner overflow-hidden flex items-center justify-center" style={{ aspectRatio: "3/4", borderStyle: url ? "solid" : "dashed", borderColor: url ? "var(--line)" : accentBorder }}>
+      {url ? <img src={url} alt={angle} className="w-full h-full object-cover" />
+           : <p className="c-muted text-[10px] text-center">📷<br />{angle}</p>}
+    </div>
+  );
+}
+
+/* Confronto Check Storico vs Oggi: foto reali da Supabase Storage
+   (checkin-photos, v36) tramite URL firmati, silhouette vuota per gli
+   angoli senza foto — mai un'immagine inventata. */
 function PhotoCompareBoard({ history }) {
   const sorted = [...history].sort((a, b) => (a.date < b.date ? 1 : -1));
   const today = sorted[0];
-  const monthAgo = sorted[Math.min(4, sorted.length - 1)];
-  const angles = ["Fronte", "Lato", "Retro"];
+  // Confronto col check con foto più vecchio disponibile fra gli ultimi 5,
+  // non semplicemente "5 posizioni fa": in modalità reale i check con foto
+  // sono sparsi, un indice fisso spesso cadrebbe su un check senza foto.
+  const withPhotos = sorted.filter((h) => h.hasPhotos);
+  const monthAgo = withPhotos.length > 1 ? withPhotos[withPhotos.length - 1] : sorted[Math.min(4, sorted.length - 1)];
+  const angles = [["Fronte", "photoFront"], ["Lato", "photoSide"], ["Retro", "photoBack"]];
   return (
     <div className="c-card">
       <p className="c-label mb-3">Plancia comparativa foto — Check Storico ({monthAgo.date}) vs Oggi ({today.date})</p>
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <p className="font-data text-[11px] uppercase mb-2 text-center" style={{ color: "var(--ink-soft)" }}>Mese scorso</p>
+          <p className="font-data text-[11px] uppercase mb-2 text-center" style={{ color: "var(--ink-soft)" }}>Check storico</p>
           <div className="grid grid-cols-3 gap-1.5">
-            {angles.map((a) => (
-              <div key={a} className="t-inner flex items-center justify-center py-6" style={{ borderStyle: "dashed" }}>
-                <p className="c-muted text-[10px] text-center">📷<br />{a}</p>
-              </div>
-            ))}
+            {angles.map(([a, k]) => <PhotoCompareSlot key={a} shot={monthAgo} angle={a} fieldKey={k} accentBorder="var(--line)" />)}
           </div>
         </div>
         <div>
           <p className="font-data text-[11px] uppercase mb-2 text-center" style={{ color: "var(--ink)", fontWeight: 600 }}>Oggi</p>
           <div className="grid grid-cols-3 gap-1.5">
-            {angles.map((a) => (
-              <div key={a} className="t-inner flex items-center justify-center py-6" style={{ borderStyle: "dashed", borderColor: "#C5A059" }}>
-                <p className="c-muted text-[10px] text-center">📷<br />{a}</p>
-              </div>
-            ))}
+            {angles.map(([a, k]) => <PhotoCompareSlot key={a} shot={today} angle={a} fieldKey={k} accentBorder="#C5A059" />)}
           </div>
         </div>
       </div>
-      <p className="c-muted text-[10px] mt-3">Le foto reali arrivano da Supabase Storage — qui non esistono ancora upload, quindi mostro il posto dove compariranno invece di inventarle.</p>
     </div>
   );
 }
@@ -4082,28 +4089,106 @@ function QuickDietEditPanel({ client, quickTargets, setQuickTargets, onOpenTimel
 }
 
 function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }) {
-  const [history, setHistory] = useState(() => buildCheckHistory(client));
+  const { supabase, isRealMode } = useContext(CoachDataContext);
+  // BUG PRESO: in modalità reale client.evening/client.waistCm non esistono
+  // (fetchClientRoster non li produce, sono campi solo del roster demo) —
+  // l'inizializzatore di useState leggeva client.evening.digestione e andava
+  // in crash SEMPRE che un coach aprisse "Check Settimanali" su un cliente
+  // vero. Sostituito con dati reali da checkins (coachingData.js), con lo
+  // stesso gate di REAL_COACHING_PLANS usato per "In Attesa": Free/Premium
+  // restano privati, mai mostrati qui — solo chi paga un piano di coaching
+  // reale finisce nel Registro Check del coach.
+  const isPaidCoaching = REAL_COACHING_PLANS.has(client.plan);
+  const [realHistory, setRealHistory] = useState(null); // null = non ancora caricato
+  const [demoHistory, setDemoHistory] = useState(() => (isRealMode ? [] : buildCheckHistory(client)));
   const [form, setForm] = useState({
-    weight: client.lastCheck.weight, waistCm: client.waistCm,
-    dolori: 0, stress: client.lastCheck.stress, digestione: client.evening.digestione, sonno: client.evening.sonno,
+    weight: "", waistCm: "", dolori: 0, stress: 0, digestione: 0, sonno: 0,
     cyclePhase: client.gender === "F" ? CYCLE_PHASES[0] : null,
   });
+  const [savingCheck, setSavingCheck] = useState(false);
+
+  const loadReal = useCallback(() => {
+    if (!isRealMode || !isPaidCoaching) return;
+    fetchCheckins(supabase, client.id)
+      .then(async (rows) => {
+        const mapped = await Promise.all(rows.map(async (c) => ({
+          id: c.date, date: c.date,
+          weight: c.weight != null ? Number(c.weight) : null,
+          waistCm: c.waist != null ? Number(c.waist) : null,
+          hasPhotos: c.has_photos,
+          photoFront: c.has_photos ? await getCheckinPhotoUrl(supabase, c.photo_front_url) : null,
+          photoSide: c.has_photos ? await getCheckinPhotoUrl(supabase, c.photo_side_url) : null,
+          photoBack: c.has_photos ? await getCheckinPhotoUrl(supabase, c.photo_back_url) : null,
+          dolori: c.pain, stress: c.stress, digestione: c.digestion, sonno: c.sleep_quality,
+          cyclePhase: c.cycle_phase,
+        })));
+        setRealHistory(mapped.filter((h) => h.weight != null));
+      })
+      .catch((err) => { console.error("PERFORM: errore caricamento check reali (coach)", err); setRealHistory([]); });
+  }, [isRealMode, isPaidCoaching, supabase, client.id]);
+  useEffect(() => { loadReal(); }, [loadReal]);
+
+  const history = isRealMode ? (realHistory ?? []) : demoHistory;
   const sorted = [...history].sort((a, b) => (a.date < b.date ? 1 : -1));
   const latest = sorted[0], previous = sorted[1];
   const avg5 = average(history.slice(-5).map((h) => h.weight));
   const delta = previous ? latest.weight - previous.weight : 0;
-  const badge = predictiveBadge(client, history);
+  const badge = latest ? predictiveBadge(client, history) : null;
 
-  const registerCheck = () => {
+  const registerCheck = async () => {
     const w = Number(form.weight), waist = Number(form.waistCm);
     if (!w || w <= 0) return;
+    if (isRealMode) {
+      setSavingCheck(true);
+      try {
+        await saveCheckin(supabase, client.id, {
+          weight: w, waist: waist || null,
+          pain: form.dolori || null, stress: form.stress || null, digestion: form.digestione || null,
+          sleepQuality: form.sonno || null, cyclePhase: client.gender === "F" ? form.cyclePhase : null,
+        });
+        loadReal();
+      } catch (err) {
+        console.error("PERFORM: errore salvataggio check (coach)", err);
+      } finally {
+        setSavingCheck(false);
+      }
+      return;
+    }
     const nextMonday = addWeeksToDate(mondayOf(new Date()), 1);
-    setHistory((h) => [...h, {
+    setDemoHistory((h) => [...h, {
       id: uid(), date: nextMonday.toISOString().slice(0, 10), weight: w, waistCm: waist || client.waistCm, hasPhotos: true,
       dolori: Number(form.dolori) || 0, stress: Number(form.stress) || 0, digestione: Number(form.digestione) || 0, sonno: Number(form.sonno) || 0,
       cyclePhase: client.gender === "F" ? form.cyclePhase : null,
     }]);
   };
+
+  if (isRealMode && !isPaidCoaching) {
+    return (
+      <div className="c-card">
+        <p className="c-heading font-display font-bold mb-2">Check privati</p>
+        <p className="c-muted text-sm leading-relaxed">
+          {client.name} ha il piano Free/Premium: i suoi check restano nei dati personali dell'atleta e non sono
+          condivisi automaticamente con te. Passano al Registro Check solo con un piano a coaching reale
+          (Scheda Personalizzata, Coaching Allenamento, Full Coaching).
+        </p>
+      </div>
+    );
+  }
+
+  if (isRealMode && realHistory === null) {
+    return <div className="c-card"><p className="c-muted text-sm">Caricamento check…</p></div>;
+  }
+
+  if (isRealMode && history.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="c-card">
+          <p className="c-muted text-sm">{client.name} non ha ancora registrato nessun check.</p>
+        </div>
+        <RegisterCheckForm form={form} setForm={setForm} client={client} onSubmit={registerCheck} busy={savingCheck} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -4133,7 +4218,7 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
           </div>
           <div className="t-inner px-3 py-2 text-center">
             <p className="c-label mb-0.5">Vita</p>
-            <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{latest.waistCm} cm</p>
+            <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{latest.waistCm != null ? `${latest.waistCm} cm` : "—"}</p>
           </div>
         </div>
         <LineChart points={history} xLabel={(p) => { const d = new Date(p.date); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; }}
@@ -4151,13 +4236,15 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
           {[["Dolori / fastidi", latest.dolori], ["Stress percepito", latest.stress], ["Digestione", latest.digestione], ["Qualità del sonno", latest.sonno]].map(([lab, v]) => (
             <div key={lab} className="t-inner px-2.5 py-2.5 text-center">
               <p className="c-label mb-1">{lab}</p>
-              <p className="font-data text-lg font-bold" style={{ color: v >= 7 ? "#DC2626" : v >= 4 ? "#F0A020" : "#10B981" }}>{v}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}>/10</span></p>
+              <p className="font-data text-lg font-bold" style={{ color: v == null ? "var(--ink-soft)" : v >= 7 ? "#DC2626" : v >= 4 ? "#F0A020" : "#10B981" }}>
+                {v == null ? "—" : <>{v}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}>/10</span></>}
+              </p>
             </div>
           ))}
           {client.gender === "F" && (
             <div className="t-inner px-2.5 py-2.5 text-center">
               <p className="c-label mb-1">Fase del ciclo</p>
-              <p className="font-data text-sm font-bold" style={{ color: "#E5C1CD" }}>{latest.cyclePhase}</p>
+              <p className="font-data text-sm font-bold" style={{ color: "#E5C1CD" }}>{latest.cyclePhase || "—"}</p>
             </div>
           )}
         </div>
@@ -4165,37 +4252,7 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
 
       <QuickDietEditPanel client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} onOpenTimeline={onSwitchToEditor} />
 
-      <div className="c-card">
-        <p className="c-label mb-3">Registra un nuovo check (per conto dell'atleta)</p>
-        <div className="flex gap-2.5 flex-wrap mb-3">
-          <label className="flex-1 min-w-[120px]">
-            <span className="c-label block mb-1">Peso (kg)</span>
-            <input type="number" step="0.1" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
-          </label>
-          <label className="flex-1 min-w-[120px]">
-            <span className="c-label block mb-1">Vita (cm)</span>
-            <input type="number" step="0.5" value={form.waistCm} onChange={(e) => setForm({ ...form, waistCm: e.target.value })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
-          </label>
-        </div>
-        <p className="c-label mb-2">Quello che i dati da soli non dicono</p>
-        <div className="grid grid-cols-2 gap-2.5 mb-3">
-          {[["dolori", "Dolori / fastidi (1-10)"], ["stress", "Stress percepito (1-10)"], ["digestione", "Digestione (1-10)"], ["sonno", "Qualità del sonno (1-10)"]].map(([k, lab]) => (
-            <label key={k}>
-              <span className="c-label block mb-1">{lab}</span>
-              <input type="number" min={0} max={10} value={form[k]} onChange={(e) => setForm({ ...form, [k]: Math.max(0, Math.min(10, Number(e.target.value) || 0)) })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
-            </label>
-          ))}
-        </div>
-        {client.gender === "F" && (
-          <label className="block mb-3">
-            <span className="c-label block mb-1">Fase del ciclo (facoltativo)</span>
-            <select value={form.cyclePhase} onChange={(e) => setForm({ ...form, cyclePhase: e.target.value })} className="t-input w-full text-sm rounded-md px-3 py-2">
-              {CYCLE_PHASES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </label>
-        )}
-        <button onClick={registerCheck} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium">Registra check di lunedì prossimo</button>
-      </div>
+      <RegisterCheckForm form={form} setForm={setForm} client={client} onSubmit={registerCheck} busy={savingCheck} />
 
       <div className="c-card">
         <p className="c-label mb-3">Storico completo ({history.length} check)</p>
@@ -4208,13 +4265,51 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
                 <span className="font-data text-xs" style={{ color: "var(--ink-soft)" }}>{h.date}</span>
                 <span className="font-data text-xs font-bold" style={{ color: "var(--ink)" }}>{h.weight} kg</span>
                 <span className="font-data text-xs" style={{ color: d <= 0 ? "#10B981" : "#F0A020" }}>{prev ? `${d > 0 ? "+" : ""}${d.toFixed(1)}` : "—"}</span>
-                <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>{h.waistCm} cm</span>
+                <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>{h.waistCm != null ? `${h.waistCm} cm` : "—"}</span>
                 <span className="text-xs" title="Foto disponibili">{h.hasPhotos ? "📷" : "—"}</span>
               </div>
             );
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+function RegisterCheckForm({ form, setForm, client, onSubmit, busy }) {
+  return (
+    <div className="c-card">
+      <p className="c-label mb-3">Registra un nuovo check (per conto dell'atleta)</p>
+      <div className="flex gap-2.5 flex-wrap mb-3">
+        <label className="flex-1 min-w-[120px]">
+          <span className="c-label block mb-1">Peso (kg)</span>
+          <input type="number" step="0.1" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
+        </label>
+        <label className="flex-1 min-w-[120px]">
+          <span className="c-label block mb-1">Vita (cm)</span>
+          <input type="number" step="0.5" value={form.waistCm} onChange={(e) => setForm({ ...form, waistCm: e.target.value })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
+        </label>
+      </div>
+      <p className="c-label mb-2">Quello che i dati da soli non dicono (facoltativo)</p>
+      <div className="grid grid-cols-2 gap-2.5 mb-3">
+        {[["dolori", "Dolori / fastidi (1-10)"], ["stress", "Stress percepito (1-10)"], ["digestione", "Digestione (1-10)"], ["sonno", "Qualità del sonno (1-10)"]].map(([k, lab]) => (
+          <label key={k}>
+            <span className="c-label block mb-1">{lab}</span>
+            <input type="number" min={0} max={10} value={form[k]} onChange={(e) => setForm({ ...form, [k]: Math.max(0, Math.min(10, Number(e.target.value) || 0)) })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
+          </label>
+        ))}
+      </div>
+      {client.gender === "F" && (
+        <label className="block mb-3">
+          <span className="c-label block mb-1">Fase del ciclo (facoltativo)</span>
+          <select value={form.cyclePhase} onChange={(e) => setForm({ ...form, cyclePhase: e.target.value })} className="t-input w-full text-sm rounded-md px-3 py-2">
+            {CYCLE_PHASES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </label>
+      )}
+      <button onClick={onSubmit} disabled={busy} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium disabled:opacity-50">
+        {busy ? "Registrazione…" : "Registra per conto dell'atleta"}
+      </button>
     </div>
   );
 }

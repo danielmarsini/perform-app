@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 
@@ -1049,31 +1049,40 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
   const [digestion, setDigestion] = useState("");
   const [sleepQuality, setSleepQuality] = useState("");
   const [cyclePhase, setCyclePhase] = useState("");
-  const [photos, setPhotos] = useState({ front: null, side: null, back: null });
+  const [photos, setPhotos] = useState({ front: null, side: null, back: null }); // { file, preview }
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const isRealMode = Boolean(supabase && userId);
+  // Check obbligatorio di domenica/lunedì (onClose assente): tutti i campi
+  // servono davvero al coach ogni settimana. "Registra" libero nell'Archivio
+  // Check (onClose presente): serve poter loggare anche solo il peso di oggi
+  // senza dover per forza valutare dolori/stress/digestione/sonno — prima
+  // richiedeva TUTTI gli 8 campi anche qui, ed è il motivo per cui il
+  // pulsante sembrava "non funzionare": restava disabilitato in silenzio.
+  const isFreeMode = !!onClose;
 
   const handlePhoto = (key) => (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setPhotos((p) => {
-      if (p[key]) URL.revokeObjectURL(p[key]);
-      return { ...p, [key]: URL.createObjectURL(file) };
+      if (p[key]?.preview) URL.revokeObjectURL(p[key].preview);
+      return { ...p, [key]: { file, preview: URL.createObjectURL(file) } };
     });
   };
 
-  const canSubmit = weight && waist && thigh && arm && pain && stress && digestion && sleepQuality;
+  const canSubmit = isFreeMode
+    ? !!weight
+    : weight && waist && thigh && arm && pain && stress && digestion && sleepQuality;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSaving(true);
     setSaveError("");
     const data = {
-      weight: Number(weight), waist: Number(waist), thigh: Number(thigh), arm: Number(arm),
-      pain: Number(pain), stress: Number(stress), digestion: Number(digestion), sleepQuality: Number(sleepQuality),
+      weight: Number(weight), waist: waist ? Number(waist) : null, thigh: thigh ? Number(thigh) : null, arm: arm ? Number(arm) : null,
+      pain: pain ? Number(pain) : null, stress: stress ? Number(stress) : null, digestion: digestion ? Number(digestion) : null,
+      sleepQuality: sleepQuality ? Number(sleepQuality) : null,
       cyclePhase: cyclePhase || null,
-      photos: { front: !!photos.front, side: !!photos.side, back: !!photos.back },
     };
     // Check reale: scrive su checkins (coachingData.js) — stessa funzione sia
     // per il check obbligatorio di domenica/lunedì sia per il pulsante
@@ -1081,7 +1090,11 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
     // vecchio comportamento simulato con un breve delay di feedback visivo.
     if (isRealMode) {
       try {
-        await saveCheckin(supabase, userId, data);
+        const photoPaths = {};
+        for (const key of ["front", "side", "back"]) {
+          if (photos[key]?.file) photoPaths[key] = await uploadCheckinPhoto(supabase, userId, photos[key].file, key);
+        }
+        await saveCheckin(supabase, userId, { ...data, photoPaths });
         onSubmit(data);
       } catch (err) {
         console.error("PERFORM: errore salvataggio check", err);
@@ -1137,23 +1150,23 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
                      placeholder="es. 78.4" className="input w-full px-4 py-3 font-data" />
             </label>
             <label className="block">
-              <span className="label block mb-1.5">Addome (cm)</span>
+              <span className="label block mb-1.5">Addome (cm){isFreeMode ? " (facoltativo)" : ""}</span>
               <input type="text" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value.replace(",", "."))}
                      placeholder="es. 84" className="input w-full px-4 py-3 font-data" />
             </label>
             <label className="block">
-              <span className="label block mb-1.5">Coscia (cm)</span>
+              <span className="label block mb-1.5">Coscia (cm){isFreeMode ? " (facoltativo)" : ""}</span>
               <input type="text" inputMode="decimal" value={thigh} onChange={(e) => setThigh(e.target.value.replace(",", "."))}
                      placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
             </label>
             <label className="block">
-              <span className="label block mb-1.5">Braccio (cm)</span>
+              <span className="label block mb-1.5">Braccio (cm){isFreeMode ? " (facoltativo)" : ""}</span>
               <input type="text" inputMode="decimal" value={arm} onChange={(e) => setArm(e.target.value.replace(",", "."))}
                      placeholder="es. 37" className="input w-full px-4 py-3 font-data" />
             </label>
           </div>
 
-          <p className="label mb-2">Quello che i dati da soli non dicono</p>
+          <p className="label mb-2">Quello che i dati da soli non dicono{isFreeMode ? " (facoltativo)" : ""}</p>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <label className="block">
               <span className="label block mb-1.5">Dolori / fastidi (1-10)</span>
@@ -1203,15 +1216,20 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           <div className="grid grid-cols-3 gap-2 mb-5">
             {[["front", "Fronte"], ["side", "Lato"], ["back", "Retro"]].map(([key, lab]) => (
               <label key={key}
-                     className="rounded-2xl flex flex-col items-center justify-center gap-1.5 py-4 cursor-pointer transition-transform active:scale-95"
+                     className="relative overflow-hidden rounded-2xl flex flex-col items-center justify-center gap-1.5 py-4 cursor-pointer transition-transform active:scale-95"
                      style={photos[key]
                        ? { background: `linear-gradient(160deg, ${accent}, ${accentText})` }
                        : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
                 {photos[key]
-                  ? <CheckCircle2 size={20} style={{ color: "#FFFFFF" }} />
-                  : <Camera size={20} style={{ color: accent }} />}
-                <span className="text-xs" style={{ color: photos[key] ? "#FFFFFF" : "var(--ink-2)", fontWeight: 600 }}>{lab}</span>
-                <input type="file" accept="image/*" className="hidden" onChange={handlePhoto(key)} />
+                  ? <img src={photos[key].preview} alt={lab} className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                  : null}
+                <span className="relative z-10 flex flex-col items-center gap-1.5">
+                  {photos[key]
+                    ? <CheckCircle2 size={20} style={{ color: "#FFFFFF" }} />
+                    : <Camera size={20} style={{ color: accent }} />}
+                  <span className="text-xs" style={{ color: photos[key] ? "#FFFFFF" : "var(--ink-2)", fontWeight: 600 }}>{lab}</span>
+                </span>
+                <input type="file" accept="image/*" capture="user" className="hidden" onChange={handlePhoto(key)} />
               </label>
             ))}
           </div>
@@ -1219,14 +1237,14 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           <button onClick={handleSubmit} disabled={!canSubmit || saving}
                   className="w-full rounded-full px-4 py-3.5 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
                   style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
-            {saving ? "Salvataggio in corso…" : "Invia Check al Coach"}
+            {saving ? "Salvataggio in corso…" : "Registra"}
           </button>
           {saveError && (
             <p className="mt-2 text-center text-sm" style={{ color: "#B91C1C" }}>{saveError}</p>
           )}
           {!canSubmit && (
             <p className="meta mt-2 text-center" style={{ fontSize: "0.68rem" }}>
-              Compila tutti i campi (le foto sono facoltative) per sbloccare l'app.
+              {isFreeMode ? "Inserisci almeno il peso per registrare." : "Compila tutti i campi (le foto sono facoltative) per sbloccare l'app."}
             </p>
           )}
         </div>

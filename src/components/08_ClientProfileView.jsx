@@ -38,7 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises } from "../lib/coachingData.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import { WeeklyCheckModal, PauseSection } from "./05_HomeDashboard.jsx";
@@ -1424,8 +1424,12 @@ export default function ClientProfileViewPreview({
         .filter((c) => c.weight != null)
         .map((c) => ({ label: c.date.slice(5).replace("-", "/"), kg: Number(c.weight) }))
     : demoWeightPoints;
-  // Una foto al mese dal giorno dell'iscrizione (profile.joined_at: 2023-04-12)
-  const checkPhotos = [
+  // Foto reali: realCheckins porta i PATH dello storage privato
+  // "checkin-photos" (v36), non URL — ogni path va risolto in un URL
+  // firmato temporaneo (1h) al momento della lettura, mai un URL pubblico
+  // permanente su foto corporee. Si ricalcola solo quando cambia l'elenco
+  // dei check con foto, non ad ogni render.
+  const demoCheckPhotos = [
     { date: "2026-02-01", front: null, side: null, back: null },
     { date: "2026-03-01", front: null, side: null, back: null },
     { date: "2026-04-01", front: null, side: null, back: null },
@@ -1433,6 +1437,21 @@ export default function ClientProfileViewPreview({
     { date: "2026-06-01", front: null, side: null, back: null },
     { date: "2026-07-01", front: null, side: null, back: null },
   ];
+  const [resolvedCheckPhotos, setResolvedCheckPhotos] = useState(null);
+  useEffect(() => {
+    if (!isRealMode) return;
+    const withPhotos = (realCheckins ?? []).filter((c) => c.has_photos);
+    if (withPhotos.length === 0) { setResolvedCheckPhotos([]); return; }
+    let cancelled = false;
+    Promise.all(withPhotos.map(async (c) => ({
+      date: c.date,
+      front: await getCheckinPhotoUrl(supabase, c.photo_front_url),
+      side: await getCheckinPhotoUrl(supabase, c.photo_side_url),
+      back: await getCheckinPhotoUrl(supabase, c.photo_back_url),
+    }))).then((shots) => { if (!cancelled) setResolvedCheckPhotos(shots); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, realCheckins]);
+  const checkPhotos = isRealMode ? (resolvedCheckPhotos ?? []) : demoCheckPhotos;
 
   // Esercizi registrati in Home, sulla scheda impostata dal coach. In
   // isRealMode arrivano da fetchExerciseRecords (storico reale da

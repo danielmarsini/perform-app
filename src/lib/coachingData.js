@@ -1124,6 +1124,29 @@ export async function awardXpBonus(supabase, { userId, coachId, amount, reason }
    Profilo — stesso form, stessa funzione, mai due percorsi diversi per lo
    stesso dato. Nessun vincolo di unicità per data: un cliente può avere sia
    il check di lunedì sia una registrazione manuale nello stesso giorno. */
+// Carica una singola foto check nel bucket privato "checkin-photos"
+// (SCHEMA_v36): path "{userId}/{timestamp}-{angolo}.jpg", RLS a livello di
+// storage.objects garantisce che solo il proprietario e il coach possano
+// leggerla — mai un bucket pubblico per foto corporee. Ritorna il path
+// salvato (non l'URL: pubblico non è mai valido qui, va sempre firmato al
+// momento della lettura con getCheckinPhotoUrl).
+export async function uploadCheckinPhoto(supabase, userId, file, angle) {
+  const ext = (file.name?.split(".").pop() || "jpg").toLowerCase();
+  const path = `${userId}/${Date.now()}-${angle}.${ext}`;
+  const { error } = await supabase.storage.from("checkin-photos").upload(path, file, { upsert: false });
+  if (error) throw error;
+  return path;
+}
+
+// URL firmato temporaneo (1h) per una foto privata — mai un URL pubblico
+// permanente su foto corporee.
+export async function getCheckinPhotoUrl(supabase, path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("checkin-photos").createSignedUrl(path, 3600);
+  if (error) { console.error("PERFORM: errore signed url foto check", error); return null; }
+  return data?.signedUrl ?? null;
+}
+
 export async function saveCheckin(supabase, userId, checkin) {
   const { error } = await supabase.from("checkins").insert({
     user_id: userId,
@@ -1138,7 +1161,10 @@ export async function saveCheckin(supabase, userId, checkin) {
     digestion: checkin.digestion ?? null,
     sleep_quality: checkin.sleepQuality ?? null,
     cycle_phase: checkin.cyclePhase ?? null,
-    has_photos: Boolean(checkin.photos?.front || checkin.photos?.side || checkin.photos?.back),
+    has_photos: Boolean(checkin.photoPaths?.front || checkin.photoPaths?.side || checkin.photoPaths?.back),
+    photo_front_url: checkin.photoPaths?.front ?? null,
+    photo_side_url: checkin.photoPaths?.side ?? null,
+    photo_back_url: checkin.photoPaths?.back ?? null,
   });
   if (error) throw error;
 }
@@ -1149,7 +1175,7 @@ export async function saveCheckin(supabase, userId, checkin) {
 export async function fetchCheckins(supabase, userId, limit = 60) {
   const { data, error } = await supabase
     .from("checkins")
-    .select("date, weight, waist, chest, arm, thigh, pain, stress, digestion, sleep_quality, cycle_phase, has_photos")
+    .select("date, weight, waist, chest, arm, thigh, pain, stress, digestion, sleep_quality, cycle_phase, has_photos, photo_front_url, photo_side_url, photo_back_url")
     .eq("user_id", userId)
     .order("date", { ascending: false })
     .limit(limit);
