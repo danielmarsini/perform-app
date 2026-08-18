@@ -954,17 +954,21 @@ export function NewsTipsViewStyles() {
         background: color-mix(in srgb, var(--accent, transparent) 8%, transparent);
       }
 
-      /* Lettura profonda: espansione fluida a tutto schermo, stile App Store */
+      /* Lettura profonda: prima si apriva sempre in basso come un foglio a
+         comparsa (align-items: flex-end) — spostato al centro dello
+         schermo, dove si trova davvero il cliente, come ogni altro popup
+         dell'app (Portal). */
       .expand-overlay {
         position: fixed; inset: 0; z-index: 100;
         background: rgba(0,0,0,0.32);
-        display: flex; align-items: flex-end; justify-content: center;
+        display: flex; align-items: center; justify-content: center;
+        padding: 1rem;
         backdrop-filter: blur(4px);
       }
       .expand-sheet {
-        width: 100%; max-width: 640px; max-height: 92vh;
-        background: var(--page); border-radius: 1.5rem 1.5rem 0 0;
-        border: 1px solid var(--line); border-bottom: none;
+        width: 100%; max-width: 640px; max-height: 90vh;
+        background: var(--page); border-radius: 1.5rem;
+        border: 1px solid var(--line);
         overflow: hidden; display: flex; flex-direction: column;
       }
       .expand-scroll { overflow-y: auto; padding: 1.6rem 1.75rem 2.4rem; }
@@ -974,10 +978,10 @@ export function NewsTipsViewStyles() {
         display: flex; align-items: center; justify-content: center;
       }
       @keyframes sheetIn {
-        0%   { opacity: 0; transform: translateY(48px); }
-        100% { opacity: 1; transform: translateY(0); }
+        0%   { opacity: 0; transform: translateY(16px) scale(0.97); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
       }
-      .expand-sheet.spring-in { animation: sheetIn 0.42s cubic-bezier(0.22,1,0.36,1) both; }
+      .expand-sheet.spring-in { animation: sheetIn 0.32s cubic-bezier(0.22,1,0.36,1) both; }
 
       /* Cassaforte — righe elenco */
       .vault-row {
