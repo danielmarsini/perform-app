@@ -115,11 +115,16 @@ export const translations = {
       freeCta: "Torna al Free", oneTimeCta: "Acquista ora", switchCta: "Passa a questo piano",
     },
     plans: {
-      free:        { name: "FREE", includes: ["Diario libero autogestito: dieta, carichi, integrazione, passi e sonno", "Nessun grafico storico o IA"] },
-      performance: { name: "PERFORMANCE PACK", includes: ["Tutto il Free", "Assistente PERFORM AI per ottimizzare le diete e fare domande profonde ai report scientifici", "Grafici storici 2D avanzati: Sonno, Passi, HRV, stile Apple Salute"] },
-      scheda:      { name: "SCHEDA PERSONALIZZATA", includes: ["Scheda di allenamento personalizzata fatta da me", "2 settimane di follow-up incluse", "Video review delle esecuzioni"] },
-      training:    { name: "SOLO ALLENAMENTO COACHING", includes: ["Scheda su misura aggiornata in continuo", "Video review delle esecuzioni", "Check settimanale", "Supporto diretto H24 su WhatsApp"] },
-      full:        { name: "FULL COACHING SUPREMO", includes: ["Tutto Solo Allenamento Coaching", "Calcolo macro preciso", "Dieta ON/OFF a 4 momenti della giornata", "Lista sostituzioni alimenti ed esercizi automatica", "Protocollo di integrazione d'élite", "Supporto WhatsApp dedicato 24/7"] },
+      free:        { name: "FREE", includes: ["Diario libero autogestito: dieta, carichi, integrazione, passi e sonno"],
+                     excludes: ["Nessun coach reale che segue i tuoi progressi", "Nessuna scheda o dieta personalizzata", "Nessun assistente AI", "Nessun grafico storico"] },
+      performance: { name: "PERFORMANCE PACK", includes: ["Tutto il Free", "Assistente PERFORM AI per ottimizzare le diete e fare domande profonde ai report scientifici", "Grafici storici 2D avanzati: Sonno, Passi, HRV, stile Apple Salute"],
+                     excludes: ["Nessuna scheda creata da me personalmente", "Nessun check settimanale con un coach reale", "Nessun supporto diretto su WhatsApp"] },
+      scheda:      { name: "SCHEDA PERSONALIZZATA", includes: ["Scheda di allenamento personalizzata fatta da me", "2 settimane di follow-up incluse", "Video review delle esecuzioni"],
+                     excludes: ["Non è un abbonamento: dopo le 2 settimane resti da solo", "Nessun aggiornamento del piano nel tempo", "Nessun piano alimentare incluso"] },
+      training:    { name: "SOLO ALLENAMENTO COACHING", includes: ["Scheda su misura aggiornata in continuo, mai ferma", "Video review delle esecuzioni", "Check settimanale con me", "Supporto diretto H24 su WhatsApp"],
+                     excludes: ["Nessun piano alimentare incluso", "Nessun protocollo di integrazione"] },
+      full:        { name: "FULL COACHING SUPREMO", includes: ["Tutto Solo Allenamento Coaching", "Calcolo macro preciso su misura", "Dieta ON/OFF a 4 momenti della giornata", "Lista sostituzioni alimenti ed esercizi automatica", "Protocollo di integrazione d'élite", "Supporto WhatsApp dedicato 24/7"],
+                     excludes: [] },
     },
     periods: { none: "", recurring: "/mese", one_time: "una tantum" },
     privacy: {
@@ -1005,13 +1010,26 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
           {plan.price} €<span style={{ fontWeight: 500, fontSize: "0.68rem" }}> {period}</span>
         </GradientText>
       </div>
-      <ul className="space-y-1 mb-3">
+      <ul className="space-y-1 mb-1">
         {copy.includes.map((f) => (
           <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "var(--ink-3)" }}>
             <Check size={13} className="shrink-0 mt-0.5" style={{ color: accent }} /> {f}
           </li>
         ))}
       </ul>
+      {/* Confronto esplicito con quello che MANCA rispetto al piano sopra —
+          non solo cosa include, anche cosa non include: crea il contrasto
+          che spinge verso il piano più caro (voce esplicita del coach). */}
+      {copy.excludes?.length > 0 && (
+        <ul className="space-y-1 mb-3">
+          {copy.excludes.map((f) => (
+            <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "var(--ink-soft)", opacity: 0.75 }}>
+              <X size={13} className="shrink-0 mt-0.5" style={{ color: "var(--ink-soft)" }} /> {f}
+            </li>
+          ))}
+        </ul>
+      )}
+      {(!copy.excludes || copy.excludes.length === 0) && <div className="mb-3" />}
       {ownerOverride ? (
         <p className="flex items-center gap-1.5" style={{ color: accent, fontSize: "0.72rem", fontWeight: 800,
                      letterSpacing: "0.06em", textTransform: "uppercase" }}>
