@@ -851,6 +851,22 @@ function weekKeyForOffset(offset) {
   const monday = addWeeksToDate(mondayOf(new Date()), offset);
   return toLocalISODate(monday);
 }
+// Data reale (GG/MM) del lunedì di una settimana, per i pallini del
+// calendario coach — sostituisce l'etichetta astratta "S+1/S-2" con una
+// data vera, così il calendario mostra sempre giorni/mesi reali invece di
+// un offset da contare a mente.
+function pillDateLabel(offset) {
+  const monday = addWeeksToDate(mondayOf(new Date()), offset);
+  return `${String(monday.getDate()).padStart(2, "0")}/${String(monday.getMonth() + 1).padStart(2, "0")}`;
+}
+// Da una data scelta con un vero calendario (input date) all'offset
+// settimana che il resto del componente già usa — per "vai a una data"
+// senza dover ricostruire tutta la navigazione a offset esistente.
+function offsetForDateISO(dateISO) {
+  const target = mondayOf(new Date(`${dateISO}T00:00:00`));
+  const todayMonday = mondayOf(new Date());
+  return Math.round((target - todayMonday) / (7 * 86400000));
+}
 function weekRangeLabel(offset) {
   const start = addWeeksToDate(mondayOf(new Date()), offset);
   const end = new Date(start); end.setDate(end.getDate() + 6);
@@ -2912,14 +2928,28 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
                   }}
                   title={tooltip}>
                   <span className="absolute top-1 right-1 rounded-full" style={{ width: 6, height: 6, backgroundColor: dot }} />
-                  {offset === 0 ? "OGGI" : offset > 0 ? `S+${offset}` : `S${offset}`}
+                  {offset === 0 ? "OGGI" : pillDateLabel(offset)}
                 </button>
               );
             })}
           </div>
           <button onClick={() => shiftWindow(1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0" aria-label="Settimane successive">›</button>
         </div>
-        <button onClick={backToToday} className="c-ghost px-3 py-2 rounded-lg text-xs font-data uppercase">Torna a oggi</button>
+        <div className="flex items-center gap-1.5">
+          {/* Calendario vero (input date nativo) per saltare direttamente a
+              qualunque giorno passato o futuro, senza scorrere i pallini uno
+              a uno — la settimana che lo contiene si apre subito. */}
+          <input type="date" aria-label="Vai a una data specifica"
+            onChange={(e) => {
+              if (!e.target.value) return;
+              const off = offsetForDateISO(e.target.value);
+              goTo(off);
+              setWindowStart(off - 3);
+              e.target.value = "";
+            }}
+            className="c-ghost px-2.5 py-2 rounded-lg text-xs font-data" style={{ colorScheme: "auto" }} />
+          <button onClick={backToToday} className="c-ghost px-3 py-2 rounded-lg text-xs font-data uppercase">Torna a oggi</button>
+        </div>
       </div>
       <p className="c-muted font-data text-[11px] mb-4">
         {weekRangeLabel(selOffset)} · 🟢 completa per il piano {client.plan === "full" ? "Full Coaching" : "Solo Allenamento"} · 🔴 da fare · 🟡 storico
