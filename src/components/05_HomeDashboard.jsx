@@ -1958,6 +1958,16 @@ export function HomeDashboard({
           <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
                                day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender} />
         )}
+
+        <div className="mt-5">
+          {access.paid ? (
+            <WikiBrowser title="Wiki Allenamento" subtitle="I principi dietro un piano che funziona" data={TRAINING_WIKI} accent={accent}
+              searchPlaceholder="Cerca un argomento (es. volume, RIR, deload...)" />
+          ) : (
+            <LockedPanel onUpgrade={onUpgrade} accent={accent}
+              text="La Wiki Allenamento è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
+          )}
+        </div>
       </div>
     );
   }
@@ -2021,6 +2031,16 @@ export function HomeDashboard({
           digestValue={digestValue}
           onDigestChange={(v) => { setDigestValue(v); onCoachSync && onCoachSync({ type: "bio-symptom", symptom: "digest", value: v }); }}
         />
+
+        <div className="mt-5">
+          {access.paid ? (
+            <WikiBrowser title="Wiki Alimentazione" subtitle="Cosa sappiamo davvero" data={NUTRITION_WIKI} accent={accent}
+              searchPlaceholder="Cerca un argomento (es. proteine, deficit, digiuno...)" />
+          ) : (
+            <LockedPanel onUpgrade={onUpgrade} accent={accent}
+              text="La Wiki Alimentazione è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
+          )}
+        </div>
       </div>
     );
   }
@@ -5028,6 +5048,440 @@ function SupplementDetailModal({ supplement, accent, onClose }) {
       </div>
     </div>
     </Portal>
+  );
+}
+
+/* ============================================================================
+   WIKI ALIMENTAZIONE + WIKI ALLENAMENTO (Premium e superiori)
+   Stessa base scientifica su cui poggiano NUTRITION_MASTER_PROMPT/
+   TRAINING_MASTER_PROMPT in 09_CoachDashboard.jsx (soglia di leucina,
+   volume diretto/sinergico, le 4 leve per lo stallo...), qui spiegata al
+   cliente in prima persona invece che al coach come istruzione operativa —
+   stesso contenuto, due destinatari diversi. Nessuna fonte inventata: solo
+   consenso scientifico consolidato (fisiologia, non un singolo studio
+   isolato), come già la Wiki Integratori qui sopra.
+   ========================================================================== */
+export const NUTRITION_WIKI = [
+  {
+    id: "proteine", name: "Proteine", icon: "🥩",
+    badge1: "1.6-2.2 g/kg/die", badge2: "Distribuite su 3-4 pasti",
+    body: "Sono l'unico macronutriente davvero indispensabile per costruire/mantenere massa muscolare: forniscono gli " +
+      "amminoacidi essenziali per la sintesi proteica. Per chi si allena con i pesi, 1.6-2.2 g per kg di peso corporeo " +
+      "al giorno coprono il fabbisogno nella quasi totalità dei casi, con margini di sicurezza inclusi.",
+    deepDive: "La sintesi proteica muscolare si attiva quando un pasto supera la soglia di leucina (~2-3 g, circa " +
+      "8.5% della quota proteica di origine animale) che stimola la via mTOR — sotto quella soglia l'effetto anabolico " +
+      "è molto più debole anche a parità di proteine totali. Per questo distribuire le proteine su 3-4 pasti principali " +
+      "(non concentrarle in uno solo) massimizza il numero di 'finestre' di sintesi attivate nella giornata. Fonti " +
+      "animali (carne, pesce, uova, latticini) hanno un profilo amminoacidico completo; fonti vegetali (legumi, soia, " +
+      "seitan) richiedono spesso combinazioni per coprire tutti gli essenziali, ma a parità di grammi totali giornalieri " +
+      "funzionano ugualmente bene per chi segue un regime vegetariano/vegano ben pianificato.",
+  },
+  {
+    id: "carboidrati", name: "Carboidrati", icon: "🍚",
+    badge1: "Il carburante principale", badge2: "Timing utile, non obbligatorio",
+    body: "Sono la fonte energetica più rapida per il sistema nervoso e per il lavoro muscolare ad alta intensità " +
+      "(ripetizioni, sprint). Tagliarli drasticamente non serve a dimagrire più in fretta: conta il totale calorico, " +
+      "ma con pochi carboidrati la qualità degli allenamenti spesso cala.",
+    deepDive: "I carboidrati si immagazzinano come glicogeno in muscoli e fegato: il glicogeno muscolare è il " +
+      "substrato preferito per sforzi 60-90 secondi ad alta intensità, tipici dell'allenamento con i pesi. Distribuire " +
+      "una quota maggiore di carboidrati intorno alla sessione di allenamento (pre e post) non è indispensabile per la " +
+      "performance del singolo allenamento se il glicogeno è già ripristinato, ma aiuta il recupero percepito e la " +
+      "qualità delle sessioni successive nei giorni ad alto volume. L'indice glicemico conta meno del contesto: un " +
+      "carboidrato ad alto IG post-allenamento (quando la sensibilità insulinica muscolare è più alta) è utile proprio " +
+      "per la velocità di ripristino del glicogeno.",
+  },
+  {
+    id: "grassi", name: "Grassi", icon: "🥑",
+    badge1: "20-30% delle calorie", badge2: "Mai sotto lo 0.5-0.8 g/kg",
+    body: "Servono alla sintesi ormonale (testosterone, estrogeni) e all'assorbimento delle vitamine liposolubili " +
+      "(A, D, E, K). Scendere troppo in basso per allungare i carboidrati o le proteine può peggiorare il quadro " +
+      "ormonale, soprattutto in deficit calorico prolungato.",
+    deepDive: "Non tutti i grassi sono equivalenti: gli acidi grassi essenziali omega-3 (EPA/DHA, pesce azzurro) e " +
+      "omega-6 non possono essere sintetizzati dal corpo e vanno introdotti con la dieta. Il rapporto omega-6/omega-3 " +
+      "nella dieta occidentale moderna è spesso sbilanciato a favore degli omega-6 (oli vegetali raffinati, cibi " +
+      "processati) — aumentare il pesce grasso 2-3 volte a settimana riequilibra il rapporto senza integratori. I " +
+      "grassi saturi non sono da demonizzare in toto entro range moderati (circa un terzo dei grassi totali), ma un " +
+      "eccesso cronico è associato a peggior profilo lipidico in soggetti predisposti.",
+  },
+  {
+    id: "deficit", name: "Deficit calorico", icon: "📉",
+    badge1: "15-25% sotto il TDEE", badge2: "Non oltre 0.5-1% peso/settimana",
+    body: "È l'unico prerequisito reale per perdere grasso: senza deficit calorico non si dimagrisce, qualunque sia " +
+      "la composizione della dieta. Un deficit troppo aggressivo (oltre il 25-30%) accelera la perdita di peso ma " +
+      "aumenta il rischio di perdere anche massa muscolare, non solo grasso.",
+    deepDive: "Un tasso di perdita di peso dello 0.5-1% del peso corporeo a settimana è generalmente il compromesso " +
+      "migliore tra velocità e conservazione della massa magra in presenza di allenamento con i pesi e proteine " +
+      "adeguate. In deficit prolungato l'adattamento metabolico (riduzione del dispendio oltre quanto spiegato dalla " +
+      "sola perdita di peso, per calo di NEAT e efficienza metabolica) è reale ma limitato: gestibile con refeed " +
+      "periodici di carboidrati o diet break a mantenimento ogni 6-10 settimane di deficit continuo, non con tagli " +
+      "calorici sempre più drastici.",
+  },
+  {
+    id: "surplus", name: "Surplus calorico", icon: "📈",
+    badge1: "5-15% sopra il TDEE", badge2: "'Pulito' vs 'sporco': conta la qualità",
+    body: "Serve per massimizzare la crescita muscolare quando l'obiettivo è la massa, ma un surplus eccessivo non " +
+      "accelera la sintesi proteica oltre un certo punto — aumenta solo l'accumulo di grasso. Un surplus moderato " +
+      "(5-15% sopra il mantenimento) è quasi sempre la scelta più efficiente.",
+    deepDive: "La velocità massima di crescita muscolare naturale è biologicamente limitata (circa 0.25-0.5% del " +
+      "peso corporeo al mese per un uomo intermedio, meno per una donna o per un atleta già avanzato) — surplus " +
+      "calorici molto alti (over 20%) non accelerano questo tetto biologico, spostano solo più energia verso il " +
+      "tessuto adiposo. Il termine 'bulk pulito' non riguarda la qualità morale del cibo ma la dimensione del " +
+      "surplus: stesso principio del deficit, verificato e corretto ogni 2-3 settimane sul trend di peso reale, non " +
+      "su una stima teorica del TDEE che varia da persona a persona.",
+  },
+  {
+    id: "sodio-potassio", name: "Sodio e Potassio", icon: "🧂",
+    badge1: "Sodio: max 2.3 g/die", badge2: "Potassio: target 3.5 g/die",
+    body: "Regolano l'equilibrio idrico e la trasmissione nervosa/muscolare. Il rischio più comune non è la carenza " +
+      "di sodio (onnipresente nei cibi processati) ma l'eccesso, mentre il potassio è spesso sotto il fabbisogno per " +
+      "scarso consumo di verdura, frutta e legumi.",
+    deepDive: "Sodio e potassio lavorano insieme nella pompa Na+/K+-ATPasi che mantiene il potenziale di membrana " +
+      "delle cellule nervose e muscolari — uno squilibrio cronico (troppo sodio, poco potassio) è associato a " +
+      "pressione arteriosa più alta nella popolazione sensibile al sale. Per un atleta la strategia più semplice è " +
+      "ridurre i cibi confezionati/bustine di condimento (fonte dominante di sodio in eccesso) e aumentare alimenti " +
+      "densi in potassio come patate, patate dolci, banana e spinaci, piuttosto che inseguire numeri precisi su " +
+      "un'etichetta.",
+  },
+  {
+    id: "ferro", name: "Ferro", icon: "🩸",
+    badge1: "8 mg/die uomini", badge2: "18 mg/die donne fertili",
+    body: "Componente dell'emoglobina, trasporta ossigeno ai muscoli — una carenza peggiora direttamente la " +
+      "performance aerobica e la sensazione di fatica. Il fabbisogno femminile in età fertile è più del doppio di " +
+      "quello maschile per le perdite mestruali, un dato spesso sottovalutato nella programmazione alimentare.",
+    deepDive: "Il ferro eme (fonti animali: carne rossa, molluschi) ha un assorbimento intestinale 2-3 volte " +
+      "superiore al ferro non-eme (fonti vegetali: legumi, spinaci) — chi segue un regime vegetariano/vegano deve " +
+      "prestare più attenzione alle fonti e agli abbinamenti. La vitamina C assunta nello stesso pasto aumenta " +
+      "l'assorbimento del ferro non-eme, mentre tè, caffè e calcio nello stesso pasto lo riducono se assunti in " +
+      "grandi quantità. Un'atleta donna con affaticamento cronico e performance in calo merita sempre un controllo " +
+      "della ferritina, non solo dell'emoglobina.",
+  },
+  {
+    id: "calcio-vitd", name: "Calcio e Vitamina D", icon: "🦴",
+    badge1: "Calcio: 1000 mg/die", badge2: "Vitamina D: spesso da integrare",
+    body: "Calcio e vitamina D lavorano insieme per la salute ossea, cruciale per chi si allena con i pesi ad alta " +
+      "intensità. La vitamina D si sintetizza soprattutto con l'esposizione solare: chi vive a latitudini nordiche o " +
+      "si allena prevalentemente al chiuso rischia carenza tutto l'anno, non solo d'inverno.",
+    deepDive: "La vitamina D regola l'assorbimento intestinale del calcio: senza livelli adeguati di vitamina D, " +
+      "anche un apporto di calcio corretto viene assorbito male. La sintesi cutanea richiede esposizione diretta di " +
+      "pelle non protetta, difficile da ottenere in modo affidabile in gran parte dell'anno alle nostre latitudini — " +
+      "è uno dei pochi casi in cui l'integrazione (spesso 1000-2000 UI/die) è raccomandata anche a chi ha " +
+      "un'alimentazione già equilibrata, previa verifica dei livelli ematici (25-OH vitamina D) col proprio medico.",
+  },
+  {
+    id: "magnesio", name: "Magnesio", icon: "💊",
+    badge1: "310-400 mg/die", badge2: "Sonno, crampi, recupero",
+    body: "Coinvolto in oltre 300 reazioni enzimatiche, incluse quelle del metabolismo energetico e del rilassamento " +
+      "muscolare. Una carenza lieve è comune in chi si allena molto (perdite con il sudore) e può manifestarsi come " +
+      "sonno peggiore, crampi o affaticamento senza una causa apparente.",
+    deepDive: "Il magnesio compete/coopera col calcio nella contrazione-rilassamento muscolare: il calcio innesca la " +
+      "contrazione, il magnesio favorisce il rilassamento — una carenza relativa può quindi manifestarsi con crampi " +
+      "o tensione muscolare persistente. Ha anche un ruolo nella regolazione del GABA, il principale neurotrasmettitore " +
+      "inibitorio del sistema nervoso centrale, il che spiega perché molti riportano un sonno più profondo " +
+      "aumentando l'apporto (mandorle, semi di zucca, spinaci) o integrando la sera, prima di dormire.",
+  },
+  {
+    id: "fibra", name: "Fibra alimentare", icon: "🌾",
+    badge1: "25-35 g/die", badge2: "Sazietà + salute del microbiota",
+    body: "Rallenta la digestione, aumenta la sazietà a parità di calorie e nutre il microbiota intestinale. Utile " +
+      "soprattutto in deficit calorico, quando la fame è la variabile che decide se il piano è sostenibile o no nel " +
+      "tempo.",
+    deepDive: "La fibra solubile (avena, legumi, mele) forma un gel viscoso che rallenta lo svuotamento gastrico e " +
+      "modula l'assorbimento di glucosio e colesterolo; la fibra insolubile (crusca, verdure a foglia) aumenta il " +
+      "volume delle feci e la motilità intestinale. Il microbiota fermenta la fibra solubile producendo acidi grassi " +
+      "a catena corta (butirrato in primis), che nutrono le cellule del colon e hanno un ruolo nella regolazione " +
+      "dell'infiammazione sistemica — un motivo in più per non ridurre verdura e legumi nemmeno nelle diete più " +
+      "ipocaloriche.",
+  },
+  {
+    id: "digiuno", name: "Digiuno intermittente", icon: "⏱️",
+    badge1: "Strumento, non magia", badge2: "Conta comunque il totale calorico",
+    body: "Restringere la finestra dei pasti (es. 16:8) non ha un effetto metabolico speciale sul dimagrimento " +
+      "rispetto allo stesso totale calorico distribuito diversamente — funziona per chi lo trova più semplice da " +
+      "seguire, non perché 'brucia più grasso'.",
+    deepDive: "Gli studi che confrontano digiuno intermittente e pasti distribuiti a parità di calorie e proteine " +
+      "totali non trovano differenze significative in perdita di grasso o massa magra: il beneficio, quando c'è, è " +
+      "quasi sempre comportamentale (meno decisioni alimentari, meno spuntini impulsivi), non metabolico. Per chi " +
+      "si allena ad alta intensità con i pesi, allenarsi a digiuno prolungato può peggiorare la performance nella " +
+      "sessione — se la finestra di digiuno copre l'orario di allenamento, vale la pena verificare l'effetto sulla " +
+      "propria prestazione prima di adottarlo stabilmente.",
+  },
+  {
+    id: "chetogenica", name: "Dieta chetogenica", icon: "🥓",
+    badge1: "<50 g carboidrati/die", badge2: "Per casi specifici, non per tutti",
+    body: "Forza il corpo a usare i chetoni (dai grassi) come carburante principale al posto del glucosio. Funziona " +
+      "per perdere peso come qualunque dieta ipocalorica sostenibile, ma per un atleta di forza/ipertrofia spesso " +
+      "penalizza il volume e l'intensità di allenamento sostenibili.",
+    deepDive: "In assenza di carboidrati il fegato produce corpi chetonici dagli acidi grassi, che diventano il " +
+      "substrato energetico principale per cervello e muscoli dopo un periodo di adattamento (1-3 settimane, la " +
+      "cosiddetta 'keto flu' iniziale). Il glicogeno muscolare resta però il substrato preferito per sforzi brevi e " +
+      "intensi tipici dei pesi: la performance nel breve-medio termine tende a calare rispetto a una dieta con " +
+      "carboidrati adeguati. Ha applicazioni cliniche specifiche (epilessia farmacoresistente, alcuni contesti " +
+      "metabolici) dove l'evidenza è solida; come scelta per la sola composizione corporea in un atleta di forza è " +
+      "raramente la strategia più efficiente.",
+  },
+  {
+    id: "mediterranea", name: "Dieta mediterranea", icon: "🫒",
+    badge1: "Il modello più studiato", badge2: "Olio EVO, pesce, legumi, verdura",
+    body: "È il pattern alimentare con più evidenza a lungo termine per salute cardiovascolare e longevità: alta " +
+      "quota di grassi insaturi (olio EVO), pesce, legumi, cereali integrali, verdura e frutta, moderata carne rossa " +
+      "e zuccheri raffinati.",
+    deepDive: "A differenza delle diete 'da laboratorio' definite per macro, la dieta mediterranea è uno studio di " +
+      "popolazioni reali osservate per decenni (studi PREDIMED e successivi), con riduzione documentata di eventi " +
+      "cardiovascolari maggiori nei gruppi che la seguivano rispetto a diete di controllo a basso contenuto di " +
+      "grassi. Per un atleta è un'ottima base di partenza qualitativa (fonti di grassi e proteine, densità " +
+      "nutrizionale) su cui poi calibrare le quantità (kcal, proteine, timing dei carboidrati) in base all'obiettivo " +
+      "specifico — non è in conflitto con un piano da bodybuilding/powerlifting, ne è la base.",
+  },
+  {
+    id: "idratazione", name: "Idratazione", icon: "💧",
+    badge1: "30-35 ml/kg di peso", badge2: "Di più nei giorni di allenamento",
+    body: "Anche una disidratazione lieve (2% del peso corporeo perso in acqua) peggiora misurabilmente forza, " +
+      "resistenza e capacità di concentrazione. Il fabbisogno di base è di circa 30-35 ml per kg di peso corporeo, " +
+      "più il sudore perso durante l'allenamento.",
+    deepDive: "L'acqua è il solvente di quasi tutte le reazioni metaboliche e regola la termoregolazione tramite " +
+      "sudorazione: durante l'esercizio ad alta intensità in ambiente caldo si possono perdere anche 1-2 litri di " +
+      "sudore in un'ora, con elettroliti (sodio soprattutto) al seguito — per sessioni sotto l'ora, acqua semplice " +
+      "basta; oltre l'ora, o con sudorazione abbondante, reintegrare anche il sodio (non solo acqua) previene i " +
+      "crampi da deplezione elettrolitica meglio della sola idratazione.",
+  },
+];
+
+export const TRAINING_WIKI = [
+  {
+    id: "ipertrofia", name: "Ipertrofia: i 3 meccanismi", icon: "💪",
+    badge1: "Tensione meccanica", badge2: "+ stress metabolico + danno",
+    body: "La crescita muscolare nasce da tre stimoli che si sommano: tensione meccanica (il carico sollevato), " +
+      "stress metabolico (l'accumulo di metaboliti nel muscolo, la 'bruciore') e danno muscolare (i microtraumi da " +
+      "riparare). Nessuno dei tre da solo è sufficiente o necessario in assoluto — un piano efficace li combina.",
+    deepDive: "La tensione meccanica è considerata il driver dominante: carichi moderati-alti (60-85% del massimale) " +
+      "portati vicino al cedimento reclutano le unità motorie a soglia più alta (le fibre a maggior potenziale di " +
+      "crescita). Lo stress metabolico (accumulo di lattato, ioni idrogeno, fosfato inorganico) amplifica la risposta " +
+      "ormonale locale e il reclutamento di fibre, ma da solo (carichi molto leggeri) produce meno crescita a parità " +
+      "di volume totale. Il danno muscolare innesca la risposta infiammatoria e la sintesi proteica riparativa, ma " +
+      "un danno eccessivo (DOMS molto forte) può addirittura ritardare il recupero e ridurre il volume allenabile " +
+      "nella settimana successiva — l'obiettivo non è 'distruggere' il muscolo ogni sessione.",
+  },
+  {
+    id: "volume", name: "Volume di allenamento", icon: "📊",
+    badge1: "10-20 serie dirette/settimana", badge2: "Per gruppo muscolare",
+    body: "Il volume (serie totali per gruppo muscolare a settimana) è la variabile con più impatto diretto " +
+      "sull'ipertrofia dopo l'intensità di sforzo. La maggior parte dei praticanti cresce meglio tra 10 e 20 serie " +
+      "dirette a settimana per gruppo, distribuite su più sessioni.",
+    deepDive: "Sotto le ~6-8 serie settimanali per gruppo lo stimolo è spesso insufficiente per crescita ottimale " +
+      "in un praticante intermedio/avanzato; oltre le 20-25 serie i rendimenti calano rapidamente e il rischio di " +
+      "recupero insufficiente sale, specie se il volume è concentrato in poche sessioni. Le serie 'sinergiche/" +
+      "indirette' (es. i tricipiti lavorati durante la panca) contano circa al 50% di una serie diretta nel computo " +
+      "totale — un piano ben progettato tiene conto di questa sovrapposizione invece di sommare ogni serie come se " +
+      "fosse isolata, altrimenti il volume reale su un gruppo può essere doppio di quanto sembra sulla carta.",
+  },
+  {
+    id: "rir-rpe", name: "RIR e RPE", icon: "🎯",
+    badge1: "RIR 1-3 la maggior parte delle serie", badge2: "RIR 0 solo occasionale",
+    body: "RIR (Reps In Reserve) e RPE (Rate of Perceived Exertion) misurano quanto sei vicino al cedimento muscolare. " +
+      "Allenarsi quasi sempre a RIR 1-3 (a 1-3 ripetizioni dal cedimento) massimizza lo stimolo senza accumulare " +
+      "fatica sistemica eccessiva ogni singola serie.",
+    deepDive: "Andare sistematicamente a cedimento assoluto (RIR 0) su ogni serie di ogni sessione aumenta la fatica " +
+      "neuromuscolare e il tempo di recupero necessario molto più di quanto aumenti lo stimolo ipertrofico rispetto " +
+      "a fermarsi a RIR 1-2 — la letteratura mostra rendimenti simili tra RIR 0-1 e RIR 2-3 quando il volume totale " +
+      "è equalizzato, ma con recupero peggiore nel primo caso. Il cedimento vero e proprio ha comunque un posto: " +
+      "usato con criterio (ultima serie di un esercizio, non su tutte), specie su esercizi monoarticolari a basso " +
+      "rischio articolare (leg extension, curl), dove il costo di recupero è più basso che su un multiarticolare " +
+      "pesante come lo squat.",
+  },
+  {
+    id: "frequenza", name: "Frequenza di allenamento", icon: "📅",
+    badge1: "2× a settimana per gruppo", badge2: "Meglio di 1× a parità di volume",
+    body: "Allenare ogni gruppo muscolare almeno 2 volte a settimana (invece di 1 sola seduta molto lunga) distribuisce " +
+      "meglio il volume totale e sembra produrre risultati leggermente superiori a parità di serie settimanali " +
+      "complessive.",
+    deepDive: "La sintesi proteica muscolare resta elevata per circa 24-48 ore dopo una sessione di allenamento " +
+      "intenso, poi torna ai livelli basali: allenare lo stesso gruppo una sola volta a settimana lascia diversi " +
+      "giorni in cui la sintesi proteica non è stimolata da un nuovo stimolo. Distribuire lo stesso volume totale " +
+      "su 2-3 sessioni per gruppo mantiene più costante l'attivazione della sintesi proteica nell'arco della " +
+      "settimana. Attenzione però al volume PER sessione: raddoppiare la frequenza senza dimezzare adeguatamente il " +
+      "volume per seduta porta solo più fatica, non più crescita.",
+  },
+  {
+    id: "sovraccarico", name: "Sovraccarico progressivo", icon: "📈",
+    badge1: "Il principio che guida tutto", badge2: "Carico, serie, reps o tecnica",
+    body: "Senza un aumento progressivo dello stimolo nel tempo (carico, serie, ripetizioni o difficoltà tecnica) il " +
+      "corpo non ha motivo di continuare ad adattarsi. È il principio più importante di tutti, più della scelta " +
+      "specifica di esercizi o di split.",
+    deepDive: "Il sovraccarico progressivo non significa solo 'metti più peso ogni settimana' — è insostenibile " +
+      "linearmente per più di poche settimane in un praticante intermedio/avanzato. Le leve disponibili sono: più " +
+      "peso a parità di reps, più ripetizioni a parità di peso, più serie a parità di carico/reps, meno recupero a " +
+      "parità di tutto il resto, o tecnica più pulita/ROM più ampio a parità di carico esterno. Un programma ben " +
+      "strutturato alterna queste leve nel tempo (spesso in blocchi/mesocicli) invece di forzare solo l'aumento del " +
+      "carico, che porta più rapidamente a stallo o infortunio.",
+  },
+  {
+    id: "recupero-serie", name: "Recupero tra le serie", icon: "⏳",
+    badge1: "2-3 min su multiarticolari pesanti", badge2: "60-90 sec su isolamento",
+    body: "Il tempo di recupero tra le serie va calibrato sull'obiettivo: più lungo (2-3 minuti) sugli esercizi " +
+      "multiarticolari pesanti per mantenere la qualità delle serie successive, più breve (60-90 secondi) su esercizi " +
+      "di isolamento a basso costo sistemico.",
+    deepDive: "Recuperi troppo brevi (30-60 sec) su esercizi pesanti come squat o stacco non permettono il pieno " +
+      "ripristino della fosfocreatina (il sistema energetico dominante nei primi 10-15 secondi di sforzo massimale), " +
+      "costringendo a ridurre il carico o le ripetizioni nelle serie successive — meno stimolo di tensione meccanica " +
+      "totale nella sessione. Su esercizi di isolamento, dove il rischio tecnico è più basso e lo stimolo target è " +
+      "spesso lo stress metabolico più che il carico assoluto, recuperi più brevi non compromettono significativamente " +
+      "la qualità e permettono di fare più volume nello stesso tempo di sessione.",
+  },
+  {
+    id: "deload", name: "Deload", icon: "🔋",
+    badge1: "Ogni 4-8 settimane", badge2: "Riduci volume e/o intensità per 1 settimana",
+    body: "Una settimana programmata a volume o intensità ridotti (non uno stop completo) ogni 4-8 settimane di " +
+      "allenamento continuo dissipa la fatica accumulata prima che diventi sovrallenamento, permettendo di tornare " +
+      "più forti nella settimana successiva.",
+    deepDive: "La fatica si accumula più velocemente della capacità di adattamento reale (il 'fitness') man mano che " +
+      "un blocco di allenamento avanza: le prestazioni possono restare stabili o calare leggermente pur essendo il " +
+      "corpo effettivamente più forte 'sotto' quella fatica. Un segnale oggettivo utile è il calo dell'HRV rispetto " +
+      "alla propria media recente insieme a stress percepito alto: quella combinazione, non la sola sensazione " +
+      "soggettiva di stanchezza, è l'indicatore più affidabile che è il momento di scaricare prima di arrivare al " +
+      "sovrallenamento conclamato, molto più lento da recuperare di un deload programmato in tempo.",
+  },
+  {
+    id: "tecniche-intensita", name: "Tecniche di intensità", icon: "🔥",
+    badge1: "Rest-pause, drop-set, super-set", badge2: "Solo su base solida, non da principianti",
+    body: "Rest-pause, drop-set, stripping e super-set aumentano lo stress metabolico e permettono di superare il " +
+      "cedimento apparente, ma hanno un costo di recupero alto — vanno usate con criterio, non su ogni esercizio " +
+      "di ogni sessione, e mai come primo approccio per chi è alle prime armi.",
+    deepDive: "Un principiante cresce già in modo ottimale con il solo sovraccarico progressivo su un volume di base " +
+      "moderato: aggiungere tecniche avanzate prima di aver esaurito i margini di crescita 'semplice' brucia margine " +
+      "di progressione futura senza un vantaggio reale nel breve termine, aumentando solo la fatica da gestire. Su un " +
+      "atleta avanzato, dove il sovraccarico progressivo lineare rallenta, tecniche come il rest-pause (una breve " +
+      "pausa di 15-20 secondi dopo il cedimento per strappare altre 2-3 ripetizioni) o il drop-set (ridurre il carico " +
+      "del 20-30% e continuare subito dopo il cedimento) diventano strumenti utili per estrarre altro stimolo dallo " +
+      "stesso tempo di allenamento, tipicamente 1-2 volte a settimana per gruppo muscolare, non di più.",
+  },
+  {
+    id: "rom", name: "Range di movimento (ROM)", icon: "↕️",
+    badge1: "ROM completo, di norma", badge2: "Parziali: solo per obiettivi specifici",
+    body: "Allenarsi con l'escursione articolare completa produce generalmente più ipertrofia dei ROM parziali, " +
+      "specie nella porzione allungata del movimento (es. lo squat profondo vs. il mezzo squat). I ROM parziali " +
+      "hanno un ruolo, ma come aggiunta mirata, non come sostituto.",
+    deepDive: "La porzione 'allungata' di un esercizio (es. la parte bassa dello squat, il fondo della panca) sembra " +
+      "produrre uno stimolo ipertrofico superiore per unità di tempo rispetto alla porzione 'accorciata', probabilmente " +
+      "per il maggiore stress meccanico sul muscolo in allungamento. Questo non significa che i parziali siano inutili: " +
+      "sono usati con criterio per lavorare in sicurezza intorno a un fastidio articolare, per sovraccaricare oltre il " +
+      "massimale su un tratto specifico (parziali in alto nello stacco per la forza di lockout), o come tecnica " +
+      "d'intensità a fine serie quando il ROM completo non è più possibile mantenendo la forma corretta.",
+  },
+  {
+    id: "cardio-interferenza", name: "Cardio e interferenza", icon: "🏃",
+    badge1: "2-3 sessioni/settimana", badge2: "Distanziato dai pesi se possibile",
+    body: "Il cardio non 'brucia' la massa muscolare se dosato correttamente, ma un eccesso di lavoro aerobico ad " +
+      "alta frequenza/intensità può interferire con gli adattamenti di forza/ipertrofia se sommato senza criterio ai " +
+      "pesi. 2-3 sessioni moderate a settimana sono generalmente ben tollerate senza compromessi.",
+    deepDive: "L'effetto interferenza nasce da una parziale sovrapposizione delle vie di segnalazione cellulare " +
+      "attivate dal lavoro aerobico (via AMPK) e dal lavoro di forza (via mTOR) — un'attivazione molto intensa e " +
+      "frequente di AMPK può in teoria smorzare il segnale anabolico di mTOR. In pratica, per volumi di cardio " +
+      "moderati (2-3 sessioni da 20-30 minuti) l'interferenza è minima o assente nella maggior parte degli studi. Se " +
+      "possibile, distanziare cardio e pesi di alcune ore (o farli in giorni diversi) riduce ulteriormente qualunque " +
+      "interferenza residua, ed è preferibile a farli sempre in sequenza diretta nella stessa sessione quando " +
+      "l'obiettivo primario è la massa muscolare.",
+  },
+  {
+    id: "riscaldamento", name: "Riscaldamento", icon: "🌡️",
+    badge1: "5-10 min generale", badge2: "+ serie di avvicinamento specifiche",
+    body: "Alza la temperatura muscolare e prepara le articolazioni al carico, riducendo il rischio di infortunio e " +
+      "migliorando la performance nelle prime serie pesanti. Le serie di avvicinamento (pesi crescenti verso il " +
+      "carico di lavoro) contano più del semplice cardio leggero generico.",
+    deepDive: "Un riscaldamento generale (5-10 minuti di attività leggera) aumenta la temperatura dei tessuti e la " +
+      "velocità di conduzione nervosa, ma l'elemento più specifico ed efficace prima di un esercizio pesante come " +
+      "squat o panca sono le serie di avvicinamento progressive (es. 50%, 70%, 85% del carico di lavoro per poche " +
+      "ripetizioni) — preparano il pattern motorio specifico di quell'esercizio, non solo la temperatura corporea " +
+      "generica. Lo stretching statico prolungato PRIMA di un esercizio di forza può temporaneamente ridurre la " +
+      "produzione di forza: se serve mobilità, meglio mobilità dinamica prima e stretching statico eventualmente a " +
+      "fine sessione.",
+  },
+  {
+    id: "mobilita", name: "Mobilità articolare", icon: "🤸",
+    badge1: "10-15 min, 3-4×/settimana", badge2: "Prevenzione, non solo performance",
+    body: "Una buona mobilità nelle articolazioni coinvolte (caviglie, anche, spalle) permette di raggiungere il ROM " +
+      "completo con tecnica corretta, riducendo compensi che nel tempo portano a infortuni da sovraccarico. Non " +
+      "serve diventare contorsionisti: basta coprire il range richiesto dai propri esercizi principali.",
+    deepDive: "Un deficit di mobilità in un'articolazione spesso si traduce in un compenso in un'altra: caviglie " +
+      "rigide durante lo squat costringono a inclinare il busto più in avanti, aumentando lo stress lombare; spalle " +
+      "poco mobili nel lento avanti costringono a inarcare eccessivamente la schiena. Lavorare sulla mobilità " +
+      "specifica delle articolazioni limitanti per i propri esercizi principali (non un programma generico) è più " +
+      "efficiente: 10-15 minuti mirati 3-4 volte a settimana, spesso integrati nel riscaldamento, sono sufficienti " +
+      "per la maggior parte dei praticanti non agonisti.",
+  },
+];
+
+/* Componente generico riusato da Wiki Alimentazione e Wiki Allenamento — la
+   Wiki Integratori sopra resta com'era (SUPP_WIKI/SupplementWikiBrowser/
+   SupplementDetailModal), non l'ho toccata: stesso pattern visivo, dati e
+   didascalie diverse passate come prop invece di duplicare il componente. */
+function WikiDetailModal({ entry, accent, onClose }) {
+  if (!entry) return null;
+  return (
+    <Portal>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+         style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
+      <div className="spring-in w-full sm:max-w-md rounded-3xl p-6 flex flex-col"
+           style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "85vh" }}
+           onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3 shrink-0">
+          <p className="h1 flex items-center gap-2">
+            <span aria-hidden="true" style={{ filter: "saturate(0.65) contrast(0.92)" }}>{entry.icon}</span>{entry.name}
+          </p>
+          <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+        </div>
+        <div className="overflow-y-auto pr-1" style={{ overflowX: "hidden" }}>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <span className="font-data px-2.5 py-1 rounded-full"
+                  style={{ fontSize: "0.6rem", letterSpacing: "0.08em", backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
+              {entry.badge1}
+            </span>
+            <span className="font-data px-2.5 py-1 rounded-full"
+                  style={{ fontSize: "0.6rem", letterSpacing: "0.08em", backgroundColor: "var(--surface-2)",
+                           border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+              {entry.badge2}
+            </span>
+          </div>
+          <p className="body mb-4">{entry.body}</p>
+          {entry.deepDive && (
+            <div className="inner p-4">
+              <p className="label mb-2" style={{ letterSpacing: "0.08em" }}>Approfondimento scientifico</p>
+              <p className="body" style={{ fontSize: "0.86rem", lineHeight: 1.6 }}>{entry.deepDive}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+    </Portal>
+  );
+}
+
+function WikiBrowser({ title, subtitle, data, accent, searchPlaceholder }) {
+  const [openId, setOpenId] = useState(null);
+  const [query, setQuery] = useState("");
+  const filtered = data.filter((w) => w.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const openEntry = data.find((w) => w.id === openId) || null;
+
+  return (
+    <div className="card">
+      <p className="label mb-1">{title}</p>
+      <p className="h1 mb-3">{subtitle}</p>
+      <div className="relative mb-3">
+        <Search size={15} style={{ color: "var(--ink-2)", position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+               placeholder={searchPlaceholder} className="input w-full pl-10 pr-4 py-3 text-sm" aria-label={title} />
+      </div>
+      <div className="flex flex-wrap gap-2 mb-1">
+        {filtered.length === 0 && <p className="meta text-sm">Nessun argomento trovato per "{query}".</p>}
+        {filtered.map((w) => (
+          <button key={w.id} onClick={() => setOpenId(w.id)}
+            className="rounded-full px-3.5 py-2 text-sm flex items-center gap-1.5 transition-all duration-300"
+            style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
+            <span aria-hidden="true" style={{ filter: "saturate(0.7) brightness(1.15)" }}>{w.icon}</span>{w.name}
+          </button>
+        ))}
+      </div>
+      <WikiDetailModal entry={openEntry} accent={accent} onClose={() => setOpenId(null)} />
+    </div>
   );
 }
 
