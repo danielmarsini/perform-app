@@ -102,6 +102,11 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  // Diagnostica minima nella risposta stessa: gli unici log altrimenti
+  // visibili sono nella dashboard Supabase, non raggiungibile da qui — un
+  // problema reale (bug useCallback dimenticato in passato, tabella mai
+  // creata) va scoperto anche solo leggendo l'HTTP response del cron.
+  const debug = [];
 
   // Pubblica fino a 2 studi nuovi per un dato argomento (news+tips per
   // ciascuno = fino a 4 righe). Ritorna quanti studi ha davvero pubblicato,
@@ -112,14 +117,16 @@ Deno.serve(async (req) => {
       pmids = await esearch(topic.query);
     } catch (err) {
       console.error("PERFORM: esearch fallita", topic.query, err.message);
+      debug.push(`esearch fallita (${topic.query}): ${err.message}`);
       return 0;
     }
-    if (pmids.length === 0) return 0;
+    if (pmids.length === 0) { debug.push(`esearch 0 risultati (${topic.query})`); return 0; }
 
-    const { data: existing } = await supabase.from("coach_news_tips").select("source_query").in("source_query", pmids);
+    const { data: existing, error: existingError } = await supabase.from("coach_news_tips").select("source_query").in("source_query", pmids);
+    if (existingError) debug.push(`select dedup fallita: ${existingError.message}`);
     const alreadyPosted = new Set((existing ?? []).map((r) => r.source_query));
     const newPmids = pmids.filter((id) => !alreadyPosted.has(id));
-    if (newPmids.length === 0) return 0;
+    if (newPmids.length === 0) { debug.push(`tutti i pmid già pubblicati (${topic.query})`); return 0; }
 
     let inserted = 0;
     for (const pmid of newPmids.slice(0, 2)) { // un paio di studi nuovi a giro, non un'inondazione
@@ -128,9 +135,10 @@ Deno.serve(async (req) => {
         article = await efetchAbstract(pmid);
       } catch (err) {
         console.error("PERFORM: errore efetch", pmid, err);
+        debug.push(`efetch fallita (${pmid}): ${err.message}`);
         continue;
       }
-      if (!article.title || !article.abstract) continue;
+      if (!article.title || !article.abstract) { debug.push(`efetch senza title/abstract (${pmid})`); continue; }
 
       const summary = firstSentences(article.abstract, 3);
       const sourceLine = article.journal && article.year ? ` (${article.journal}, ${article.year})` : "";
@@ -145,7 +153,7 @@ Deno.serve(async (req) => {
         source_query: pmid,
         published_at: now,
       });
-      if (newsError) { console.error("PERFORM: errore insert news", newsError); continue; }
+      if (newsError) { console.error("PERFORM: errore insert news", newsError); debug.push(`insert news fallito (${pmid}): ${newsError.message}`); continue; }
 
       // Stesso studio, riformulato come consiglio pratico: nessuna
       // interpretazione aggiuntiva, solo l'inquadramento "cosa significa per
@@ -159,7 +167,7 @@ Deno.serve(async (req) => {
         source_query: pmid,
         published_at: now,
       });
-      if (tipsError) console.error("PERFORM: errore insert tips", tipsError);
+      if (tipsError) { console.error("PERFORM: errore insert tips", tipsError); debug.push(`insert tips fallito (${pmid}): ${tipsError.message}`); }
 
       inserted++;
     }
@@ -183,5 +191,5 @@ Deno.serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ inserted, topic: usedTopic.query }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ inserted, topic: usedTopic.query, debug }), { headers: { "Content-Type": "application/json" } });
 });
