@@ -1332,6 +1332,9 @@ export function SettingsDrawer({
           )}
 
           <p className="label text-center mt-8" style={{ fontSize: "0.6rem" }}>{t.footer}</p>
+          <p className="text-center mt-1 italic" style={{ fontSize: "0.56rem", color: "#A1A1AA", opacity: 0.7 }}>
+            Evidence-Based Method by D. Marsini
+          </p>
         </div>
       </div>
     </div>
