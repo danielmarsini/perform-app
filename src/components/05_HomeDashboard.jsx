@@ -200,7 +200,7 @@ function useDragScroll(ref) {
 /* Grafico 3D idro-satinato Minimal Luxury: prismi in vetro (Glassmorphism),
    contorni ultrasottili lucidi, gradiente cangiante oro/rosa in movimento
    continuo, scorrimento libero e continuo (swipe/drag) su tutto lo storico. */
-function Chart3D({ kind, series }) {
+function Chart3D({ kind, series, title }) {
   const scrollRef = useRef(null);
   useDragScroll(scrollRef);
   const t = THRESH[kind];
@@ -223,21 +223,29 @@ function Chart3D({ kind, series }) {
          style={{ backgroundColor: "rgba(255,255,255,0.07)", backdropFilter: "blur(16px) saturate(160%)",
                   WebkitBackdropFilter: "blur(16px) saturate(160%)",
                   border: "0.5px solid rgba(255,255,255,0.4)", boxShadow: "0 12px 34px rgba(0,0,0,0.14)" }}>
-      {/* Finestra fissa a 7 giorni visibili (7 candele da 20px + 6 spazi da
-          10px = 200px): prima si vedevano tutti i 49 giorni di storico
-          insieme su schermi larghi, troppo affollato. Lo storico resta
-          tutto raggiungibile scorrendo indietro col dito/mouse
-          (useDragScroll), solo non più tutto in vista insieme. */}
-      <div ref={scrollRef} className="flex items-end gap-2.5 overflow-x-auto mx-auto"
-           style={{ cursor: "grab", scrollBehavior: "smooth", maxWidth: 200 }}>
+      {/* Etichetta esplicita: prima i due grafici (sonno/passi) erano
+          identici nella forma e distinguibili solo dal contesto sopra —
+          poco chiaro, specie scorrendo velocemente. */}
+      {title && (
+        <p className="font-data mb-3" style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--ink-2)", letterSpacing: "0.02em" }}>
+          {title}
+        </p>
+      )}
+      {/* Finestra fissa a 7 giorni visibili, candele che riempiono tutta la
+          larghezza reale della card (prima erano fisse a 20px anche su una
+          card enormemente più larga: strette e sperse nel vuoto). Lo
+          storico resta raggiungibile scorrendo indietro col dito/mouse
+          (useDragScroll) quando ci sono più di 7 giorni di dati. */}
+      <div ref={scrollRef} className="flex items-end gap-2.5 overflow-x-auto"
+           style={{ cursor: "grab", scrollBehavior: "smooth", width: "100%" }}>
         {series.map((v, i) => {
           const idxFromEnd = series.length - 1 - i;
           const hPct = v > 0 ? Math.max(6, Math.min(100, (v / maxVal) * 100)) : 3;
           const tone = CANDLE[grade(kind, v)];
           return (
-            <div key={i} className="shrink-0 flex flex-col items-center" style={{ width: 20 }}>
-              <div style={{ height: 148, width: 20, display: "flex", alignItems: "flex-end" }}>
-                <div className="relative overflow-hidden" style={{ width: 20, height: `${hPct}%`, borderRadius: 2,
+            <div key={i} className="shrink-0 flex flex-col items-center" style={{ width: "calc((100% - 60px) / 7)", minWidth: 34 }}>
+              <div style={{ height: 176, width: "100%", display: "flex", alignItems: "flex-end" }}>
+                <div className="relative overflow-hidden" style={{ width: "100%", height: `${hPct}%`, borderRadius: 4,
                        background: `linear-gradient(180deg, ${tone.top} 0%, ${tone.mid} 45%, ${tone.dark} 100%)`,
                        border: "0.5px solid rgba(255,255,255,0.55)",
                        boxShadow: `0 4px 12px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.55)` }}>
@@ -247,7 +255,7 @@ function Chart3D({ kind, series }) {
                          background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)" }} />
                 </div>
               </div>
-              <span className="font-data" style={{ fontSize: "0.5rem", fontWeight: 600, color: "var(--ink-3)", marginTop: 5, whiteSpace: "nowrap" }}>
+              <span className="font-data" style={{ fontSize: "0.58rem", fontWeight: 600, color: "var(--ink-3)", marginTop: 6, whiteSpace: "nowrap" }}>
                 {dateLabelFor(idxFromEnd)}
               </span>
             </div>
@@ -2095,7 +2103,7 @@ export function HomeDashboard({
             </span>
           )}
         </div>
-        <Chart3D kind="sleep" series={liveHistory.sleep} />
+        <Chart3D kind="sleep" series={liveHistory.sleep} title="😴 Sonno — ore per notte" />
       </div>
 
       {/* passi: stessa casella pulita sopra al grafico */}
@@ -2106,7 +2114,7 @@ export function HomeDashboard({
                  disabled={isRealMode ? false : autoSteps} placeholder="Passi di oggi"
                  aria-label="Passi di oggi" className="input flex-1 px-3 py-2 text-sm font-data disabled:opacity-70" />
         </div>
-        <Chart3D kind="steps" series={liveHistory.steps} />
+        <Chart3D kind="steps" series={liveHistory.steps} title="👣 Passi — al giorno" />
         {isRealMode ? (
           isAndroid() && isGoogleFitConfigured() ? (
             <GoogleFitStepsSync accent={accent} onSetSteps={onSetSteps} />
