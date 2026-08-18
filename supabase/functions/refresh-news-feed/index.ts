@@ -103,64 +103,85 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-  const topic = TOPICS[twoHourSlot() % TOPICS.length];
-  let pmids = [];
-  try {
-    pmids = await esearch(topic.query);
-  } catch (err) {
-    return new Response(JSON.stringify({ error: `esearch fallita: ${err.message}` }), { status: 502 });
-  }
-  if (pmids.length === 0) return new Response(JSON.stringify({ inserted: 0, reason: "no-results", topic: topic.query }));
-
-  // Evita duplicati: non ripubblicare uno studio già presente (source_query
-  // qui è il pmid stesso, univoco per articolo — vedi insert sotto).
-  const { data: existing } = await supabase.from("coach_news_tips").select("source_query").in("source_query", pmids);
-  const alreadyPosted = new Set((existing ?? []).map((r) => r.source_query));
-  const newPmids = pmids.filter((id) => !alreadyPosted.has(id));
-  if (newPmids.length === 0) return new Response(JSON.stringify({ inserted: 0, reason: "already-posted", topic: topic.query }));
-
-  let inserted = 0;
-  for (const pmid of newPmids.slice(0, 1)) { // un solo studio nuovo al giorno, non un'inondazione
-    let article;
+  // Pubblica fino a 2 studi nuovi per un dato argomento (news+tips per
+  // ciascuno = fino a 4 righe). Ritorna quanti studi ha davvero pubblicato,
+  // così il chiamante sa se deve tentare un argomento di riserva.
+  async function publishFromTopic(topic) {
+    let pmids = [];
     try {
-      article = await efetchAbstract(pmid);
+      pmids = await esearch(topic.query);
     } catch (err) {
-      console.error("PERFORM: errore efetch", pmid, err);
-      continue;
+      console.error("PERFORM: esearch fallita", topic.query, err.message);
+      return 0;
     }
-    if (!article.title || !article.abstract) continue;
+    if (pmids.length === 0) return 0;
 
-    const summary = firstSentences(article.abstract, 3);
-    const sourceLine = article.journal && article.year ? ` (${article.journal}, ${article.year})` : "";
-    const now = new Date().toISOString();
+    const { data: existing } = await supabase.from("coach_news_tips").select("source_query").in("source_query", pmids);
+    const alreadyPosted = new Set((existing ?? []).map((r) => r.source_query));
+    const newPmids = pmids.filter((id) => !alreadyPosted.has(id));
+    if (newPmids.length === 0) return 0;
 
-    const { error: newsError } = await supabase.from("coach_news_tips").insert({
-      channel: "news",
-      eyebrow: topic.eyebrow,
-      title: article.title,
-      body: `${summary}${sourceLine}`,
-      body_extended: [article.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
-      source_query: pmid,
-      published_at: now,
-    });
-    if (newsError) { console.error("PERFORM: errore insert news", newsError); continue; }
+    let inserted = 0;
+    for (const pmid of newPmids.slice(0, 2)) { // un paio di studi nuovi a giro, non un'inondazione
+      let article;
+      try {
+        article = await efetchAbstract(pmid);
+      } catch (err) {
+        console.error("PERFORM: errore efetch", pmid, err);
+        continue;
+      }
+      if (!article.title || !article.abstract) continue;
 
-    // Stesso studio, riformulato come consiglio pratico: nessuna
-    // interpretazione aggiuntiva, solo l'inquadramento "cosa significa per
-    // te" seguito dal riassunto reale — mai un consiglio inventato di sana pianta.
-    const { error: tipsError } = await supabase.from("coach_news_tips").insert({
-      channel: "tips",
-      eyebrow: topic.eyebrow,
-      title: `Cosa significa per te: ${article.title}`,
-      body: `${summary}${sourceLine}`,
-      body_extended: [article.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
-      source_query: pmid,
-      published_at: now,
-    });
-    if (tipsError) console.error("PERFORM: errore insert tips", tipsError);
+      const summary = firstSentences(article.abstract, 3);
+      const sourceLine = article.journal && article.year ? ` (${article.journal}, ${article.year})` : "";
+      const now = new Date().toISOString();
 
-    inserted++;
+      const { error: newsError } = await supabase.from("coach_news_tips").insert({
+        channel: "news",
+        eyebrow: topic.eyebrow,
+        title: article.title,
+        body: `${summary}${sourceLine}`,
+        body_extended: [article.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
+        source_query: pmid,
+        published_at: now,
+      });
+      if (newsError) { console.error("PERFORM: errore insert news", newsError); continue; }
+
+      // Stesso studio, riformulato come consiglio pratico: nessuna
+      // interpretazione aggiuntiva, solo l'inquadramento "cosa significa per
+      // te" seguito dal riassunto reale — mai un consiglio inventato di sana pianta.
+      const { error: tipsError } = await supabase.from("coach_news_tips").insert({
+        channel: "tips",
+        eyebrow: topic.eyebrow,
+        title: `Cosa significa per te: ${article.title}`,
+        body: `${summary}${sourceLine}`,
+        body_extended: [article.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
+        source_query: pmid,
+        published_at: now,
+      });
+      if (tipsError) console.error("PERFORM: errore insert tips", tipsError);
+
+      inserted++;
+    }
+    return inserted;
   }
 
-  return new Response(JSON.stringify({ inserted, topic: topic.query }), { headers: { "Content-Type": "application/json" } });
+  const primaryTopic = TOPICS[twoHourSlot() % TOPICS.length];
+  let inserted = await publishFromTopic(primaryTopic);
+  let usedTopic = primaryTopic;
+
+  // L'argomento del turno aveva già tutto pubblicato di recente (o PubMed
+  // non ha risultati nuovi): prima di rinunciare fino al prossimo giro (2h
+  // dopo, col 40% di probabilità — poteva restare "silenzioso" per giorni
+  // su un argomento esaurito) prova UN argomento di riserva scelto a caso
+  // fra gli altri 13, invece di arrendersi subito.
+  if (inserted === 0) {
+    const fallback = TOPICS[Math.floor(Math.random() * TOPICS.length)];
+    if (fallback.query !== primaryTopic.query) {
+      inserted = await publishFromTopic(fallback);
+      usedTopic = fallback;
+    }
+  }
+
+  return new Response(JSON.stringify({ inserted, topic: usedTopic.query }), { headers: { "Content-Type": "application/json" } });
 });
