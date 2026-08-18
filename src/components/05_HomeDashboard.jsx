@@ -20,9 +20,9 @@ import React, { useState, useMemo, useEffect, useId, useRef } from "react";
 import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
-  CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock,
+  CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, requestPause, fetchActivePause } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 
@@ -2278,8 +2278,171 @@ export function HomeDashboard({
         );
       })()}
 
+      <CardioSection supabase={supabase} userId={userId} accent={accent} />
+
       {!access.pro && <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
         text="Sonno e passi dicono molto, ma solo se qualcuno li legge nel contesto giusto. Fatti aiutare da un professionista del settore che li integra nel tuo piano completo: vedi gli abbonamenti per iniziare." />}
+    </div>
+  );
+}
+
+/* ============================================================================
+   SEZIONE CARDIO — registro attività stile diario Strava semplificato
+   Parte del Diario Libero (disponibile a tutti i piani, come dieta/carichi/
+   integrazione/passi/sonno già elencati in FREE): registrazione manuale di
+   tipo/durata/distanza, storico recente con passo/ritmo calcolato quando c'è
+   la distanza, niente dati finti — vuoto finché il cliente non registra
+   davvero un'attività (stesso principio già applicato a sonno/passi).
+   ========================================================================== */
+const CARDIO_ACTIVITIES = [
+  { id: "corsa", label: "Corsa", icon: "🏃" },
+  { id: "camminata", label: "Camminata", icon: "🚶" },
+  { id: "bici", label: "Bici", icon: "🚴" },
+  { id: "nuoto", label: "Nuoto", icon: "🏊" },
+  { id: "canottaggio", label: "Canottaggio/Vogatore", icon: "🚣" },
+  { id: "altro", label: "Altro", icon: "🔥" },
+];
+
+function paceLabel(durationMin, distanceKm) {
+  if (!distanceKm || distanceKm <= 0) return null;
+  const paceMinPerKm = durationMin / distanceKm;
+  const m = Math.floor(paceMinPerKm);
+  const s = Math.round((paceMinPerKm - m) * 60);
+  return `${m}:${String(s).padStart(2, "0")} min/km`;
+}
+
+function CardioSection({ supabase, userId, accent }) {
+  const isRealMode = Boolean(supabase && userId);
+  const [logs, setLogs] = useState(null); // null finché non caricato (solo isRealMode)
+  const [activityType, setActivityType] = useState("corsa");
+  const [duration, setDuration] = useState("");
+  const [distance, setDistance] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadLogs = useCallback(() => {
+    if (!isRealMode) return;
+    fetchCardioLogs(supabase, userId)
+      .then(setLogs)
+      .catch((err) => { console.error("PERFORM: errore lettura cardio_logs", err); setLogs([]); });
+  }, [isRealMode, supabase, userId]);
+
+  useEffect(() => { loadLogs(); }, [loadLogs]);
+
+  const save = async () => {
+    const mins = Number(duration);
+    if (!mins || mins <= 0) { setError("Inserisci una durata in minuti."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      await addCardioLog(supabase, userId, {
+        date: toLocalISODate(), activityType,
+        durationMin: mins, distanceKm: distance ? Number(distance) : null, notes: notes.trim() || null,
+      });
+      setDuration(""); setDistance(""); setNotes("");
+      loadLogs();
+    } catch (err) {
+      console.error("PERFORM: errore salvataggio attività cardio", err);
+      setError("Non sono riuscito a salvare l'attività.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (id) => {
+    try {
+      await deleteCardioLog(supabase, id);
+      setLogs((ls) => ls.filter((l) => l.id !== id));
+    } catch (err) {
+      console.error("PERFORM: errore eliminazione attività cardio", err);
+    }
+  };
+
+  if (!isRealMode) return null; // solo modalità reale: niente storico finto in anteprima
+
+  const thisWeekMin = (logs || [])
+    .filter((l) => (Date.now() - new Date(`${l.date}T00:00:00`).getTime()) / 86400000 < 7)
+    .reduce((sum, l) => sum + l.duration_min, 0);
+
+  return (
+    <div className="card mb-4">
+      <div className="flex items-center justify-between mb-1">
+        <p className="label flex items-center gap-1.5"><Route size={13} style={{ color: accent }} />Cardio</p>
+        {logs && logs.length > 0 && (
+          <span className="font-data text-xs font-bold" style={{ color: accent }}>{thisWeekMin} min questa settimana</span>
+        )}
+      </div>
+      <p className="h1 mb-3">Registra un'attività</p>
+
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {CARDIO_ACTIVITIES.map((a) => {
+          const on = activityType === a.id;
+          return (
+            <button key={a.id} onClick={() => setActivityType(a.id)} type="button"
+              className="rounded-full px-3 py-2 text-xs flex items-center gap-1.5"
+              style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }
+                        : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+              <span aria-hidden="true">{a.icon}</span>{a.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <label className="block">
+          <span className="label block mb-1.5">Durata (min)</span>
+          <input type="number" min="1" value={duration} onChange={(e) => setDuration(e.target.value)}
+            placeholder="es. 35" className="input w-full px-4 py-3 font-data" />
+        </label>
+        <label className="block">
+          <span className="label block mb-1.5">Distanza (km, facoltativo)</span>
+          <input type="number" min="0" step="0.1" value={distance} onChange={(e) => setDistance(e.target.value)}
+            placeholder="es. 5.2" className="input w-full px-4 py-3 font-data" />
+        </label>
+      </div>
+      <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
+        placeholder="Note (facoltativo, es. percorso, sensazioni...)"
+        className="input w-full px-4 py-3 text-sm mb-3" />
+
+      {error && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{error}</p>}
+
+      <button onClick={save} disabled={saving} className="w-full rounded-full px-4 py-3 text-sm btn-3d disabled:opacity-60"
+        style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
+        {saving ? "Salvo…" : "Registra attività"}
+      </button>
+
+      {logs === null ? (
+        <p className="meta text-sm mt-4">Carico lo storico…</p>
+      ) : logs.length === 0 ? (
+        <p className="meta text-sm mt-4">Nessuna attività registrata ancora — la prima comparirà qui.</p>
+      ) : (
+        <div className="space-y-2 mt-4">
+          {logs.map((l) => {
+            const meta = CARDIO_ACTIVITIES.find((a) => a.id === l.activity_type) || CARDIO_ACTIVITIES[CARDIO_ACTIVITIES.length - 1];
+            const pace = paceLabel(l.duration_min, l.distance_km);
+            return (
+              <div key={l.id} className="inner px-4 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm flex items-center gap-1.5" style={{ color: "var(--ink)", fontWeight: 600 }}>
+                    <span aria-hidden="true">{meta.icon}</span>{meta.label}
+                    <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>
+                      · {new Date(`${l.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
+                    </span>
+                  </p>
+                  <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-soft)" }}>
+                    {l.duration_min} min{l.distance_km ? ` · ${l.distance_km} km` : ""}{pace ? ` · ${pace}` : ""}
+                  </p>
+                  {l.notes && <p className="meta text-xs mt-0.5 leading-relaxed">{l.notes}</p>}
+                </div>
+                <button onClick={() => remove(l.id)} aria-label="Elimina attività" className="shrink-0 p-1.5">
+                  <Trash2 size={15} style={{ color: "var(--ink-tertiary)" }} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -1289,4 +1289,31 @@ export async function adminDeleteAccount(supabase, clientId) {
   if (error) throw error;
 }
 
+// Sezione Cardio (stile diario Strava semplificato) — registro manuale di
+// attività cardio, parte del Diario Libero disponibile a tutti i piani.
+export async function fetchCardioLogs(supabase, userId, limit = 20) {
+  const { data, error } = await supabase
+    .from("cardio_logs")
+    .select("id, date, activity_type, duration_min, distance_km, notes, created_at")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function addCardioLog(supabase, userId, { date, activityType, durationMin, distanceKm, notes }) {
+  const { error } = await supabase.from("cardio_logs").insert({
+    user_id: userId, date, activity_type: activityType, duration_min: durationMin,
+    distance_km: distanceKm || null, notes: notes || null,
+  });
+  if (error) throw error;
+}
+
+export async function deleteCardioLog(supabase, logId) {
+  const { error } = await supabase.from("cardio_logs").delete().eq("id", logId);
+  if (error) throw error;
+}
+
 export { MUSCLE_TARGETS };
