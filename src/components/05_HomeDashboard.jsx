@@ -223,8 +223,13 @@ function Chart3D({ kind, series }) {
          style={{ backgroundColor: "rgba(255,255,255,0.07)", backdropFilter: "blur(16px) saturate(160%)",
                   WebkitBackdropFilter: "blur(16px) saturate(160%)",
                   border: "0.5px solid rgba(255,255,255,0.4)", boxShadow: "0 12px 34px rgba(0,0,0,0.14)" }}>
-      <div ref={scrollRef} className="flex items-end gap-2.5 overflow-x-auto"
-           style={{ cursor: "grab", scrollBehavior: "smooth" }}>
+      {/* Finestra fissa a 7 giorni visibili (7 candele da 20px + 6 spazi da
+          10px = 200px): prima si vedevano tutti i 49 giorni di storico
+          insieme su schermi larghi, troppo affollato. Lo storico resta
+          tutto raggiungibile scorrendo indietro col dito/mouse
+          (useDragScroll), solo non più tutto in vista insieme. */}
+      <div ref={scrollRef} className="flex items-end gap-2.5 overflow-x-auto mx-auto"
+           style={{ cursor: "grab", scrollBehavior: "smooth", maxWidth: 200 }}>
         {series.map((v, i) => {
           const idxFromEnd = series.length - 1 - i;
           const hPct = v > 0 ? Math.max(6, Math.min(100, (v / maxVal) * 100)) : 3;
