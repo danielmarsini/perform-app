@@ -15,6 +15,20 @@ body {
   background-color: #09090B;
 }
 
+/* Nitidezza testo: l'app usa moltissimo testo con gradiente (background-clip:
+   text, GradientText/GOLD_GRADIENT) — quella tecnica passa per un percorso di
+   rendering leggermente diverso dal testo a colore pieno e su alcuni monitor/
+   zoom del browser può risultare più morbida. Questi due flag spingono il
+   motore di rendering verso la resa più nitida disponibile, stesso principio
+   che si usa per far apparire il testo "retina" più definito. Non risolve uno
+   zoom del sistema operativo impostato oltre il 100% (quello è fuori dal
+   controllo della pagina), ma è la parte che l'app può davvero migliorare. */
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
 /* Spinner di caricamento discreto per le schermate lazy (Classifica,
    Pannello Coach) — mai un flash bianco con "Caricamento…", solo un anello
    che ruota sullo sfondo giusto del tema. */
