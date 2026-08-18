@@ -22,9 +22,35 @@
 // LLM a pagamento.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import Anthropic from "npm:@anthropic-ai/sdk@0.32";
 
 const NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
 const POST_PROBABILITY = 0.4;
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
+const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+
+// Gli abstract PubMed arrivano sempre in inglese — pubblico dell'app
+// italiano, quindi vanno tradotti prima di pubblicare. Un modello economico
+// e veloce basta per una traduzione fedele (non serve ragionamento, solo
+// linguistica): stesso ANTHROPIC_API_KEY già usato da ask-perform-ai/
+// generate-plan, ma un modello diverso qui perché il compito è più semplice
+// e gira in automatico più volte al giorno senza supervisione umana.
+async function translateToItalian(title, abstract) {
+  const msg = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 900,
+    messages: [{
+      role: "user",
+      content: `Traduci in italiano professionale e naturale, per un pubblico di sportivi/appassionati di fitness. Traduzione fedele, senza aggiungere interpretazioni, consigli o dati non presenti nel testo originale. Rispondi SOLO con un oggetto JSON valido, nessun altro testo, con esattamente questi due campi:\n{"title": "...", "abstract": "..."}\n\nTitolo originale:\n${title}\n\nAbstract originale:\n${abstract}`,
+    }],
+  });
+  const text = msg.content?.[0]?.type === "text" ? msg.content[0].text : "";
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("risposta di traduzione senza JSON");
+  const parsed = JSON.parse(match[0]);
+  if (!parsed.title || !parsed.abstract) throw new Error("traduzione incompleta");
+  return parsed;
+}
 
 // Una rotazione di argomenti reali per i 5 temi richiesti: allenamento,
 // alimentazione, integrazione, recupero atleti, farmacologia sportiva.
@@ -140,16 +166,27 @@ Deno.serve(async (req) => {
       }
       if (!article.title || !article.abstract) { debug.push(`efetch senza title/abstract (${pmid})`); continue; }
 
-      const summary = firstSentences(article.abstract, 3);
+      // Pubblico italiano: titolo e abstract vanno tradotti, mai lasciati
+      // in inglese com'erano da PubMed.
+      let it;
+      try {
+        it = await translateToItalian(article.title, article.abstract);
+      } catch (err) {
+        console.error("PERFORM: errore traduzione", pmid, err);
+        debug.push(`traduzione fallita (${pmid}): ${err.message}`);
+        it = { title: article.title, abstract: article.abstract }; // meglio inglese che niente
+      }
+
+      const summary = firstSentences(it.abstract, 3);
       const sourceLine = article.journal && article.year ? ` (${article.journal}, ${article.year})` : "";
       const now = new Date().toISOString();
 
       const { error: newsError } = await supabase.from("coach_news_tips").insert({
         channel: "news",
         eyebrow: topic.eyebrow,
-        title: article.title,
+        title: it.title,
         body: `${summary}${sourceLine}`,
-        body_extended: [article.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
+        body_extended: [it.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
         source_query: pmid,
         published_at: now,
       });
@@ -161,9 +198,9 @@ Deno.serve(async (req) => {
       const { error: tipsError } = await supabase.from("coach_news_tips").insert({
         channel: "tips",
         eyebrow: topic.eyebrow,
-        title: `Cosa significa per te: ${article.title}`,
+        title: `Cosa significa per te: ${it.title}`,
         body: `${summary}${sourceLine}`,
-        body_extended: [article.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
+        body_extended: [it.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
         source_query: pmid,
         published_at: now,
       });
