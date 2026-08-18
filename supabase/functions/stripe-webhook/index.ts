@@ -86,10 +86,17 @@ Deno.serve(async (req) => {
       const userId = sub.metadata?.supabase_user_id;
       if (userId) {
         // L'abbonamento è finito (cancellato dal cliente o pagamenti falliti
-        // troppe volte): torna a 'free'. Se era un piano a coaching anche
-        // client_status torna neutro — non è più un cliente pagante, il
-        // coach non deve continuare a vederlo come attivo.
-        const { error } = await admin.from("profiles").update({ plan: "free", client_status: null }).eq("id", userId);
+        // troppe volte): torna a 'free'. Se era un vero cliente in coaching
+        // (client_status già 'active') il nuovo stato è 'expired', non null
+        // — così finisce nel reparto "Scaduti" del pannello coach invece di
+        // sparire silenziosamente come se non fosse mai stato un cliente.
+        // Chi aveva solo Performance Pack (mai 'active', non è coaching)
+        // torna semplicemente a un utente registrato qualunque.
+        const { data: existing } = await admin.from("profiles").select("client_status").eq("id", userId).maybeSingle();
+        const wasCoachingClient = existing?.client_status === "active";
+        const { error } = await admin.from("profiles")
+          .update({ plan: "free", client_status: wasCoachingClient ? "expired" : null })
+          .eq("id", userId);
         if (error) console.error("PERFORM: errore downgrade dopo cancellazione abbonamento", error);
       }
     }

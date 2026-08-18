@@ -1220,6 +1220,7 @@ export async function fetchClientRoster(supabase) {
         status: p.client_status === "active" ? "active" : "pending",
         clientStatus: p.client_status || "registered",
         lastActivity: p.last_activity,
+        createdAt: p.created_at,
         age: answers.eta ?? null,
         birthDate: null,
         heightCm: answers.heightCm ?? null,
@@ -1255,6 +1256,36 @@ export async function activateClient(supabase, clientId, plan) {
     throw new Error(`plan non valido per l'attivazione: "${plan}". Valori ammessi: ${COACHING_PLANS.join(", ")}`);
   }
   const { error } = await supabase.from("profiles").update({ client_status: "active", plan }).eq("id", clientId);
+  if (error) throw error;
+}
+
+// Rinomina un cliente (Hub Rete & Accessi) — semplice update diretto, stessa
+// tabella/permessi già usati da activateClient qui sopra. Non tocca email
+// (quella vive in auth.users, cambiarla richiederebbe una verifica separata,
+// fuori scope per un "correggi il nome scritto male").
+export async function renameClient(supabase, clientId, { fullName, nickname }) {
+  const patch = {};
+  if (fullName !== undefined) patch.full_name = fullName;
+  if (nickname !== undefined) patch.nickname = nickname;
+  const { error } = await supabase.from("profiles").update(patch).eq("id", clientId);
+  if (error) throw error;
+}
+
+// Reset password reale (Edge Function admin-reset-password, service role +
+// Supabase Auth Admin API) — mai una password finta generata solo lato
+// client come prima: quella non cambiava nulla di vero su auth.users.
+// Ritorna la password nuova UNA volta sola, da comunicare al cliente.
+export async function adminResetPassword(supabase, clientId) {
+  const { data, error } = await supabase.functions.invoke("admin-reset-password", { body: { userId: clientId } });
+  if (error) throw error;
+  return data?.password;
+}
+
+// Elimina definitivamente un account (Edge Function admin-delete-account) —
+// per ripulire i doppioni di registrazione. Azione irreversibile: la UI
+// chiamante deve sempre chiedere conferma esplicita prima.
+export async function adminDeleteAccount(supabase, clientId) {
+  const { error } = await supabase.functions.invoke("admin-delete-account", { body: { userId: clientId } });
   if (error) throw error;
 }
 

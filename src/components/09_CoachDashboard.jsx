@@ -207,6 +207,7 @@ import {
   computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
   awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange, fetchClientPauses,
   fetchMesocycleWeeksRange, saveMesocycleWeek,
+  renameClient, adminResetPassword, adminDeleteAccount,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -276,24 +277,26 @@ const DEPTS = [
   { id: "pending", label: "In attesa", dot: "🟡" },
   { id: "expired", label: "Scaduti", dot: "🔴" },
 ];
-/* Billing Shield: il pagamento fallito sposta l'account nel reparto Scaduti
-   in automatico — nessuna azione manuale del coach. NOTA IMPORTANTE: qui
-   simulo solo la LETTURA del risultato (billingStatus) e la conseguenza sul
-   reparto. Il dialogo vero con Stripe Billing (webhook su pagamento fallito,
-   retry, dunning) va implementato server-side via Supabase Edge Function —
-   non può vivere in questo file React lato client, né deve mai vedere la
-   secret key di Stripe. Allo stesso modo, la schermata "a specchio" che si
-   blocca sul telefono dell'atleta appartiene ad AuthView.jsx/AppShell, non
-   a questo pannello Coach: qui il coach vede solo l'effetto (reparto rosso). */
+// I 3 reparti sono SOLO per rapporti di coaching reale (chi ha pagato
+// scheda/training/full) — non per chiunque sia semplicemente registrato con
+// piano Free o Performance Pack: quelli vivono solo in Hub Rete & Accessi,
+// mai qui. BUG PRESO: prima ogni riga con un profiles.role reale (cioè
+// SEMPRE, per qualunque account vero) finiva in "In attesa" perché
+// clientStatus non era mai null grazie al fallback "registered" di
+// fetchClientRoster — anche i semplici iscritti Free affollavano la coda
+// che dovrebbe contenere solo chi aspetta la presa in gestione dopo un
+// pagamento vero. Il webhook Stripe (customer.subscription.deleted) scrive
+// ora client_status='expired' quando un abbonamento coaching non si
+// rinnova, invece di tornare silenziosamente 'registered' — è quello il
+// segnale per "Scaduti", non billingStatus (mai popolato per i dati reali).
+const REAL_COACHING_PLANS = new Set(["scheda_personalizzata", "training", "full", "scheda"]); // "scheda" = id demo
 function deptOf(c) {
-  if (c.clientStatus) {
-    if (c.clientStatus === "active") return "active";
-    if (c.clientStatus === "paused") return "expired";
-    return "pending";
-  }
-  if (c.billingStatus === "payment_failed") return "expired";
-  if (c.status === "pending_approval" || c.status === "new" || c.status === "requires_renewal") return "pending";
-  return computeStatus(c) === "red" && c.adherence < 65 ? "expired" : "active";
+  if (c.clientStatus === "active") return "active";
+  if (c.clientStatus === "expired" || c.clientStatus === "paused") return "expired";
+  if (c.billingStatus === "payment_failed") return "expired"; // solo dati demo, mai popolato dal roster reale
+  if (c.status === "pending_approval" || c.status === "new" || c.status === "requires_renewal") return "pending"; // solo dati demo
+  if (REAL_COACHING_PLANS.has(c.plan)) return "pending"; // ha pagato un piano coaching, aspetta la presa in gestione
+  return null; // Free/Performance Pack: non fa parte di questo roster
 }
 
 /* ============================================================================
@@ -1773,9 +1776,125 @@ function CoachingPlanPicker({ onPick, busy, onCancel }) {
   );
 }
 
+// Azioni admin reali (Edge Function, service role): rinomina, reset
+// password, elimina account. Sostituisce il vecchio "Rigenera" finto — quel
+// pulsante generava una stringa casuale solo in stato locale React, non
+// toccava mai auth.users, il coach pensava di aver risolto un accesso
+// bloccato e in realtà no.
+function AccountActions({ client, onRenamed }) {
+  const { supabase, reloadRoster } = useContext(CoachDataContext);
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState(client.name);
+  const [busy, setBusy] = useState(false);
+  const [newPassword, setNewPassword] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState("");
+
+  const saveRename = async () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed || trimmed === client.name) { setEditing(false); return; }
+    setBusy(true);
+    setError("");
+    try {
+      await renameClient(supabase, client.id, { fullName: trimmed });
+      setEditing(false);
+      onRenamed?.();
+      reloadRoster?.();
+    } catch (err) {
+      console.error("PERFORM: errore rinomina cliente", err);
+      setError("Non sono riuscito a salvare il nuovo nome.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resetPassword = async () => {
+    setBusy(true);
+    setError("");
+    setNewPassword(null);
+    try {
+      const pwd = await adminResetPassword(supabase, client.id);
+      setNewPassword(pwd);
+    } catch (err) {
+      console.error("PERFORM: errore reset password", err);
+      setError("Non sono riuscito a reimpostare la password.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteAccount = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await adminDeleteAccount(supabase, client.id);
+      reloadRoster?.();
+    } catch (err) {
+      console.error("PERFORM: errore eliminazione account", err);
+      setError("Non sono riuscito a eliminare l'account.");
+      setBusy(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") saveRename(); if (e.key === "Escape") setEditing(false); }}
+          className="t-input px-2.5 py-2 rounded-lg text-xs flex-1 min-w-0" autoFocus />
+        <button onClick={saveRename} disabled={busy} className="c-btn px-2.5 py-2 rounded-lg text-xs">✓</button>
+      </div>
+    );
+  }
+
+  if (confirmDelete) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs" style={{ color: "#DC2626", fontWeight: 600 }}>Eliminare per sempre {client.name}?</p>
+        <div className="flex gap-1.5">
+          <button onClick={deleteAccount} disabled={busy} className="px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{ backgroundColor: "#DC2626", color: "#FFFFFF" }}>
+            {busy ? "…" : "Conferma"}
+          </button>
+          <button onClick={() => setConfirmDelete(false)} disabled={busy} className="c-ghost px-2.5 py-1.5 rounded-lg text-xs">Annulla</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button onClick={() => { setNameDraft(client.name); setEditing(true); }} className="c-ghost px-2.5 py-1.5 rounded-lg text-[11px] font-medium">
+          ✏️ Rinomina
+        </button>
+        <button onClick={resetPassword} disabled={busy} className="c-ghost px-2.5 py-1.5 rounded-lg text-[11px] font-medium">
+          🔑 Reset password
+        </button>
+        <button onClick={() => setConfirmDelete(true)} className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium" style={{ color: "#DC2626" }}>
+          🗑 Elimina
+        </button>
+      </div>
+      {newPassword && (
+        <p className="font-data text-xs px-2.5 py-1.5 rounded-lg" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
+          Nuova password: <strong>{newPassword}</strong> — comunicala ora, non sarà più visibile dopo.
+        </p>
+      )}
+      {error && <p className="text-xs" style={{ color: "#DC2626" }}>{error}</p>}
+    </div>
+  );
+}
+
 function AccessControlTable({ passwordOverrides, onRegenerate }) {
   const { clients: CLIENTS, supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
-  const rows = [...CLIENTS].sort((a, b) => a.name.localeCompare(b.name, "it"));
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  // Ordine CRONOLOGICO (più recenti prima) invece di alfabetico — il coach
+  // vede subito chi si è appena iscritto, non deve scorrere l'alfabeto per
+  // trovarlo. I dati demo non hanno createdAt: restano nell'ordine dato
+  // (sort è stabile), solo i dati reali vengono davvero riordinati.
+  const rows = [...CLIENTS]
+    .filter((c) => q === "" || c.name.toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   const [pickingId, setPickingId] = useState(null); // id del cliente per cui è aperto il selettore piano
   const [activatingId, setActivatingId] = useState(null);
 
@@ -1796,8 +1915,14 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
     <div className="c-card">
       <h3 className="c-heading font-display font-bold mb-1">🔐 Controllo Accessi — Tutti gli utenti</h3>
       <p className="c-muted text-xs mb-4">
-        Ordine alfabetico, TUTTI gli iscritti (non solo gli attivi). Visualizza o rigenera la password direttamente da qui per risolvere un problema di accesso.
+        Ordine cronologico (più recenti prima), TUTTI gli iscritti (non solo gli attivi) — anche i doppioni di
+        registrazione restano visibili qui, riconoscibili da nome/email uguali: eliminali con l'azione dedicata.
       </p>
+      <div className="relative mb-4">
+        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: "var(--ink-tertiary)" }} />
+        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cerca per nome o email…"
+          className="t-input w-full text-sm rounded-lg pl-10 pr-3.5 py-2.5" />
+      </div>
       <div className="space-y-2">
         {rows.map((c) => {
           const login = buildLastLogin(c);
@@ -1807,9 +1932,22 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
               <div className="min-w-0">
                 <p className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 600 }}>{c.name}</p>
                 <p className="font-data text-xs truncate" style={{ color: "var(--ink-soft)" }}>{c.email}</p>
+                {isRealMode && c.createdAt && (
+                  <p className="font-data text-[10px] mt-0.5" style={{ color: "var(--ink-tertiary)" }}>
+                    Iscritto il {new Date(c.createdAt).toLocaleDateString("it-IT")}
+                  </p>
+                )}
               </div>
-              <p className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>Ultimo ingresso: {fmtLastLogin(login)}</p>
-              <PasswordViewer password={password} onRegenerate={() => onRegenerate(c.id, c.name)} />
+              {isRealMode ? (
+                <p className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>Piano: {c.plan}</p>
+              ) : (
+                <p className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>Ultimo ingresso: {fmtLastLogin(login)}</p>
+              )}
+              {isRealMode ? (
+                <AccountActions client={c} />
+              ) : (
+                <PasswordViewer password={password} onRegenerate={() => onRegenerate(c.id, c.name)} />
+              )}
               {isRealMode && c.clientStatus === "registered" && (
                 pickingId === c.id ? (
                   <CoachingPlanPicker onPick={(plan) => activate(c, plan)} busy={activatingId === c.id} onCancel={() => setPickingId(null)} />
@@ -1822,6 +1960,7 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
             </div>
           );
         })}
+        {rows.length === 0 && <p className="c-muted text-sm py-6 text-center">Nessun risultato per questa ricerca</p>}
       </div>
     </div>
   );
