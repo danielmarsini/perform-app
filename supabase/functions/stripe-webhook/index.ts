@@ -74,7 +74,11 @@ Deno.serve(async (req) => {
       const priceId = session.metadata?.price_id;
       const planDb = priceId ? PRICE_TO_PLAN[priceId] : null;
       if (userId && planDb) {
-        const update: Record<string, unknown> = { plan: planDb, stripe_customer_id: session.customer };
+        // whitelisted_until azzerato: un pagamento reale rende il cliente
+        // indipendente dal timer della whitelist (SCHEMA_v37) — non va mai
+        // declassato da expire-whitelists solo perché il coach lo aveva
+        // whitelistato prima che iniziasse a pagare per davvero.
+        const update: Record<string, unknown> = { plan: planDb, stripe_customer_id: session.customer, whitelisted_until: null };
         if (COACHING_PLANS.has(planDb)) update.client_status = "active";
         const { error } = await admin.from("profiles").update(update).eq("id", userId);
         if (error) console.error("PERFORM: errore aggiornamento profilo dopo pagamento", error);

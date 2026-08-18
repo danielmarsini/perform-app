@@ -1218,7 +1218,7 @@ export async function saveAnamnesis(supabase, userId, answers) {
 export async function fetchClientRoster(supabase) {
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
-    .select("id, nickname, full_name, email, gender, role, xp_total, current_streak, plan, client_status, last_activity, created_at")
+    .select("id, nickname, full_name, email, gender, role, xp_total, current_streak, plan, client_status, last_activity, created_at, whitelisted_until")
     .eq("role", "user")
     .order("created_at", { ascending: false });
   if (profilesError) throw profilesError;
@@ -1247,6 +1247,9 @@ export async function fetchClientRoster(supabase) {
         clientStatus: p.client_status || "registered",
         lastActivity: p.last_activity,
         createdAt: p.created_at,
+        fullName: p.full_name || null,
+        nickname: p.nickname || null,
+        whitelistedUntil: p.whitelisted_until || null,
         age: answers.eta ?? null,
         birthDate: null,
         heightCm: answers.heightCm ?? null,
@@ -1282,6 +1285,37 @@ export async function activateClient(supabase, clientId, plan) {
     throw new Error(`plan non valido per l'attivazione: "${plan}". Valori ammessi: ${COACHING_PLANS.join(", ")}`);
   }
   const { error } = await supabase.from("profiles").update({ client_status: "active", plan }).eq("id", clientId);
+  if (error) throw error;
+}
+
+// Whitelist: il coach conosce la persona di persona e le dà accesso pieno
+// senza pagamento Stripe reale né anamnesi da compilare — bypassa entrambi
+// impostando onboarding_completed direttamente (stesso flag che App.jsx usa
+// per decidere se mostrare OnboardingFlow, dove vive l'anamnesi
+// obbligatoria dei piani a coaching). whitelisted_until è la data esatta di
+// scadenza: exact months da oggi, non un'approssimazione a 30 giorni — così
+// "3 mesi gratis" scade davvero 3 mesi dopo, indipendentemente dal numero
+// di giorni nei mesi di mezzo.
+const WHITELISTABLE_PLANS = ["free", "performance_pack", "scheda_personalizzata", "training", "full"];
+export async function whitelistClient(supabase, clientId, plan, months) {
+  if (!WHITELISTABLE_PLANS.includes(plan)) {
+    throw new Error(`piano non valido per la whitelist: "${plan}"`);
+  }
+  const n = Number(months);
+  if (!Number.isFinite(n) || n <= 0) throw new Error("numero di mesi non valido");
+  const until = new Date();
+  until.setMonth(until.getMonth() + n);
+  const { error } = await supabase.from("profiles").update({
+    plan, client_status: "active", onboarding_completed: true, whitelisted_until: until.toISOString(),
+  }).eq("id", clientId);
+  if (error) throw error;
+}
+
+// Rimuove la whitelist prima della scadenza naturale (il coach cambia idea,
+// o la persona inizia a pagare per davvero tramite "Cambia abbonamento").
+// Non tocca il piano attuale — solo lo scollega dal timer di scadenza.
+export async function clearWhitelist(supabase, clientId) {
+  const { error } = await supabase.from("profiles").update({ whitelisted_until: null }).eq("id", clientId);
   if (error) throw error;
 }
 

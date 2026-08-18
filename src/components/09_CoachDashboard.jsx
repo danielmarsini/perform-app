@@ -2,8 +2,9 @@ import React, { useState, useMemo, useEffect, useCallback, useRef, createContext
 import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
   AlertTriangle, Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
-  Trash2, ArrowLeft, CalendarDays, Wallet, Server,
+  Trash2, ArrowLeft, CalendarDays, Wallet, Server, X, ShieldCheck, Check,
 } from "lucide-react";
+import Portal from "./Portal.jsx";
 
 /* ============================================================================
    COACH DASHBOARD — PERFORM (Evidence-Based Method by D. Marsini)
@@ -209,6 +210,7 @@ import {
   fetchMesocycleWeeksRange, saveMesocycleWeek,
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, saveCheckin, getCheckinPhotoUrl,
+  xpToLevelInfo, whitelistClient, clearWhitelist,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -1642,86 +1644,27 @@ function AlarmsDashboard({ onOpen }) {
 }
 
 /* --------------------------------- WHITELIST -------------------------------- */
-/* Logica adattata dal modulo whitelist del monolite (righe 3754-3763,
-   4014-4073): due toggle indipendenti Bypass Stripe / Bypass Anamnesi.    */
+/* BUG PRESO: questo pannello era completamente finto — "Genera accesso
+   diretto" scriveva solo in stato locale React (setCreated), mai su
+   Supabase; nessun account veniva davvero creato, nessun bypass davvero
+   applicato, nonostante il testo dicesse esplicitamente "restano
+   tracciati". Sostituito dal flusso reale: la whitelist (bypass Stripe +
+   bypass anamnesi, scadenza a mesi esatti, SCHEMA_v37) si attiva da
+   Controllo Accessi cliccando sul cliente già registrato — vedi
+   ClientWhitelistPanel/whitelistClient (coachingData.js). Questo pannello
+   ora è solo un rimando, non serve più duplicare la UI. */
 function WhitelistPanel() {
-  const [wl, setWl] = useState({ email: "", name: "", bypassPay: true, bypassAnam: false, plan: "full" });
-  const [created, setCreated] = useState([]);
-
-  const generate = () => {
-    if (!wl.email.includes("@") || wl.name.trim().length < 3) return;
-    const password = `${wl.name.trim().split(" ")[0]}-${Math.floor(1000 + Math.random() * 9000)}`;
-    setCreated((list) => [{ ...wl, password, createdAt: new Date().toLocaleString("it-IT") }, ...list]);
-    setWl({ email: "", name: "", bypassPay: true, bypassAnam: false, plan: "full" });
-  };
-
   return (
     <div className="c-card">
       <h3 className="c-heading font-display font-bold flex items-center gap-2 mb-1">
         <Lock size={17} style={{ color: "#C5A059" }} />
-        🔐 Gestione Whitelist
+        🔐 Whitelist
       </h3>
-      <p className="c-muted font-data text-xs mb-5">
-        Accesso diretto per collaboratori o amici storici · pre-crea il profilo su Supabase con i bypass scelti
-      </p>
-
-      <label className="block mb-3">
-        <span className="c-label block mb-1.5">Email del collaboratore</span>
-        <input type="email" value={wl.email} onChange={(e) => setWl({ ...wl, email: e.target.value })}
-          placeholder="nome@email.it" className="t-input w-full text-sm rounded-xl px-4 py-3" />
-      </label>
-      <label className="block mb-4">
-        <span className="c-label block mb-1.5">Nome e cognome</span>
-        <input type="text" value={wl.name} onChange={(e) => setWl({ ...wl, name: e.target.value })}
-          placeholder="Nome Cognome" className="t-input w-full text-sm rounded-xl px-4 py-3" />
-      </label>
-
-      {[
-        ["bypassPay", "Bypass pagamento Stripe", "Salta la schermata dei piani: l'account risulta già pagato"],
-        ["bypassAnam", "Bypass anamnesi", "Salta le 56 domande: il profilo passa direttamente su active"],
-      ].map(([k, lab, desc]) => (
-        <div key={k} className="t-inner px-4 py-3.5 mb-2.5 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>{lab}</p>
-            <p className="c-muted text-xs mt-0.5 leading-relaxed">{desc}</p>
-          </div>
-          <button onClick={() => setWl({ ...wl, [k]: !wl[k] })} className="relative rounded-full transition-all duration-300 shrink-0"
-            style={{ width: 48, height: 28, backgroundColor: wl[k] ? "#C5A059" : "#E4E4E7" }} aria-label={lab}>
-            <span className="absolute rounded-full transition-all duration-300" style={{ width: 22, height: 22, top: 3, left: wl[k] ? 23 : 3, backgroundColor: "#FFFFFF", boxShadow: "0 2px 6px rgba(0,0,0,0.22)" }} />
-          </button>
-        </div>
-      ))}
-
-      <label className="block mb-4">
-        <span className="c-label block mb-1.5">Piano assegnato</span>
-        <select value={wl.plan} onChange={(e) => setWl({ ...wl, plan: e.target.value })} className="t-input w-full text-sm rounded-xl px-4 py-3">
-          <option value="full">Full Coaching 360°</option>
-          <option value="training">Solo Allenamento</option>
-          <option value="scheda">Scheda Personalizzata</option>
-        </select>
-      </label>
-
-      <button onClick={generate} className="c-btn w-full rounded-full px-4 py-3.5 text-sm font-medium">
-        Genera accesso diretto
-      </button>
-
-      {created.length > 0 && (
-        <div className="mt-5">
-          <p className="c-label mb-2">Accessi generati in questa sessione</p>
-          {created.map((a) => (
-            <div key={a.email + a.createdAt} className="t-inner px-4 py-3 mb-1.5">
-              <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>{a.name}</p>
-              <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-soft)" }}>{a.email} · password {a.password}</p>
-              <p className="font-data text-[10px] mt-1" style={{ color: "#10B981" }}>
-                {a.bypassAnam ? "Attivo subito" : a.bypassPay ? "Pagamento saltato · anamnesi da compilare" : "Percorso standard"} · {a.createdAt}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <p className="c-muted text-xs mt-4 leading-relaxed">
-        Gli accessi diretti restano tracciati: ogni bypass registra chi l'ha concesso e quando. Serve per la contabilità, non per il controllo.
+      <p className="c-muted text-sm leading-relaxed">
+        La whitelist (bypass pagamento Stripe + bypass anamnesi, con scadenza a mesi esatti) si attiva ora da
+        <strong> Controllo Accessi</strong>: cerca la persona già registrata, clicca sul suo nome per aprire il
+        dettaglio e attiva la whitelist da lì. Serve che la persona si sia già registrata almeno una volta —
+        anche solo con un account Free.
       </p>
     </div>
   );
@@ -1885,6 +1828,186 @@ function AccountActions({ client, onRenamed }) {
   );
 }
 
+/* Bottone copia-negli-appunti generico: usato per email/nome reale nel
+   dettaglio cliente — "dammi la possibilità di copiare la mail e nome vero"
+   per poter riconoscere/whitelistare persone che il coach conosce. */
+function CopyButton({ value, label }) {
+  const [copied, setCopied] = useState(false);
+  const doCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(value || "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error("PERFORM: errore copia negli appunti", err);
+    }
+  };
+  return (
+    <button onClick={doCopy} disabled={!value} title={`Copia ${label}`}
+            className="inline-flex items-center gap-1 disabled:opacity-40" style={{ color: "var(--ink-tertiary)" }}>
+      {copied ? <Check size={12} style={{ color: "#10B981" }} /> : <Copy size={12} />}
+    </button>
+  );
+}
+
+const WHITELIST_PLAN_LABELS = {
+  free: "Free", performance_pack: "Premium", scheda_personalizzata: "Scheda Personalizzata",
+  training: "Coaching Allenamento", full: "Full Coaching",
+};
+
+/* Whitelist: attiva un piano a tempo senza passare da Stripe né da
+   anamnesi obbligatoria — persone che il coach conosce di persona (vedi
+   whitelistClient/coachingData.js, SCHEMA_v37). La scadenza è calcolata a
+   mesi esatti dalla data di attivazione, non un'approssimazione a giorni. */
+function ClientWhitelistPanel({ client, onChanged }) {
+  const { supabase, reloadRoster } = useContext(CoachDataContext);
+  const [plan, setPlan] = useState("full");
+  const [months, setMonths] = useState(3);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const isActive = client.whitelistedUntil && new Date(client.whitelistedUntil) > new Date();
+
+  const activate = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await whitelistClient(supabase, client.id, plan, months);
+      reloadRoster?.();
+      onChanged?.();
+    } catch (err) {
+      console.error("PERFORM: errore attivazione whitelist", err);
+      setError(err.message || "Non sono riuscito ad attivare la whitelist.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await clearWhitelist(supabase, client.id);
+      reloadRoster?.();
+      onChanged?.();
+    } catch (err) {
+      console.error("PERFORM: errore rimozione whitelist", err);
+      setError("Non sono riuscito a rimuovere la whitelist.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="t-inner px-4 py-3.5">
+      <div className="flex items-center gap-1.5 mb-2">
+        <ShieldCheck size={15} style={{ color: "#C5A059" }} />
+        <p className="c-label" style={{ margin: 0 }}>Whitelist — bypass Stripe e anamnesi</p>
+      </div>
+      {isActive ? (
+        <>
+          <p className="text-sm mb-3" style={{ color: "var(--ink)" }}>
+            Attiva fino al <strong>{new Date(client.whitelistedUntil).toLocaleDateString("it-IT")}</strong> —
+            piano {WHITELIST_PLAN_LABELS[client.plan] || client.plan}.
+          </p>
+          <button onClick={remove} disabled={busy} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium">
+            {busy ? "…" : "Rimuovi whitelist"}
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="c-muted text-xs mb-3">
+            Per persone che conosci di persona: accesso pieno senza pagamento reale, con scadenza precisa.
+          </p>
+          <div className="flex flex-wrap items-end gap-2.5 mb-3">
+            <label className="flex-1 min-w-[160px]">
+              <span className="c-label block mb-1">Piano</span>
+              <select value={plan} onChange={(e) => setPlan(e.target.value)} className="t-input w-full text-sm rounded-md px-2.5 py-2">
+                {Object.entries(WHITELIST_PLAN_LABELS).filter(([id]) => id !== "free").map(([id, label]) => (
+                  <option key={id} value={id}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="w-24">
+              <span className="c-label block mb-1">Mesi</span>
+              <input type="number" min={1} max={24} value={months} onChange={(e) => setMonths(e.target.value)} className="t-input w-full text-sm rounded-md px-2.5 py-2 font-data text-center" />
+            </label>
+            <button onClick={activate} disabled={busy} className="c-btn px-3.5 py-2 rounded-lg text-xs font-medium">
+              {busy ? "…" : "Attiva whitelist"}
+            </button>
+          </div>
+        </>
+      )}
+      {error && <p className="text-xs" style={{ color: "#DC2626" }}>{error}</p>}
+    </div>
+  );
+}
+
+/* Dettaglio cliente da Controllo Accessi: nickname/livello XP/piano/date +
+   whitelist — "se clicco su di esso fa vedere le loro impostazioni". */
+function ClientAccessDetailModal({ client, onClose }) {
+  const level = xpToLevelInfo(client.xp || 0);
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+           style={{ backgroundColor: "rgba(9,9,11,0.65)", backdropFilter: "blur(6px)" }} onClick={onClose}>
+        <div className="spring-in c-card w-full overflow-y-auto" style={{ maxWidth: 440, maxHeight: "88vh" }} onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-start justify-between mb-4">
+            <div className="min-w-0">
+              <p className="c-heading font-display font-bold truncate">{client.name}</p>
+              <p className="c-muted text-xs">Dettaglio accesso</p>
+            </div>
+            <button onClick={onClose} aria-label="Chiudi" className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="space-y-2 mb-4">
+            <div className="t-inner px-3.5 py-2.5 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="c-label mb-0.5">Nome reale (registrazione)</p>
+                <p className="text-sm truncate" style={{ color: "var(--ink)" }}>{client.fullName || "—"}</p>
+              </div>
+              <CopyButton value={client.fullName} label="nome" />
+            </div>
+            <div className="t-inner px-3.5 py-2.5 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="c-label mb-0.5">Email</p>
+                <p className="font-data text-sm truncate" style={{ color: "var(--ink)" }}>{client.email || "—"}</p>
+              </div>
+              <CopyButton value={client.email} label="email" />
+            </div>
+            <div className="t-inner px-3.5 py-2.5">
+              <p className="c-label mb-0.5">Nickname</p>
+              <p className="text-sm" style={{ color: "var(--ink)" }}>{client.nickname || "—"}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="t-inner px-3.5 py-2.5">
+                <p className="c-label mb-0.5">Livello</p>
+                <p className="text-sm font-bold" style={{ color: "var(--ink)" }}>{level.title}</p>
+              </div>
+              <div className="t-inner px-3.5 py-2.5">
+                <p className="c-label mb-0.5">XP totali</p>
+                <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{client.xp}</p>
+              </div>
+              <div className="t-inner px-3.5 py-2.5">
+                <p className="c-label mb-0.5">Piano attuale</p>
+                <p className="text-sm" style={{ color: "var(--ink)" }}>{WHITELIST_PLAN_LABELS[client.plan] || client.plan}</p>
+              </div>
+              <div className="t-inner px-3.5 py-2.5">
+                <p className="c-label mb-0.5">Iscritto il</p>
+                <p className="text-sm" style={{ color: "var(--ink)" }}>{client.createdAt ? new Date(client.createdAt).toLocaleDateString("it-IT") : "—"}</p>
+              </div>
+            </div>
+          </div>
+
+          <ClientWhitelistPanel client={client} onChanged={onClose} />
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 function AccessControlTable({ passwordOverrides, onRegenerate }) {
   const { clients: CLIENTS, supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const [query, setQuery] = useState("");
@@ -1898,6 +2021,7 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   const [pickingId, setPickingId] = useState(null); // id del cliente per cui è aperto il selettore piano
   const [activatingId, setActivatingId] = useState(null);
+  const [detailClient, setDetailClient] = useState(null); // riga cliccata → apre ClientAccessDetailModal
 
   const activate = async (c, plan) => {
     setActivatingId(c.id);
@@ -1928,11 +2052,22 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
         {rows.map((c) => {
           const login = buildLastLogin(c);
           const password = passwordOverrides?.[c.id] || c.password;
+          const whitelistActive = c.whitelistedUntil && new Date(c.whitelistedUntil) > new Date();
           return (
             <div key={c.id} className="t-inner px-4 py-3 grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
               <div className="min-w-0">
-                <p className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 600 }}>{c.name}</p>
-                <p className="font-data text-xs truncate" style={{ color: "var(--ink-soft)" }}>{c.email}</p>
+                <button onClick={() => isRealMode && setDetailClient(c)} className="flex items-center gap-1.5 max-w-full text-left"
+                        disabled={!isRealMode} title={isRealMode ? "Apri dettaglio accesso" : undefined}>
+                  <p className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 600 }}>{c.name}</p>
+                  {isRealMode && <CopyButton value={c.fullName || c.name} label="nome" />}
+                  {whitelistActive && (
+                    <span title="Whitelist attiva" style={{ fontSize: "0.9rem" }}>🛡️</span>
+                  )}
+                </button>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-data text-xs truncate" style={{ color: "var(--ink-soft)" }}>{c.email}</p>
+                  {isRealMode && <CopyButton value={c.email} label="email" />}
+                </div>
                 {isRealMode && c.createdAt && (
                   <p className="font-data text-[10px] mt-0.5" style={{ color: "var(--ink-tertiary)" }}>
                     Iscritto il {new Date(c.createdAt).toLocaleDateString("it-IT")}
@@ -1963,6 +2098,12 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
         })}
         {rows.length === 0 && <p className="c-muted text-sm py-6 text-center">Nessun risultato per questa ricerca</p>}
       </div>
+      {detailClient && (
+        <ClientAccessDetailModal
+          client={rows.find((r) => r.id === detailClient.id) || detailClient}
+          onClose={() => setDetailClient(null)}
+        />
+      )}
     </div>
   );
 }
