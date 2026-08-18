@@ -4564,6 +4564,7 @@ const STRIPE_STATUS_META = {
   paid: { label: "🟢 PAGATO", bg: "#ECFDF5", border: "#A7F3D0", color: "#047857" },
   processing: { label: "🟡 IN ELABORAZIONE", bg: "#FFFBEB", border: "#FDE68A", color: "#92400E" },
   failed: { label: "🔴 FALLITO", bg: "#FEF2F2", border: "#FECACA", color: "#B91C1C" },
+  refunded: { label: "↩️ RIMBORSATO", bg: "#F4F4F5", border: "#D4D4D8", color: "#52525B" },
 };
 
 function MonetaryWidgets({ mrr, transactions, isDark }) {
@@ -4590,12 +4591,14 @@ function MonetaryWidgets({ mrr, transactions, isDark }) {
   );
 }
 
-function TransactionLedger({ transactions }) {
+function TransactionLedger({ transactions, real }) {
   return (
     <div className="c-card">
       <h3 className="c-heading font-display font-bold mb-1">🧾 Storico Transazioni & Hub Fiscale</h3>
       <p className="c-muted text-xs mb-4">
-        Ordine cronologico decrescente · gli ID transazione qui sono simulati (`ch_sim_…`/`in_sim_…`), non veri ID Stripe — in produzione arrivano dal webhook Stripe nella tabella <code>subscriptions</code>.
+        {real
+          ? "Ordine cronologico decrescente · charge reali letti in diretta da Stripe, ID veri — clicca l'ID per verificarlo sulla Dashboard Stripe."
+          : "Ordine cronologico decrescente · gli ID transazione qui sono simulati (`ch_sim_…`/`in_sim_…`), non veri ID Stripe — in produzione arrivano dal webhook Stripe nella tabella subscriptions."}
       </p>
       <div className="space-y-1.5">
         {transactions.map((t) => {
@@ -4633,19 +4636,60 @@ function buildRevenueHistory(mrr) {
 }
 
 function FinanceModule({ isDark }) {
-  const { clients: CLIENTS } = useContext(CoachDataContext);
-  const mrr = useMemo(() => computeMRR(CLIENTS), [CLIENTS]);
-  const transactions = useMemo(() => buildTransactions(CLIENTS), [CLIENTS]);
-  const revenueHistory = useMemo(() => buildRevenueHistory(mrr), [mrr]);
+  const { clients: CLIENTS, supabase, isRealMode } = useContext(CoachDataContext);
+  const demoMrr = useMemo(() => computeMRR(CLIENTS), [CLIENTS]);
+  const demoTransactions = useMemo(() => buildTransactions(CLIENTS), [CLIENTS]);
+  const demoRevenueHistory = useMemo(() => buildRevenueHistory(demoMrr), [demoMrr]);
+
+  // BUG PRESO: l'MRR veniva stimato da profiles.plan/client_status — un
+  // piano assegnato manualmente dal coach ("Prendi in gestione", whitelist)
+  // risultava contato come fatturato vero anche senza un euro incassato
+  // davvero (il caso esatto segnalato: 2 account test attivati a mano
+  // mostravano 120€/mese). Ora la fonte è sempre Stripe stesso, in tempo
+  // reale, via finance-summary (Edge Function coach-only) — mai una copia
+  // locale che possa disallinearsi.
+  const [real, setReal] = useState(null); // null = non ancora caricato, false = errore
+  const [loading, setLoading] = useState(isRealMode);
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    setLoading(true);
+    supabase.functions.invoke("finance-summary", { method: "POST" })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || data?.error) { console.error("PERFORM: errore finance-summary", error || data?.error); setReal(false); return; }
+        setReal(data);
+      })
+      .catch((err) => { console.error("PERFORM: errore chiamata finance-summary", err); if (!cancelled) setReal(false); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase]);
+
+  if (isRealMode) {
+    if (loading) return <div className="c-card"><p className="c-muted text-sm">Caricamento dati reali da Stripe…</p></div>;
+    if (!real) return <div className="c-card"><p className="c-muted text-sm">Non sono riuscito a leggere i dati finanziari da Stripe. Riprova tra poco.</p></div>;
+    return (
+      <div>
+        <MonetaryWidgets mrr={real.mrr} transactions={real.transactions} isDark={isDark} />
+        <TransactionLedger real transactions={real.transactions.map((t) => ({
+          id: t.id, clientName: t.name || "—", email: t.email || "—",
+          planLabel: `€ ${t.amount.toFixed(2)} ${(t.currency || "eur").toUpperCase()}`,
+          stripeStatus: t.status === "succeeded" ? "paid" : t.status === "refunded" ? "refunded" : t.status === "failed" ? "failed" : "processing",
+          stripeId: t.id, timestamp: t.createdAt,
+        }))} />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <MonetaryWidgets mrr={mrr} transactions={transactions} isDark={isDark} />
+      <MonetaryWidgets mrr={demoMrr} transactions={demoTransactions} isDark={isDark} />
       <div className="c-card mb-5">
         <p className="c-label mb-1">Andamento fatturato mensile</p>
-        <p className="c-muted text-xs mb-3">Curva illustrativa fino all'MRR di oggi — lo storico reale arriva dal webhook Stripe, non ancora collegato in questa anteprima.</p>
-        <LineChart points={revenueHistory} xLabel={(p) => p.month} series={[{ key: "revenue", label: "Fatturato (€)", color: "#C5A059" }]} />
+        <p className="c-muted text-xs mb-3">Curva illustrativa fino all'MRR di oggi — anteprima, non collegata a Stripe.</p>
+        <LineChart points={demoRevenueHistory} xLabel={(p) => p.month} series={[{ key: "revenue", label: "Fatturato (€)", color: "#C5A059" }]} />
       </div>
-      <TransactionLedger transactions={transactions} />
+      <TransactionLedger transactions={demoTransactions} />
     </div>
   );
 }
