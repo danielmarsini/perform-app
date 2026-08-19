@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 
@@ -2705,6 +2705,10 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
 
   const isMaxEffort = index < 2;
   const peak = Math.max(0, ...rows.map((r) => Number(r.kg) || 0));
+  // "8-10" = stesso range per tutte le serie. "8/12" = target diverso per
+  // ogni serie (prima 8, seconda 12). Vedi parseRepsTarget (coachingData.js).
+  const repsTargets = useMemo(() => parseRepsTarget(ex.reps, ex.sets), [ex.reps, ex.sets]);
+  const hasPerSetTargets = ex.reps?.includes("/");
 
   /* Storico: supporta sia il vecchio formato (array di kg) sia quello nuovo
      {kg, reps}, per ricordare il carico E le reps dell'ultima volta identica. */
@@ -2782,7 +2786,11 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       </div>
 
       <p className="h2">{ex.name}</p>
-      <p className="meta mt-0.5">{ex.sets} serie × {ex.reps} reps · RIR {ex.rirTarget}</p>
+      <p className="meta mt-0.5">
+        {hasPerSetTargets
+          ? repsTargets.map((t, i) => `S${i + 1}: ${t}`).join(" · ")
+          : `${ex.sets} serie × ${ex.reps} reps`} · RIR {ex.rirTarget}
+      </p>
       {ex.technique && <p className="mt-1 text-sm" style={{ color: "var(--ink-2)", fontWeight: 500 }}>Tecnica: {ex.technique}</p>}
       {lastEntry && lastEntry.kg > 0 ? (
         <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
@@ -2813,8 +2821,9 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
             {["kg", "reps", "rir"].map((f) => (
               <input key={f} type="number" min="0" value={row[f]}
                      onChange={(e) => { onSetField(ex, i, f, e.target.value); syncToCoach({ kind: "field-change", rowIndex: i, field: f, value: e.target.value }); }}
+                     placeholder={f === "reps" ? repsTargets[i] : undefined}
                      className="col-span-3 input w-full px-2 py-2.5 text-center text-sm"
-                     aria-label={`${f} serie ${i + 1} di ${ex.name}`} />
+                     aria-label={f === "reps" && repsTargets[i] ? `reps serie ${i + 1} di ${ex.name}, target ${repsTargets[i]}` : `${f} serie ${i + 1} di ${ex.name}`} />
             ))}
             <button onClick={() => toggleRowDone(i)}
                     aria-label={doneRows[i] ? `Segna serie ${i + 1} come da rifare` : `Segna serie ${i + 1} come completata e avvia il recupero`}

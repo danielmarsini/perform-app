@@ -1540,4 +1540,21 @@ export async function deleteCardioLog(supabase, logId) {
   if (error) throw error;
 }
 
-export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, computeVolume };
+// "8-10" (o un numero fisso "8") = stesso range/valore per tutte le serie.
+// "8/12" (con la barra) = una serie per parte: prima serie 8, seconda 12.
+// "8/10/12" = 3 serie con 3 target diversi. Se le parti non combaciano col
+// numero di serie, l'ultima parte si ripete per quelle in eccesso — non
+// un errore, un caso limite gestito con buon senso.
+function parseRepsTarget(repsRaw, numSets) {
+  const raw = String(repsRaw || "").trim();
+  const n = Math.max(0, Number(numSets) || 0);
+  if (!raw || n === 0) return [];
+  if (raw.includes("/")) {
+    const parts = raw.split("/").map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 0) return Array.from({ length: n }, () => "");
+    return Array.from({ length: n }, (_, i) => parts[i] ?? parts[parts.length - 1]);
+  }
+  return Array.from({ length: n }, () => raw);
+}
+
+export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, computeVolume, parseRepsTarget };
