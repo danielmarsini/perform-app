@@ -94,11 +94,31 @@ export const MACRO_COLORS = {
    invert:true = valori più bassi sono migliori (es. RHR: meno battiti a riposo
    è meglio), quindi "bad" è il limite superiore da non superare. */
 export const THRESH = {
-  sleep: { bad: 6,    mid: 7.5,   fmt: (v) => `${v.toFixed(1)}h` },
-  steps: { bad: 8000, mid: 10000, fmt: (v) => `${(v / 1000).toFixed(1)}k` },
-  hrv:   { bad: 40,   mid: 60,    fmt: (v) => `${Math.round(v)}ms` },
-  rhr:   { bad: 75,   mid: 65,    fmt: (v) => `${Math.round(v)}bpm`, invert: true },
+  sleep: { bad: 6,    mid: 7.5,   fmt: (v) => `${v.toFixed(1)}h`, gridStep: 2 },
+  steps: { bad: 8000, mid: 10000, fmt: (v) => `${(v / 1000).toFixed(1)}k`, gridStep: 5000 },
+  hrv:   { bad: 40,   mid: 60,    fmt: (v) => `${Math.round(v)}ms`, gridStep: 20 },
+  rhr:   { bad: 75,   mid: 65,    fmt: (v) => `${Math.round(v)}bpm`, invert: true, gridStep: 20 },
 };
+
+// Colore continuo (stessa curva a semaforo dei cerchi di compliance,
+// complianceHsl più sotto) invece dei 3 blocchi netti rosso/arancio/verde:
+// una progressione fluida rosso acceso → rosso spento → arancio → arancio
+// chiaro → giallo → verde → verde acceso man mano che il valore sale.
+// Per rhr (invert: più basso è meglio) la scala è specchiata.
+function chart3dPct(kind, v) {
+  const t = THRESH[kind];
+  if (t.invert) {
+    if (v >= t.bad) return 0;
+    if (v >= t.mid) return 55 * (t.bad - v) / (t.bad - t.mid || 1);
+    const span = t.mid * 0.4 || 1;
+    return Math.min(100, 55 + 45 * Math.min(1, (t.mid - v) / span));
+  }
+  if (v <= 0) return 0;
+  if (v < t.bad) return 55 * (v / t.bad);
+  if (v < t.mid) return 55 + 30 * (v - t.bad) / (t.mid - t.bad || 1);
+  const span = t.mid * 0.3 || 1;
+  return Math.min(100, 85 + 15 * Math.min(1, (v - t.mid) / span));
+}
 
 const CANDLE = {
   bad:  { top: "#F87171", mid: "#EF4444", dark: "#B91C1C", label: "#DC2626" },
@@ -240,12 +260,14 @@ function Chart3D({ kind, series, title }) {
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
 
-  // Piano cartesiano: due righe sottili di riferimento alle soglie
-  // bad/mid (le stesse che colorano le candele in grade()), così si vede
-  // subito a colpo d'occhio dove sta il proprio valore rispetto agli
-  // obiettivi, non solo il colore della singola candela.
-  const thresholdPct = (v) => Math.max(0, Math.min(100, (v / maxVal) * 100));
-  const thresholds = [{ v: t.mid, label: "obiettivo" }, { v: t.bad, label: "attenzione" }];
+  // Piano cartesiano vero, stile app Salute di iPhone: righe orizzontali a
+  // intervalli regolari (5k/10k/15k passi, ogni 2h di sonno...) con la
+  // scala etichettata, non solo due soglie isolate — così si legge il
+  // valore assoluto a colpo d'occhio, non solo "sopra o sotto obiettivo".
+  const gridPct = (v) => Math.max(0, Math.min(100, (v / maxVal) * 100));
+  const niceMax = Math.ceil(maxVal / t.gridStep) * t.gridStep;
+  const gridLines = [];
+  for (let v = t.gridStep; v <= niceMax && gridLines.length < 5; v += t.gridStep) gridLines.push(v);
 
   const activeIdx = selectedIdx ?? series.length - 1;
   const activeIdxFromEnd = series.length - 1 - activeIdx;
@@ -270,13 +292,14 @@ function Chart3D({ kind, series, title }) {
           più di 7 giorni di dati. */}
       <div ref={scrollRef} className="relative flex items-end gap-2.5 overflow-x-auto"
            style={{ cursor: "grab", scrollBehavior: "smooth", width: "100%" }}>
-        {/* Piano cartesiano: righe soglia sottili, sotto alle candele */}
+        {/* Griglia cartesiana: righe orizzontali regolari ed etichettate,
+            sotto alle candele — mai solo 1-2 soglie isolate. */}
         <div className="absolute inset-x-0 pointer-events-none" style={{ height: BAR_H, top: 0 }}>
-          {thresholds.map((th) => (
-            <div key={th.label} className="absolute inset-x-0" style={{ bottom: `${thresholdPct(th.v)}%`,
-                   borderTop: "1px dashed rgba(255,255,255,0.28)" }}>
-              <span className="font-data absolute right-0" style={{ top: -13, fontSize: "0.48rem", color: "var(--ink-3)", opacity: 0.8, whiteSpace: "nowrap" }}>
-                {t.fmt(th.v)}
+          {gridLines.map((v) => (
+            <div key={v} className="absolute inset-x-0" style={{ bottom: `${gridPct(v)}%`,
+                   borderTop: "1px solid rgba(255,255,255,0.14)" }}>
+              <span className="font-data absolute right-0" style={{ top: -12, fontSize: "0.46rem", color: "var(--ink-3)", opacity: 0.75, whiteSpace: "nowrap" }}>
+                {t.fmt(v)}
               </span>
             </div>
           ))}
@@ -284,13 +307,24 @@ function Chart3D({ kind, series, title }) {
         {series.map((v, i) => {
           const idxFromEnd = series.length - 1 - i;
           const hPct = v > 0 ? Math.max(6, Math.min(100, (v / maxVal) * 100)) : 3;
-          const tone = CANDLE[grade(kind, v)];
+          // Colore continuo a semaforo (stessa curva dei cerchi di
+          // compliance): sfuma gradualmente rosso→arancio→giallo→verde
+          // man mano che il valore sale, mai un salto netto di colore.
+          const { h, s, l } = complianceHsl(chart3dPct(kind, v));
+          const tone = {
+            top: `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${Math.min(100, l + 16).toFixed(0)}%)`,
+            mid: `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`,
+            dark: `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${Math.max(0, l - 14).toFixed(0)}%)`,
+          };
           const isActive = i === activeIdx;
           return (
             <button key={i} onMouseDown={onPointerDownBar} onTouchStart={onPointerDownBar} onClick={onClickBar(i, setSelectedIdx)}
                     className="relative shrink-0 flex flex-col items-center" style={{ width: "calc((100% - 60px) / 7)", minWidth: 34 }}>
-              <div style={{ height: BAR_H, width: "100%", display: "flex", alignItems: "flex-end" }}>
-                <div className="relative overflow-hidden" style={{ width: "100%", height: `${hPct}%`, borderRadius: 4,
+              <div style={{ height: BAR_H, width: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+                {/* Barra più sottile (stile Salute di iPhone): non riempie
+                    più tutta la colonna, solo il 58% centrato — prima
+                    risultava "cicciotta". */}
+                <div className="relative overflow-hidden" style={{ width: "58%", height: `${hPct}%`, borderRadius: 5,
                        background: `linear-gradient(180deg, ${tone.top} 0%, ${tone.mid} 45%, ${tone.dark} 100%)`,
                        border: isActive ? "1.5px solid rgba(255,255,255,0.9)" : "0.5px solid rgba(255,255,255,0.55)",
                        boxShadow: `0 4px 12px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.55)` }}>
@@ -815,7 +849,10 @@ const COMPLIANCE_COLOR_STOPS = [
   { pct: 85,  h: 118, s: 68, l: 40 },  // verde (soglia Ottimale)
   { pct: 100, h: 152, s: 72, l: 45 },  // verde cristallino brillante
 ];
-function complianceColor(pct) {
+// Estratta da complianceColor così anche Chart3D (sonno/passi) può usare la
+// STESSA curva a semaforo continua dei cerchi di compliance, invece di 3
+// blocchi di colore netti — "come nei cerchi", richiesta esplicita.
+function complianceHsl(pct) {
   const p = complPct(pct);
   let lo = COMPLIANCE_COLOR_STOPS[0], hi = COMPLIANCE_COLOR_STOPS[COMPLIANCE_COLOR_STOPS.length - 1];
   for (let i = 0; i < COMPLIANCE_COLOR_STOPS.length - 1; i++) {
@@ -825,9 +862,10 @@ function complianceColor(pct) {
   }
   const span = hi.pct - lo.pct || 1;
   const t = (p - lo.pct) / span;
-  const h = lo.h + (hi.h - lo.h) * t;
-  const s = lo.s + (hi.s - lo.s) * t;
-  const l = lo.l + (hi.l - lo.l) * t;
+  return { h: lo.h + (hi.h - lo.h) * t, s: lo.s + (hi.s - lo.s) * t, l: lo.l + (hi.l - lo.l) * t };
+}
+function complianceColor(pct) {
+  const { h, s, l } = complianceHsl(pct);
   return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
 }
 /* Etichetta descrittiva (solo per il popup analitico, il colore resta continuo). */
