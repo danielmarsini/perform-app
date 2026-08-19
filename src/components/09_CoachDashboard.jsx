@@ -5,7 +5,7 @@ import {
   Trash2, ArrowLeft, CalendarDays, Wallet, Server, X, ShieldCheck, Check,
 } from "lucide-react";
 import Portal from "./Portal.jsx";
-import { VolumeBar } from "./05_HomeDashboard.jsx";
+import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
    COACH DASHBOARD — PERFORM (Evidence-Based Method by D. Marsini)
@@ -2615,11 +2615,25 @@ function WeekDietEditor({ week, onChange, client }) {
 /* Timing dell'integrazione: sezioni per momento della giornata, ognuna
    con titolo modificabile (anche personalizzato) e la propria lista di
    integratori con dose. */
+// BUG PRESO: prima ogni sezione aveva un titolo libero ("Nuova sezione",
+// rinominabile a mano) salvato PARI PARI come prescribed_supplements.moment
+// — fetchPrescribedSupplements riordina i momenti alfabeticamente lato
+// cliente, quindi "Pre-Workout" scritto liberamente non combaciava mai col
+// vero ordine cronologico (mattina→pre workout→post workout→sera) e finiva
+// in coda. Ora le sezioni standard usano l'id fisso di SUPP_MOMENTS (stesso
+// identificatore che il cliente legge per riordinare correttamente): il
+// titolo mostrato resta quello leggibile, ma è l'id a essere salvato.
 function WeekSuppsEditor({ week, onChange, client }) {
   const { supabase, isRealMode, coachId } = useContext(CoachDataContext);
-  const updTitle = (si, v) => onChange({ ...week, supplements: week.supplements.map((s, j) => (j === si ? { ...s, title: v } : s)) });
+  const usedMomentIds = new Set(week.supplements.map((s) => s.id_ref).filter(Boolean));
+  const availableMoments = SUPP_MOMENTS.filter((m) => !usedMomentIds.has(m.id));
   const removeSection = (si) => onChange({ ...week, supplements: week.supplements.filter((_, j) => j !== si) });
-  const addSection = () => onChange({ ...week, supplements: [...week.supplements, { id: uid(), title: "Nuova sezione", items: [] }] });
+  const addSection = (moment) => onChange({
+    ...week,
+    supplements: [...week.supplements, moment
+      ? { id: uid(), id_ref: moment.id, title: moment.label, items: [] }
+      : { id: uid(), id_ref: null, title: "Altro momento", items: [] }],
+  });
 
   const updItem = (si, ii, k, v) => onChange({
     ...week,
@@ -2656,19 +2670,31 @@ function WeekSuppsEditor({ week, onChange, client }) {
 
   return (
     <div>
-      <ConfirmToggle label="Integratori" checked={week.confirmed.supplements} onToggle={() => onChange({ ...week, confirmed: { ...week.confirmed, supplements: !week.confirmed.supplements } })} />
+      {/* Il toggle "Integratori da confermare" è stato tolto — richiesta
+          esplicita: resta solo "Salva modifiche" qui sotto, che scrive
+          davvero su Supabase e avvisa il cliente. */}
+      <datalist id="supp-wiki-names">
+        {SUPP_WIKI.map((s) => <option key={s.id} value={s.name} />)}
+      </datalist>
       <div className="space-y-3">
       {week.supplements.map((sec, si) => (
         <div key={sec.id} className="c-card">
           <div className="flex items-center gap-2 mb-3">
-            <input value={sec.title} onChange={(e) => updTitle(si, e.target.value)} className="t-input flex-1 text-sm font-medium rounded-lg px-3 py-2" />
+            <p className="text-sm font-medium flex-1" style={{ color: "var(--ink)" }}>{sec.title}</p>
             <button onClick={() => removeSection(si)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi sezione"><Trash2 size={13} /></button>
           </div>
           <div className="space-y-2 mb-2.5">
             {sec.items.map((it, ii) => (
               <div key={it.id} className="t-inner px-3 py-2.5 flex items-center gap-2 flex-wrap">
-                <input value={it.name} onChange={(e) => updItem(si, ii, "name", e.target.value)} placeholder="Nome integratore" className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[160px]" />
-                <input value={it.dose} onChange={(e) => updItem(si, ii, "dose", e.target.value)} placeholder="Dose" className="t-input w-28 text-sm rounded-md px-2 py-1.5" />
+                <input value={it.name} onChange={(e) => {
+                  updItem(si, ii, "name", e.target.value);
+                  // Nome riconosciuto nella lista: precompila la dose
+                  // standard, il coach non deve più ricordarla a memoria —
+                  // resta comunque modificabile subito dopo.
+                  const known = SUPP_WIKI.find((s) => s.name.toLowerCase() === e.target.value.toLowerCase());
+                  if (known && !it.dose) updItem(si, ii, "dose", known.dose.split(",")[0].split("(")[0].trim());
+                }} list="supp-wiki-names" placeholder="Nome integratore" className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[160px]" />
+                <input value={it.dose} onChange={(e) => updItem(si, ii, "dose", e.target.value)} placeholder="Dose" className="t-input w-32 text-sm rounded-md px-2 py-1.5" />
                 <button onClick={() => removeItem(si, ii)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
               </div>
             ))}
@@ -2677,9 +2703,16 @@ function WeekSuppsEditor({ week, onChange, client }) {
           <button onClick={() => addItem(si)} className="c-ghost px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1"><Plus size={12} /> Integratore</button>
         </div>
       ))}
-      <button onClick={addSection} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium flex items-center justify-center gap-2">
-        <Plus size={14} /> Nuova sezione (mattina, spuntino, pre/intra/post-workout…)
-      </button>
+      <div className="flex flex-wrap gap-1.5">
+        {availableMoments.map((m) => (
+          <button key={m.id} onClick={() => addSection(m)} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1">
+            <Plus size={12} /> {m.icon} {m.label}
+          </button>
+        ))}
+        <button onClick={() => addSection(null)} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1">
+          <Plus size={12} /> Altro momento
+        </button>
+      </div>
       </div>
 
       {isRealMode && (
@@ -3121,8 +3154,30 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     }
   };
 
+  // Riorganizzato: prima la scelta di COSA editare (allenamento/dieta/
+  // integratori), poi — solo per allenamento e dieta, che si programmano
+  // davvero nel lungo periodo — la gestione settimane (pillole date,
+  // mesociclo, clona settimana). Gli integratori restano un protocollo
+  // per la settimana corrente, niente timeline sotto.
+  const showWeekManager = section === "allenamento" || section === "dieta";
+
   return (
     <div>
+      <div className="grid grid-cols-3 gap-1.5 mb-5">
+        {[["allenamento", "Allenamento", Dumbbell], ["dieta", "Alimentazione", Salad], ["integratori", "Integratori", Pill]].map(([id, lab, Ico]) => {
+          const on = section === id;
+          return (
+            <button key={id} onClick={() => setSection(id)} className="rounded-xl px-2 py-3 flex flex-col items-center gap-1.5"
+              style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+              <Ico size={17} strokeWidth={on ? 2 : 1.6} style={{ color: on ? "#C5A059" : "var(--ink-soft)" }} />
+              <span className="font-data text-[11px] uppercase" style={{ fontWeight: on ? 600 : 400 }}>{lab}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {showWeekManager && (
+      <>
       <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
         <div className="flex items-center gap-1.5">
           <button onClick={() => shiftWindow(-1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0" aria-label="Settimane precedenti">‹</button>
@@ -3205,19 +3260,8 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
           {mesoBusy ? "Salvo…" : "Salva mesociclo"}
         </button>
       </div>
-
-      <div className="grid grid-cols-3 gap-1.5 mb-5">
-        {[["allenamento", "Allenamento", Dumbbell], ["dieta", "Dieta", Salad], ["integratori", "Integratori", Pill]].map(([id, lab, Ico]) => {
-          const on = section === id;
-          return (
-            <button key={id} onClick={() => setSection(id)} className="rounded-xl px-2 py-3 flex flex-col items-center gap-1.5"
-              style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
-              <Ico size={17} strokeWidth={on ? 2 : 1.6} style={{ color: on ? "#C5A059" : "var(--ink-soft)" }} />
-              <span className="font-data text-[11px] uppercase" style={{ fontWeight: on ? 600 : 400 }}>{lab}</span>
-            </button>
-          );
-        })}
-      </div>
+      </>
+      )}
 
       {section === "allenamento" && (
         isRealMode && workoutLoading ? (
@@ -3650,9 +3694,13 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
 
       {tab === "editor" && (
         <div>
-          <AICoPilot client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
-          <AIAdvisorChat client={client} />
+          {/* Riorganizzato: prima la scelta di cosa editare (allenamento/
+              alimentazione/integratori) e la gestione settimane dentro
+              ClientTimeline, poi in fondo Editor AI e Co-Pilota — prima
+              erano in cima, sopra a tutto il resto dell'editor. */}
           <ClientTimeline client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
+          <AIAdvisorChat client={client} />
+          <AICoPilot client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
         </div>
       )}
     </div>

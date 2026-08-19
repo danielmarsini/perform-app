@@ -643,9 +643,13 @@ export async function saveWeekSupplements(supabase, coachId, clientId, sections)
 
   const rows = [];
   (sections ?? []).forEach((sec) => {
+    // id_ref (id fisso di SUPP_MOMENTS, es. "preWo") ha sempre la priorità
+    // sul titolo libero: è quello che il cliente usa per riordinare
+    // correttamente mattina→pre workout→post workout→sera.
+    const moment = sec.id_ref || sec.title;
     (sec.items ?? []).forEach((it, i) => {
       if (!it.name || !it.name.trim()) return;
-      rows.push({ user_id: clientId, coach_id: coachId, moment: sec.title, name: it.name.trim(), dose: it.dose || null, sort_order: i });
+      rows.push({ user_id: clientId, coach_id: coachId, moment, name: it.name.trim(), dose: it.dose || null, sort_order: i });
     });
   });
   if (rows.length === 0) return;
