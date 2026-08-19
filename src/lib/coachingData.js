@@ -112,9 +112,13 @@ function computeVolume(dayList, lib) {
         return;
       }
       // Esercizio custom non ancora in libreria: usa il distretto + sinergici
-      // scelti a mano (muscleTarget/synergists), riportati al nome breve.
-      if (!ex.muscleTarget) return;
-      addSets(DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget, sets, true);
+      // scelti a mano. muscleTarget (editor coach) e targetMuscle (editor
+      // libero Free/Premium in 05_HomeDashboard.jsx) sono lo stesso concetto
+      // con due nomi di campo diversi — entrambi accettati qui, mai un
+      // grafico vuoto solo per una differenza di naming tra i due editor.
+      const manualTarget = ex.muscleTarget || ex.targetMuscle;
+      if (!manualTarget) return;
+      addSets(DB_MUSCLE_TO_CHART[manualTarget] || manualTarget, sets, true);
       (ex.synergists || []).forEach((m) => addSets(DB_MUSCLE_TO_CHART[m] || m, sets * 0.5, false));
     });
   });

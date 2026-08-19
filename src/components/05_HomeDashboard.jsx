@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 
@@ -590,95 +590,44 @@ function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, accent, w
    serie dirette al 100% + serie sui sinergici al 50%.
    ========================================================================== */
 
-/* Mappa anatomica: distretto primario (diretto, 100%) + distretti sinergici
-   (50%). Dorso separato in Gran Dorsale e Trapezio come due distretti clinici
-   distinti; Adduttori incluso come distretto a sé. */
-/* Mappa anatomica: distretto primario (diretto, 100%) + distretti sinergici
-   (50%). 14 categorie anatomiche reali e distinte: nessuna dicitura generica
-   "Deltoidi" o "Dorso" unificata — deltoide anteriore/laterale/posteriore e
-   Gran Dorsale/Trapezio sono sempre trattati come distretti separati. */
-const MUSCLE_MAP = [
-  { test: /panca|croci|dip|chest|pectoral|peck/,                    primary: ["Pettorali"],          secondary: ["Tricipiti", "Deltoide Anteriore"] },
-  { test: /squat|pressa|affond|front squat|leg press/,              primary: ["Quadricipiti"],        secondary: ["Glutei", "Adduttori"] },
-  { test: /stacco|rdl|rumeno|good morning|femoral|leg curl/,        primary: ["Femorali", "Glutei"],  secondary: ["Gran Dorsale", "Adduttori"] },
-  { test: /adduttori|adductor|copenhagen|sumo/,                     primary: ["Adduttori"],           secondary: [] },
-  { test: /abduttori|abductor|glute bridge|hip thrust/,             primary: ["Glutei"],              secondary: ["Adduttori"] },
-  { test: /shrug|scrollate/,                                        primary: ["Trapezio"],            secondary: [] },
-  { test: /face pull|rematore presa larga|rematore gomiti alti/,    primary: ["Trapezio", "Deltoide Posteriore"], secondary: [] },
-  { test: /iperestension/,                                          primary: ["Femorali"],            secondary: ["Gran Dorsale"] },
-  { test: /rematore|trazioni|lat machine|pulley|pull-over|pullover/, primary: ["Gran Dorsale"],       secondary: ["Bicipiti", "Trapezio"] },
-  { test: /alzate laterali/,                                        primary: ["Deltoide Laterale"],   secondary: ["Trapezio"] },
-  { test: /alzate posteriori|reverse fly/,                          primary: ["Deltoide Posteriore"], secondary: ["Trapezio", "Gran Dorsale"] },
-  { test: /alzate frontali|lento|military|arnold|shoulder press/,   primary: ["Deltoide Anteriore"],  secondary: ["Trapezio"] },
-  { test: /curl|preacher|hammer|martello/,                          primary: ["Bicipiti"],            secondary: [] },
-  { test: /french|push down|kickback|skull crusher|tricipiti/,      primary: ["Tricipiti"],           secondary: [] },
-  { test: /calf/,                                                   primary: ["Polpacci"],            secondary: [] },
-  { test: /plank|crunch|addominali|ab wheel|sollevamento gambe/,    primary: ["Addome"],              secondary: [] },
-];
-const VOLUME_MUSCLE_ORDER = [
-  "Pettorali", "Gran Dorsale", "Trapezio",
-  "Deltoide Anteriore", "Deltoide Laterale", "Deltoide Posteriore",
-  "Bicipiti", "Tricipiti", "Addome", "Glutei",
-  "Quadricipiti", "Femorali", "Adduttori", "Polpacci",
-];
+/* BUG PRESO: questo grafico indovinava il gruppo muscolare con un regex sul
+   NOME dell'esercizio (spesso sbagliato, o "Generico"), scollegato dal
+   calcolo vero usato lato coach (EXERCISE_LIB + muscoli scelti a mano) — un
+   cliente vedeva un volume diverso da quello che il coach aveva davvero
+   impostato. Ora usa computeVolume (coachingData.js), la STESSA identica
+   funzione del pannello coach: stessi nomi di distretto (MUSCLES, brevi),
+   stesso calcolo diretto 100%/sinergici 50%, mai due fonti di verità. */
 
-function muscleMapFor(name) {
-  const s = (name || "").toLowerCase();
-  const hit = MUSCLE_MAP.find((m) => m.test.test(s));
-  return hit || { primary: ["Generico"], secondary: [] };
-}
-
-/* Soglie a semaforo sul volume settimanale (serie dirette + 50% sinergici):
-   sotto 8 o sopra 25 = rosso, 8-9 o 21-25 = arancione, 10-20 = verde ottimale. */
-function volumeTone(sets) {
-  if (sets < 8 || sets > 25) return "bad";
-  if (sets < 10 || sets > 20) return "warn";
-  return "good";
-}
-
-/* Ciclo istantaneo: somma le serie dirette (100%) e sui sinergici (50%) di
-   ogni esercizio della settimana, per distretto muscolare. */
-function computeVolumeMatrix(weekDays) {
-  const totals = {};
-  const add = (muscle, amount) => { totals[muscle] = (totals[muscle] || 0) + amount; };
-  (weekDays || []).forEach((day) => {
-    const exercises = day?.exercises || [];
-    exercises.forEach((ex) => {
-      const sets = Number(ex.sets) || 3;
-      if (ex.targetMuscle) {
-        // assegnazione manuale (esercizio scritto a mano, non riconosciuto): 100% diretto, nessun sinergico ipotizzato
-        add(ex.targetMuscle, sets);
-        return;
-      }
-      const { primary, secondary } = muscleMapFor(ex.name);
-      primary.forEach((m) => add(m, sets));
-      secondary.forEach((m) => add(m, sets * 0.5));
-    });
-  });
-  return totals;
-}
-
-/* Barra lucida a semaforo: gradiente + velo di luce in cima, stessa energia
-   3D del brand, colorata in base alla soglia di volume. */
-function VolumeBar({ muscle, sets }) {
-  const tone = volumeTone(sets);
-  const c = CANDLE[tone];
+/* Barra lucida a due segmenti, colore brand oro/rosa (accent) invece del
+   semaforo rosso/arancio/verde: segmento pieno per le serie dirette,
+   segmento più chiaro/trasparente aggiunto in coda per le serie indirette
+   sullo stesso distretto — "prendendo la funzionalità di quello del coach
+   e la grafica di quello dei clienti", richiesta esplicita. */
+function VolumeBar({ muscle, direct, indirect, accent }) {
+  const total = direct + indirect;
   const maxScale = 30;
-  const pct = Math.max(4, Math.min(100, (sets / maxScale) * 100));
+  const dPct = Math.max(0, Math.min(100, (direct / maxScale) * 100));
+  const iPct = Math.max(0, Math.min(100 - dPct, (indirect / maxScale) * 100));
   return (
     <div className="flex items-center gap-3">
       <span className="text-xs shrink-0 truncate" style={{ width: 92, color: "var(--ink)", fontWeight: 600 }}>{muscle}</span>
-      <div className="flex-1 relative rounded-full overflow-hidden" style={{ height: 16, backgroundColor: "var(--surface-2)" }}>
-        <div className="h-full rounded-full relative overflow-hidden"
-             style={{ width: `${pct}%`, background: `linear-gradient(180deg, ${c.top}, ${c.mid} 55%, ${c.dark})`,
-                      boxShadow: `0 2px 6px ${c.mid}66`,
-                      transition: "width 0.6s cubic-bezier(.22,1,.36,1), background 0.4s ease" }}>
-          <div className="absolute inset-x-0 top-0" style={{ height: "45%",
-                 background: "linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0))" }} />
-        </div>
+      <div className="flex-1 relative rounded-full overflow-hidden flex" style={{ height: 16, backgroundColor: "var(--surface-2)" }}>
+        {dPct > 0 && (
+          <div className="h-full relative overflow-hidden shrink-0" style={{ width: `${dPct}%`,
+                 background: `linear-gradient(180deg, ${accent}, ${accent}CC)`,
+                 boxShadow: `0 2px 6px ${accent}66`,
+                 transition: "width 0.6s cubic-bezier(.22,1,.36,1)" }}>
+            <div className="absolute inset-x-0 top-0" style={{ height: "45%",
+                   background: "linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0))" }} />
+          </div>
+        )}
+        {iPct > 0 && (
+          <div className="h-full shrink-0" style={{ width: `${iPct}%`, backgroundColor: `${accent}4D`,
+                 transition: "width 0.6s cubic-bezier(.22,1,.36,1)" }} />
+        )}
       </div>
-      <span className="text-xs shrink-0 text-right" style={{ width: 34, color: c.label, fontWeight: 800 }}>
-        {Number.isInteger(sets) ? sets : sets.toFixed(1)}
+      <span className="text-xs shrink-0 text-right" style={{ width: 34, color: accent, fontWeight: 800 }}>
+        {Number.isInteger(total) ? total : total.toFixed(1)}
       </span>
     </div>
   );
@@ -686,23 +635,36 @@ function VolumeBar({ muscle, sets }) {
 
 /* Card completa della Matrice dei Volumi: mostra solo i distretti realmente
    coinvolti questa settimana, ordinati anatomicamente. */
-function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade }) {
-  const totals = useMemo(() => computeVolumeMatrix(weekDays), [weekDays]);
-  const involved = VOLUME_MUSCLE_ORDER.filter((m) => totals[m] > 0);
+function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accentProp, supabase, userId, libOverride }) {
+  const accent = accentProp || (gender === "F" ? "#D4A5A5" : "#C5A059");
+  const isRealMode = Boolean(supabase && userId);
+  // Libreria condivisa reale (SCHEMA_v39): stessa fonte usata dal coach.
+  // In demo/anteprima resta il default statico, mai una chiamata di rete.
+  // libOverride: se un antenato l'ha già caricata (es. FreeWorkoutBuilder,
+  // che la riusa anche per l'assegnazione muscoli in DayEditor), niente
+  // seconda chiamata di rete ridondante.
+  const [lib, setLib] = useState(DEFAULT_EXERCISE_LIB);
+  useEffect(() => {
+    if (!isRealMode || libOverride) return;
+    fetchExerciseLibrary(supabase).then(setLib)
+      .catch((err) => console.error("PERFORM: errore caricamento libreria esercizi", err));
+  }, [isRealMode, supabase, libOverride]);
+
+  const volume = useMemo(() => computeVolume(weekDays, libOverride || lib), [weekDays, lib, libOverride]);
+  const involved = VOLUME_MUSCLES.filter((m) => volume[m].direct + volume[m].indirect > 0);
 
   return (
     <div className="card mb-4">
       <p className="label mb-1">Matrice dei Volumi</p>
       <p className="h1 mb-1">Stimolo settimanale reale</p>
       <p className="body mb-4">
-        Ricalcolata a ogni esercizio inserito: serie dirette al 100%, serie sui distretti sinergici al 50%.
-        Verde 10-20 serie (ottimale) · arancione 8-9 o 21-25 (al limite) · rosso sotto 8 o sopra 25.
+        Ricalcolata a ogni esercizio inserito: serie dirette al 100% (barra piena), serie sui distretti sinergici al 50% (barra chiara).
       </p>
 
       {userPlan === "free" ? (
         <>
           <div className="flex flex-wrap gap-1.5 mb-4">
-            {VOLUME_MUSCLE_ORDER.map((m) => (
+            {VOLUME_MUSCLES.map((m) => (
               <span key={m} className="rounded-full px-2.5 py-1 text-xs"
                     style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
                 {m}
@@ -717,7 +679,7 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade }) {
         <p className="meta">Aggiungi esercizi alla settimana per vedere la matrice popolarsi.</p>
       ) : (
         <div className="space-y-2.5">
-          {involved.map((m) => <VolumeBar key={m} muscle={m} sets={totals[m]} />)}
+          {involved.map((m) => <VolumeBar key={m} muscle={m} direct={volume[m].direct} indirect={volume[m].indirect} accent={accent} />)}
         </div>
       )}
     </div>
@@ -2066,12 +2028,13 @@ export function HomeDashboard({
               </div>
             )}
             <div className="mt-4">
-              <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} />
+              <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabaseProp} userId={userId} />
             </div>
           </>
         ) : (
           <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
-                               day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender} />
+                               day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
+                               supabase={supabaseProp} userId={userId} />
         )}
 
         <div className="mt-5">
@@ -3180,13 +3143,24 @@ function makeExercise(name, sets, reps, targetMuscle) {
   return ex;
 }
 
-function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, gender }) {
+function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, gender, supabase, userId }) {
   const [innerTab, setInnerTab] = useState("oggi");
   const [weeks, setWeeks] = useState([emptyWeek()]);
   const [activeWeek, setActiveWeek] = useState(0);
   const [sets, setSets] = useState({});
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  // Libreria esercizi condivisa (SCHEMA_v39), caricata una volta qui e
+  // riusata sia dal grafico volumi sia da DayEditor per sapere se un
+  // esercizio scritto a mano è già mappato o serve un target manuale.
+  const isRealMode = Boolean(supabase && userId);
+  const [exerciseLib, setExerciseLib] = useState(DEFAULT_EXERCISE_LIB);
+  useEffect(() => {
+    if (!isRealMode) return;
+    fetchExerciseLibrary(supabase).then(setExerciseLib)
+      .catch((err) => console.error("PERFORM: errore caricamento libreria esercizi", err));
+  }, [isRealMode, supabase]);
 
   const todayDay = weeks[0]?.[day.weekday] || null;
 
@@ -3361,13 +3335,14 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                   onAdd={(item) => addExercise(activeWeek, dIdx, item)}
                   onRemove={(exIdx) => removeExercise(activeWeek, dIdx, exIdx)}
                   onUpdate={(exIdx, patch) => updateExercise(activeWeek, dIdx, exIdx, patch)}
-                  accent={accent} accentText={accentText} accentSoft={accentSoft} />
+                  accent={accent} accentText={accentText} accentSoft={accentSoft}
+                  supabase={supabase} userId={userId} exerciseLib={exerciseLib} onLearned={setExerciseLib} />
               );
             })}
           </div>
 
           <div className="mt-4">
-            <VolumeMatrixCard weekDays={weeks[activeWeek]} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} />
+            <VolumeMatrixCard weekDays={weeks[activeWeek]} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} libOverride={exerciseLib} />
           </div>
         </div>
       )}
@@ -3378,7 +3353,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
   );
 }
 
-function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, accent, accentText, accentSoft }) {
+function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, accent, accentText, accentSoft, supabase, userId, exerciseLib, onLearned }) {
   const [query, setQuery] = useState("");
   const [dropOpen, setDropOpen] = useState(false);
   const [targetMuscle, setTargetMuscle] = useState("");
@@ -3393,14 +3368,25 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
 
   const trimmed = query.trim();
   const isKnown = EXERCISE_LIBRARY.some((n) => n.toLowerCase() === trimmed.toLowerCase());
-  /* Se il nome scritto a mano non è nella lista ufficiale e il pattern non lo
-     riconosce, serve un'assegnazione manuale del distretto per non lasciare
-     vuoto il grafico dei volumi. */
-  const needsTarget = trimmed.length > 0 && !isKnown && muscleMapFor(trimmed).primary[0] === "Generico";
+  // BUG PRESO: prima indovinava il distretto con un regex sul nome (spesso
+  // sbagliato, "Generico" invisibile al grafico) — ora chiede sempre
+  // un'assegnazione manuale per un nome che non è già nella libreria
+  // condivisa reale (stessa fonte del pannello coach), niente più indovinelli.
+  const inSharedLib = Boolean((exerciseLib || {})[trimmed]);
+  const needsTarget = trimmed.length > 0 && !inSharedLib;
 
   const handleAdd = () => {
     if (!trimmed) return;
     if (needsTarget && !targetMuscle) return;
+    // Un esercizio nuovo con target scelto entra nella libreria condivisa:
+    // "così se inserisco un nuovo esercizio non perdo tempo a riscriverlo
+    // per altri che hanno lo stesso esercizio" — richiesta esplicita.
+    if (needsTarget && targetMuscle && supabase && userId) {
+      const direct = [DB_MUSCLE_TO_CHART[targetMuscle] || targetMuscle];
+      learnExercise(supabase, trimmed, direct, [], userId)
+        .then(() => fetchExerciseLibrary(supabase).then((lib) => onLearned?.(lib)))
+        .catch((err) => console.error("PERFORM: errore salvataggio esercizio in libreria", err));
+    }
     onAdd(makeExercise(trimmed, setsVal, reps, needsTarget ? targetMuscle : undefined));
     setQuery(""); setTargetMuscle(""); setDropOpen(false);
   };
@@ -6101,12 +6087,12 @@ const SUBS = [
   { group: "Fonti di grassi", base: "10 g olio EVO", eq: ["15 g mandorle", "15 g burro d'arachidi", "30 g avocado"] },
 ];
 
-/* Wrapper di compatibilità per proposeReschedule: usa la nuova mappa
-   anatomica (Adduttori, Gran Dorsale/Trapezio separati) della Matrice dei
-   Volumi, appiattendo diretti + sinergici in un'unica lista. */
+/* Wrapper di compatibilità per proposeReschedule: distretti diretti +
+   sinergici dalla libreria esercizi condivisa (coachingData.js), appiattiti
+   in un'unica lista — nome non in libreria = nessun conflitto ipotizzato. */
 const MUSCLES_OF = (n) => {
-  const { primary, secondary } = muscleMapFor(n);
-  return [...primary, ...secondary];
+  const entry = DEFAULT_EXERCISE_LIB[n];
+  return entry ? [...entry.direct, ...entry.indirect] : [];
 };
 
 /* Generatore deterministico di storico simulato: 7 settimane di dati plausibili
