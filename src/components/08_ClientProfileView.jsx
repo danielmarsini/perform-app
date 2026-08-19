@@ -38,10 +38,11 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents } from "../lib/coachingData.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import { WeeklyCheckModal, PauseSection } from "./05_HomeDashboard.jsx";
+import { CONSENT_COPY } from "./03_AuthView.jsx";
 
 /* ============================================================================
    1 · INTERNAZIONALIZZAZIONE
@@ -129,11 +130,15 @@ export const translations = {
     periods: { none: "", recurring: "/mese", one_time: "una tantum" },
     privacy: {
       title: "Privacy e trattamento dati",
-      genericBody: "I dati del tuo profilo, il Nickname, i passi, il sonno e il diario quotidiano di macros ed idratazione sono archiviati in modo criptato e sicuro su PERFORM per permetterti di tracciare i tuoi progressi. Nessun dato viene ceduto o venduto a terzi.",
-      extendedBody: "Il tuo percorso di coaching include anche le foto del check del lunedì, le circonferenze corporee, i bio-marker ematici e le 56 domande della tua anamnesi iniziale: questi dati sono protetti da crittografia di livello medico e visibili unicamente a Coach Daniel Marsini.",
-      legalNote: "Titolare del trattamento: Daniel Marsini. Base giuridica: consenso esplicito ex art. 9 GDPR, raccolto alla registrazione e revocabile.",
-      documents: "Documenti",
-      docs: ["Informativa privacy", "Termini di servizio", "Esonero responsabilità medica"],
+      genericBody: "PERFORM tratta i tuoi dati personali — profilo, nickname, passi, sonno, diario di macro e idratazione — con crittografia sul database e sui bucket di archiviazione, in conformità al Regolamento UE 2016/679 (GDPR). I dati non vengono mai ceduti, venduti o condivisi con terzi per finalità commerciali: sono usati esclusivamente per farti tracciare i tuoi progressi e, se hai un piano a coaching, per farli leggere al tuo coach. Questa informativa vale per ogni account, a prescindere dal piano attivo.",
+      extendedBody: "Con un piano a coaching (Scheda Personalizzata, Coaching Allenamento o Full Coaching) tratti anche dati di categoria particolare ai sensi dell'art. 9 GDPR: foto del check settimanale, circonferenze corporee, bio-marker ematici e le risposte della tua anamnesi iniziale. Questi dati restano protetti con lo stesso livello di crittografia e sono visibili solo a te e a Coach Daniel Marsini, titolare del trattamento — mai ad altri utenti dell'app.",
+      legalNote: "Titolare del trattamento: Daniel Marsini. Base giuridica: consenso esplicito ex art. 9 GDPR, raccolto alla registrazione e revocabile in qualsiasi momento da questa schermata.",
+      documents: "I tuoi consensi",
+      documentsHint: "Il testo esatto che hai accettato in fase di registrazione — tocca per leggerlo per intero.",
+      downloadBtn: "Scarica i miei dati",
+      downloadHint: "Un file con profilo, consensi accettati e data di registrazione, per i tuoi archivi personali.",
+      downloadBusy: "Preparazione…",
+      downloadError: "Non sono riuscito a preparare il file. Riprova.",
       dangerTitle: "Elimina account e dati storici",
       dangerBody: "Cancella definitivamente profilo, anamnesi, foto, misurazioni e diario. L'operazione è immediata e irreversibile: non esiste ripristino.",
       deleteBtn: "Elimina il mio account",
@@ -1182,6 +1187,49 @@ export function SettingsDrawer({
     return () => { cancelled = true; };
   }, [open, isRealMode]);
 
+  // "Scarica i miei dati": profilo + i 3 consensi legali esatti accettati
+  // alla registrazione (legal_consents, mai letti da nessuna schermata
+  // finora) in un unico file JSON leggibile, per gli archivi personali
+  // dell'utente — vale per ogni piano, non solo per chi ha un coach.
+  const [openDoc, setOpenDoc] = useState(null); // indice CONSENT_COPY aperto nel popup
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const downloadMyData = async () => {
+    if (!isRealMode) return;
+    setDownloadBusy(true);
+    setDownloadError("");
+    try {
+      const [profile, consents] = await Promise.all([
+        fetchProfileDetails(supabase, userId),
+        fetchLegalConsents(supabase, userId).catch(() => null),
+      ]);
+      const payload = {
+        esportato_il: new Date().toISOString(),
+        profilo: { email: accountEmail || null, nickname: profile?.nickname || null, bio: profile?.bio || null, iscritto_il: profile?.created_at || null },
+        consensi_accettati: consents ? {
+          data_accettazione: consents.accepted_at,
+          versione_informativa: consents.policy_version,
+          data_di_nascita_dichiarata: consents.birth_date,
+          testo_accettato: CONSENT_COPY.map((c) => ({ titolo: c.title, testo: c.long })),
+        } : "Nessun consenso registrato per questo account.",
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `perform-dati-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PERFORM: errore esportazione dati utente", err);
+      setDownloadError(t.privacy.downloadError);
+    } finally {
+      setDownloadBusy(false);
+    }
+  };
+
   const togglePush = async () => {
     setPushState("busy");
     if (pushState === "on") {
@@ -1382,17 +1430,47 @@ export function SettingsDrawer({
               </div>
 
               <div className="card mb-3">
-                <p className="label mb-2">{t.privacy.documents}</p>
-                {t.privacy.docs.map((d) => (
-                  <button key={d} className="w-full flex items-center justify-between gap-3 py-2.5"
+                <p className="label mb-1">{t.privacy.documents}</p>
+                <p className="meta mb-2" style={{ fontSize: "0.7rem" }}>{t.privacy.documentsHint}</p>
+                {CONSENT_COPY.map((d, i) => (
+                  <button key={d.key} onClick={() => setOpenDoc(i)} className="w-full flex items-center justify-between gap-3 py-2.5 text-left"
                           style={{ borderBottom: "1px solid var(--line)" }}>
                     <span className="flex items-center gap-2 text-sm" style={{ color: "var(--ink)" }}>
-                      <FileText size={14} style={{ color: "var(--ink-2)" }} /> {d}
+                      <FileText size={14} style={{ color: "var(--ink-2)" }} /> {d.title}
                     </span>
                     <ExternalLink size={13} style={{ color: "var(--ink-2)" }} />
                   </button>
                 ))}
               </div>
+
+              {isRealMode && (
+                <div className="card mb-3">
+                  <p className="label mb-1">{t.privacy.downloadBtn}</p>
+                  <p className="meta mb-3" style={{ fontSize: "0.7rem" }}>{t.privacy.downloadHint}</p>
+                  {downloadError && <p className="text-xs mb-2" style={{ color: "#DC2626" }}>{downloadError}</p>}
+                  <button onClick={downloadMyData} disabled={downloadBusy}
+                    className="w-full rounded-2xl px-4 py-3 text-sm flex items-center justify-center gap-2"
+                    style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
+                    <FileText size={15} /> {downloadBusy ? t.privacy.downloadBusy : t.privacy.downloadBtn}
+                  </button>
+                </div>
+              )}
+
+              {openDoc != null && (
+                <Portal>
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                       style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={() => setOpenDoc(null)}>
+                    <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}
+                         style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}>
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <p className="h2" style={{ margin: 0 }}>{CONSENT_COPY[openDoc].title}</p>
+                        <button onClick={() => setOpenDoc(null)} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+                      </div>
+                      <p className="body leading-relaxed">{CONSENT_COPY[openDoc].long}</p>
+                    </div>
+                  </div>
+                </Portal>
+              )}
 
               {onLogout && (
                 <button onClick={onLogout}

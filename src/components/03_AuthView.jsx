@@ -355,7 +355,7 @@ function ConsentRow({ item, checked, expanded, onToggleCheck, onToggleExpand, th
    4 · SCHERMATA DI ACCESSO
    ========================================================================== */
 
-const CONSENT_COPY = [
+export const CONSENT_COPY = [
   {
     key: "gdpr",
     title: "Consenso Trattamento Dati Biometrici e GDPR",

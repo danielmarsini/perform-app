@@ -1561,4 +1561,16 @@ function parseRepsTarget(repsRaw, numSets) {
   return Array.from({ length: n }, () => raw);
 }
 
+// I 3 consensi legali accettati alla registrazione (legal_consents,
+// scritti da saveConsents in 03_AuthView.jsx) — mai letti finora da
+// nessuna schermata. Servono per "Scarica i miei dati": l'utente deve
+// poter vedere/esportare esattamente cosa ha accettato e quando.
+export async function fetchLegalConsents(supabase, userId) {
+  const { data, error } = await supabase.from("legal_consents")
+    .select("gdpr_data, medical_waiver, community_direct, birth_date, accepted_at, policy_version")
+    .eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, computeVolume, parseRepsTarget };
