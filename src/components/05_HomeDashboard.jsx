@@ -2040,6 +2040,7 @@ export function HomeDashboard({
         <div className="mt-5">
           {access.paid ? (
             <WikiBrowser title="Wiki Allenamento" subtitle="I principi dietro un piano che funziona" data={TRAINING_WIKI} accent={accent}
+              intro="Volume, intensità, frequenza e sovraccarico progressivo non sono concetti nati in sala pesi: sono i principi con cui il corpo umano si adatta a qualsiasi sforzo ripetuto — servono a mantenere la massa muscolare e la densità ossea con l'età (prevenzione di sarcopenia e cadute), a costruire la base atletica in qualunque sport, a riabilitarsi dopo un infortunio, e più in generale a restare funzionali nella vita di tutti i giorni. La sala pesi è semplicemente il contesto più controllato e misurabile per applicarli: pro, un ambiente prevedibile dove ogni variabile (carico, serie, recupero) si programma e si verifica; contro, richiede attrezzatura e costanza, e un piano tarato solo sull'estetica può trascurare mobilità e pattern di movimento utili fuori dalla palestra."
               searchPlaceholder="Cerca un argomento (es. volume, RIR, deload...)" />
           ) : (
             <LockedPanel onUpgrade={onUpgrade} accent={accent}
@@ -2113,6 +2114,7 @@ export function HomeDashboard({
         <div className="mt-5">
           {access.paid ? (
             <WikiBrowser title="Wiki Alimentazione" subtitle="Cosa sappiamo davvero" data={NUTRITION_WIKI} accent={accent}
+              intro="Proteine, deficit/surplus calorico e micronutrienti contano per chiunque, non solo per chi si allena: energia quotidiana, funzione immunitaria, lucidità mentale, salute ossea e longevità dipendono dalla stessa base nutrizionale. In un percorso in sala pesi questi principi vengono applicati con più precisione — si pesano gli alimenti, si calcola un target di macro, si programmano fasi di surplus o deficit — perché servono risultati misurabili in tempi definiti: pro, un controllo molto più fine su composizione corporea e performance; contro, richiede tracking costante e, se vissuto in modo ossessivo, può peggiorare il rapporto con il cibo invece di migliorarlo — per la sola salute generale bastano abitudini molto più semplici."
               searchPlaceholder="Cerca un argomento (es. proteine, deficit, digiuno...)" />
           ) : (
             <LockedPanel onUpgrade={onUpgrade} accent={accent}
@@ -5728,7 +5730,7 @@ function WikiDetailModal({ entry, accent, onClose }) {
   );
 }
 
-function WikiBrowser({ title, subtitle, data, accent, searchPlaceholder }) {
+function WikiBrowser({ title, subtitle, intro, data, accent, searchPlaceholder }) {
   const [openId, setOpenId] = useState(null);
   const [query, setQuery] = useState("");
   const filtered = data.filter((w) => w.name.toLowerCase().includes(query.trim().toLowerCase()));
@@ -5738,6 +5740,7 @@ function WikiBrowser({ title, subtitle, data, accent, searchPlaceholder }) {
     <div className="card">
       <p className="label mb-1">{title}</p>
       <p className="h1 mb-3">{subtitle}</p>
+      {intro && <p className="body mb-4" style={{ lineHeight: 1.6 }}>{intro}</p>}
       <div className="relative mb-3">
         <Search size={15} style={{ color: "var(--ink-2)", position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
         <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
@@ -5772,6 +5775,14 @@ function SupplementWikiBrowser({ accent }) {
     <div className="card">
       <p className="label mb-1">Wiki integratori</p>
       <p className="h1 mb-3">Cosa sappiamo davvero</p>
+      <p className="body mb-4" style={{ lineHeight: 1.6 }}>
+        Creatina, omega-3, vitamina D, magnesio e buona parte di questa lista hanno un ruolo anche fuori dalla sala
+        pesi: salute cognitiva, ossea, cardiovascolare e qualità del sonno, utili a chiunque a prescindere
+        dall'allenamento. In un contesto di performance vengono dosati e sincronizzati con l'allenamento per un
+        beneficio specifico e misurabile in più — pro, un piccolo margine reale quando la base (allenamento e dieta)
+        è già solida; contro, non sostituiscono quella base, e alcuni prodotti di moda in palestra hanno molta meno
+        evidenza scientifica di quanto il marketing lasci intendere.
+      </p>
       <div className="relative mb-3">
         <Search size={15} style={{ color: "var(--ink-2)", position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
         <input type="text" value={wikiQuery} onChange={(e) => setWikiQuery(e.target.value)}
