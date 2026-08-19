@@ -1418,6 +1418,7 @@ export async function fetchClientRoster(supabase) {
         foodDislikes: answers.foodDislikes ?? [],
         email: p.email,
         lastCheck: last ? { weight: Number(last.weight) } : { weight: null },
+        lastCheckDate: last?.date || null, // per "chi è in ritardo" nel pannello coach
         weightHistory: ordered.map((c) => Number(c.weight)).filter((n) => !Number.isNaN(n)),
         waistCm: null,
         billingStatus: p.plan && p.plan !== "free" ? "active" : "pending",

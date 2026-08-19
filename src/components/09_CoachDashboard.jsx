@@ -1495,6 +1495,50 @@ function ComplianceRing({ label, value }) {
    subito sotto mostra già ogni cliente, ripeterlo qui sarebbe ridondante.
    Cliccare un atleta segnalato apre direttamente il suo profilo sulla tab
    Bioritmi & Grafici, dove il dolore è documentato per esteso. */
+// "Chi è in ritardo": efficienza per il coach — invece di aprire ogni
+// cliente uno a uno per vedere chi non fa il check da giorni, un unico
+// pannello li ordina dal più in ritardo. Solo clienti a coaching reale
+// (REAL_COACHING_PLANS) e solo in modalità reale: niente dati demo, il
+// segnale ha senso solo con date di check vere.
+const LATE_THRESHOLD_DAYS = 10;
+function daysSince(dateISO) {
+  if (!dateISO) return Infinity;
+  return Math.floor((Date.now() - new Date(`${dateISO}T00:00:00`).getTime()) / 86400000);
+}
+function LateCheckinsPanel({ onOpen }) {
+  const { clients: CLIENTS, isRealMode } = useContext(CoachDataContext);
+  if (!isRealMode) return null;
+  const managed = CLIENTS.filter((c) => c.clientStatus === "active" && REAL_COACHING_PLANS.has(c.plan));
+  const late = managed
+    .map((c) => ({ ...c, daysLate: daysSince(c.lastCheckDate) }))
+    .filter((c) => c.daysLate >= LATE_THRESHOLD_DAYS)
+    .sort((a, b) => b.daysLate - a.daysLate);
+  if (late.length === 0) return null;
+  return (
+    <div className="c-card mb-5">
+      <h3 className="c-heading font-display font-bold flex items-center gap-2 mb-1">
+        <CalendarDays size={17} style={{ color: "#C5A059" }} />
+        Chi è in ritardo
+      </h3>
+      <p className="c-muted font-data text-xs mb-4">
+        Nessun check registrato da almeno {LATE_THRESHOLD_DAYS} giorni — ordinati dal più in ritardo. Clicca per aprire il profilo.
+      </p>
+      <div className="space-y-2">
+        {late.map((c) => (
+          <button key={c.id} onClick={() => onOpen?.(c.id)}
+            className="w-full flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5"
+            style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
+            <span className="text-sm font-medium" style={{ color: "#27272A" }}>{c.name}</span>
+            <span className="font-data text-xs font-semibold" style={{ color: "#92400E" }}>
+              {c.daysLate === Infinity ? "mai registrato" : `${c.daysLate} giorni fa`}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AlarmsDashboard({ onOpen }) {
   const { clients: CLIENTS } = useContext(CoachDataContext);
   // Solo i clienti presi in gestione (clientStatus === "active") finiscono nel
@@ -4802,6 +4846,7 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
               {tab === "atleti" && (
                 <div>
                   <AlarmsDashboard onOpen={openClientAlert} />
+                  <LateCheckinsPanel onOpen={setSelectedId} />
                   <RosterView onOpen={setSelectedId} />
                 </div>
               )}
