@@ -1396,7 +1396,7 @@ function PauseRequestModal({ supabase, userId, accent, accentText, onClose, onSa
         <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6" onClick={(e) => e.stopPropagation()}
              style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}>
           <div className="flex items-center justify-between mb-4">
-            <p className="h1">Pausa dal programma</p>
+            <p className="h1-gradient">Pausa dal programma</p>
             <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
           </div>
 
@@ -1762,7 +1762,7 @@ export function HomeDashboard({
       </button>
       <div>
         <p className="label mb-0.5">{WEEK_DAYS[day.weekday]}{day.weekNumber != null ? ` · settimana ${day.weekNumber}` : ""}</p>
-        <h2 className="h1">{title}</h2>
+        <h2 className="h1-gradient">{title}</h2>
       </div>
     </div>
   );
@@ -2028,13 +2028,13 @@ export function HomeDashboard({
               </div>
             )}
             <div className="mt-4">
-              <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabaseProp} userId={userId} />
+              <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} />
             </div>
           </>
         ) : (
           <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
                                day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
-                               supabase={supabaseProp} userId={userId} />
+                               supabase={supabase} userId={userId} />
         )}
 
         <div className="mt-5">
@@ -4794,7 +4794,7 @@ function NutritionTargetsPanel({ accent, accentSoft, accentText, targetOn, targe
       <div className="card mb-4">
         <p className="label mb-1">Oggi</p>
         <div className="flex items-center justify-between gap-3">
-          <p className="h1" style={{ margin: 0 }}>
+          <p className="h1-gradient" style={{ margin: 0 }}>
             {isTrainingDay ? "🏋️ Giorno ON — Allenamento" : "🧘 Giorno OFF — Riposo"}
           </p>
           {onToggleTrainingDay && (
@@ -6505,11 +6505,19 @@ export default function HomePreview({
           background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;
           animation:performGlow 5s ease-in-out infinite;display:inline-block}
         @media (prefers-reduced-motion: reduce){.title-shine{animation:none}}
-        .h1{font-size:1.45rem;font-weight:700;letter-spacing:-0.01em}
-        .h1{background-image:linear-gradient(100deg, var(--title-a), var(--title-b), var(--title-c), var(--title-b), var(--title-a));
+        /* BUG PRESO: si chiamava ".h1" come la classe (diversa, testo pieno
+           var(--ink)) di 08_ClientProfileView.jsx/04_AppShell.jsx — nomi
+           di classe globali non isolati fra file, l'ultimo <style> montato
+           vinceva la cascata per QUALUNQUE elemento .h1 in tutta l'app.
+           Risultato: "Impostazioni" e altri titoli altrove diventavano
+           invisibili (color:transparent senza il gradiente giusto sotto,
+           le variabili --title-a/b/c non esistono fuori da questo file).
+           Rinominata in modo univoco: mai più una collisione fra file. */
+        .h1-gradient{font-size:1.45rem;font-weight:700;letter-spacing:-0.01em}
+        .h1-gradient{background-image:linear-gradient(100deg, var(--title-a), var(--title-b), var(--title-c), var(--title-b), var(--title-a));
           background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;
           animation:performGlow 5s ease-in-out infinite;display:inline-block}
-        @media (prefers-reduced-motion: reduce){.h1{animation:none}}
+        @media (prefers-reduced-motion: reduce){.h1-gradient{animation:none}}
         /* micro-bordo animato, per le card premium (banner principale) */
         .gradient-border{position:relative;border:1.5px solid transparent;border-radius:1rem;background-clip:padding-box}
         .gradient-border::before{content:"";position:absolute;inset:-1.5px;border-radius:inherit;padding:1.5px;

@@ -404,7 +404,12 @@ function LangSelector({ lang, onChange }) {
               backgroundColor: on ? "var(--surface-2)" : "transparent",
             }}
             aria-label={l.label} aria-pressed={on}>
-            <span style={{ fontSize: "1.55rem", lineHeight: 1 }}>{l.flag}</span>
+            {/* Windows spesso non ha i glifi bandiera e mostra le due lettere
+                del codice paese come testo semplice invece dell'icona a
+                colori — senza un colore esplicito ereditava un colore
+                ambiente che in certi stati poteva risultare nero su nero
+                (Onyx) o bianco su bianco (Light), illeggibile. */}
+            <span style={{ fontSize: "1.55rem", lineHeight: 1, color: "var(--ink)" }}>{l.flag}</span>
             <span style={{ fontSize: "0.68rem", fontWeight: on ? 700 : 500,
                             color: on ? "var(--ink)" : "var(--ink-2)" }}>{l.label}</span>
           </button>
@@ -820,7 +825,11 @@ export function ClientProfileView({
   const save = () => {
     const n = nick.trim();
     if (n.length < 3 || n.length > 20) return setErr("3–20 " + t.nicknameLabel.toLowerCase());
-    if (!/^[A-Za-z0-9_.-]+$/.test(n)) return setErr("A-Z 0-9 . _ -");
+    // Il nickname resta senza spazi (è pensato come uno pseudonimo pubblico
+    // stile username, non un nome e cognome) — ma il messaggio d'errore ora
+    // spiega il motivo specifico invece del criptico "A-Z 0-9 . _ -".
+    if (/\s/.test(n)) return setErr("Il nickname non può contenere spazi");
+    if (!/^[A-Za-z0-9._-]+$/.test(n)) return setErr("Solo lettere, numeri, . _ -");
     if (nicknameTaken && n.toLowerCase() !== (profile.nickname || "").toLowerCase() && nicknameTaken(n))
       return setErr("—");
     setErr("");
