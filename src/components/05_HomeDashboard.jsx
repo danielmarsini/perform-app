@@ -5820,6 +5820,13 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, onCoachSync, su
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId]);
 
+  // BUG PRESO: fetchPrescribedSupplements ordina i momenti ALFABETICAMENTE
+  // ("mattina" < "postWo" < "preWo" < "sera") — Post-Wo finiva prima di
+  // Pre-Wo nell'ordine di fetch, e il raggruppamento per Map preservava
+  // quell'ordine sbagliato. L'ordine cronologico vero (mattina→pre
+  // workout→post workout→sera) viene sempre da SUPP_MOMENTS; un momento
+  // libero scritto dal coach che non combacia va in coda, nell'ordine in
+  // cui compare.
   const realGroups = useMemo(() => {
     if (!prescribed) return [];
     const byMoment = new Map();
@@ -5827,7 +5834,19 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, onCoachSync, su
       if (!byMoment.has(it.moment)) byMoment.set(it.moment, []);
       byMoment.get(it.moment).push(it);
     });
-    return Array.from(byMoment.entries()).map(([moment, items]) => ({ id: moment, label: moment, items }));
+    const canonicalOrder = SUPP_MOMENTS.map((m) => m.id);
+    const sortedMoments = [...byMoment.keys()].sort((a, b) => {
+      const ia = canonicalOrder.indexOf(a), ib = canonicalOrder.indexOf(b);
+      if (ia === -1 && ib === -1) return 0;
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+    return sortedMoments.map((moment) => ({
+      id: moment,
+      label: SUPP_MOMENTS.find((m) => m.id === moment)?.label || moment,
+      items: byMoment.get(moment),
+    }));
   }, [prescribed]);
 
   const groups = isRealMode
