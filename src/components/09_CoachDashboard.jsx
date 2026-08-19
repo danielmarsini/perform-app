@@ -4039,11 +4039,15 @@ function buildCheckHistory(client) {
   return weights.map((w, i) => {
     const offset = i - (weights.length - 1); // 0 = oggi, negativo = passato
     const waist = client.waistCm - direction * 0.2 * offset; // nel passato: più alta se sta dimagrendo, più bassa se sta crescendo
+    const thigh = (client.prs?.squat ? client.waistCm * 0.7 : client.waistCm * 0.68) - direction * 0.08 * offset;
+    const arm = client.waistCm * 0.44 - direction * 0.05 * offset;
     return {
       id: uid(),
       date: addWeeksToDate(todayMonday, offset).toISOString().slice(0, 10),
       weight: Math.round(w * 10) / 10,
       waistCm: Math.round(waist * 10) / 10,
+      thighCm: Math.round(thigh * 10) / 10,
+      armCm: Math.round(arm * 10) / 10,
       hasPhotos: true,
       // "Quello che i dati da soli non dicono" — simulate riusando i campi
       // che il cliente aveva già (evening.digestione/sonno sono già 1-10;
@@ -4068,12 +4072,18 @@ function LineChart({ points, series, xLabel }) {
   const W = 560, H = 190, PAD = 30;
   const n = points.length;
   const x = (i) => PAD + (n <= 1 ? 0 : (i / (n - 1)) * (W - PAD * 2));
-  const scales = series.map((s) => {
-    const vals = points.map((p) => Number(p[s.key]) || 0);
+  // Ogni serie ignora i punti dove il valore è null/undefined (una misura
+  // non registrata in quel check, es. circonferenze facoltative) invece di
+  // trattarli come 0 — altrimenti un check senza quella misura disegnava un
+  // finto tuffo a zero, leggibile come un crollo reale che non è mai successo.
+  const seriesPoints = series.map((s) => points.map((p, i) => ({ i, v: p[s.key] })).filter((p) => p.v != null && p.v !== ""));
+  const scales = series.map((s, si) => {
+    const vals = seriesPoints[si].map((p) => Number(p.v));
+    if (vals.length === 0) return { min: 0, span: 1 };
     const min = Math.min(...vals), span = Math.max(0.5, Math.max(...vals) - min);
     return { min, span };
   });
-  const yFor = (s, i, sc) => H - PAD - ((Number(points[i][s.key]) - sc.min) / sc.span) * (H - PAD * 2);
+  const yFor = (v, sc) => H - PAD - ((Number(v) - sc.min) / sc.span) * (H - PAD * 2);
   return (
     <div>
       <div className="flex items-center gap-4 mb-2 flex-wrap">
@@ -4087,12 +4097,14 @@ function LineChart({ points, series, xLabel }) {
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ minWidth: 480 }} role="img" aria-label={series.map((s) => s.label).join(" e ")}>
           {series.map((s, si) => {
             const sc = scales[si];
-            const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${yFor(s, i, sc)}`).join(" ");
+            const pts = seriesPoints[si];
+            if (pts.length === 0) return null;
+            const path = pts.map((p, j) => `${j === 0 ? "M" : "L"} ${x(p.i)} ${yFor(p.v, sc)}`).join(" ");
             return (
               <g key={s.key}>
                 <path d={path} fill="none" stroke={s.color} strokeWidth="2" />
-                {points.map((p, i) => (
-                  <circle key={i} cx={x(i)} cy={yFor(s, i, sc)} r={i === n - 1 ? 4 : 2.5} fill={s.color} />
+                {pts.map((p) => (
+                  <circle key={p.i} cx={x(p.i)} cy={yFor(p.v, sc)} r={p.i === n - 1 ? 4 : 2.5} fill={s.color} />
                 ))}
               </g>
             );
@@ -4249,6 +4261,8 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
           id: c.date, date: c.date,
           weight: c.weight != null ? Number(c.weight) : null,
           waistCm: c.waist != null ? Number(c.waist) : null,
+          thighCm: c.thigh != null ? Number(c.thigh) : null,
+          armCm: c.arm != null ? Number(c.arm) : null,
           hasPhotos: c.has_photos,
           photoFront: c.has_photos ? await getCheckinPhotoUrl(supabase, c.photo_front_url) : null,
           photoSide: c.has_photos ? await getCheckinPhotoUrl(supabase, c.photo_side_url) : null,
@@ -4356,7 +4370,16 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
           </div>
         </div>
         <LineChart points={history} xLabel={(p) => { const d = new Date(p.date); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; }}
-          series={[{ key: "weight", label: "Peso (kg)", color: "#2563EB" }, { key: "waistCm", label: "Addome (cm)", color: client.gender === "F" ? "#E5C1CD" : "#C5A059" }]} />
+          series={[
+            { key: "weight", label: "Peso (kg)", color: "#2563EB" },
+            { key: "waistCm", label: "Vita (cm)", color: client.gender === "F" ? "#E5C1CD" : "#C5A059" },
+            { key: "thighCm", label: "Coscia (cm)", color: "#F0A020" },
+            { key: "armCm", label: "Braccio (cm)", color: "#10B981" },
+          ]} />
+        <p className="c-muted text-[10px] mt-2">
+          Peso stabile + circonferenze in calo = probabile ricomposizione. Tutto in calo = dimagrimento. Peso e
+          circonferenze in salita insieme = bulk — usa questo confronto per tarare le prossime decisioni sul piano.
+        </p>
       </div>
 
       <PhotoCompareBoard history={history} />

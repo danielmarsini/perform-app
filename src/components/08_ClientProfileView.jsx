@@ -548,6 +548,74 @@ export function WeightChart({ points, accent, t }) {
   );
 }
 
+const CIRC_SERIES = [
+  { key: "waist", label: "Vita", color: "#2563EB" },
+  { key: "thigh", label: "Coscia", color: "#C5A059" },
+  { key: "arm", label: "Braccio", color: "#10B981" },
+];
+
+/* Confronto circonferenze (vita/coscia/braccio) ad ogni check che le
+   registra — non solo il peso: mostra DOVE sta cambiando il corpo, utile
+   per distinguere una ricomposizione (vita giù, peso stabile) da un
+   dimagrimento vero o da un bulk. Stessa identica lista usata anche lato
+   coach in CheckDetail (09_CoachDashboard.jsx, LineChart) — nessuna
+   duplicazione di logica, solo di rendering (qui SVG dedicato più
+   compatto per lo spazio ridotto del profilo). */
+export function CircumferenceChart({ points, accent }) {
+  const withAny = (points || []).filter((p) => p.waist != null || p.thigh != null || p.arm != null);
+  if (withAny.length < 2) return <p className="meta text-sm">Registra la stessa misura in almeno 2 check per vedere il confronto.</p>;
+
+  const W = 320, H = 130, pad = 24;
+  const allVals = CIRC_SERIES.flatMap((s) => withAny.map((p) => p[s.key]).filter((v) => v != null));
+  const min = Math.min(...allVals) - 1, max = Math.max(...allVals) + 1;
+  const x = (i) => pad + (i * (W - pad * 2)) / (withAny.length - 1 || 1);
+  const y = (v) => H - pad - ((v - min) / (max - min || 1)) * (H - pad * 1.8);
+
+  return (
+    <>
+      <div className="flex items-center gap-3 mb-1.5 flex-wrap">
+        {CIRC_SERIES.map((s) => (
+          <span key={s.key} className="flex items-center gap-1 font-data" style={{ fontSize: "0.6rem", color: s.color }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: s.color, display: "inline-block" }} /> {s.label}
+          </span>
+        ))}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Confronto circonferenze">
+        <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="var(--line)" />
+        {CIRC_SERIES.map((s) => {
+          const seriesPoints = withAny.map((p, i) => ({ i, v: p[s.key] })).filter((p) => p.v != null);
+          if (seriesPoints.length < 2) return null;
+          const path = seriesPoints.map((p, j) => `${j === 0 ? "M" : "L"}${x(p.i)},${y(p.v)}`).join(" ");
+          return (
+            <g key={s.key}>
+              <path d={path} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              {seriesPoints.map((p) => <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r="2.8" fill="var(--surface)" stroke={s.color} strokeWidth="1.8" />)}
+            </g>
+          );
+        })}
+        {withAny.map((p, i) => (i === 0 || i === withAny.length - 1 || i % Math.ceil(withAny.length / 5) === 0) && (
+          <text key={i} x={x(i)} y={H - pad + 13} textAnchor="middle" fontSize="7.5" fill="var(--ink-2)" fontFamily="system-ui, -apple-system, sans-serif">{p.label}</text>
+        ))}
+      </svg>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+        {CIRC_SERIES.map((s) => {
+          const vals = withAny.map((p) => p[s.key]).filter((v) => v != null);
+          if (vals.length < 2) return null;
+          const delta = +(vals[vals.length - 1] - vals[0]).toFixed(1);
+          return (
+            <p key={s.key} className="meta font-data" style={{ fontSize: "0.68rem" }}>
+              {s.label}:{" "}
+              <span style={{ color: delta === 0 ? "var(--ink-2)" : delta < 0 ? "#10B981" : "#B45309", fontWeight: 700 }}>
+                {delta > 0 ? "+" : ""}{delta} cm
+              </span>
+            </p>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 /* Progressione settimanale di un singolo esercizio: peso del set migliore
    seduta per seduta. Stesso linguaggio visivo di WeightChart, generalizzato:
    qui il valore è il carico sollevato, non il peso corporeo. */
@@ -724,7 +792,7 @@ export function ClientProfileView({
   accent, accentText, gender, lang, onChangeLang,
   profile,           // { name, nickname, bio, avatar, joined_at, gender, email }
   level, xp,
-  checkPhotos, weightPoints,
+  checkPhotos, weightPoints, circPoints,
   exercises,                                   // [{ id, name, muscleGroup, compound, sessions:[{week,date,kg,reps}] }]
   favoriteExerciseIds, onToggleFavoriteExercise,
   onSaveProfile, onOpenSettings, nicknameTaken,
@@ -892,6 +960,9 @@ export function ClientProfileView({
           )}
         </div>
         <WeightChart points={weightPoints} accent={accent} t={t.archive} />
+
+        <p className="label mt-6 mb-2">Confronto circonferenze</p>
+        <CircumferenceChart points={circPoints} accent={accent} />
 
         <p className="label mt-6 mb-2">{t.archive.photoGallery}</p>
         <p className="h2 mb-2" style={{ fontSize: "0.95rem" }}>{t.archive.compareTitle}</p>
@@ -1429,6 +1500,26 @@ export default function ClientProfileViewPreview({
         .filter((c) => c.weight != null)
         .map((c) => ({ label: c.date.slice(5).replace("-", "/"), kg: Number(c.weight) }))
     : demoWeightPoints;
+
+  // Circonferenze: confronto ogni volta che il cliente le registra, così
+  // vede anche DOVE sta aumentando/diminuendo (non solo il peso) — utile
+  // per riconoscere una ricomposizione (peso stabile, vita giù) da un vero
+  // dimagrimento o da un bulk. Stesso principio di weightPoints: solo check
+  // che hanno davvero quella misura, niente punti a zero inventati.
+  const demoCircPoints = [
+    { label: "C1", waist: 84, thigh: 58, arm: 37 }, { label: "C2", waist: 83.4, thigh: 58.1, arm: 37.2 },
+    { label: "C3", waist: 82.9, thigh: 58.3, arm: 37.3 }, { label: "C4", waist: 82.3, thigh: 58.5, arm: 37.5 },
+  ];
+  const circPoints = isRealMode
+    ? (realCheckins ?? [])
+        .filter((c) => c.waist != null || c.thigh != null || c.arm != null)
+        .map((c) => ({
+          label: c.date.slice(5).replace("-", "/"),
+          waist: c.waist != null ? Number(c.waist) : null,
+          thigh: c.thigh != null ? Number(c.thigh) : null,
+          arm: c.arm != null ? Number(c.arm) : null,
+        }))
+    : demoCircPoints;
   // Foto reali: realCheckins porta i PATH dello storage privato
   // "checkin-photos" (v36), non URL — ogni path va risolto in un URL
   // firmato temporaneo (1h) al momento della lettura, mai un URL pubblico
@@ -1584,7 +1675,7 @@ export default function ClientProfileViewPreview({
           onChangeLang={onChangeLangProp ?? setLang}
           profile={{ ...profile, email: owner ? (ownerEmail ?? OWNER_EMAIL) : profile.email }}
           level={isRealMode ? realLevelInfo.level : 4} xp={isRealMode ? realLevelInfo.xp : 4850}
-          checkPhotos={checkPhotos} weightPoints={weightPoints}
+          checkPhotos={checkPhotos} weightPoints={weightPoints} circPoints={circPoints}
           exercises={exercises} favoriteExerciseIds={favoriteExerciseIds}
           onToggleFavoriteExercise={toggleFavoriteExercise}
           onSaveProfile={(d) => setProfile((p) => ({ ...p, ...d }))}
