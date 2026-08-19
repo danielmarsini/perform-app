@@ -8,18 +8,23 @@
 // diventano in media 4-5 pubblicazioni, a orari che sembrano naturali/
 // casuali invece di un post fisso alla stessa ora, più vicino a un feed
 // social vero. Pesca studi REALI e recenti da PubMed (l'archivio pubblico
-// di letteratura biomedica del NIH americano, gratuito, senza chiave API)
-// su una rotazione di argomenti allenamento/alimentazione/integrazione/
-// recupero/farmacologia sportiva, e pubblica due righe in coach_news_tips
-// per ogni studio nuovo trovato:
-//   - channel 'news'  → il titolo e l'abstract riassunti, come una notizia
-//   - channel 'tips'  → lo stesso studio riformulato come applicazione pratica
+// di letteratura biomedica del NIH americano, gratuito, senza chiave API).
+//
+// BUG PRESO: News e Tips erano praticamente identici — stesso studio,
+// stesso riassunto, solo il titolo di Tips aveva un prefisso "Cosa
+// significa per te:". Ora sono due rotazioni di argomenti PubMed
+// indipendenti, con due trasformazioni diverse dello stesso tipo di fonte
+// (mai contenuto inventato, sempre uno studio reale sotto):
+//   - channel 'news' → NEWS_TOPICS (allenamento/alimentazione/
+//     integrazione/recupero/farmacologia/ormoni/fisiologia/anatomia),
+//     tradotto fedelmente come notizia scientifica.
+//   - channel 'tips' → TIPS_TOPICS (tecnica esecutiva, timing pasti,
+//     igiene del sonno, programmazione pratica, mobilità, idratazione,
+//     recupero tra sedute), riformulato in italiano come consiglio
+//     applicabile SUBITO — sempre ancorato ai risultati reali dello
+//     studio, mai un suggerimento non supportato dal testo originale.
 // source_query resta il link "leggi lo studio originale" verso PubMed (vedi
-// pubmedSearchUrl in 06_NewsTipsView.jsx, già esistente). Nessun contenuto
-// scritto da zero o inventato: solo titolo + abstract reali, tradotti con
-// un riassunto meccanico (prime frasi), mai riscritti o interpretati da
-// un'IA — è la scelta fatta esplicitamente invece di usare una chiave API
-// LLM a pagamento.
+// pubmedSearchUrl in 06_NewsTipsView.jsx, già esistente).
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk@0.32";
@@ -52,11 +57,32 @@ async function translateToItalian(title, abstract) {
   return parsed;
 }
 
-// Una rotazione di argomenti reali per i 5 temi richiesti: allenamento,
-// alimentazione, integrazione, recupero atleti, farmacologia sportiva.
-// L'argomento cambia ogni 2 ore (stessa cadenza del cron), non più una
-// volta al giorno — con più chiamate al giorno serve più varietà.
-const TOPICS = [
+// Stesso principio di translateToItalian ma per Tips: non una traduzione
+// fedele, una RIFORMULAZIONE in consiglio pratico attuabile — il coach
+// vuole che Tips dica "cosa fare in pratica", non "cosa dice lo studio".
+// Resta ancorato SOLO ai risultati reali dell'abstract, esplicitamente
+// vietato aggiungere consigli non supportati dal testo.
+async function craftPracticalTip(title, abstract) {
+  const msg = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 900,
+    messages: [{
+      role: "user",
+      content: `Trasforma questo studio scientifico in un consiglio pratico per chi si allena e segue un percorso fitness. Scrivi in italiano, tono diretto e concreto, spiegando COSA FARE in pratica — basandoti SOLO sui risultati reali riportati nell'abstract, senza aggiungere consigli, numeri o affermazioni non presenti nel testo originale. Rispondi SOLO con un oggetto JSON valido, nessun altro testo, con esattamente questi due campi:\n{"title": "un titolo breve e diretto per il consiglio pratico, non il titolo dello studio", "body": "2-4 frasi che spiegano cosa fare in pratica, basate sui risultati reali dello studio"}\n\nTitolo studio originale:\n${title}\n\nAbstract originale:\n${abstract}`,
+    }],
+  });
+  const text = msg.content?.[0]?.type === "text" ? msg.content[0].text : "";
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("risposta consiglio pratico senza JSON");
+  const parsed = JSON.parse(match[0]);
+  if (!parsed.title || !parsed.body) throw new Error("consiglio pratico incompleto");
+  return parsed;
+}
+
+// News: scoperte scientifiche professionali — allenamento, alimentazione,
+// integrazione, recupero, farmacologia sportiva, ormoni, fisiologia,
+// anatomia. L'argomento cambia ogni 2 ore (stessa cadenza del cron).
+const NEWS_TOPICS = [
   { query: "resistance training hypertrophy randomized", eyebrow: "Allenamento" },
   { query: "resistance training program variables strength", eyebrow: "Allenamento" },
   { query: "high intensity interval training adaptations", eyebrow: "Allenamento" },
@@ -71,6 +97,32 @@ const TOPICS = [
   { query: "overtraining syndrome athletes recovery", eyebrow: "Recupero" },
   { query: "anabolic steroid athletes health risk", eyebrow: "Farmacologia sportiva" },
   { query: "doping performance enhancing substances athletes", eyebrow: "Farmacologia sportiva" },
+  { query: "testosterone cortisol hormonal response exercise", eyebrow: "Ormoni" },
+  { query: "growth hormone insulin exercise adaptation", eyebrow: "Ormoni" },
+  { query: "skeletal muscle hypertrophy signaling mechanisms", eyebrow: "Fisiologia" },
+  { query: "muscle fiber type physiology adaptation training", eyebrow: "Fisiologia" },
+  { query: "skeletal muscle anatomy structure function", eyebrow: "Anatomia" },
+  { query: "tendon ligament joint biomechanics exercise", eyebrow: "Anatomia" },
+];
+
+// Tips: consigli pratici da studi con un'applicazione diretta — tecnica
+// esecutiva, timing pasti, sonno, programmazione, mobilità, idratazione,
+// recupero tra sedute. Rotazione indipendente da NEWS_TOPICS: stesso
+// principio (studio reale da PubMed), fonti diverse, orientate al "cosa
+// fare" invece che al "cosa si è scoperto".
+const TIPS_TOPICS = [
+  { query: "resistance training exercise technique form injury prevention", eyebrow: "Tecnica esecutiva" },
+  { query: "range of motion resistance training muscle growth", eyebrow: "Tecnica esecutiva" },
+  { query: "warm-up protocol injury prevention athletic performance", eyebrow: "Riscaldamento" },
+  { query: "nutrient timing meal frequency athletic performance", eyebrow: "Alimentazione pratica" },
+  { query: "protein distribution meal timing muscle protein synthesis", eyebrow: "Alimentazione pratica" },
+  { query: "sleep hygiene intervention athletes practical", eyebrow: "Sonno" },
+  { query: "resistance training program design practical recommendations", eyebrow: "Programmazione" },
+  { query: "training frequency volume practical recommendations hypertrophy", eyebrow: "Programmazione" },
+  { query: "stretching mobility flexibility practical guidelines athletes", eyebrow: "Mobilità" },
+  { query: "hydration fluid intake practical guidelines exercise performance", eyebrow: "Idratazione" },
+  { query: "recovery strategies between training sessions practical", eyebrow: "Recupero pratico" },
+  { query: "deload training practical recommendations overtraining prevention", eyebrow: "Recupero pratico" },
 ];
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -134,25 +186,27 @@ Deno.serve(async (req) => {
   // creata) va scoperto anche solo leggendo l'HTTP response del cron.
   const debug = [];
 
-  // Pubblica fino a 2 studi nuovi per un dato argomento (news+tips per
-  // ciascuno = fino a 4 righe). Ritorna quanti studi ha davvero pubblicato,
-  // così il chiamante sa se deve tentare un argomento di riserva.
-  async function publishFromTopic(topic) {
+  // Pubblica fino a 2 studi nuovi per un dato argomento sul canale dato.
+  // Dedup SCOPED al canale: news e tips pescano da rotazioni diverse ma un
+  // pmid potrebbe capitare in entrambe — non deve bloccare Tips solo
+  // perché quello stesso studio è già uscito su News (e viceversa).
+  async function publishFromTopic(channel, topic, transform) {
     let pmids = [];
     try {
       pmids = await esearch(topic.query);
     } catch (err) {
       console.error("PERFORM: esearch fallita", topic.query, err.message);
-      debug.push(`esearch fallita (${topic.query}): ${err.message}`);
+      debug.push(`[${channel}] esearch fallita (${topic.query}): ${err.message}`);
       return 0;
     }
-    if (pmids.length === 0) { debug.push(`esearch 0 risultati (${topic.query})`); return 0; }
+    if (pmids.length === 0) { debug.push(`[${channel}] esearch 0 risultati (${topic.query})`); return 0; }
 
-    const { data: existing, error: existingError } = await supabase.from("coach_news_tips").select("source_query").in("source_query", pmids);
-    if (existingError) debug.push(`select dedup fallita: ${existingError.message}`);
+    const { data: existing, error: existingError } = await supabase.from("coach_news_tips")
+      .select("source_query").eq("channel", channel).in("source_query", pmids);
+    if (existingError) debug.push(`[${channel}] select dedup fallita: ${existingError.message}`);
     const alreadyPosted = new Set((existing ?? []).map((r) => r.source_query));
     const newPmids = pmids.filter((id) => !alreadyPosted.has(id));
-    if (newPmids.length === 0) { debug.push(`tutti i pmid già pubblicati (${topic.query})`); return 0; }
+    if (newPmids.length === 0) { debug.push(`[${channel}] tutti i pmid già pubblicati (${topic.query})`); return 0; }
 
     let inserted = 0;
     for (const pmid of newPmids.slice(0, 2)) { // un paio di studi nuovi a giro, non un'inondazione
@@ -161,72 +215,68 @@ Deno.serve(async (req) => {
         article = await efetchAbstract(pmid);
       } catch (err) {
         console.error("PERFORM: errore efetch", pmid, err);
-        debug.push(`efetch fallita (${pmid}): ${err.message}`);
+        debug.push(`[${channel}] efetch fallita (${pmid}): ${err.message}`);
         continue;
       }
-      if (!article.title || !article.abstract) { debug.push(`efetch senza title/abstract (${pmid})`); continue; }
+      if (!article.title || !article.abstract) { debug.push(`[${channel}] efetch senza title/abstract (${pmid})`); continue; }
 
-      // Pubblico italiano: titolo e abstract vanno tradotti, mai lasciati
-      // in inglese com'erano da PubMed.
-      let it;
+      let row;
       try {
-        it = await translateToItalian(article.title, article.abstract);
+        row = await transform(article);
       } catch (err) {
-        console.error("PERFORM: errore traduzione", pmid, err);
-        debug.push(`traduzione fallita (${pmid}): ${err.message}`);
-        it = { title: article.title, abstract: article.abstract }; // meglio inglese che niente
+        console.error(`PERFORM: errore trasformazione ${channel}`, pmid, err);
+        debug.push(`[${channel}] trasformazione fallita (${pmid}): ${err.message}`);
+        row = { title: article.title, body: firstSentences(article.abstract, 3), bodyExtended: [article.abstract] }; // meglio inglese che niente
       }
 
-      const summary = firstSentences(it.abstract, 3);
       const sourceLine = article.journal && article.year ? ` (${article.journal}, ${article.year})` : "";
-      const now = new Date().toISOString();
-
-      const { error: newsError } = await supabase.from("coach_news_tips").insert({
-        channel: "news",
+      const { error: insertError } = await supabase.from("coach_news_tips").insert({
+        channel,
         eyebrow: topic.eyebrow,
-        title: it.title,
-        body: `${summary}${sourceLine}`,
-        body_extended: [it.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
+        title: row.title,
+        body: `${row.body}${sourceLine}`,
+        body_extended: [...row.bodyExtended, sourceLine ? `Fonte: studio reale pubblicato su${sourceLine}.` : null].filter(Boolean),
         source_query: pmid,
-        published_at: now,
+        published_at: new Date().toISOString(),
       });
-      if (newsError) { console.error("PERFORM: errore insert news", newsError); debug.push(`insert news fallito (${pmid}): ${newsError.message}`); continue; }
-
-      // Stesso studio, riformulato come consiglio pratico: nessuna
-      // interpretazione aggiuntiva, solo l'inquadramento "cosa significa per
-      // te" seguito dal riassunto reale — mai un consiglio inventato di sana pianta.
-      const { error: tipsError } = await supabase.from("coach_news_tips").insert({
-        channel: "tips",
-        eyebrow: topic.eyebrow,
-        title: `Cosa significa per te: ${it.title}`,
-        body: `${summary}${sourceLine}`,
-        body_extended: [it.abstract, sourceLine ? `Pubblicato su${sourceLine}.` : null].filter(Boolean),
-        source_query: pmid,
-        published_at: now,
-      });
-      if (tipsError) { console.error("PERFORM: errore insert tips", tipsError); debug.push(`insert tips fallito (${pmid}): ${tipsError.message}`); }
-
+      if (insertError) { console.error(`PERFORM: errore insert ${channel}`, insertError); debug.push(`[${channel}] insert fallito (${pmid}): ${insertError.message}`); continue; }
       inserted++;
     }
     return inserted;
   }
 
-  const primaryTopic = TOPICS[twoHourSlot() % TOPICS.length];
-  let inserted = await publishFromTopic(primaryTopic);
-  let usedTopic = primaryTopic;
-
-  // L'argomento del turno aveva già tutto pubblicato di recente (o PubMed
-  // non ha risultati nuovi): prima di rinunciare fino al prossimo giro (2h
-  // dopo, col 40% di probabilità — poteva restare "silenzioso" per giorni
-  // su un argomento esaurito) prova UN argomento di riserva scelto a caso
-  // fra gli altri 13, invece di arrendersi subito.
-  if (inserted === 0) {
-    const fallback = TOPICS[Math.floor(Math.random() * TOPICS.length)];
-    if (fallback.query !== primaryTopic.query) {
-      inserted = await publishFromTopic(fallback);
-      usedTopic = fallback;
-    }
+  // News: traduzione fedele, presentata come notizia scientifica.
+  async function newsTransform(article) {
+    const it = await translateToItalian(article.title, article.abstract);
+    return { title: it.title, body: firstSentences(it.abstract, 3), bodyExtended: [it.abstract] };
   }
 
-  return new Response(JSON.stringify({ inserted, topic: usedTopic.query, debug }), { headers: { "Content-Type": "application/json" } });
+  // Tips: riformulazione in consiglio pratico attuabile, sempre ancorata
+  // ai risultati reali dello studio.
+  async function tipsTransform(article) {
+    const tip = await craftPracticalTip(article.title, article.abstract);
+    return { title: tip.title, body: tip.body, bodyExtended: [tip.body] };
+  }
+
+  async function publishChannel(channel, topics, transform) {
+    const primaryTopic = topics[twoHourSlot() % topics.length];
+    let inserted = await publishFromTopic(channel, primaryTopic, transform);
+    let usedTopic = primaryTopic;
+    // L'argomento del turno aveva già tutto pubblicato di recente (o PubMed
+    // non ha risultati nuovi): prova UN argomento di riserva scelto a caso
+    // invece di restare silenzioso fino al prossimo giro.
+    if (inserted === 0) {
+      const fallback = topics[Math.floor(Math.random() * topics.length)];
+      if (fallback.query !== primaryTopic.query) {
+        inserted = await publishFromTopic(channel, fallback, transform);
+        usedTopic = fallback;
+      }
+    }
+    return { inserted, topic: usedTopic.query };
+  }
+
+  const news = await publishChannel("news", NEWS_TOPICS, newsTransform);
+  const tips = await publishChannel("tips", TIPS_TOPICS, tipsTransform);
+
+  return new Response(JSON.stringify({ news, tips, debug }), { headers: { "Content-Type": "application/json" } });
 });
