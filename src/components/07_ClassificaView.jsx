@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { xpToLevelInfo, fetchMonthlyLeaderboard } from '../lib/coachingData.js';
+import Portal from './Portal.jsx';
 
 const ITALIAN_MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
 function monthKeyLabel(monthKey) {
@@ -333,12 +334,13 @@ function AvatarCircle({ avatarUrl, className = '' }) {
 
 const METAL_FOR_RANK = { 1: 'gold', 2: 'silver', 3: 'bronze' };
 
-function PodiumCard({ athlete: a, position, delay }) {
+function PodiumCard({ athlete: a, position, delay, onSelect }) {
   const heightClass = position === 'center' ? 'pc-podium-tall' : position === 'left' ? 'pc-podium-mid' : 'pc-podium-low';
   const metal = METAL_FOR_RANK[a.rank];
 
   return (
-    <div className={`pc-podium-card pc-metal-${metal} ${heightClass}`} style={{ animationDelay: `${delay}ms` }}>
+    <div className={`pc-podium-card pc-metal-${metal} ${heightClass}`} style={{ animationDelay: `${delay}ms`, cursor: onSelect ? 'pointer' : undefined }}
+         onClick={onSelect ? () => onSelect(a) : undefined} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined}>
       <div className="pc-medal-float">
         {a.rank === 1 ? <TrophyIcon3D size={38} /> : <MedalIcon3D size={34} variant={metal} />}
       </div>
@@ -356,10 +358,11 @@ function PodiumCard({ athlete: a, position, delay }) {
   );
 }
 
-function LeaderboardRow({ athlete: a, maxXP }) {
+function LeaderboardRow({ athlete: a, maxXP, onSelect }) {
   const barWidth = Math.max(8, Math.round((a.xp / maxXP) * 100));
   return (
-    <div className="pc-row">
+    <div className="pc-row" style={{ cursor: onSelect ? 'pointer' : undefined }}
+         onClick={onSelect ? () => onSelect(a) : undefined} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined}>
       <div className="pc-row-rank">{a.rank}°</div>
       <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-row" />
       <div className="pc-row-main">
@@ -381,6 +384,38 @@ function LeaderboardRow({ athlete: a, maxXP }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* Dettaglio atleta: livello, bio, XP totali LIFETIME (non il guadagno del
+   mese mostrato in classifica) e giorni massimi di streak — click su una
+   riga/podio qualsiasi, sia nel mese corrente sia nell'archivio storico
+   (stessa forma dati, stesso componente). Centrato sullo schermo come gli
+   altri popup dell'app, mai in basso. */
+function AthleteDetailModal({ athlete: a, onClose }) {
+  if (!a) return null;
+  return (
+    <Portal>
+      <div className="pc-detail-overlay" onClick={onClose}>
+        <div className="pc-detail-modal" onClick={(e) => e.stopPropagation()}>
+          <button type="button" className="pc-drawer-close pc-detail-close" onClick={onClose} aria-label="Chiudi">✕</button>
+          <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-detail" />
+          <div className="pc-detail-nick">{a.nickname}</div>
+          <div className="pc-level-badge pc-shine-text" style={{ marginTop: 4 }}>{a.level}</div>
+          {a.bio && <p className="pc-detail-bio">{a.bio}</p>}
+          <div className="pc-detail-stats">
+            <div className="pc-detail-stat">
+              <div className="pc-detail-stat-value pc-shine-text">{formatXP(a.xpTotal ?? a.xp)}</div>
+              <div className="pc-detail-stat-label">XP totali</div>
+            </div>
+            <div className="pc-detail-stat">
+              <div className="pc-detail-stat-value pc-shine-text">{a.longestStreak ?? a.streakDays}</div>
+              <div className="pc-detail-stat-label">Streak massimo</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Portal>
   );
 }
 
@@ -433,7 +468,7 @@ function StickyUserBar({ isCurrent, rank, xp, gapToTop10, avatarUrl, level, stre
 
 // Mini-podio compatto per una riga dell'Archivio (Livello 1), espandibile in
 // Deep-Dive Top10 (Livello 2) con micro-tasto di chiusura filiforme.
-function ArchiveMonthRow({ month, expanded, onToggle }) {
+function ArchiveMonthRow({ month, expanded, onToggle, onSelectAthlete }) {
   const top3 = month.top10.filter((a) => a.rank <= 3).sort((a, b) => a.rank - b.rank);
   const maxXP = month.top10[0].xp;
   return (
@@ -465,7 +500,7 @@ function ArchiveMonthRow({ month, expanded, onToggle }) {
           </button>
           <div className="pc-list pc-list-archive">
             {month.top10.map((a) => (
-              <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} />
+              <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={onSelectAthlete} />
             ))}
           </div>
         </div>
@@ -474,7 +509,7 @@ function ArchiveMonthRow({ month, expanded, onToggle }) {
   );
 }
 
-function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand, loading, empty, showLaunchLabel = true }) {
+function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand, loading, empty, showLaunchLabel = true, onSelectAthlete }) {
   const [visibleCount, setVisibleCount] = useState(4);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -517,7 +552,7 @@ function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand, load
           {loading && <div className="pc-drawer-loading">Caricamento archivio…</div>}
           {empty && <div className="pc-drawer-end">Ancora nessun mese chiuso da consultare — torna qui dal mese prossimo.</div>}
           {visibleMonths.map((m) => (
-            <ArchiveMonthRow key={m.id} month={m} expanded={expandedId === m.id} onToggle={onToggleExpand} />
+            <ArchiveMonthRow key={m.id} month={m} expanded={expandedId === m.id} onToggle={onToggleExpand} onSelectAthlete={onSelectAthlete} />
           ))}
           {loadingMore && <div className="pc-drawer-loading">Caricamento mesi precedenti…</div>}
           {!loading && !hasMore && visibleMonths.length > 0 && showLaunchLabel && (
@@ -539,6 +574,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
   const gender = genderOverride === 'female' ? 'female' : SIMULATED_GENDER;
   const mode = dark ? 'onyx' : 'light';
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [expandedMonthId, setExpandedMonthId] = useState(null);
   const reducedMotion = usePrefersReducedMotion();
 
@@ -929,6 +965,36 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
         @keyframes pc-drawer-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
+        /* ---------- Dettaglio Atleta (centrato, non un bottom sheet) ---------- */
+
+        .pc-detail-overlay {
+          position: fixed; inset: 0; z-index: 50;
+          background: rgba(0, 0, 0, 0.45);
+          display: flex; align-items: center; justify-content: center;
+          padding: 20px;
+        }
+        .pc-detail-modal {
+          position: relative;
+          width: 100%; max-width: 340px;
+          display: flex; flex-direction: column; align-items: center;
+          text-align: center;
+          background: var(--pc-glass-bg);
+          backdrop-filter: blur(var(--pc-blur));
+          -webkit-backdrop-filter: blur(var(--pc-blur));
+          border: 0.5px solid var(--pc-glass-border);
+          border-radius: 28px;
+          padding: 32px 22px 24px;
+          animation: pc-drawer-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .pc-detail-close { position: absolute; top: 14px; right: 14px; }
+        .pc-avatar-detail { width: 76px; height: 76px; margin-bottom: 14px; }
+        .pc-detail-nick { font-size: 17px; font-weight: 600; color: var(--pc-text-primary); }
+        .pc-detail-bio { font-size: 12.5px; color: var(--pc-text-secondary); line-height: 1.5; margin: 12px 0 0; }
+        .pc-detail-stats { display: flex; gap: 28px; margin-top: 20px; }
+        .pc-detail-stat { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+        .pc-detail-stat-value { font-size: 19px; font-weight: 700; }
+        .pc-detail-stat-label { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pc-text-tertiary); }
+
         .pc-drawer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
         .pc-drawer-title { font-size: 12.5px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pc-text-primary); }
         .pc-drawer-close {
@@ -1082,13 +1148,13 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
       <div className="pc-podium">
         {podiumOrder.map(({ athlete: a, position, delay }) => (
-          <PodiumCard key={a.rank} athlete={a} position={position} delay={delay} />
+          <PodiumCard key={a.rank} athlete={a} position={position} delay={delay} onSelect={setSelectedAthlete} />
         ))}
       </div>
 
       <div className="pc-list">
         {restOfList.map((a) => (
-          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} />
+          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} />
         ))}
       </div>
 
@@ -1116,7 +1182,10 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         loading={isRealMode && archiveLoading}
         empty={isRealMode && !archiveLoading && pastMonths.length === 0}
         showLaunchLabel={!isRealMode}
+        onSelectAthlete={setSelectedAthlete}
       />
+
+      <AthleteDetailModal athlete={selectedAthlete} onClose={() => setSelectedAthlete(null)} />
     </div>
   );
 }

@@ -1096,7 +1096,7 @@ export async function fetchMonthlyLeaderboard(supabase, monthKey) {
   const isCurrentMonth = monthKey === toLocalISODate().slice(0, 7);
 
   const [{ data: profiles, error: profilesError }, { data: startSnaps, error: startError }, endResult] = await Promise.all([
-    supabase.from("profiles").select("id, nickname, full_name, xp_total, current_streak").eq("role", "user"),
+    supabase.from("profiles").select("id, nickname, full_name, xp_total, current_streak, avatar_url, bio, longest_streak").eq("role", "user"),
     supabase.from("monthly_xp_snapshots").select("user_id, xp_total_at_snapshot").eq("month", monthKey),
     isCurrentMonth ? Promise.resolve({ data: [] }) : supabase.from("monthly_xp_snapshots").select("user_id, xp_total_at_snapshot").eq("month", nextMonthKey),
   ]);
@@ -1130,6 +1130,10 @@ export async function fetchMonthlyLeaderboard(supabase, monthKey) {
         xpThisMonth: Math.max(0, end - start),
         streakDays: p.current_streak ?? 0,
         level: xpToLevelInfo(p.xp_total ?? 0).title, // livello LIFETIME, non del singolo mese
+        avatarUrl: p.avatar_url || null,
+        bio: p.bio || "",
+        xpTotal: p.xp_total ?? 0,          // lifetime, non il guadagno del mese — per il dettaglio atleta
+        longestStreak: p.longest_streak ?? 0,
       };
     })
     .sort((a, b) => b.xpThisMonth - a.xpThisMonth)
