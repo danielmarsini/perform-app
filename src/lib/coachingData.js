@@ -12,6 +12,115 @@ const MUSCLE_TARGETS = [
   "Quadricipiti", "Femorali", "Adduttori", "Polpacci",
 ];
 
+/* ---------------------------------------------------------------------------
+   LIBRERIA ESERCIZI CONDIVISA — spostata qui da 09_CoachDashboard.jsx così
+   sia il pannello coach SIA la Home del cliente (05_HomeDashboard.jsx)
+   calcolano il volume settimanale con la STESSA identica logica. Prima
+   erano due sistemi scollegati: il coach leggeva questa mappa, il cliente
+   indovinava il gruppo muscolare con un regex sul nome — spesso sbagliato,
+   e un cliente vedeva un volume diverso da quello che il coach aveva
+   davvero impostato. MAI PIÙ due fonti di verità per lo stesso calcolo.
+   ------------------------------------------------------------------------- */
+
+// Nomi brevi per il grafico volumi (Petto, Dorsali, Deltoide Ant/Lat/Post,
+// Addominali...) — MUSCLE_TARGETS sopra è il check constraint reale di
+// workout_logs.muscle_target, con nomi estesi diversi in 6 casi su 14.
+const MUSCLES = ["Petto", "Trapezio", "Dorsali", "Deltoide Ant", "Deltoide Lat", "Deltoide Post", "Bicipiti", "Tricipiti", "Quadricipiti", "Femorali", "Adduttori", "Glutei", "Polpacci", "Addominali"];
+
+const DEFAULT_EXERCISE_LIB = {
+  "Panca piana bilanciere": { direct: ["Petto"], indirect: ["Tricipiti", "Deltoide Ant"] },
+  "Lento avanti manubri": { direct: ["Deltoide Ant"], indirect: ["Deltoide Lat", "Tricipiti"] },
+  "Croci ai cavi": { direct: ["Petto"], indirect: ["Deltoide Ant"] },
+  "French press EZ": { direct: ["Tricipiti"], indirect: [] },
+  "Alzate laterali": { direct: ["Deltoide Lat"], indirect: [] },
+  "Lat machine": { direct: ["Dorsali"], indirect: ["Bicipiti", "Deltoide Post"] },
+  "Rematore bilanciere": { direct: ["Dorsali"], indirect: ["Bicipiti", "Deltoide Post", "Trapezio"] },
+  "Face pull ai cavi": { direct: ["Deltoide Post"], indirect: ["Dorsali", "Trapezio"] },
+  "Scrollate con bilanciere": { direct: ["Trapezio"], indirect: [] },
+  "Curl bilanciere": { direct: ["Bicipiti"], indirect: [] },
+  "Squat bilanciere": { direct: ["Quadricipiti"], indirect: ["Glutei"] },
+  "Leg extension": { direct: ["Quadricipiti"], indirect: [] },
+  "Stacco rumeno bilanciere": { direct: ["Femorali"], indirect: ["Glutei"] },
+  "Hip thrust bilanciere": { direct: ["Glutei"], indirect: ["Femorali"] },
+  "Leg curl sdraiato": { direct: ["Femorali"], indirect: [] },
+  "Adductor machine": { direct: ["Adduttori"], indirect: [] },
+  "Calf in piedi": { direct: ["Polpacci"], indirect: [] },
+  "Crunch ai cavi": { direct: ["Addominali"], indirect: [] },
+  "Plank": { direct: ["Addominali"], indirect: [] },
+};
+
+const EXERCISE_LIB_MUSCLE_TO_DB = {
+  "Petto": "Pettorali",
+  "Dorsali": "Gran Dorsale",
+  "Deltoide Ant": "Deltoide Anteriore",
+  "Deltoide Lat": "Deltoide Laterale",
+  "Deltoide Post": "Deltoide Posteriore",
+  "Addominali": "Addome",
+  // Gli altri 8 nomi coincidono già: Trapezio, Bicipiti, Tricipiti,
+  // Quadricipiti, Femorali, Adduttori, Glutei, Polpacci.
+};
+// Inverso della mappa sopra: riporta il muscle_target (nome DB, esteso)
+// scelto per un esercizio CUSTOM al nome breve usato da MUSCLES/computeVolume.
+const DB_MUSCLE_TO_CHART = Object.fromEntries(
+  Object.entries(EXERCISE_LIB_MUSCLE_TO_DB).map(([chart, db]) => [db, chart])
+);
+
+function resolveMuscleTarget(exerciseName, lib) {
+  const libMuscle = (lib || DEFAULT_EXERCISE_LIB)[exerciseName]?.direct?.[0];
+  if (!libMuscle) return null;
+  return EXERCISE_LIB_MUSCLE_TO_DB[libMuscle] || libMuscle;
+}
+
+// Libreria collettiva reale (SCHEMA_v39): parte da DEFAULT_EXERCISE_LIB e la
+// estende con ogni esercizio custom che coach o clienti Premium hanno già
+// registrato in passato — mai più ridigitare muscoli target già scelti per
+// lo stesso esercizio. Ordinata alfabeticamente per il menu a tendina.
+async function fetchExerciseLibrary(supabase) {
+  const lib = { ...DEFAULT_EXERCISE_LIB };
+  const { data, error } = await supabase.from("exercise_library").select("name, direct, indirect");
+  if (error) { console.error("PERFORM: errore lettura libreria esercizi", error); return lib; }
+  (data ?? []).forEach((row) => { lib[row.name] = { direct: row.direct ?? [], indirect: row.indirect ?? [] }; });
+  return lib;
+}
+
+// on conflict do nothing: una voce già presente non va mai sovrascritta da
+// un secondo inserimento — il primo che l'ha definita resta quello valido.
+async function learnExercise(supabase, name, direct, indirect, userId) {
+  if (!name?.trim() || !direct?.length) return;
+  const { error } = await supabase.from("exercise_library")
+    .insert({ name: name.trim(), direct, indirect: indirect || [], created_by: userId || null })
+    .select().maybeSingle();
+  if (error && error.code !== "23505") console.error("PERFORM: errore salvataggio esercizio in libreria", error); // 23505 = già esiste, atteso e ok
+}
+
+// Serie dirette 100% + serie sui sinergici 50%, per gruppo muscolare —
+// STESSA funzione per il pannello coach e per la Home del cliente.
+function computeVolume(dayList, lib) {
+  const activeLib = lib || DEFAULT_EXERCISE_LIB;
+  const vol = {}; MUSCLES.forEach((m) => (vol[m] = { direct: 0, indirect: 0 }));
+  const addSets = (muscle, amount, isDirect) => {
+    if (!vol[muscle]) return; // nome non riconosciuto: ignorato invece di far crashare il grafico
+    vol[muscle][isDirect ? "direct" : "indirect"] += amount;
+  };
+  (dayList || []).filter(Boolean).forEach((day) => {
+    (day.exercises || []).forEach((ex) => {
+      const sets = Number(ex.sets) || 0;
+      const entry = activeLib[ex.name];
+      if (entry) {
+        entry.direct.forEach((m) => addSets(m, sets, true));
+        entry.indirect.forEach((m) => addSets(m, sets * 0.5, false));
+        return;
+      }
+      // Esercizio custom non ancora in libreria: usa il distretto + sinergici
+      // scelti a mano (muscleTarget/synergists), riportati al nome breve.
+      if (!ex.muscleTarget) return;
+      addSets(DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget, sets, true);
+      (ex.synergists || []).forEach((m) => addSets(DB_MUSCLE_TO_CHART[m] || m, sets * 0.5, false));
+    });
+  });
+  return vol;
+}
+
 // Data (o "oggi") in formato YYYY-MM-DD LOCALE, mai da toISOString() — che
 // converte sempre in UTC e sposta la data di un giorno indietro per chiunque
 // sia in un fuso orario positivo (Italia inclusa) nelle ore vicine alla
@@ -1427,4 +1536,4 @@ export async function deleteCardioLog(supabase, logId) {
   if (error) throw error;
 }
 
-export { MUSCLE_TARGETS };
+export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, computeVolume };

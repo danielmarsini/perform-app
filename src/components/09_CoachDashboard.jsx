@@ -120,65 +120,16 @@ function waLink(client, text) {
   return `https://wa.me/${COACH_WHATSAPP}?text=${encodeURIComponent(text)}`;
 }
 
-/* --------------------------- LIBRERIA ESERCIZI (subset) --------------------
-   Sottoinsieme reale della EXERCISE_LIBRARY del monolite (righe 190-330),
-   sufficiente a risolvere direct/indirect per il calcolo volumi.
-   NOTA: "Dorso" è stato sostituito su tua richiesta esplicita con "Trapezio"
-   e "Dorsali" (distretti distinti), più l'aggiunta di "Adduttori". Questi due
-   nuovi esercizi (Scrollate, Adductor machine) non erano nel monolite: li ho
-   aggiunti per dare un valore di volume non-zero ai due nuovi distretti.   */
-const MUSCLES = ["Petto", "Trapezio", "Dorsali", "Deltoide Ant", "Deltoide Lat", "Deltoide Post", "Bicipiti", "Tricipiti", "Quadricipiti", "Femorali", "Adduttori", "Glutei", "Polpacci", "Addominali"];
-
-const EXERCISE_LIB = {
-  "Panca piana bilanciere": { direct: ["Petto"], indirect: ["Tricipiti", "Deltoide Ant"] },
-  "Lento avanti manubri": { direct: ["Deltoide Ant"], indirect: ["Deltoide Lat", "Tricipiti"] },
-  "Croci ai cavi": { direct: ["Petto"], indirect: ["Deltoide Ant"] },
-  "French press EZ": { direct: ["Tricipiti"], indirect: [] },
-  "Alzate laterali": { direct: ["Deltoide Lat"], indirect: [] },
-  "Lat machine": { direct: ["Dorsali"], indirect: ["Bicipiti", "Deltoide Post"] },
-  "Rematore bilanciere": { direct: ["Dorsali"], indirect: ["Bicipiti", "Deltoide Post", "Trapezio"] },
-  "Face pull ai cavi": { direct: ["Deltoide Post"], indirect: ["Dorsali", "Trapezio"] },
-  "Scrollate con bilanciere": { direct: ["Trapezio"], indirect: [] },
-  "Curl bilanciere": { direct: ["Bicipiti"], indirect: [] },
-  "Squat bilanciere": { direct: ["Quadricipiti"], indirect: ["Glutei"] },
-  "Leg extension": { direct: ["Quadricipiti"], indirect: [] },
-  "Stacco rumeno bilanciere": { direct: ["Femorali"], indirect: ["Glutei"] },
-  "Hip thrust bilanciere": { direct: ["Glutei"], indirect: ["Femorali"] },
-  "Leg curl sdraiato": { direct: ["Femorali"], indirect: [] },
-  "Adductor machine": { direct: ["Adduttori"], indirect: [] },
-  "Calf in piedi": { direct: ["Polpacci"], indirect: [] },
-  "Crunch ai cavi": { direct: ["Addominali"], indirect: [] },
-  "Plank": { direct: ["Addominali"], indirect: [] },
-};
-const EX_NAMES = Object.keys(EXERCISE_LIB);
-
-// EXERCISE_LIB usa nomi brevi per il grafico volumi (Petto, Dorsali, Deltoide
-// Ant/Lat/Post, Addominali...); MUSCLE_TARGETS (coachingData.js) è il check
-// constraint reale di workout_logs.muscle_target, con nomi estesi diversi in
-// 6 casi su 14. Serve per risolvere il distretto degli esercizi di libreria
-// (custom === false) al momento del salvataggio reale — i custom lo chiedono
-// a parte, con il select aggiunto in WeekWorkoutEditor qui sotto.
-const EXERCISE_LIB_MUSCLE_TO_DB = {
-  "Petto": "Pettorali",
-  "Dorsali": "Gran Dorsale",
-  "Deltoide Ant": "Deltoide Anteriore",
-  "Deltoide Lat": "Deltoide Laterale",
-  "Deltoide Post": "Deltoide Posteriore",
-  "Addominali": "Addome",
-  // Gli altri 8 nomi coincidono già: Trapezio, Bicipiti, Tricipiti,
-  // Quadricipiti, Femorali, Adduttori, Glutei, Polpacci.
-};
-function resolveMuscleTarget(exerciseName) {
-  const libMuscle = EXERCISE_LIB[exerciseName]?.direct?.[0];
-  if (!libMuscle) return null;
-  return EXERCISE_LIB_MUSCLE_TO_DB[libMuscle] || libMuscle;
-}
-// Inverso della mappa sopra: serve per riportare il muscle_target (nome DB,
-// esteso) scelto per un esercizio CUSTOM al nome breve usato da MUSCLES /
-// computeVolume per il grafico volumi.
-const DB_MUSCLE_TO_CHART = Object.fromEntries(
-  Object.entries(EXERCISE_LIB_MUSCLE_TO_DB).map(([chart, db]) => [db, chart])
-);
+/* Libreria esercizi: MUSCLES/EXERCISE_LIB_MUSCLE_TO_DB/DB_MUSCLE_TO_CHART/
+   resolveMuscleTarget/computeVolume spostati in coachingData.js (SCHEMA_v39)
+   così la Home del cliente calcola il volume con la STESSA identica logica
+   — prima erano due sistemi scollegati, un cliente vedeva un volume diverso
+   da quello che il coach aveva davvero impostato. La libreria esercizi ora è
+   collettiva e reale (tabella exercise_library), non più solo questi ~19
+   di default: EX_NAMES viene dallo state exerciseLib sotto, caricato al
+   mount del pannello coach e aggiornato ad ogni nuovo esercizio custom
+   salvato con i suoi muscoli target — mai più ridigitarli per un altro
+   cliente con lo stesso esercizio. */
 
 /* ------------------------------- STATO CLIENTI ------------------------------
    Sottoinsieme reale di CLIENTS (righe 1298-1316), con l'aggiunta di due
@@ -211,12 +162,14 @@ import {
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, saveCheckin, getCheckinPhotoUrl,
   xpToLevelInfo, whitelistClient, clearWhitelist,
+  MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
+  fetchExerciseLibrary, learnExercise, computeVolume,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
 // i pannelli innestati (Anamnesi, Editor) senza dover passare supabase/coachId
 // come prop attraverso ogni livello di componenti.
-const CoachDataContext = createContext({ clients: [], supabase: null, coachId: null, isRealMode: false, reloadRoster: () => {} });
+const CoachDataContext = createContext({ clients: [], supabase: null, coachId: null, isRealMode: false, reloadRoster: () => {}, exerciseLib: DEFAULT_EXERCISE_LIB, reloadExerciseLib: () => {} });
 
 const DEMO_CLIENTS = [
   { id: 1, demoId: "marco", name: "Marco Bianchi", gender: "M", goal: "ipertrofia", calories: 2900, adherence: 94, streak: 17, xp: 3450, plan: "full", status: "active",
@@ -439,33 +392,9 @@ function simulateAnamnesis(client) {
 }
 
 /* ------------------------------ VOLUME BAR CHART ---------------------------
-   Estratto verbatim dal monolite (righe 473-506): serie dirette 100% vs
-   indirette 50% sui sinergici, con soglia visiva a 10 serie.              */
+   computeVolume ora vive in coachingData.js (SCHEMA_v39) — stessa identica
+   funzione usata anche dalla Home del cliente, mai due calcoli diversi.  */
 function fmtSets(v) { return Number.isInteger(v) ? String(v) : v.toFixed(1).replace(".", ","); }
-function computeVolume(dayList) {
-  const vol = {}; MUSCLES.forEach((m) => (vol[m] = { direct: 0, indirect: 0 }));
-  const addSets = (muscle, amount, isDirect) => {
-    if (!vol[muscle]) return; // nome non riconosciuto: ignorato invece di far crashare il grafico
-    vol[muscle][isDirect ? "direct" : "indirect"] += amount;
-  };
-  dayList.filter(Boolean).forEach((day) => {
-    (day.exercises || []).forEach((ex) => {
-      const sets = Number(ex.sets) || 0;
-      const lib = EXERCISE_LIB[ex.name];
-      if (lib) {
-        lib.direct.forEach((m) => addSets(m, sets, true));
-        lib.indirect.forEach((m) => addSets(m, sets * 0.5, false));
-        return;
-      }
-      // Esercizio custom: usa il distretto + sinergici scelti dal coach nel
-      // select, riportati al nome breve del grafico via DB_MUSCLE_TO_CHART.
-      if (!ex.muscleTarget) return;
-      addSets(DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget, sets, true);
-      (ex.synergists || []).forEach((m) => addSets(DB_MUSCLE_TO_CHART[m] || m, sets * 0.5, false));
-    });
-  });
-  return vol;
-}
 function VolumeBarChart({ volume }) {
   const rows = MUSCLES.map((m) => ({ m, d: volume[m].direct, i: volume[m].indirect, tot: volume[m].direct + volume[m].indirect }));
   const maxV = Math.max(20, ...rows.map((r) => r.tot));
@@ -2152,14 +2081,18 @@ function excludedExercises(client, checkHistory) {
 }
 /* Muscoli sotto le 10 serie/settimana nel piano attuale: priorità nel nuovo mesociclo. */
 function muscleDeficiencies(currentWorkout) {
-  const vol = computeVolume(currentWorkout);
+  // Il generatore mesocicli pesca solo da MESOCICLO_POOLS (una selezione
+  // curata, non tutta la libreria dinamica): DEFAULT_EXERCISE_LIB è sempre
+  // la fonte corretta qui, a prescindere da eventuali esercizi custom
+  // appresi altrove.
+  const vol = computeVolume(currentWorkout, DEFAULT_EXERCISE_LIB);
   return MUSCLES.map((m) => ({ m, tot: vol[m].direct + vol[m].indirect })).filter((r) => r.tot < 10).sort((a, b) => a.tot - b.tot).map((r) => r.m);
 }
 function pickExercises(pool, excl, deficiencies, count) {
   const available = pool.filter((n) => !excl.has(n));
   const prioritized = [...available].sort((a, b) => {
-    const aScore = (EXERCISE_LIB[a]?.direct || []).some((m) => deficiencies.includes(m)) ? -1 : 0;
-    const bScore = (EXERCISE_LIB[b]?.direct || []).some((m) => deficiencies.includes(m)) ? -1 : 0;
+    const aScore = (DEFAULT_EXERCISE_LIB[a]?.direct || []).some((m) => deficiencies.includes(m)) ? -1 : 0;
+    const bScore = (DEFAULT_EXERCISE_LIB[b]?.direct || []).some((m) => deficiencies.includes(m)) ? -1 : 0;
     return aScore - bScore;
   });
   return prioritized.slice(0, count);
@@ -2276,6 +2209,11 @@ function MesocicloGenerator({ client, currentWorkout, onApprove }) {
    dal menu, Tempi di Recupero per esercizio, e le 4 Tecniche d'Intensità
    pianificate (Drop-set, Rest-Pause, Stripping, Super-set).               */
 function WeekWorkoutEditor({ week, onChange, client }) {
+  const { supabase, coachId, isRealMode, exerciseLib, reloadExerciseLib } = useContext(CoachDataContext);
+  // EX_NAMES ora viene dalla libreria collettiva reale (SCHEMA_v39), non più
+  // una lista fissa di ~19 esercizi — ordinata alfabeticamente, cresce da
+  // sola ogni volta che un esercizio custom viene salvato in libreria.
+  const EX_NAMES = useMemo(() => Object.keys(exerciseLib).sort((a, b) => a.localeCompare(b, "it")), [exerciseLib]);
   const [selDay, setSelDay] = useState(0);
   const day = week.workout[selDay];
   const setDay = (updater) => onChange({ ...week, workout: week.workout.map((d, i) => (i === selDay ? updater(d) : d)) });
@@ -2290,7 +2228,16 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   }));
   const removeEx = (i) => setDay((d) => ({ ...d, exercises: d.exercises.filter((_, j) => j !== i) }));
   const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, sets: 3, reps: "8-10", rest: 120, rirTarget: "", technique: "Nessuna" }] }));
-  const volume = useMemo(() => computeVolume(week.workout), [week.workout]);
+  const volume = useMemo(() => computeVolume(week.workout, exerciseLib), [week.workout, exerciseLib]);
+  const [savedToLib, setSavedToLib] = useState({}); // { exId: true } — feedback visivo dopo "Salva in libreria"
+  const saveExerciseToLib = async (ex) => {
+    if (!isRealMode || !ex.name?.trim() || !ex.muscleTarget) return;
+    const direct = [DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget];
+    const indirect = (ex.synergists || []).map((m) => DB_MUSCLE_TO_CHART[m] || m);
+    await learnExercise(supabase, ex.name.trim(), direct, indirect, coachId);
+    reloadExerciseLib();
+    setSavedToLib((s) => ({ ...s, [ex.id]: true }));
+  };
   // Un esercizio custom SENZA distretto scelto è l'unico caso davvero escluso
   // dal grafico volumi ora — con un distretto impostato (+ eventuali
   // sinergici) contribuisce come qualunque esercizio di libreria.
@@ -2395,6 +2342,13 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                           );
                         })}
                       </div>
+                      <button type="button" onClick={() => saveExerciseToLib(ex)}
+                              className="c-ghost px-2.5 py-1.5 rounded-md text-[11px] font-data uppercase mt-2 flex items-center gap-1">
+                        {savedToLib[ex.id] ? "✓ Salvato in libreria" : "💾 Salva in libreria"}
+                      </button>
+                      <p className="c-muted text-[10px] mt-1">
+                        Salvalo dopo aver scelto i muscoli: la prossima volta compare già nel menu, per qualunque cliente — mai più da riscrivere.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -3011,7 +2965,7 @@ function AIAdvisorChat({ client }) {
 }
 
 function ClientTimeline({ client, quickTargets, setQuickTargets }) {
-  const { supabase, isRealMode } = useContext(CoachDataContext);
+  const { supabase, isRealMode, exerciseLib } = useContext(CoachDataContext);
   const myQuickTarget = quickTargets?.[client.id];
   const [weeksByOffset, setWeeksByOffset] = useState(() => ({ 0: makeDefaultWeek(client, 0, myQuickTarget) }));
   const [selOffset, setSelOffset] = useState(0);
@@ -3057,7 +3011,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     setWorkoutLoading(true);
     setWorkoutError("");
     setWorkoutSaved(false);
-    fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !EXERCISE_LIB[name])
+    fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name])
       .then((data) => { if (!cancelled) setRealWorkout(data); })
       .catch((err) => {
         console.error("PERFORM: errore caricamento allenamento reale", err);
@@ -3084,14 +3038,14 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     setWorkoutBusy(true);
     setWorkoutError("");
     try {
-      // I nomi in libreria (custom === false) prendono il distretto da
-      // EXERCISE_LIB (mappato ai nomi reali del DB): il coach non deve
-      // sceglierlo a mano per quelli, solo per gli esercizi liberi.
+      // I nomi in libreria (custom === false) prendono il distretto dalla
+      // libreria collettiva reale (mappato ai nomi reali del DB): il coach
+      // non deve sceglierlo a mano per quelli, solo per gli esercizi liberi.
       const resolved = realWorkout.map((day) => day && {
         ...day,
         exercises: day.exercises.map((ex) => ({
           ...ex,
-          muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name),
+          muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name, exerciseLib),
           synergists: ex.custom ? ex.synergists : [],
         })),
       });
@@ -4741,6 +4695,17 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
     reloadRoster();
   }, [reloadRoster]);
 
+  // Libreria esercizi collettiva reale (SCHEMA_v39): caricata una volta al
+  // mount del pannello, ricaricata dopo ogni esercizio custom appreso —
+  // così il menu a tendina (EX_NAMES) si aggiorna subito, senza refresh.
+  const [exerciseLib, setExerciseLib] = useState(DEFAULT_EXERCISE_LIB);
+  const reloadExerciseLib = useCallback(() => {
+    if (!isRealMode) return;
+    fetchExerciseLibrary(supabase).then(setExerciseLib)
+      .catch((err) => console.error("PERFORM: errore caricamento libreria esercizi", err));
+  }, [isRealMode, supabase]);
+  useEffect(() => { reloadExerciseLib(); }, [reloadExerciseLib]);
+
   const clients = isRealMode ? (realClients ?? []) : DEMO_CLIENTS;
 
   const [tab, setTab] = useState("atleti");
@@ -4772,7 +4737,7 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
   const isDark = dark;
 
   return (
-    <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode, reloadRoster }}>
+    <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode, reloadRoster, exerciseLib, reloadExerciseLib }}>
       <div className={`coach-root${isDark ? " dark" : ""}`}>
         <GlobalStyle />
         {/* max-w-2xl su mobile: stessa larghezza fissa "da app" delle altre
