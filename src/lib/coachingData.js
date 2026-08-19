@@ -1297,7 +1297,16 @@ export async function activateClient(supabase, clientId, plan) {
 // "3 mesi gratis" scade davvero 3 mesi dopo, indipendentemente dal numero
 // di giorni nei mesi di mezzo.
 const WHITELISTABLE_PLANS = ["free", "performance_pack", "scheda_personalizzata", "training", "full"];
-export async function whitelistClient(supabase, clientId, plan, months) {
+// skipAnamnesis: per i piani a coaching reale (scheda_personalizzata/
+// training/full) il coach può scegliere di far comunque compilare
+// l'anamnesi — alcune persone che conosce di persona gliela serve comunque
+// per davvero. Se true, onboarding_completed passa direttamente a true
+// (bypass totale, com'era prima). Se false, onboarding_completed resta
+// false: al prossimo accesso OnboardingFlow riparte, vede che profiles.plan
+// è già un piano coaching (resumedPlanId) e salta dritto allo step
+// anamnesi — stesso comportamento di un cliente vero tornato da Stripe,
+// nessuna doppia scelta del piano.
+export async function whitelistClient(supabase, clientId, plan, months, skipAnamnesis = true) {
   if (!WHITELISTABLE_PLANS.includes(plan)) {
     throw new Error(`piano non valido per la whitelist: "${plan}"`);
   }
@@ -1306,7 +1315,7 @@ export async function whitelistClient(supabase, clientId, plan, months) {
   const until = new Date();
   until.setMonth(until.getMonth() + n);
   const { error } = await supabase.from("profiles").update({
-    plan, client_status: "active", onboarding_completed: true, whitelisted_until: until.toISOString(),
+    plan, client_status: "active", onboarding_completed: skipAnamnesis, whitelisted_until: until.toISOString(),
   }).eq("id", clientId);
   if (error) throw error;
 }

@@ -1653,23 +1653,6 @@ function AlarmsDashboard({ onOpen }) {
    Controllo Accessi cliccando sul cliente già registrato — vedi
    ClientWhitelistPanel/whitelistClient (coachingData.js). Questo pannello
    ora è solo un rimando, non serve più duplicare la UI. */
-function WhitelistPanel() {
-  return (
-    <div className="c-card">
-      <h3 className="c-heading font-display font-bold flex items-center gap-2 mb-1">
-        <Lock size={17} style={{ color: "#C5A059" }} />
-        🔐 Whitelist
-      </h3>
-      <p className="c-muted text-sm leading-relaxed">
-        La whitelist (bypass pagamento Stripe + bypass anamnesi, con scadenza a mesi esatti) si attiva ora da
-        <strong> Controllo Accessi</strong>: cerca la persona già registrata, clicca sul suo nome per aprire il
-        dettaglio e attiva la whitelist da lì. Serve che la persona si sia già registrata almeno una volta —
-        anche solo con un account Free.
-      </p>
-    </div>
-  );
-}
-
 /* Interruttore "sezione confermata per l'atleta": guida il colore del
    pallino S1/S2/... nella timeline (verde solo se tutto il richiesto dal
    piano è confermato). */
@@ -1863,16 +1846,18 @@ function ClientWhitelistPanel({ client, onChanged }) {
   const { supabase, reloadRoster } = useContext(CoachDataContext);
   const [plan, setPlan] = useState("full");
   const [months, setMonths] = useState(3);
+  const [skipAnamnesis, setSkipAnamnesis] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const isActive = client.whitelistedUntil && new Date(client.whitelistedUntil) > new Date();
+  const requiresAnamnesis = REAL_COACHING_PLANS.has(plan); // scheda_personalizzata/training/full — non performance_pack
 
   const activate = async () => {
     setBusy(true);
     setError("");
     try {
-      await whitelistClient(supabase, client.id, plan, months);
+      await whitelistClient(supabase, client.id, plan, months, requiresAnamnesis ? skipAnamnesis : true);
       reloadRoster?.();
       onChanged?.();
     } catch (err) {
@@ -1936,6 +1921,14 @@ function ClientWhitelistPanel({ client, onChanged }) {
               {busy ? "…" : "Attiva whitelist"}
             </button>
           </div>
+          {requiresAnamnesis && (
+            <label className="flex items-center gap-2 mb-1 cursor-pointer">
+              <input type="checkbox" checked={skipAnamnesis} onChange={(e) => setSkipAnamnesis(e.target.checked)} className="w-4 h-4" />
+              <span className="text-xs" style={{ color: "var(--ink-2)" }}>
+                Salta anche l'anamnesi {skipAnamnesis ? "" : "— dovrà compilarla al primo accesso"}
+              </span>
+            </label>
+          )}
         </>
       )}
       {error && <p className="text-xs" style={{ color: "#DC2626" }}>{error}</p>}
@@ -4794,7 +4787,6 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
 
               {tab === "rete" && (
                 <div className="space-y-5">
-                  <WhitelistPanel />
                   <AccessControlTable passwordOverrides={passwordOverrides} onRegenerate={regeneratePassword} />
                 </div>
               )}
