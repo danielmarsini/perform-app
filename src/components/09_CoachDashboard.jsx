@@ -5,6 +5,7 @@ import {
   Trash2, ArrowLeft, CalendarDays, Wallet, Server, X, ShieldCheck, Check,
 } from "lucide-react";
 import Portal from "./Portal.jsx";
+import { VolumeBar } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
    COACH DASHBOARD — PERFORM (Evidence-Based Method by D. Marsini)
@@ -393,34 +394,20 @@ function simulateAnamnesis(client) {
 
 /* ------------------------------ VOLUME BAR CHART ---------------------------
    computeVolume ora vive in coachingData.js (SCHEMA_v39) — stessa identica
-   funzione usata anche dalla Home del cliente, mai due calcoli diversi.  */
-function fmtSets(v) { return Number.isInteger(v) ? String(v) : v.toFixed(1).replace(".", ","); }
-function VolumeBarChart({ volume }) {
-  const rows = MUSCLES.map((m) => ({ m, d: volume[m].direct, i: volume[m].indirect, tot: volume[m].direct + volume[m].indirect }));
-  const maxV = Math.max(20, ...rows.map((r) => r.tot));
-  const W = 520, LABEL = 118, VAL = 44, ROWH = 24, PADT = 10;
-  const BARW = W - LABEL - VAL - 8;
-  const H = PADT * 2 + rows.length * ROWH;
-  const xThresh = LABEL + (10 / maxV) * BARW;
+   funzione usata anche dalla Home del cliente, mai due calcoli diversi.
+   Riusa lo stesso identico componente VolumeBar del lato cliente
+   (05_HomeDashboard.jsx) — richiesta esplicita: "voglio identico a lato
+   cliente visivamente colori scritte e graficamente". Prima questo file
+   disegnava un istogramma SVG bianco/liste a parte, visivamente scollegato
+   dalla pillola oro/rosa che il cliente vede davvero. */
+function VolumeBarChart({ volume, gender }) {
+  const accent = gender === "F" ? "#E5C1CD" : "#C5A059";
+  const involved = MUSCLES.filter((m) => volume[m].direct + volume[m].indirect > 0);
+  if (involved.length === 0) return <p className="c-muted text-sm">Nessun esercizio ancora inserito questa settimana.</p>;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Serie settimanali per gruppo muscolare, volume diretto e indiretto">
-      <line x1={xThresh} x2={xThresh} y1={PADT - 4} y2={H - PADT + 4} stroke="var(--ink-tertiary)" strokeWidth="1" strokeDasharray="3 3" />
-      <text x={xThresh + 4} y={PADT + 2} fontSize="8.5" fill="var(--ink-tertiary)" fontFamily='system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'>10 serie</text>
-      {rows.map((r, idx) => {
-        const y = PADT + idx * ROWH;
-        const dW = (r.d / maxV) * BARW, iW = (r.i / maxV) * BARW;
-        const low = r.tot < 10 && r.tot > 0;
-        return (
-          <g key={r.m}>
-            <text x={LABEL - 6} y={y + ROWH / 2 + 3.5} textAnchor="end" fontSize="10" fill={low ? "#92400E" : "var(--ink)"} fontFamily='system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'>{r.m}</text>
-            <rect x={LABEL} y={y + 5} width={BARW} height={ROWH - 10} rx="2" fill="#F8F9FA" />
-            {r.d > 0 && <rect x={LABEL} y={y + 5} width={dW} height={ROWH - 10} rx="2" fill="var(--ink)" />}
-            {r.i > 0 && <rect x={LABEL + dW} y={y + 5} width={iW} height={ROWH - 10} fill="#C5A059" />}
-            <text x={LABEL + dW + iW + 5} y={y + ROWH / 2 + 3.5} fontSize="10" fontWeight="600" fill={low ? "#92400E" : "var(--ink)"} fontFamily='system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'>{fmtSets(r.tot)}</text>
-          </g>
-        );
-      })}
-    </svg>
+    <div className="space-y-2.5">
+      {involved.map((m) => <VolumeBar key={m} muscle={m} direct={volume[m].direct} indirect={volume[m].indirect} accent={accent} />)}
+    </div>
   );
 }
 
@@ -2361,7 +2348,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
 
       <div className="c-card">
         <p className="c-label mb-3">Volume settimanale per gruppo muscolare · Serie Dirette 100% / Indirette 50%</p>
-        <VolumeBarChart volume={volume} />
+        <VolumeBarChart volume={volume} gender={client.gender} />
         {unmapped.length > 0 && (
           <p className="font-data text-[10px] mt-3" style={{ color: "#92400E" }}>
             {unmapped.length === 1 ? "Esercizio personalizzato escluso" : "Esercizi personalizzati esclusi"} dal grafico volumi (nome non in libreria): {unmapped.join(", ")}

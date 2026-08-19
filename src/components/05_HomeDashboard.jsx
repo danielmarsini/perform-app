@@ -603,7 +603,7 @@ function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, accent, w
    segmento più chiaro/trasparente aggiunto in coda per le serie indirette
    sullo stesso distretto — "prendendo la funzionalità di quello del coach
    e la grafica di quello dei clienti", richiesta esplicita. */
-function VolumeBar({ muscle, direct, indirect, accent }) {
+export function VolumeBar({ muscle, direct, indirect, accent }) {
   const total = direct + indirect;
   const maxScale = 30;
   const dPct = Math.max(0, Math.min(100, (direct / maxScale) * 100));
