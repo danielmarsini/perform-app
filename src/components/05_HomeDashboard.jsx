@@ -200,11 +200,33 @@ function useDragScroll(ref) {
 /* Grafico 3D idro-satinato Minimal Luxury: prismi in vetro (Glassmorphism),
    contorni ultrasottili lucidi, gradiente cangiante oro/rosa in movimento
    continuo, scorrimento libero e continuo (swipe/drag) su tutto lo storico. */
+const BAR_H = 176; // altezza dell'area candele — le righe soglia e il calcolo hPct condividono questo numero
+
 function Chart3D({ kind, series, title }) {
   const scrollRef = useRef(null);
   useDragScroll(scrollRef);
+  // Le candele sono ora anche pulsanti cliccabili (per il dettaglio del
+  // valore): senza questa guardia, un trascinamento per scorrere lo
+  // storico (useDragScroll) faceva scattare anche un click spurio sulla
+  // candela sotto il dito/cursore al rilascio. Sopra 6px di movimento non
+  // è più considerato un tap.
+  const dragStart = useRef(null);
+  const onPointerDownBar = (e) => { dragStart.current = "touches" in e ? e.touches[0].clientX : e.clientX; };
+  const onClickBar = (i, setter) => (e) => {
+    const start = dragStart.current;
+    const end = "clientX" in e ? e.clientX : start;
+    dragStart.current = null;
+    if (start != null && Math.abs(end - start) > 6) return; // trascinamento, non un tap
+    setter(i);
+  };
   const t = THRESH[kind];
   const maxVal = Math.max(...series, t.mid * 1.15, 1);
+  // Nessuna selezione = mostra il valore di oggi (ultimo della serie), come
+  // prima. Un click su una candela fissa quel giorno finché non se ne
+  // clicca un altro — "se clicco su una candela mostra preciso quanti
+  // passi/ore ho fatto".
+  const [selectedIdx, setSelectedIdx] = useState(null);
+  useEffect(() => { setSelectedIdx(null); }, [series.length]); // nuovo giorno arrivato: torna a mostrare "oggi"
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
@@ -217,6 +239,17 @@ function Chart3D({ kind, series, title }) {
     d.setDate(d.getDate() - idxFromEnd);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
+
+  // Piano cartesiano: due righe sottili di riferimento alle soglie
+  // bad/mid (le stesse che colorano le candele in grade()), così si vede
+  // subito a colpo d'occhio dove sta il proprio valore rispetto agli
+  // obiettivi, non solo il colore della singola candela.
+  const thresholdPct = (v) => Math.max(0, Math.min(100, (v / maxVal) * 100));
+  const thresholds = [{ v: t.mid, label: "obiettivo" }, { v: t.bad, label: "attenzione" }];
+
+  const activeIdx = selectedIdx ?? series.length - 1;
+  const activeIdxFromEnd = series.length - 1 - activeIdx;
+  const activeVal = series[activeIdx] || 0;
 
   return (
     <div className="relative rounded-2xl p-4 overflow-hidden"
@@ -232,39 +265,55 @@ function Chart3D({ kind, series, title }) {
         </p>
       )}
       {/* Finestra fissa a 7 giorni visibili, candele che riempiono tutta la
-          larghezza reale della card (prima erano fisse a 20px anche su una
-          card enormemente più larga: strette e sperse nel vuoto). Lo
-          storico resta raggiungibile scorrendo indietro col dito/mouse
-          (useDragScroll) quando ci sono più di 7 giorni di dati. */}
-      <div ref={scrollRef} className="flex items-end gap-2.5 overflow-x-auto"
+          larghezza reale della card. Lo storico resta raggiungibile
+          scorrendo indietro col dito/mouse (useDragScroll) quando ci sono
+          più di 7 giorni di dati. */}
+      <div ref={scrollRef} className="relative flex items-end gap-2.5 overflow-x-auto"
            style={{ cursor: "grab", scrollBehavior: "smooth", width: "100%" }}>
+        {/* Piano cartesiano: righe soglia sottili, sotto alle candele */}
+        <div className="absolute inset-x-0 pointer-events-none" style={{ height: BAR_H, top: 0 }}>
+          {thresholds.map((th) => (
+            <div key={th.label} className="absolute inset-x-0" style={{ bottom: `${thresholdPct(th.v)}%`,
+                   borderTop: "1px dashed rgba(255,255,255,0.28)" }}>
+              <span className="font-data absolute right-0" style={{ top: -13, fontSize: "0.48rem", color: "var(--ink-3)", opacity: 0.8, whiteSpace: "nowrap" }}>
+                {t.fmt(th.v)}
+              </span>
+            </div>
+          ))}
+        </div>
         {series.map((v, i) => {
           const idxFromEnd = series.length - 1 - i;
           const hPct = v > 0 ? Math.max(6, Math.min(100, (v / maxVal) * 100)) : 3;
           const tone = CANDLE[grade(kind, v)];
+          const isActive = i === activeIdx;
           return (
-            <div key={i} className="shrink-0 flex flex-col items-center" style={{ width: "calc((100% - 60px) / 7)", minWidth: 34 }}>
-              <div style={{ height: 176, width: "100%", display: "flex", alignItems: "flex-end" }}>
+            <button key={i} onMouseDown={onPointerDownBar} onTouchStart={onPointerDownBar} onClick={onClickBar(i, setSelectedIdx)}
+                    className="relative shrink-0 flex flex-col items-center" style={{ width: "calc((100% - 60px) / 7)", minWidth: 34 }}>
+              <div style={{ height: BAR_H, width: "100%", display: "flex", alignItems: "flex-end" }}>
                 <div className="relative overflow-hidden" style={{ width: "100%", height: `${hPct}%`, borderRadius: 4,
                        background: `linear-gradient(180deg, ${tone.top} 0%, ${tone.mid} 45%, ${tone.dark} 100%)`,
-                       border: "0.5px solid rgba(255,255,255,0.55)",
+                       border: isActive ? "1.5px solid rgba(255,255,255,0.9)" : "0.5px solid rgba(255,255,255,0.55)",
                        boxShadow: `0 4px 12px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.55)` }}>
                   <div className="absolute inset-x-0 top-0" style={{ height: "35%",
                          background: "linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0))" }} />
-                  <div className="chart3d-sheen absolute top-0 bottom-0" style={{ width: "45%",
-                         background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)" }} />
+                  {/* Brillantezza dal basso verso l'alto (era da sinistra a destra) */}
+                  <div className="chart3d-sheen absolute inset-x-0" style={{ height: "45%",
+                         background: "linear-gradient(180deg, transparent, rgba(255,255,255,0.4), transparent)" }} />
                 </div>
               </div>
-              <span className="font-data" style={{ fontSize: "0.58rem", fontWeight: 600, color: "var(--ink-3)", marginTop: 6, whiteSpace: "nowrap" }}>
+              <span className="font-data" style={{ fontSize: "0.58rem", fontWeight: isActive ? 800 : 600, color: isActive ? "var(--ink)" : "var(--ink-3)", marginTop: 6, whiteSpace: "nowrap" }}>
                 {dateLabelFor(idxFromEnd)}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
       <div className="mt-3">
         <span className="font-data" style={{ fontSize: "0.95rem", fontWeight: 800, color: "var(--ink)" }}>
-          {t.fmt(series[series.length - 1] || 0)}
+          {t.fmt(activeVal)}
+        </span>
+        <span className="meta ml-1.5" style={{ fontSize: "0.72rem" }}>
+          {selectedIdx == null ? "oggi" : dateLabelFor(activeIdxFromEnd) === "Oggi" || dateLabelFor(activeIdxFromEnd) === "Ieri" ? dateLabelFor(activeIdxFromEnd).toLowerCase() : dateLabelFor(activeIdxFromEnd)}
         </span>
       </div>
     </div>
@@ -6467,7 +6516,7 @@ export default function HomePreview({
         .candle-rise{animation:candleRise .6s cubic-bezier(.22,1,.36,1) both}
         @keyframes performGlow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
         @keyframes ringBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
-        @keyframes chart3dSheen{0%{left:-60%}100%{left:160%}}
+        @keyframes chart3dSheen{0%{top:160%}100%{top:-60%}}
         .chart3d-sheen{animation:chart3dSheen 2.8s ease-in-out infinite}
         @media (prefers-reduced-motion: reduce){.chart3d-sheen{animation:none}}
         .ring-breathe{animation:ringBreathe 3.4s ease-in-out infinite}
