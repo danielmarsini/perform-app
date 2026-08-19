@@ -1296,7 +1296,9 @@ export function PauseSection({ supabase, userId, accent, accentText }) {
           </div>
         </div>
       ) : (
-        <button onClick={() => setShowModal(true)} className="text-xs mb-4" style={{ color: "var(--ink-2)" }}>
+        <button onClick={() => setShowModal(true)}
+                className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-3 mb-4 text-sm transition-transform active:scale-[0.98] btn-3d"
+                style={{ backgroundColor: "var(--surface-2)", border: `1.5px solid ${accent}`, color: "var(--ink)", fontWeight: 700 }}>
           🏖️ Vai in vacanza o chiedi un riposo forzato
         </button>
       )}

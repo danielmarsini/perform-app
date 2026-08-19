@@ -730,6 +730,7 @@ export function ClientProfileView({
   onSaveProfile, onOpenSettings, nicknameTaken,
   onOpenManualCheck,   // se passato, mostra il pulsante "Registra ora" nell'Archivio Check
   supabase, userId,    // solo per "Vai in vacanza / chiedi riposo forzato" (PauseSection)
+  plan,                // id STRIPE_PLANS ("free"/"performance"/"scheda"/"training"/"full") — gate PauseSection
 }) {
   const t = translations[lang] || translations.it;
   const [editing, setEditing] = useState(false);
@@ -865,7 +866,11 @@ export function ClientProfileView({
       </div>
       </div>
 
-      {supabase && userId && (
+      {/* Pausa (vacanza/riposo forzato): solo per chi ha un vero coach dietro
+          (Scheda Personalizzata/Coaching Allenamento/Full Coaching) — un
+          Free/Premium autogestito non ha nessuno a cui "avvisare" di una
+          pausa, il concetto stesso non si applica. */}
+      {supabase && userId && ["scheda", "training", "full"].includes(plan) && (
         <div className="mb-4">
           <PauseSection supabase={supabase} userId={userId} accent={accent} accentText={accentText} />
         </div>
@@ -1587,6 +1592,7 @@ export default function ClientProfileViewPreview({
           nicknameTaken={(n) => ["SaraSteel", "LucaE"].some((x) => x.toLowerCase() === n.toLowerCase())}
           onOpenManualCheck={isRealMode ? () => setShowManualCheck(true) : undefined}
           supabase={isRealMode ? supabase : undefined} userId={isRealMode ? userId : undefined}
+          plan={plan}
         />
       </main>
 
