@@ -890,7 +890,7 @@ function expandPauseDates(periods) {
 // appena calcolato, anche se la scrittura di cache fallisce (best-effort: un
 // problema di permessi sulla cache non deve rompere la UI che lo mostra).
 export async function computeRealXpAndStreak(supabase, userId) {
-  const { data: profileRow } = await supabase.from("profiles").select("created_at").eq("id", userId).maybeSingle();
+  const { data: profileRow } = await supabase.from("profiles").select("created_at, longest_streak").eq("id", userId).maybeSingle();
   const sinceDate = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : "2020-01-01";
   const today = toLocalISODate();
 
@@ -942,13 +942,51 @@ export async function computeRealXpAndStreak(supabase, userId) {
     + bonusXp                           // bonus manuali assegnati dal coach (xp_bonuses)
   );
 
+  // Record storico: mai un numero che scende. "Giorni massimi di streak" è
+  // il picco di sempre, non lo streak corrente — serve un max esplicito qui
+  // perché current_streak si azzera quando la serie si interrompe.
+  const longestStreak = Math.max(profileRow?.longest_streak ?? 0, streak);
   try {
-    await supabase.from("profiles").update({ xp_total: xpTotal, current_streak: streak }).eq("id", userId);
+    await supabase.from("profiles").update({ xp_total: xpTotal, current_streak: streak, longest_streak: longestStreak }).eq("id", userId);
   } catch (err) {
     console.error("PERFORM: impossibile aggiornare la cache XP/streak su profiles", err);
   }
 
   return { xpTotal, streak };
+}
+
+// BUG PRESO: "Modifica profilo" (Impostazioni) non scriveva MAI su Supabase
+// — onSaveProfile aggiornava solo lo state React locale, perso al refresh.
+// Nickname/bio reali, un solo punto di scrittura.
+export async function saveProfileDetails(supabase, userId, { nickname, bio }) {
+  const { error } = await supabase.from("profiles").update({ nickname, bio }).eq("id", userId);
+  if (error) throw error;
+}
+
+// Legge nickname/bio/avatar reali per seedare il form "Modifica profilo" al
+// mount — prima partiva sempre dai valori demo fissi, mai da quelli veri.
+export async function fetchProfileDetails(supabase, userId) {
+  const { data, error } = await supabase.from("profiles")
+    .select("nickname, bio, avatar_url, full_name, xp_total, current_streak, longest_streak, created_at")
+    .eq("id", userId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// Avatar reale: prima era un blob: URL locale al browser (URL.createObjectURL),
+// mai caricato da nessuna parte — invalido già al refresh della pagina.
+// Bucket pubblico "avatars" (SCHEMA_v38), path avatars/<user_id>/<timestamp>.<ext>
+// cosi ogni upload nuovo ha un nome diverso (niente problemi di cache CDN su
+// un file riscritto con lo stesso path).
+export async function uploadAvatar(supabase, userId, file) {
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${userId}/${Date.now()}.${ext}`;
+  const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, { upsert: false });
+  if (uploadError) throw uploadError;
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  const { error: updateError } = await supabase.from("profiles").update({ avatar_url: data.publicUrl }).eq("id", userId);
+  if (updateError) throw updateError;
+  return data.publicUrl;
 }
 
 // Vacanza (2-14 giorni) o riposo forzato singolo (motivo obbligatorio): una

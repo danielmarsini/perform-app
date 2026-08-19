@@ -36,9 +36,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
-  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy,
+  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar } from "../lib/coachingData.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import { WeeklyCheckModal, PauseSection } from "./05_HomeDashboard.jsx";
@@ -805,7 +805,10 @@ export function ClientProfileView({
   const [nick, setNick] = useState(profile.nickname || "");
   const [bio, setBio] = useState(profile.bio || "");
   const [avatar, setAvatar] = useState(profile.avatar || null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [err, setErr] = useState("");
+  const isRealMode = Boolean(supabase && userId);
+  useEffect(() => { setNick(profile.nickname || ""); setBio(profile.bio || ""); setAvatar(profile.avatar || null); }, [profile.nickname, profile.bio, profile.avatar]);
   // Entrambe le sezioni partono chiuse: pagina profilo pulita, l'atleta apre
   // solo quella che gli interessa in quel momento (Section è già un banner
   // chiudibile — tap per espandere/richiudere, un accordion: mai due aperte
@@ -865,12 +868,30 @@ export function ClientProfileView({
             {editing && (
               <span className="absolute inset-0 flex items-center justify-center"
                     style={{ backgroundColor: "rgba(17,17,17,0.55)" }}>
-                <Camera size={20} style={{ color: "#FFFFFF" }} />
+                {avatarBusy ? <Loader2 size={20} className="animate-spin" style={{ color: "#FFFFFF" }} /> : <Camera size={20} style={{ color: "#FFFFFF" }} />}
               </span>
             )}
           </button>
           <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                 onChange={(e) => { const f = e.target.files?.[0]; if (f) setAvatar(URL.createObjectURL(f)); }} />
+                 onChange={async (e) => {
+                   const f = e.target.files?.[0];
+                   if (!f) return;
+                   // BUG PRESO: prima era solo URL.createObjectURL(f), un blob:
+                   // locale al browser — spariva già al refresh perché non
+                   // veniva mai davvero caricato da nessuna parte.
+                   if (!isRealMode) { setAvatar(URL.createObjectURL(f)); return; }
+                   setAvatarBusy(true);
+                   setErr("");
+                   try {
+                     const url = await uploadAvatar(supabase, userId, f);
+                     setAvatar(url);
+                   } catch (err) {
+                     console.error("PERFORM: errore caricamento avatar", err);
+                     setErr("Non sono riuscito a caricare la foto.");
+                   } finally {
+                     setAvatarBusy(false);
+                   }
+                 }} />
 
           <div className="min-w-0 flex-1">
             {!editing ? (
@@ -1468,8 +1489,21 @@ export default function ClientProfileViewPreview({
         console.error("PERFORM: errore calcolo XP/livello profilo", err);
         if (!cancelled) setRealXpStreak({ xpTotal: 0, streak: 0 });
       });
-    supabase.from("profiles").select("created_at").eq("id", userId).maybeSingle()
-      .then(({ data }) => { if (!cancelled && data?.created_at) setProfile((p) => ({ ...p, joined_at: data.created_at.slice(0, 10) })); });
+    // Nickname/bio/avatar reali: prima il form "Modifica profilo" partiva
+    // sempre dai valori demo fissi in questo file, mai da quelli davvero
+    // salvati — la causa esatta per cui una modifica sembrava "sparire".
+    fetchProfileDetails(supabase, userId)
+      .then((data) => {
+        if (cancelled || !data) return;
+        setProfile((p) => ({
+          ...p,
+          nickname: data.nickname || p.nickname,
+          bio: data.bio ?? "",
+          avatar: data.avatar_url || null,
+          joined_at: data.created_at ? data.created_at.slice(0, 10) : p.joined_at,
+        }));
+      })
+      .catch((err) => console.error("PERFORM: errore caricamento dettagli profilo", err));
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId]);
   const realLevelInfo = isRealMode ? xpToLevelInfo(realXpStreak?.xpTotal ?? 0) : null;
@@ -1678,7 +1712,15 @@ export default function ClientProfileViewPreview({
           checkPhotos={checkPhotos} weightPoints={weightPoints} circPoints={circPoints}
           exercises={exercises} favoriteExerciseIds={favoriteExerciseIds}
           onToggleFavoriteExercise={toggleFavoriteExercise}
-          onSaveProfile={(d) => setProfile((p) => ({ ...p, ...d }))}
+          onSaveProfile={(d) => {
+            setProfile((p) => ({ ...p, ...d }));
+            // BUG PRESO: qui si aggiornava SOLO lo state locale — nickname e
+            // bio non arrivavano mai a Supabase, persi al primo refresh.
+            if (isRealMode) {
+              saveProfileDetails(supabase, userId, { nickname: d.nickname, bio: d.bio })
+                .catch((err) => console.error("PERFORM: errore salvataggio profilo", err));
+            }
+          }}
           onOpenSettings={onOpenSettingsProp ?? (() => setSettings(true))}
           nicknameTaken={(n) => ["SaraSteel", "LucaE"].some((x) => x.toLowerCase() === n.toLowerCase())}
           onOpenManualCheck={isRealMode ? () => setShowManualCheck(true) : undefined}
