@@ -3067,7 +3067,7 @@ const EXERCISE_DB = {
   ],
 };
 
-const EXERCISE_LIBRARY = Object.values(EXERCISE_DB).flat();
+const EXERCISE_LIBRARY = Object.values(EXERCISE_DB).flat().sort((a, b) => a.localeCompare(b, "it"));
 
 /* Spiegazioni biomeccaniche da manuale esperto per le varianti d'élite più
    richieste: leve, linee di forza e profili di tensione, non solo indicazioni
