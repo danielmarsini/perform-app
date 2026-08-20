@@ -161,7 +161,7 @@ import {
   awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange, fetchClientPauses,
   fetchMesocycleWeeksRange, saveMesocycleWeek,
   renameClient, adminResetPassword, adminDeleteAccount,
-  fetchCheckins, saveCheckin, getCheckinPhotoUrl,
+  fetchCheckins, saveCheckin, getCheckinPhotoUrl, fetchPrescribedSupplements,
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
   fetchExerciseLibrary, learnExercise, computeVolume,
@@ -2667,24 +2667,18 @@ function WeekDietEditor({ week, onChange, client }) {
 // in coda. Ora le sezioni standard usano l'id fisso di SUPP_MOMENTS (stesso
 // identificatore che il cliente legge per riordinare correttamente): il
 // titolo mostrato resta quello leggibile, ma è l'id a essere salvato.
-function WeekSuppsEditor({ week, onChange, client }) {
+function WeekSuppsEditor({ supplements, onChange, client }) {
   const { supabase, isRealMode, coachId } = useContext(CoachDataContext);
-  const usedMomentIds = new Set(week.supplements.map((s) => s.id_ref).filter(Boolean));
+  const usedMomentIds = new Set(supplements.map((s) => s.id_ref).filter(Boolean));
   const availableMoments = SUPP_MOMENTS.filter((m) => !usedMomentIds.has(m.id));
-  const removeSection = (si) => onChange({ ...week, supplements: week.supplements.filter((_, j) => j !== si) });
-  const addSection = (moment) => onChange({
-    ...week,
-    supplements: [...week.supplements, moment
-      ? { id: uid(), id_ref: moment.id, title: moment.label, items: [] }
-      : { id: uid(), id_ref: null, title: "Altro momento", items: [] }],
-  });
+  const removeSection = (si) => onChange(supplements.filter((_, j) => j !== si));
+  const addSection = (moment) => onChange([...supplements, moment
+    ? { id: uid(), id_ref: moment.id, title: moment.label, items: [] }
+    : { id: uid(), id_ref: null, title: "Altro momento", items: [] }]);
 
-  const updItem = (si, ii, k, v) => onChange({
-    ...week,
-    supplements: week.supplements.map((s, j) => (j !== si ? s : { ...s, items: s.items.map((it, k2) => (k2 === ii ? { ...it, [k]: v } : it)) })),
-  });
-  const removeItem = (si, ii) => onChange({ ...week, supplements: week.supplements.map((s, j) => (j !== si ? s : { ...s, items: s.items.filter((_, k2) => k2 !== ii) })) });
-  const addItem = (si) => onChange({ ...week, supplements: week.supplements.map((s, j) => (j !== si ? s : { ...s, items: [...s.items, { id: uid(), name: "", dose: "" }] })) });
+  const updItem = (si, ii, k, v) => onChange(supplements.map((s, j) => (j !== si ? s : { ...s, items: s.items.map((it, k2) => (k2 === ii ? { ...it, [k]: v } : it)) })));
+  const removeItem = (si, ii) => onChange(supplements.map((s, j) => (j !== si ? s : { ...s, items: s.items.filter((_, k2) => k2 !== ii) })));
+  const addItem = (si) => onChange(supplements.map((s, j) => (j !== si ? s : { ...s, items: [...s.items, { id: uid(), name: "", dose: "" }] })));
 
   // Sostituisce l'intero protocollo del cliente (delete + insert, vedi nota
   // in saveWeekSupplements): niente storico da preservare qui, a differenza
@@ -2697,7 +2691,7 @@ function WeekSuppsEditor({ week, onChange, client }) {
     setSuppSaving(true);
     setSuppError("");
     try {
-      await saveWeekSupplements(supabase, coachId, client.id, week.supplements);
+      await saveWeekSupplements(supabase, coachId, client.id, supplements);
       setSuppSaved(true);
       setTimeout(() => setSuppSaved(false), 2500);
       notifyClientPlanChange(supabase, client.id, {
@@ -2721,7 +2715,7 @@ function WeekSuppsEditor({ week, onChange, client }) {
         {SUPP_WIKI.map((s) => <option key={s.id} value={s.name} />)}
       </datalist>
       <div className="space-y-3">
-      {week.supplements.map((sec, si) => (
+      {supplements.map((sec, si) => (
         <div key={sec.id} className="c-card">
           <div className="flex items-center gap-2 mb-3">
             <p className="text-sm font-medium flex-1" style={{ color: "var(--ink)" }}>{sec.title}</p>
@@ -3129,6 +3123,54 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     }
   };
 
+  // --- INTEGRATORI REALI --------------------------------------------------
+  // BUG PRESO: l'editor partiva SEMPRE da makeDefaultWeek (sezioni finte
+  // vuote), mai da quanto davvero salvato in prescribed_supplements — il
+  // salvataggio scriveva su Supabase correttamente, ma riaprendo il
+  // cliente (nuova sessione, o solo cambiando atleta e tornando indietro)
+  // l'editor mostrava di nuovo il finto default, come se non avesse mai
+  // salvato nulla. Non è un concetto per-settimana (prescribed_supplements
+  // non ha una data): un solo fetch al mount, non per ogni offset.
+  const [realSupplements, setRealSupplements] = useState(null); // null = non ancora caricato
+  const [suppsLoading, setSuppsLoading] = useState(isRealMode);
+  const [suppsError, setSuppsError] = useState("");
+  useEffect(() => {
+    if (!isRealMode) return undefined;
+    let cancelled = false;
+    setSuppsLoading(true);
+    fetchPrescribedSupplements(supabase, client.id)
+      .then((rows) => {
+        if (cancelled) return;
+        const byMoment = new Map();
+        rows.forEach((r) => {
+          if (!byMoment.has(r.moment)) byMoment.set(r.moment, []);
+          byMoment.get(r.moment).push(r);
+        });
+        const sections = [...byMoment.entries()].map(([moment, items]) => {
+          const known = SUPP_MOMENTS.find((m) => m.id === moment);
+          return {
+            id: uid(),
+            id_ref: known ? known.id : null,
+            title: known ? known.label : moment,
+            items: items.map((it) => ({ id: it.id, name: it.name, dose: it.dose || "" })),
+          };
+        });
+        setRealSupplements(sections);
+      })
+      .catch((err) => {
+        console.error("PERFORM: errore lettura protocollo integratori reale", err);
+        if (!cancelled) { setSuppsError("Non sono riuscito a caricare il protocollo di questo cliente."); setRealSupplements([]); }
+      })
+      .finally(() => { if (!cancelled) setSuppsLoading(false); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+
+  const supplementsForEditor = isRealMode ? (realSupplements ?? []) : week.supplements;
+  const handleSupplementsChange = (nextSupplements) => {
+    if (isRealMode) setRealSupplements(nextSupplements);
+    else setWeek((w) => ({ ...w, supplements: nextSupplements }));
+  };
+
   const cloneToNext = async () => {
     if (selOffset >= MAX_FORWARD_WEEKS) return;
     const nextOffset = selOffset + 1;
@@ -3338,7 +3380,20 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         )
       )}
       {section === "dieta" && <WeekDietEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
-      {section === "integratori" && <WeekSuppsEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
+      {section === "integratori" && (
+        isRealMode && suppsLoading ? (
+          <p className="c-muted text-sm px-1">Caricamento protocollo…</p>
+        ) : (
+          <>
+            {suppsError && (
+              <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
+                {suppsError}
+              </p>
+            )}
+            <WeekSuppsEditor supplements={supplementsForEditor} onChange={handleSupplementsChange} client={client} />
+          </>
+        )
+      )}
     </div>
   );
 }

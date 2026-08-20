@@ -368,7 +368,7 @@ export async function computeNutritionCompliance(supabase, userId) {
 export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDateISO) {
   const { data, error } = await supabase
     .from("workout_logs")
-    .select("id, date, split_label, exercise_name, muscle_target, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only")
+    .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only")
     .eq("user_id", userId)
     .gte("date", fromDateISO)
     .lte("date", toDateISO)

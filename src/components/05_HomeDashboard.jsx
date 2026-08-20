@@ -6307,6 +6307,15 @@ export default function HomePreview({
               rests: Array.from({ length: r.sets_count ?? 3 }, () => r.rest_seconds ?? 120),
               history,
               splitLabel: r.split_label,
+              // BUG PRESO: mancavano qui — computeVolume(weekPlan) per un
+              // esercizio custom non ancora nella libreria condivisa si
+              // affida SOLO a questi due campi (il nome da solo non basta).
+              // Senza, l'esercizio spariva del tutto dal volume lato
+              // cliente (0 serie), mentre il coach — che legge muscleTarget/
+              // synergists direttamente da fetchWeekWorkout — lo vedeva
+              // giusto: due grafici con numeri diversi sugli stessi esercizi.
+              muscleTarget: r.muscle_target || null,
+              synergists: r.synergist_targets || [],
             };
           }));
           return { label: dayRows[0].split_label || "Scheda di oggi", exercises: exercisesForDay };
