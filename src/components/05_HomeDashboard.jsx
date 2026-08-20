@@ -21,10 +21,14 @@ import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
+  Loader2, AlertTriangle,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
+// @zxing/browser (~450 KB) è importato SOLO quando il mirino barcode si apre
+// davvero (import() dinamico dentro BarcodeScannerModal), non nel bundle
+// principale: la stragrande maggioranza delle sessioni non lo usa mai.
 
 /* ============================================================================
    0 · NOTA — l'header istituzionale (logo, marchio "PERFORM", firma) è
@@ -2120,7 +2124,7 @@ export function HomeDashboard({
           target={target} mealsBySlot={mealsBySlot} foods={foods}
           mealGuide={mealGuide} substitutions={substitutions}
           onAddFood={onAddFood} onRemoveFood={onRemoveFood} onOpenScanner={onOpenScanner} onOpenPhoto={onOpenPhoto} onAddCustomFood={onAddCustomFood}
-          onCopyYesterday={onCopyYesterday} onShoppingList={onShoppingList}
+          onCopyYesterday={onCopyYesterday} onShoppingList={onShoppingList} supabase={supabase}
           onGenerateSimilar={onGenerateSimilar}
           targetOn={targetOn} targetOff={targetOff}
           onSetTargetOn={onSetTargetOn} onSetTargetOff={onSetTargetOff}
@@ -4153,26 +4157,107 @@ export const SUPP_PLAN_PRO = {
   sera:    [{ name: "Magnesio", dose: "300 mg", note: "30 min prima di dormire" }],
 };
 
-/* Prodotti confezionati plausibili per simulare una scansione con codice a
-   barre: ogni scansione arricchisce il catalogo condiviso, come farebbe un
-   database crowdsourced tipo MyFitnessPal. */
-const SCAN_POOL = [
-  { base: "Yogurt Bianco Intero", kcal: 66, p: 3.5, c: 4.7, f: 3.6 },
-  { base: "Fette Biscottate Integrali", kcal: 400, p: 10, c: 72, f: 8 },
-  { base: "Barretta Proteica", kcal: 380, p: 30, c: 35, f: 12 },
-  { base: "Hummus di Ceci", kcal: 166, p: 8, c: 14, f: 9.6 },
-  { base: "Gallette di Riso Integrale", kcal: 387, p: 8, c: 82, f: 3 },
-  { base: "Formaggio Spalmabile Light", kcal: 155, p: 11, c: 4, f: 11 },
-  { base: "Cracker Integrali", kcal: 421, p: 10, c: 68, f: 12 },
-  { base: "Latte Parzialmente Scremato", kcal: 46, p: 3.3, c: 4.8, f: 1.5 },
-];
+/* Lettura codice a barre REALE: Open Food Facts è il database di prodotti
+   alimentari aperto e gratuito (nessuna chiave API, stesso principio già
+   scelto per PubMed in News & Tips) — un barcode EAN scansionato dalla
+   fotocamera del cliente interroga direttamente questo servizio. Se il
+   prodotto è nel loro database, arriva già con nome e nutrienti reali
+   per 100g; se non lo trovano, il cliente lo aggiunge a mano come sempre
+   (e arricchisce anche il nostro catalogo condiviso, custom_foods). */
+async function lookupBarcodeProduct(barcode) {
+  const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=product_name,brands,nutriments`);
+  if (!res.ok) throw new Error(`Open Food Facts ${res.status}`);
+  const data = await res.json();
+  if (data.status !== 1 || !data.product) return null;
+  const n = data.product.nutriments || {};
+  const name = [data.product.product_name, data.product.brands].filter(Boolean).join(" — ") || `Prodotto ${barcode}`;
+  return {
+    name,
+    kcal: Math.round(n["energy-kcal_100g"] ?? 0),
+    p: Math.round((n["proteins_100g"] ?? 0) * 10) / 10,
+    c: Math.round((n["carbohydrates_100g"] ?? 0) * 10) / 10,
+    f: Math.round((n["fat_100g"] ?? 0) * 10) / 10,
+    na: n["sodium_100g"] != null ? Math.round(n["sodium_100g"] * 1000) : undefined, // g → mg
+    k: n["potassium_100g"] != null ? Math.round(n["potassium_100g"] * 1000) : undefined,
+  };
+}
+
+/* Fotocamera in diretta + decodifica barcode client-side (ZXing, nessun
+   server coinvolto nella lettura): funziona anche su iOS Safari, dove
+   l'API nativa BarcodeDetector non esiste. */
+function BarcodeScannerModal({ onDetected, onClose, accent }) {
+  const videoRef = useRef(null);
+  const [status, setStatus] = useState("starting"); // starting | scanning | denied | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let controlsRef = null;
+    let cancelled = false;
+    import("@zxing/browser")
+      .then(({ BrowserMultiFormatReader }) => {
+        if (cancelled) return undefined;
+        const reader = new BrowserMultiFormatReader();
+        return reader.decodeFromVideoDevice(undefined, videoRef.current, (result, err, controls) => {
+          if (cancelled) return;
+          controlsRef = controls;
+          if (result) {
+            controls.stop();
+            onDetected(result.getText());
+          }
+        });
+      })
+      .then(() => { if (!cancelled) setStatus("scanning"); })
+      .catch((err) => {
+        console.error("PERFORM: errore avvio fotocamera per scansione", err);
+        if (cancelled) return;
+        setStatus(err?.name === "NotAllowedError" ? "denied" : "error");
+        setErrorMsg(err?.message || "Fotocamera non disponibile.");
+      });
+    return () => { cancelled = true; controlsRef?.stop(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "#000000" }}>
+        <div className="flex items-center justify-between px-4 py-3.5">
+          <p className="text-sm font-semibold" style={{ color: "#FFFFFF" }}>Inquadra il codice a barre</p>
+          <button onClick={onClose} aria-label="Chiudi" className="p-2"><X size={20} style={{ color: "#FFFFFF" }} /></button>
+        </div>
+        <div className="relative flex-1 overflow-hidden">
+          <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+          {status === "scanning" && (
+            <div className="absolute inset-x-10 top-1/2 -translate-y-1/2 rounded-2xl pointer-events-none"
+                 style={{ height: 120, border: `2px solid ${accent}`, boxShadow: "0 0 0 2000px rgba(0,0,0,0.4)" }} />
+          )}
+          {(status === "denied" || status === "error") && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
+              <AlertTriangle size={28} style={{ color: "#F0A020" }} />
+              <p className="text-sm" style={{ color: "#FFFFFF" }}>
+                {status === "denied" ? "Serve il permesso della fotocamera per scansionare." : errorMsg}
+              </p>
+            </div>
+          )}
+          {status === "starting" && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Loader2 size={28} className="animate-spin" style={{ color: "#FFFFFF" }} />
+            </div>
+          )}
+        </div>
+        <p className="text-center py-3.5" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.72rem" }}>
+          Cerca su Open Food Facts, il database prodotti aperto e gratuito.
+        </p>
+      </div>
+    </Portal>
+  );
+}
 
 function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide, substitutions,
   onAddFood, onRemoveFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
   onGenerateSimilar, targetOn, targetOff, onSetTargetOn, onSetTargetOff,
   isTrainingDay, onToggleTrainingDay, waterTarget, onSetWaterTarget, fullAccess, subsAccess, onUpgrade,
-  userPlan, gender, waterMl, digestValue, onDigestChange,
+  userPlan, gender, waterMl, digestValue, onDigestChange, supabase,
 }) {
   const [tab, setTab] = useState("diary");        // diary è il default
   const [openSlot, setOpenSlot] = useState(null);
@@ -4204,22 +4289,65 @@ function NutritionTabs({
 
   const reset = () => { setQuery(""); setSelected(null); setGrams(""); setManualAddOpen(false); setManualMacros({ kcal: "", p: "", c: "", f: "" }); };
 
-  /* Scansione codice a barre simulata: pesca un prodotto plausibile e lo
-     aggiunge subito al catalogo condiviso, pronto per le ricerche future. */
-  const handleScan = (slotId) => {
-    const base = SCAN_POOL[Math.floor(Math.random() * SCAN_POOL.length)];
-    const food = { name: `${base.base} (scansionato)`, kcal: base.kcal, p: base.p, c: base.c, f: base.f };
-    onAddCustomFood && onAddCustomFood(food);
-    setSelected(food); setQuery(food.name); setDropOpen(false);
-    onOpenScanner && onOpenScanner(slotId);
+  /* Scansione codice a barre reale (Open Food Facts, vedi lookupBarcodeProduct
+     sopra) — nessuna simulazione: il barcode letto dalla fotocamera interroga
+     davvero il database prodotti. */
+  const [scannerSlot, setScannerSlot] = useState(null); // slotId col mirino aperto, o null
+  const [scanLookupBusy, setScanLookupBusy] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const handleBarcodeDetected = async (barcode) => {
+    setScannerSlot(null);
+    setScanLookupBusy(true);
+    setScanError("");
+    try {
+      const food = await lookupBarcodeProduct(barcode);
+      if (!food) {
+        setScanError(`Nessun prodotto trovato per il codice ${barcode} — aggiungilo tu qui sotto, arricchirai il catalogo per tutti.`);
+        setQuery(barcode);
+        setManualAddOpen(true);
+        return;
+      }
+      onAddCustomFood && onAddCustomFood(food);
+      setSelected(food); setQuery(food.name); setDropOpen(false);
+    } catch (err) {
+      console.error("PERFORM: errore ricerca codice a barre", err);
+      setScanError("Non sono riuscito a cercare il prodotto — controlla la connessione e riprova.");
+    } finally {
+      setScanLookupBusy(false);
+    }
   };
 
-  /* Foto del piatto: stima AI plausibile, aggiunta anch'essa al catalogo. */
-  const handlePhotoAdd = (slotId) => {
-    const food = { name: "Piatto fotografato (stima AI)", kcal: 420, p: 28, c: 45, f: 14 };
-    onAddCustomFood && onAddCustomFood(food);
-    setSelected(food); setQuery(food.name); setDropOpen(false);
-    onOpenPhoto && onOpenPhoto(slotId);
+  /* Foto del piatto: stima reale da PERFORM AI (Claude, vision) via Edge
+     Function estimate-food-photo — non più un valore fisso finto. Resta
+     sempre una STIMA (etichettata come tale), mai un dato certo come una
+     scansione barcode o un inserimento manuale. */
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const photoInputRef = useRef(null);
+  const handlePhotoFile = async (file) => {
+    if (!file || !supabase) return;
+    setPhotoBusy(true);
+    setPhotoError("");
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const { data, error } = await supabase.functions.invoke("estimate-food-photo", {
+        body: { imageBase64: base64, mediaType: file.type || "image/jpeg" },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const food = { name: `${data.name} (stima AI)`, kcal: data.kcal, p: data.p, c: data.c, f: data.f };
+      setSelected(food); setQuery(food.name); setDropOpen(false);
+    } catch (err) {
+      console.error("PERFORM: errore stima foto piatto", err);
+      setPhotoError(err.message || "Non sono riuscito a stimare il piatto dalla foto — riprova o inseriscilo a mano.");
+    } finally {
+      setPhotoBusy(false);
+    }
   };
 
   /* Inserimento manuale: se un alimento non c'è, chi lo cerca lo aggiunge lui
@@ -4400,17 +4528,29 @@ function NutritionTabs({
                           onChange={(e) => setGrams(e.target.value)} placeholder="Grammi (a crudo)"
                           className="input flex-1 min-w-0 px-4 py-3 font-data text-sm"
                           aria-label="Grammi a crudo" />
-                        <button onClick={() => handleScan(slot.id)} aria-label="Codice a barre"
+                        <button onClick={() => { setScannerSlot(slot.id); onOpenScanner && onOpenScanner(slot.id); }} aria-label="Codice a barre" disabled={scanLookupBusy}
                           className="shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-transform active:scale-95"
                           style={{ backgroundColor: "#111111" }}>
-                          <Barcode size={19} style={{ color: accent }} />
+                          {scanLookupBusy ? <Loader2 size={19} className="animate-spin" style={{ color: accent }} /> : <Barcode size={19} style={{ color: accent }} />}
                         </button>
-                        <button onClick={() => handlePhotoAdd(slot.id)} aria-label="Fotografa il piatto"
+                        <button onClick={() => { onOpenPhoto && onOpenPhoto(slot.id); photoInputRef.current?.click(); }} aria-label="Fotografa il piatto" disabled={photoBusy}
                           className="shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-transform active:scale-95"
                           style={{ backgroundColor: "#111111" }}>
-                          <Camera size={19} style={{ color: accent }} />
+                          {photoBusy ? <Loader2 size={19} className="animate-spin" style={{ color: accent }} /> : <Camera size={19} style={{ color: accent }} />}
                         </button>
+                        <input ref={photoInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoFile(f); e.target.value = ""; }} />
                       </div>
+
+                      {scanError && (
+                        <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(240,160,32,0.12)", color: "#B45309" }}>{scanError}</p>
+                      )}
+                      {photoError && (
+                        <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626" }}>{photoError}</p>
+                      )}
+                      {scannerSlot === slot.id && (
+                        <BarcodeScannerModal accent={accent} onClose={() => setScannerSlot(null)} onDetected={handleBarcodeDetected} />
+                      )}
 
                       {selected && (
                         <div className="mb-4">
