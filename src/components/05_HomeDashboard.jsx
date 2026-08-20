@@ -2441,22 +2441,40 @@ function RouteMap({ points, live, accent, height = 220 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polylineRef = useRef(null);
+  const markerRef = useRef(null); // puntino blu della posizione attuale, solo live
+  const leafletRef = useRef(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     import("leaflet").then((L) => {
       if (cancelled || !containerRef.current || mapRef.current) return;
+      leafletRef.current = L;
       const map = L.map(containerRef.current, { zoomControl: live, attributionControl: true, dragging: true, scrollWheelZoom: false });
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>',
         maxZoom: 19,
       }).addTo(map);
       const start = points?.[0] || { lat: 45.4642, lng: 9.19 }; // Milano come centro neutro se non c'è ancora un punto
-      map.setView([start.lat, start.lng], 15);
-      polylineRef.current = L.polyline([], { color: accent, weight: 4, opacity: 0.9 }).addTo(map);
+      map.setView([start.lat, start.lng], live ? 17 : 15);
+      polylineRef.current = L.polyline([], { color: accent, weight: 5, opacity: 0.95, lineJoin: "round", lineCap: "round" }).addTo(map);
       mapRef.current = map;
       setReady(true);
+      // Leaflet calcola le dimensioni al momento della creazione: se il
+      // contenitore non aveva ancora le sue dimensioni finali (layout non
+      // ancora assestato dentro il Portal), i tile risultano disallineati
+      // finché non si ridimensiona la finestra. invalidateSize forzato
+      // subito dopo evita di doverlo scoprire per caso.
+      requestAnimationFrame(() => map.invalidateSize());
+      // Se il tracciamento è già live e la fotocamera GPS non ha ancora
+      // dato un punto, prova comunque a centrare sulla posizione vera
+      // dell'utente invece di restare fermi su Milano.
+      if (live && !points?.length && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { if (!cancelled) map.setView([pos.coords.latitude, pos.coords.longitude], 17); },
+          () => {}, { maximumAge: 10000, timeout: 5000 }
+        );
+      }
     });
     return () => {
       cancelled = true;
@@ -2468,10 +2486,23 @@ function RouteMap({ points, live, accent, height = 220 }) {
 
   useEffect(() => {
     if (!ready || !mapRef.current || !polylineRef.current || !points?.length) return;
+    const L = leafletRef.current;
     const latlngs = points.map((p) => [p.lat, p.lng]);
     polylineRef.current.setLatLngs(latlngs);
+    const lastLatLng = latlngs[latlngs.length - 1];
+
     if (live) {
-      mapRef.current.panTo(latlngs[latlngs.length - 1]);
+      // Puntino blu della posizione attuale — stile "You are here" delle
+      // mappe native: cerchio bianco con nucleo blu acceso, ricreato solo
+      // la prima volta e poi solo spostato (mai un lampo di ricomparsa).
+      if (!markerRef.current) {
+        markerRef.current = L.circleMarker(lastLatLng, {
+          radius: 9, color: "#FFFFFF", weight: 3, fillColor: "#2563EB", fillOpacity: 1,
+        }).addTo(mapRef.current);
+      } else {
+        markerRef.current.setLatLng(lastLatLng);
+      }
+      mapRef.current.panTo(lastLatLng);
     } else {
       mapRef.current.fitBounds(latlngs, { padding: [24, 24] });
     }
@@ -4471,64 +4502,162 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
   const videoRef = useRef(null);
   const [status, setStatus] = useState("starting"); // starting | scanning | denied | error
   const [errorMsg, setErrorMsg] = useState("");
+  const [manualCode, setManualCode] = useState("");
+  // BUG EVITATO: onDetected è una funzione inline nel genitore, ricreata ad
+  // ogni suo render — se fosse nell'array di dipendenze dell'effetto sotto,
+  // ogni render di NutritionTabs (es. digitando in un altro campo) avrebbe
+  // fatto ripartire da zero fotocamera e scansione. Il ref tiene sempre
+  // l'ultima versione senza dover mai riavviare la fotocamera per questo.
+  const onDetectedRef = useRef(onDetected);
+  useEffect(() => { onDetectedRef.current = onDetected; }, [onDetected]);
 
   useEffect(() => {
-    let controlsRef = null;
     let cancelled = false;
-    import("@zxing/browser")
-      .then(({ BrowserMultiFormatReader }) => {
-        if (cancelled) return undefined;
-        const reader = new BrowserMultiFormatReader();
-        return reader.decodeFromVideoDevice(undefined, videoRef.current, (result, err, controls) => {
+    let stream = null;
+    let rafId = null;
+    let zxingControls = null;
+
+    async function startScanning() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      } catch (err) {
+        throw err; // permesso negato o nessuna fotocamera — gestito nel catch sotto
+      }
+      if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+
+      const video = videoRef.current;
+      video.srcObject = stream;
+      // Autoplay può essere bloccato senza un gesto utente su alcuni browser
+      // anche con video muto: forziamo il play esplicitamente invece di
+      // fidarci solo dell'attributo autoplay.
+      await video.play().catch(() => {});
+      if (cancelled) return;
+      setStatus("scanning");
+
+      // API nativa BarcodeDetector (Chrome/Edge/Android): più veloce e più
+      // affidabile di una libreria JS quando disponibile. ZXing resta il
+      // fallback universale (funziona anche su iOS Safari, dove l'API
+      // nativa non esiste).
+      if ("BarcodeDetector" in window) {
+        let detector;
+        try {
+          const formats = await window.BarcodeDetector.getSupportedFormats();
+          const wanted = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"].filter((f) => formats.includes(f));
+          detector = new window.BarcodeDetector({ formats: wanted.length ? wanted : formats });
+        } catch {
+          detector = new window.BarcodeDetector();
+        }
+        const loop = async () => {
           if (cancelled) return;
-          controlsRef = controls;
-          if (result) {
-            controls.stop();
-            onDetected(result.getText());
+          try {
+            const codes = await detector.detect(video);
+            if (codes.length > 0) { onDetectedRef.current(codes[0].rawValue); return; }
+          } catch {
+            // frame non ancora pronto o errore di decodifica transitorio: si riprova al giro dopo
           }
-        });
-      })
-      .then(() => { if (!cancelled) setStatus("scanning"); })
-      .catch((err) => {
-        console.error("PERFORM: errore avvio fotocamera per scansione", err);
-        if (cancelled) return;
-        setStatus(err?.name === "NotAllowedError" ? "denied" : "error");
-        setErrorMsg(err?.message || "Fotocamera non disponibile.");
+          rafId = requestAnimationFrame(loop);
+        };
+        rafId = requestAnimationFrame(loop);
+        return;
+      }
+
+      const { BrowserMultiFormatReader } = await import("@zxing/browser");
+      if (cancelled) return;
+      const reader = new BrowserMultiFormatReader();
+      zxingControls = await reader.decodeFromStream(stream, video, (result) => {
+        if (cancelled || !result) return;
+        onDetectedRef.current(result.getText());
       });
-    return () => { cancelled = true; controlsRef?.stop(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }
+
+    startScanning().catch((err) => {
+      console.error("PERFORM: errore avvio fotocamera per scansione", err);
+      if (cancelled) return;
+      setStatus(err?.name === "NotAllowedError" ? "denied" : "error");
+      setErrorMsg(err?.name === "NotFoundError" ? "Nessuna fotocamera trovata su questo dispositivo." : (err?.message || "Fotocamera non disponibile."));
+    });
+
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      zxingControls?.stop();
+      stream?.getTracks().forEach((t) => t.stop());
+    };
   }, []);
+
+  const submitManualCode = (e) => {
+    e.preventDefault();
+    const code = manualCode.trim();
+    if (code) onDetected(code);
+  };
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "#000000" }}>
-        <div className="flex items-center justify-between px-4 py-3.5">
-          <p className="text-sm font-semibold" style={{ color: "#FFFFFF" }}>Inquadra il codice a barre</p>
-          <button onClick={onClose} aria-label="Chiudi" className="p-2"><X size={20} style={{ color: "#FFFFFF" }} /></button>
+      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "#0A0A0C" }}>
+        <div className="flex items-center justify-between px-5 py-4">
+          <div>
+            <p className="text-sm font-semibold" style={{ color: "#FFFFFF" }}>Codice a barre</p>
+            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.68rem" }}>Open Food Facts — database aperto e gratuito</p>
+          </div>
+          <button onClick={onClose} aria-label="Chiudi"
+            className="w-9 h-9 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: "rgba(255,255,255,0.1)" }}>
+            <X size={17} style={{ color: "#FFFFFF" }} />
+          </button>
         </div>
-        <div className="relative flex-1 overflow-hidden">
-          <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+
+        <div className="relative flex-1 overflow-hidden mx-5 rounded-3xl" style={{ minHeight: 220 }}>
+          <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
           {status === "scanning" && (
-            <div className="absolute inset-x-10 top-1/2 -translate-y-1/2 rounded-2xl pointer-events-none"
-                 style={{ height: 120, border: `2px solid ${accent}`, boxShadow: "0 0 0 2000px rgba(0,0,0,0.4)" }} />
+            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 pointer-events-none">
+              <div className="relative rounded-2xl" style={{ height: 130, boxShadow: "0 0 0 2000px rgba(0,0,0,0.5)" }}>
+                {[["top", "left"], ["top", "right"], ["bottom", "left"], ["bottom", "right"]].map(([v, h]) => (
+                  <div key={`${v}-${h}`} className="absolute" style={{
+                    [v]: -2, [h]: -2, width: 26, height: 26,
+                    borderTop: v === "top" ? `3px solid ${accent}` : "none",
+                    borderBottom: v === "bottom" ? `3px solid ${accent}` : "none",
+                    borderLeft: h === "left" ? `3px solid ${accent}` : "none",
+                    borderRight: h === "right" ? `3px solid ${accent}` : "none",
+                    borderRadius: 6,
+                  }} />
+                ))}
+              </div>
+            </div>
           )}
           {(status === "denied" || status === "error") && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
-              <AlertTriangle size={28} style={{ color: "#F0A020" }} />
+              <AlertTriangle size={26} style={{ color: "#F0A020" }} />
               <p className="text-sm" style={{ color: "#FFFFFF" }}>
-                {status === "denied" ? "Serve il permesso della fotocamera per scansionare." : errorMsg}
+                {status === "denied" ? "Serve il permesso della fotocamera per scansionare — controlla le impostazioni del browser." : errorMsg}
               </p>
             </div>
           )}
           {status === "starting" && (
             <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 size={28} className="animate-spin" style={{ color: "#FFFFFF" }} />
+              <Loader2 size={26} className="animate-spin" style={{ color: "#FFFFFF" }} />
             </div>
           )}
         </div>
-        <p className="text-center py-3.5" style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.72rem" }}>
-          Cerca su Open Food Facts, il database prodotti aperto e gratuito.
-        </p>
+
+        {/* Fallback sempre visibile, non solo se la fotocamera fallisce: un
+            codice illeggibile (etichetta rovinata, scarsa luce) o nessuna
+            fotocamera restano gestibili senza bloccare il cliente. */}
+        <form onSubmit={submitManualCode} className="px-5 py-4">
+          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.68rem" }} className="mb-2">
+            Il codice non si legge? Scrivilo a mano:
+          </p>
+          <div className="flex gap-2">
+            <input type="text" inputMode="numeric" value={manualCode} onChange={(e) => setManualCode(e.target.value)}
+              placeholder="es. 8001505005707" aria-label="Codice a barre manuale"
+              className="flex-1 min-w-0 rounded-xl px-4 py-3 text-sm font-data"
+              style={{ backgroundColor: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#FFFFFF" }} />
+            <button type="submit" disabled={!manualCode.trim()}
+              className="shrink-0 rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
+              style={{ backgroundColor: accent, color: "#FFFFFF" }}>
+              Cerca
+            </button>
+          </div>
+        </form>
       </div>
     </Portal>
   );
@@ -4751,6 +4880,12 @@ function NutritionTabs({
                         <input type="text" value={query}
                           onChange={(e) => { setQuery(e.target.value); setSelected(null); setDropOpen(true); }}
                           onFocus={() => setDropOpen(true)}
+                          // BUG PRESO: chiudeva la tendina 180ms dopo ogni blur, ANCHE
+                          // quando l'utente aveva appena aperto il form "aggiungi
+                          // manualmente" e stava per compilare kcal/macro — la tendina
+                          // (che conteneva quel form) spariva sotto ai suoi occhi prima
+                          // che potesse scrivere nulla. Il form ora vive fuori dalla
+                          // tendina (sotto), quindi non dipende più da dropOpen.
                           onBlur={() => setTimeout(() => setDropOpen(false), 180)}
                           placeholder="Cerca alimento…"
                           className="input search-strong w-full pl-10 pr-9 py-3"
@@ -4761,7 +4896,7 @@ function NutritionTabs({
                             <X size={14} />
                           </button>
                         )}
-                        {dropOpen && !selected && (
+                        {dropOpen && !selected && !manualAddOpen && (
                           <div className="absolute z-30 left-0 right-0 mt-1.5 rounded-xl overflow-hidden"
                                style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)",
                                         boxShadow: "0 16px 40px rgba(0,0,0,0.16)", maxHeight: 288, overflowY: "auto" }}>
@@ -4773,7 +4908,7 @@ function NutritionTabs({
                                 {f.name}
                               </button>
                             ))}
-                            {filtered.length === 0 && !manualAddOpen && (
+                            {filtered.length === 0 && (
                               <div className="px-4 py-3">
                                 <p className="meta text-sm mb-2">Nessun risultato per "{query}".</p>
                                 <button onMouseDown={() => setManualAddOpen(true)}
@@ -4783,27 +4918,32 @@ function NutritionTabs({
                                 </button>
                               </div>
                             )}
-                            {manualAddOpen && (
-                              <div className="p-4">
-                                <p className="label mb-2">Nuovo alimento (valori per 100 g a crudo)</p>
-                                <div className="grid grid-cols-2 gap-2 mb-2">
-                                  {[["kcal", "Kcal"], ["p", "Proteine g"], ["c", "Carbo g"], ["f", "Grassi g"]].map(([k, lab]) => (
-                                    <input key={k} type="number" min="0" value={manualMacros[k]}
-                                      onMouseDown={(e) => e.stopPropagation()}
-                                      onChange={(e) => setManualMacros((m) => ({ ...m, [k]: e.target.value }))}
-                                      placeholder={lab} className="input px-3 py-2.5 text-sm" aria-label={lab} />
-                                  ))}
-                                </div>
-                                <button onMouseDown={saveManualFood}
-                                  className="w-full rounded-full px-4 py-2.5 text-sm btn-3d"
-                                  style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
-                                  Salva nel catalogo e usa
-                                </button>
-                              </div>
-                            )}
                           </div>
                         )}
                       </div>
+
+                      {/* Form "nuovo alimento": indipendente da dropOpen (mai più
+                          nascosto da un blur mentre ci si sta scrivendo dentro). */}
+                      {manualAddOpen && !selected && (
+                        <div className="inner p-4 mb-2.5">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="label" style={{ margin: 0 }}>Nuovo alimento — "{query}" (valori per 100 g a crudo)</p>
+                            <button onClick={() => setManualAddOpen(false)} aria-label="Annulla"><X size={15} style={{ color: "var(--ink-2)" }} /></button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 mb-3">
+                            {[["kcal", "Kcal"], ["p", "Proteine g"], ["c", "Carbo g"], ["f", "Grassi g"]].map(([k, lab]) => (
+                              <input key={k} type="number" min="0" value={manualMacros[k]}
+                                onChange={(e) => setManualMacros((m) => ({ ...m, [k]: e.target.value }))}
+                                placeholder={lab} className="input px-3 py-2.5 text-sm" aria-label={lab} />
+                            ))}
+                          </div>
+                          <button onClick={saveManualFood}
+                            className="w-full rounded-full px-4 py-2.5 text-sm btn-3d"
+                            style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
+                            Salva nel catalogo e usa
+                          </button>
+                        </div>
+                      )}
 
                       <div className="flex gap-2 mb-3">
                         <input type="number" min="1" inputMode="numeric" value={grams}
