@@ -22,7 +22,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 
@@ -6475,12 +6475,25 @@ export default function HomePreview({
   };
   const resetActivityToday = () => setLastActivityDate(toLocalISODate());
 
-  /* Catalogo alimenti che cresce nel tempo: ogni scansione o inserimento
-     manuale lo arricchisce, come un database collettivo stile MyFitnessPal. */
-  const [customFoods, setCustomFoods] = useState([]);
-  const addCustomFood = (food) =>
-    setCustomFoods((cf) => (cf.some((f) => f.name.toLowerCase() === food.name.toLowerCase()) ? cf : [...cf, food]));
-  const allFoods = useMemo(() => [...F, ...customFoods], [customFoods]);
+  /* Catalogo alimenti che cresce nel tempo: ogni inserimento manuale lo
+     arricchisce, come un database collettivo stile MyFitnessPal.
+     BUG PRESO: era SOLO state locale del browser (mai scritto su
+     Supabase) — perso al refresh, mai visto da nessun altro cliente.
+     custom_foods (SCHEMA_v43) lo rende reale e condiviso: chi lo cerca
+     dopo lo trova già pronto, non solo chi l'ha scritto. */
+  const [sharedFoods, setSharedFoods] = useState([]);
+  useEffect(() => {
+    if (!supabaseProp || !userId) return;
+    let cancelled = false;
+    fetchCustomFoods(supabaseProp).then((rows) => { if (!cancelled) setSharedFoods(rows); })
+      .catch((err) => console.error("PERFORM: errore caricamento catalogo alimenti condiviso", err));
+    return () => { cancelled = true; };
+  }, [supabaseProp, userId]);
+  const addCustomFood = (food) => {
+    setSharedFoods((cf) => (cf.some((f) => f.name.toLowerCase() === food.name.toLowerCase()) ? cf : [...cf, food]));
+    if (supabaseProp && userId) learnCustomFood(supabaseProp, food, userId);
+  };
+  const allFoods = useMemo(() => [...F, ...sharedFoods], [sharedFoods]);
 
   const accent = gender === "F" ? (dark ? "#D4A5A5" : "#9D6666") : (dark ? "#C5A059" : "#8C6E33");
   const accentSoft = gender === "F" ? "rgba(212,165,165,0.5)" : "rgba(197,160,89,0.5)";

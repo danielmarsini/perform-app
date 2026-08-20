@@ -1574,6 +1574,37 @@ export async function fetchLegalConsents(supabase, userId) {
   return data;
 }
 
+// Database alimenti collettivo reale (SCHEMA_v43) — stesso principio della
+// libreria esercizi (SCHEMA_v39): un alimento inserito a mano da un
+// cliente arricchisce il catalogo per tutti, mai più solo nella sessione
+// locale di chi l'ha scritto.
+export async function fetchCustomFoods(supabase) {
+  const { data, error } = await supabase.from("custom_foods")
+    .select("name, kcal, protein, carbs, fat, sodium_mg, potassium_mg, iron_mg, calcium_mg, magnesium_mg");
+  if (error) throw error;
+  return (data ?? []).map((f) => ({
+    name: f.name, kcal: Number(f.kcal) || 0, p: Number(f.protein) || 0, c: Number(f.carbs) || 0, f: Number(f.fat) || 0,
+    na: f.sodium_mg != null ? Number(f.sodium_mg) : undefined,
+    k: f.potassium_mg != null ? Number(f.potassium_mg) : undefined,
+    fe: f.iron_mg != null ? Number(f.iron_mg) : undefined,
+    ca: f.calcium_mg != null ? Number(f.calcium_mg) : undefined,
+    mg: f.magnesium_mg != null ? Number(f.magnesium_mg) : undefined,
+  }));
+}
+
+// on conflict do nothing: chi ha scritto per primo un alimento resta la
+// voce valida — un secondo inserimento con lo stesso nome (magari con
+// valori leggermente diversi digitati da un altro cliente) non lo tocca.
+export async function learnCustomFood(supabase, food, userId) {
+  if (!food?.name?.trim()) return;
+  const { error } = await supabase.from("custom_foods").insert({
+    name: food.name.trim(), kcal: food.kcal || 0, protein: food.p || 0, carbs: food.c || 0, fat: food.f || 0,
+    sodium_mg: food.na ?? null, potassium_mg: food.k ?? null, iron_mg: food.fe ?? null,
+    calcium_mg: food.ca ?? null, magnesium_mg: food.mg ?? null, created_by: userId || null,
+  });
+  if (error && error.code !== "23505") console.error("PERFORM: errore salvataggio alimento nel catalogo condiviso", error); // 23505 = già esiste, atteso e ok
+}
+
 // Punteggio di ricomposizione: legge peso e vita (non "un numero" arbitrario
 // — un'etichetta onesta derivata da due delta reali già misurati) per capire
 // se sta succedendo dimagrimento, bulk o vera ricomposizione (peso stabile/su,
