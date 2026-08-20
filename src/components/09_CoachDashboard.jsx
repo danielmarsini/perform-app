@@ -2391,7 +2391,9 @@ function WeekWorkoutEditor({ week, onChange, client }) {
       )}
 
       <div className="c-card">
-        <p className="c-label mb-3">Volume settimanale per gruppo muscolare · Serie Dirette 100% / Indirette 50%</p>
+        <p className="c-label mb-1">Matrice dei Volumi</p>
+        <h3 className="c-heading font-display font-bold mb-1" style={{ fontSize: "1.15rem" }}>Stimolo settimanale reale</h3>
+        <p className="c-muted text-xs mb-4">Serie dirette al 100% (barra piena) · serie sui distretti sinergici al 50% (barra chiara).</p>
         <VolumeBarChart volume={volume} gender={client.gender} />
         {unmapped.length > 0 && (
           <p className="font-data text-[10px] mt-3" style={{ color: "#92400E" }}>
@@ -2678,7 +2680,7 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
 
   const updItem = (si, ii, k, v) => onChange(supplements.map((s, j) => (j !== si ? s : { ...s, items: s.items.map((it, k2) => (k2 === ii ? { ...it, [k]: v } : it)) })));
   const removeItem = (si, ii) => onChange(supplements.map((s, j) => (j !== si ? s : { ...s, items: s.items.filter((_, k2) => k2 !== ii) })));
-  const addItem = (si) => onChange(supplements.map((s, j) => (j !== si ? s : { ...s, items: [...s.items, { id: uid(), name: "", dose: "" }] })));
+  const addItem = (si) => onChange(supplements.map((s, j) => (j !== si ? s : { ...s, items: [...s.items, { id: uid(), name: "", dose: "", dayType: "all" }] })));
 
   // Sostituisce l'intero protocollo del cliente (delete + insert, vedi nota
   // in saveWeekSupplements): niente storico da preservare qui, a differenza
@@ -2723,17 +2725,33 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
           </div>
           <div className="space-y-2 mb-2.5">
             {sec.items.map((it, ii) => (
-              <div key={it.id} className="t-inner px-3 py-2.5 flex items-center gap-2 flex-wrap">
-                <input value={it.name} onChange={(e) => {
-                  updItem(si, ii, "name", e.target.value);
-                  // Nome riconosciuto nella lista: precompila la dose
-                  // standard, il coach non deve più ricordarla a memoria —
-                  // resta comunque modificabile subito dopo.
-                  const known = SUPP_WIKI.find((s) => s.name.toLowerCase() === e.target.value.toLowerCase());
-                  if (known && !it.dose) updItem(si, ii, "dose", known.dose.split(",")[0].split("(")[0].trim());
-                }} list="supp-wiki-names" placeholder="Nome integratore" className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[160px]" />
-                <input value={it.dose} onChange={(e) => updItem(si, ii, "dose", e.target.value)} placeholder="Dose" className="t-input w-32 text-sm rounded-md px-2 py-1.5" />
-                <button onClick={() => removeItem(si, ii)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
+              <div key={it.id} className="t-inner px-3 py-2.5">
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <input value={it.name} onChange={(e) => {
+                    updItem(si, ii, "name", e.target.value);
+                    // Nome riconosciuto nella lista: precompila la dose
+                    // standard, il coach non deve più ricordarla a memoria —
+                    // resta comunque modificabile subito dopo.
+                    const known = SUPP_WIKI.find((s) => s.name.toLowerCase() === e.target.value.toLowerCase());
+                    if (known && !it.dose) updItem(si, ii, "dose", known.dose.split(",")[0].split("(")[0].trim());
+                  }} list="supp-wiki-names" placeholder="Nome integratore" className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[160px]" />
+                  <input value={it.dose} onChange={(e) => updItem(si, ii, "dose", e.target.value)} placeholder="Dose" className="t-input w-32 text-sm rounded-md px-2 py-1.5" />
+                  <button onClick={() => removeItem(si, ii)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
+                </div>
+                {/* Stessa logica ON/OFF già usata per l'alimentazione: quale
+                    giorno reale del cliente questo integratore vale — deciso
+                    da weekPlan[oggi] lato cliente, non da un calendario a parte. */}
+                <div className="flex gap-1.5">
+                  {[["all", "Ogni giorno"], ["on", "Solo ON"], ["off", "Solo OFF"]].map(([id, lab]) => (
+                    <button key={id} type="button" onClick={() => updItem(si, ii, "dayType", id)}
+                      className="px-2.5 py-1 rounded-full text-[10px] font-data uppercase"
+                      style={(it.dayType || "all") === id
+                        ? { backgroundColor: "#111111", color: "#FFFFFF" }
+                        : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+                      {lab}
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
             {sec.items.length === 0 && <p className="c-muted text-xs px-1">Nessun integratore in questa fascia oraria.</p>}
@@ -3152,7 +3170,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
             id: uid(),
             id_ref: known ? known.id : null,
             title: known ? known.label : moment,
-            items: items.map((it) => ({ id: it.id, name: it.name, dose: it.dose || "" })),
+            items: items.map((it) => ({ id: it.id, name: it.name, dose: it.dose || "", dayType: it.day_type || "all" })),
           };
         });
         setRealSupplements(sections);

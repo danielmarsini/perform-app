@@ -385,7 +385,7 @@ export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDat
 export async function fetchPrescribedSupplements(supabase, userId) {
   const { data, error } = await supabase
     .from("prescribed_supplements")
-    .select("id, moment, name, dose, sort_order")
+    .select("id, moment, name, dose, sort_order, day_type")
     .eq("user_id", userId)
     .order("moment", { ascending: true })
     .order("sort_order", { ascending: true });
@@ -649,7 +649,7 @@ export async function saveWeekSupplements(supabase, coachId, clientId, sections)
     const moment = sec.id_ref || sec.title;
     (sec.items ?? []).forEach((it, i) => {
       if (!it.name || !it.name.trim()) return;
-      rows.push({ user_id: clientId, coach_id: coachId, moment, name: it.name.trim(), dose: it.dose || null, sort_order: i });
+      rows.push({ user_id: clientId, coach_id: coachId, moment, name: it.name.trim(), dose: it.dose || null, sort_order: i, day_type: it.dayType || "all" });
     });
   });
   if (rows.length === 0) return;

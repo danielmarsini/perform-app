@@ -5047,7 +5047,7 @@ function NutritionTargetsPanel({ accent, accentSoft, accentText, targetOn, targe
 
 function SupplementsPanel({ accent, accentSoft, accentText, isPro, isPaid, isTrainingDay, onUpgrade, onCoachSync, supabase, userId }) {
   return isPro
-    ? <SupplementsPlanLocked accent={accent} accentSoft={accentSoft} accentText={accentText} onCoachSync={onCoachSync} supabase={supabase} userId={userId} />
+    ? <SupplementsPlanLocked accent={accent} accentSoft={accentSoft} accentText={accentText} isTrainingDay={isTrainingDay} onCoachSync={onCoachSync} supabase={supabase} userId={userId} />
     : <SupplementsFreeDiary accent={accent} accentSoft={accentSoft} accentText={accentText} isPaid={isPaid} isTrainingDay={isTrainingDay} onUpgrade={onUpgrade} onCoachSync={onCoachSync} />;
 }
 
@@ -5828,7 +5828,7 @@ function SupplementWikiBrowser({ accent }) {
   );
 }
 
-function SupplementsPlanLocked({ accent, accentSoft, accentText, onCoachSync, supabase, userId }) {
+function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, onCoachSync, supabase, userId }) {
   const [checked, setChecked] = useState({});
   const isRealMode = Boolean(supabase && userId);
 
@@ -5859,10 +5859,18 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, onCoachSync, su
   // workout→post workout→sera) viene sempre da SUPP_MOMENTS; un momento
   // libero scritto dal coach che non combacia va in coda, nell'ordine in
   // cui compare.
+  // ON/OFF: stessa logica già usata per l'alimentazione (weekPlan[oggi]
+  // reale, non un calendario a parte) — un integratore 'on' compare solo
+  // nei giorni di allenamento, 'off' solo nei giorni di riposo, 'all'
+  // (default) sempre.
   const realGroups = useMemo(() => {
     if (!prescribed) return [];
+    const forToday = prescribed.filter((it) => {
+      const dt = it.day_type || "all";
+      return dt === "all" || (dt === "on") === !!isTrainingDay;
+    });
     const byMoment = new Map();
-    prescribed.forEach((it) => {
+    forToday.forEach((it) => {
       if (!byMoment.has(it.moment)) byMoment.set(it.moment, []);
       byMoment.get(it.moment).push(it);
     });
@@ -5879,7 +5887,7 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, onCoachSync, su
       label: SUPP_MOMENTS.find((m) => m.id === moment)?.label || moment,
       items: byMoment.get(moment),
     }));
-  }, [prescribed]);
+  }, [prescribed, isTrainingDay]);
 
   const groups = isRealMode
     ? realGroups
