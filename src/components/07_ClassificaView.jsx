@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { xpToLevelInfo, fetchMonthlyLeaderboard } from '../lib/coachingData.js';
 import Portal from './Portal.jsx';
+import SwipeHandle from './SwipeHandle.jsx';
+import { useSwipeDownClose } from '../lib/useSwipeGesture.js';
 
 const ITALIAN_MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
 function monthKeyLabel(monthKey) {
@@ -393,11 +395,14 @@ function LeaderboardRow({ athlete: a, maxXP, onSelect }) {
    (stessa forma dati, stesso componente). Centrato sullo schermo come gli
    altri popup dell'app, mai in basso. */
 function AthleteDetailModal({ athlete: a, onClose }) {
+  const modalRef = useRef(null);
+  useSwipeDownClose(modalRef, onClose, !!a);
   if (!a) return null;
   return (
     <Portal>
       <div className="pc-detail-overlay" onClick={onClose}>
-        <div className="pc-detail-modal" onClick={(e) => e.stopPropagation()}>
+        <div ref={modalRef} className="pc-detail-modal" onClick={(e) => e.stopPropagation()}>
+          <SwipeHandle />
           <button type="button" className="pc-drawer-close pc-detail-close" onClick={onClose} aria-label="Chiudi">✕</button>
           <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-detail" />
           <div className="pc-detail-nick">{a.nickname}</div>

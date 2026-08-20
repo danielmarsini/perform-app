@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { haptic } from "./haptics.js";
 
 /* Gesture di navigazione stile iOS: swipe orizzontale da bordo sinistro →
    "indietro" (come il back-swipe nativo di Safari/iOS), swipe verticale
@@ -36,7 +37,7 @@ export function useEdgeSwipeBack(onBack, enabled = true) {
     function onTouchEnd() {
       const s = state.current;
       state.current = null;
-      if (s && s.dx > THRESHOLD_PX && Math.abs(s.dy) < s.dx * 0.6) onBackRef.current();
+      if (s && s.dx > THRESHOLD_PX && Math.abs(s.dy) < s.dx * 0.6) { haptic("tap"); onBackRef.current(); }
     }
     window.addEventListener("touchstart", onTouchStart, { passive: true });
     window.addEventListener("touchmove", onTouchMove, { passive: true });
@@ -49,17 +50,20 @@ export function useEdgeSwipeBack(onBack, enabled = true) {
   }, [enabled]);
 }
 
-// Da attaccare al div radice di un modale a tutto schermo (position:fixed):
-// swipe verso il basso abbastanza deciso → onClose(). Ref al nodo DOM del
-// modale stesso, non a document — così resta locale a quel popup.
-export function useSwipeDownClose(ref, onClose) {
+// Da attaccare a un elemento "maniglia" (di solito l'header del modale, con
+// SwipeHandle.jsx sopra a segnalarlo visivamente) — MAI al modale intero:
+// se il modale ha contenuto scrollabile, un trascinamento verso il basso
+// dentro al contenuto verrebbe interpretato come "chiudi" invece che come
+// scroll. enabled=false per i pochi modali che non si possono chiudere
+// (es. il check settimanale obbligatorio di domenica/lunedì).
+export function useSwipeDownClose(ref, onClose, enabled = true) {
   const state = useRef(null);
   const onCloseRef = useRef(onClose);
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || !enabled) return;
     function onTouchStart(e) {
       if (e.target.closest?.("[data-no-swipe]")) { state.current = null; return; }
       const t = e.touches[0];
@@ -75,7 +79,7 @@ export function useSwipeDownClose(ref, onClose) {
     function onTouchEnd() {
       const s = state.current;
       state.current = null;
-      if (s && s.dy > THRESHOLD_PX + 20 && Math.abs(s.dx) < s.dy * 0.6) onCloseRef.current();
+      if (s && s.dy > THRESHOLD_PX + 20 && Math.abs(s.dx) < s.dy * 0.6) { haptic("tap"); onCloseRef.current(); }
     }
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: true });
@@ -85,5 +89,5 @@ export function useSwipeDownClose(ref, onClose) {
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, [ref]);
+  }, [ref, enabled]);
 }

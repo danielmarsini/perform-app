@@ -41,6 +41,8 @@ import {
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading } from "../lib/coachingData.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
+import SwipeHandle from "./SwipeHandle.jsx";
+import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { WeeklyCheckModal, PauseSection } from "./05_HomeDashboard.jsx";
 import { CONSENT_COPY } from "./03_AuthView.jsx";
 
@@ -1212,6 +1214,8 @@ export function SettingsDrawer({
   // finora) in un unico file JSON leggibile, per gli archivi personali
   // dell'utente — vale per ogni piano, non solo per chi ha un coach.
   const [openDoc, setOpenDoc] = useState(null); // indice CONSENT_COPY aperto nel popup
+  const openDocHeaderRef = useRef(null);
+  useSwipeDownClose(openDocHeaderRef, () => setOpenDoc(null), openDoc != null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const downloadMyData = async () => {
@@ -1482,9 +1486,12 @@ export function SettingsDrawer({
                        style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={() => setOpenDoc(null)}>
                     <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}
                          style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}>
-                      <div className="flex items-center justify-between gap-3 mb-3">
-                        <p className="h2" style={{ margin: 0 }}>{CONSENT_COPY[openDoc].title}</p>
-                        <button onClick={() => setOpenDoc(null)} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+                      <div ref={openDocHeaderRef}>
+                        <SwipeHandle />
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <p className="h2" style={{ margin: 0 }}>{CONSENT_COPY[openDoc].title}</p>
+                          <button onClick={() => setOpenDoc(null)} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+                        </div>
                       </div>
                       <p className="body leading-relaxed">{CONSENT_COPY[openDoc].long}</p>
                     </div>

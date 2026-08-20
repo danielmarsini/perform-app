@@ -25,7 +25,9 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
+import { haptic } from "../lib/haptics.js";
 import Portal from "./Portal.jsx";
+import SwipeHandle from "./SwipeHandle.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 // Leaflet + OpenStreetMap: mappa del percorso reale, gratuita e senza
 // chiave API (nessun account Google Maps da pagare/gestire) — stesso
@@ -963,6 +965,8 @@ function ComplianceRings({ rings, onSelect }) {
 /* Popup analitico a comparsa, stile Instagram: si apre dal basso, sfondo
    sfumato, dettaglio del singolo reparto in un colpo d'occhio. */
 function CompliancePopup({ ring, onClose }) {
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
   if (!ring) return null;
   const isNeutral = ring.pct == null;
   const tier = isNeutral ? { color: "var(--ink-2)", label: "Nessun dato" } : complianceTier(ring.pct);
@@ -973,11 +977,14 @@ function CompliancePopup({ ring, onClose }) {
         <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 overflow-y-auto"
              style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "88vh" }}
              onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-between mb-4">
-            <p className="h1 flex items-center gap-2">
-              <ring.icon size={18} style={{ color: tier.color }} /> {ring.label}
-            </p>
-            <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+          <div ref={headerRef}>
+            <SwipeHandle />
+            <div className="flex items-center justify-between mb-4">
+              <p className="h1 flex items-center gap-2">
+                <ring.icon size={18} style={{ color: tier.color }} /> {ring.label}
+              </p>
+              <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+            </div>
           </div>
           <p style={{ fontSize: "2.6rem", fontWeight: 700, color: tier.color, lineHeight: 1 }}>{isNeutral ? "n/d" : `${ring.pct}%`}</p>
           <p className="meta mb-4 mt-1">{isNeutral ? tier.label : `${tier.label} · media ultimi 7 giorni`}</p>
@@ -1128,6 +1135,8 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
   // richiedeva TUTTI gli 8 campi anche qui, ed è il motivo per cui il
   // pulsante sembrava "non funzionare": restava disabilitato in silenzio.
   const isFreeMode = !!onClose;
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose, isFreeMode);
 
   const handlePhoto = (key) => (e) => {
     const file = e.target.files?.[0];
@@ -1163,6 +1172,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           if (photos[key]?.file) photoPaths[key] = await uploadCheckinPhoto(supabase, userId, photos[key].file, key);
         }
         await saveCheckin(supabase, userId, { ...data, photoPaths });
+        haptic("success");
         onSubmit(data);
       } catch (err) {
         console.error("PERFORM: errore salvataggio check", err);
@@ -1186,14 +1196,17 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
              style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.10), rgba(255,255,255,0) 55%)" }} />
 
         <div className="relative">
-          <div className="flex items-start justify-between">
-            <span className="inline-flex items-center justify-center rounded-full mb-4"
-                  style={{ width: 48, height: 48, backgroundColor: accent }}>
-              <Camera size={22} style={{ color: "#FFFFFF" }} />
-            </span>
-            {onClose && (
-              <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
-            )}
+          <div ref={headerRef}>
+            {isFreeMode && <SwipeHandle />}
+            <div className="flex items-start justify-between">
+              <span className="inline-flex items-center justify-center rounded-full mb-4"
+                    style={{ width: 48, height: 48, backgroundColor: accent }}>
+                <Camera size={22} style={{ color: "#FFFFFF" }} />
+              </span>
+              {onClose && (
+                <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+              )}
+            </div>
           </div>
           <p className="h1 mb-2">{onClose ? "Registra un check" : "Check settimanale"}</p>
           <p className="body mb-4">
@@ -1399,6 +1412,8 @@ function PauseRequestModal({ supabase, userId, accent, accentText, onClose, onSa
   };
 
   const canSubmit = type === "vacation" ? (startDate && endDate && endDate >= startDate) : (startDate && reason);
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
 
   return (
     <Portal>
@@ -1406,9 +1421,12 @@ function PauseRequestModal({ supabase, userId, accent, accentText, onClose, onSa
              backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)", overflowY: "auto" }} onClick={onClose}>
         <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}
              style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "88vh" }}>
-          <div className="flex items-center justify-between mb-4">
-            <p className="h1-gradient">Pausa dal programma</p>
-            <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+          <div ref={headerRef}>
+            <SwipeHandle />
+            <div className="flex items-center justify-between mb-4">
+              <p className="h1-gradient">Pausa dal programma</p>
+              <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-1.5 mb-4">
@@ -2108,7 +2126,7 @@ export function HomeDashboard({
         <div className="card mb-5">
           <p className="label mb-3">Idratazione</p>
           <div className="flex items-center gap-4">
-            <button onClick={onAddWater} aria-label="Aggiungi 250 ml"
+            <button onClick={() => { haptic("tap"); onAddWater(); }} aria-label="Aggiungi 250 ml"
                     className="relative rounded-2xl overflow-hidden shrink-0 transition-transform active:scale-95"
                     style={{ width: 62, height: 96,
                              background: "linear-gradient(145deg, var(--surface-2) 0%, var(--surface) 100%)",
@@ -2541,6 +2559,7 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
 
   const start = () => {
     if (!navigator.geolocation) { setGpsError("Il tuo browser non supporta la geolocalizzazione."); return; }
+    haptic("confirm");
     setGpsError("");
     setPoints([]);
     setStartedAt(Date.now());
@@ -2559,6 +2578,7 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
   };
 
   const stop = () => {
+    haptic("tap");
     if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
     watchIdRef.current = null;
     setTracking(false);
@@ -2593,6 +2613,7 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
         avgSpeedKmh: avgSpeedKmh > 0 ? Math.round(avgSpeedKmh * 10) / 10 : null,
         maxSpeedKmh: maxSpeedKmh > 0 ? Math.round(maxSpeedKmh * 10) / 10 : null,
       });
+      haptic("confirm");
       onSaved();
       onClose();
     } catch (err) {
@@ -2756,6 +2777,7 @@ function CardioSection({ supabase, userId, accent }) {
         date: toLocalISODate(), activityType,
         durationMin: mins, distanceKm: distance ? Number(distance) : null, notes: notes.trim() || null,
       });
+      haptic("confirm");
       setDuration(""); setDistance(""); setNotes("");
       loadLogs();
     } catch (err) {
@@ -2769,6 +2791,7 @@ function CardioSection({ supabase, userId, accent }) {
   const remove = async (id) => {
     try {
       await deleteCardioLog(supabase, id);
+      haptic("warning");
       setLogs((ls) => ls.filter((l) => l.id !== id));
     } catch (err) {
       console.error("PERFORM: errore eliminazione attività cardio", err);
@@ -4857,6 +4880,7 @@ function NutritionTabs({
       name, kcal: Number(manualMacros.kcal) || 0, p: Number(manualMacros.p) || 0,
       c: Number(manualMacros.c) || 0, f: Number(manualMacros.f) || 0,
     };
+    haptic("confirm");
     onAddCustomFood && onAddCustomFood(food);
     setSelected(food); setManualAddOpen(false); setDropOpen(false);
   };
@@ -4918,7 +4942,7 @@ function NutritionTabs({
                           <span className="flex items-center gap-2 shrink-0">
                             <span className="meta font-data text-xs">{i.grams} g · {i.kcal} kcal</span>
                             {onRemoveFood && (
-                              <button onClick={() => onRemoveFood(slot.id, k)} aria-label={`Rimuovi ${i.name}`}
+                              <button onClick={() => { haptic("warning"); onRemoveFood(slot.id, k); }} aria-label={`Rimuovi ${i.name}`}
                                       className="p-1 rounded-full" style={{ color: "var(--ink-2)" }}>
                                 <X size={13} />
                               </button>
@@ -5088,7 +5112,7 @@ function NutritionTabs({
                       )}
 
                       <div className="flex gap-2">
-                        <button onClick={() => { if (preview) { onAddFood(slot.id, preview); reset(); setOpenSlot(null); } }}
+                        <button onClick={() => { if (preview) { haptic("confirm"); onAddFood(slot.id, preview); reset(); setOpenSlot(null); } }}
                           disabled={!preview}
                           className="flex-1 rounded-full px-4 py-3 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
                           style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
@@ -6028,6 +6052,8 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
    dentro un'area che scorre — testo lungo, niente layout che esplode la
    pagina. Stesso pattern visivo di CompliancePopup (overlay + foglio). */
 function SupplementDetailModal({ supplement, accent, onClose }) {
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose, !!supplement);
   if (!supplement) return null;
   const w = supplement;
   return (
@@ -6037,11 +6063,14 @@ function SupplementDetailModal({ supplement, accent, onClose }) {
       <div className="spring-in w-full sm:max-w-md rounded-3xl p-6 flex flex-col"
            style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "85vh" }}
            onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-3 shrink-0">
-          <p className="h1 flex items-center gap-2">
-            <span aria-hidden="true" style={{ filter: "saturate(0.65) contrast(0.92)" }}>{w.icon}</span>{w.name}
-          </p>
-          <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+        <div ref={headerRef} className="shrink-0">
+          <SwipeHandle />
+          <div className="flex items-center justify-between mb-3">
+            <p className="h1 flex items-center gap-2">
+              <span aria-hidden="true" style={{ filter: "saturate(0.65) contrast(0.92)" }}>{w.icon}</span>{w.name}
+            </p>
+            <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+          </div>
         </div>
         <div className="overflow-y-auto pr-1" style={{ overflowX: "hidden" }}>
           <div className="flex flex-wrap gap-2 mb-3">
@@ -6433,6 +6462,8 @@ export const TRAINING_WIKI = [
    SupplementDetailModal), non l'ho toccata: stesso pattern visivo, dati e
    didascalie diverse passate come prop invece di duplicare il componente. */
 function WikiDetailModal({ entry, accent, onClose }) {
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose, !!entry);
   if (!entry) return null;
   return (
     <Portal>
@@ -6441,11 +6472,14 @@ function WikiDetailModal({ entry, accent, onClose }) {
       <div className="spring-in w-full sm:max-w-md rounded-3xl p-6 flex flex-col"
            style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "85vh" }}
            onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-3 shrink-0">
-          <p className="h1 flex items-center gap-2">
-            <span aria-hidden="true" style={{ filter: "saturate(0.65) contrast(0.92)" }}>{entry.icon}</span>{entry.name}
-          </p>
-          <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+        <div ref={headerRef} className="shrink-0">
+          <SwipeHandle />
+          <div className="flex items-center justify-between mb-3">
+            <p className="h1 flex items-center gap-2">
+              <span aria-hidden="true" style={{ filter: "saturate(0.65) contrast(0.92)" }}>{entry.icon}</span>{entry.name}
+            </p>
+            <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+          </div>
         </div>
         <div className="overflow-y-auto pr-1" style={{ overflowX: "hidden" }}>
           <div className="flex flex-wrap gap-2 mb-3">
@@ -6617,6 +6651,7 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
 
   const toggle = (momentId, itemId) => {
     const key = `${momentId}-${itemId}`;
+    haptic("tap");
     setChecked((c) => ({ ...c, [key]: !c[key] }));
     onCoachSync && onCoachSync({ type: "supplement", momentId, id: itemId });
   };

@@ -5,6 +5,8 @@ import {
   Trash2, ArrowLeft, CalendarDays, Wallet, Server, X, ShieldCheck, Check,
 } from "lucide-react";
 import Portal from "./Portal.jsx";
+import SwipeHandle from "./SwipeHandle.jsx";
+import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
@@ -1900,19 +1902,24 @@ function ClientWhitelistPanel({ client, onChanged }) {
    whitelist — "se clicco su di esso fa vedere le loro impostazioni". */
 function ClientAccessDetailModal({ client, onClose }) {
   const level = xpToLevelInfo(client.xp || 0);
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
   return (
     <Portal>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
            style={{ backgroundColor: "rgba(9,9,11,0.65)", backdropFilter: "blur(6px)" }} onClick={onClose}>
         <div className="spring-in c-card w-full overflow-y-auto" style={{ maxWidth: 440, maxHeight: "88vh" }} onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-start justify-between mb-4">
-            <div className="min-w-0">
-              <p className="c-heading font-display font-bold truncate">{client.name}</p>
-              <p className="c-muted text-xs">Dettaglio accesso</p>
+          <div ref={headerRef}>
+            <SwipeHandle />
+            <div className="flex items-start justify-between mb-4">
+              <div className="min-w-0">
+                <p className="c-heading font-display font-bold truncate">{client.name}</p>
+                <p className="c-muted text-xs">Dettaglio accesso</p>
+              </div>
+              <button onClick={onClose} aria-label="Chiudi" className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0">
+                <X size={16} />
+              </button>
             </div>
-            <button onClick={onClose} aria-label="Chiudi" className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0">
-              <X size={16} />
-            </button>
           </div>
 
           <div className="space-y-2 mb-4">
