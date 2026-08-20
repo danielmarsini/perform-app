@@ -2597,27 +2597,36 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
   const mm = String(Math.floor(elapsedSec / 60)).padStart(2, "0");
   const ss = String(elapsedSec % 60).padStart(2, "0");
 
+  const activityMeta = CARDIO_ACTIVITIES.find((a) => a.id === activityType) || CARDIO_ACTIVITIES[0];
+
   return (
     <Portal>
       <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "var(--page)" }}>
-        <div className="flex items-center justify-between px-4 py-3.5">
-          <p className="h2" style={{ margin: 0 }}>Cardio GPS</p>
-          <button onClick={() => { stop(); onClose(); }} aria-label="Chiudi"><X size={20} style={{ color: "var(--ink-2)" }} /></button>
+        <div className="flex items-center justify-between px-5 py-4">
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true" style={{ fontSize: "1.2rem" }}>{activityMeta.icon}</span>
+            <p className="h2" style={{ margin: 0 }}>{activityMeta.label} GPS</p>
+          </div>
+          <button onClick={() => { stop(); onClose(); }} aria-label="Chiudi"
+            className="w-9 h-9 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+            <X size={16} style={{ color: "var(--ink-2)" }} />
+          </button>
         </div>
 
-        <div className="px-4">
+        <div className="px-5">
           <RouteMap points={points} live accent={accent} height={260} />
         </div>
 
-        <div className="px-4 py-4">
+        <div className="px-5 py-5 flex-1 flex flex-col">
           {!tracking && points.length === 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-4">
+            <div className="flex flex-wrap gap-1.5 mb-5">
               {CARDIO_ACTIVITIES.map((a) => {
                 const on = activityType === a.id;
                 return (
                   <button key={a.id} onClick={() => setActivityType(a.id)} type="button"
-                    className="rounded-full px-3 py-2 text-xs flex items-center gap-1.5"
-                    style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }
+                    className="rounded-full px-3.5 py-2 text-xs flex items-center gap-1.5 transition-transform active:scale-95"
+                    style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700, boxShadow: `0 3px 10px ${accent}55` }
                               : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
                     <span aria-hidden="true">{a.icon}</span>{a.label}
                   </button>
@@ -2626,47 +2635,60 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-2.5 mb-4">
-            <div className="inner px-3 py-3 text-center">
-              <p className="label mb-1">Tempo</p>
-              <p className="font-data text-lg font-bold" style={{ color: "var(--ink)" }}>{mm}:{ss}</p>
+          {/* Tempo trascorso come cifra "hero" — è il numero che si guarda
+              di più durante la sessione, deve leggersi da lontano/di corsa. */}
+          <div className="text-center mb-5">
+            <p className="label mb-1" style={{ letterSpacing: "0.12em" }}>Tempo</p>
+            <p className="font-data" style={{
+              fontSize: "3.2rem", fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em",
+              backgroundImage: `linear-gradient(100deg, ${accent}, var(--ink), ${accent})`,
+              WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+            }}>
+              {mm}:{ss}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 mb-5">
+            <div className="rounded-2xl px-4 py-3.5" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+              <p className="label mb-1 flex items-center gap-1"><Route size={11} />Distanza</p>
+              <p className="font-data text-2xl font-bold" style={{ color: "var(--ink)" }}>{distanceKm.toFixed(2)} <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--ink-2)" }}>km</span></p>
             </div>
-            <div className="inner px-3 py-3 text-center">
-              <p className="label mb-1">Distanza</p>
-              <p className="font-data text-lg font-bold" style={{ color: "var(--ink)" }}>{distanceKm.toFixed(2)} km</p>
-            </div>
-            <div className="inner px-3 py-3 text-center">
-              <p className="label mb-1">Passo medio</p>
-              <p className="font-data text-lg font-bold" style={{ color: "var(--ink)" }}>{paceLabel(durationMin, distanceKm) || "—"}</p>
+            <div className="rounded-2xl px-4 py-3.5" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+              <p className="label mb-1 flex items-center gap-1"><Timer size={11} />Passo medio</p>
+              <p className="font-data text-2xl font-bold" style={{ color: "var(--ink)" }}>{paceLabel(durationMin, distanceKm) || "—"}</p>
             </div>
           </div>
 
-          {gpsError && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{gpsError}</p>}
+          {gpsError && (
+            <p className="text-xs mb-4 rounded-xl px-3.5 py-2.5" style={{ backgroundColor: "rgba(220,38,38,0.08)", color: "#DC2626" }}>{gpsError}</p>
+          )}
 
-          {!tracking && points.length === 0 && (
-            <button onClick={start} className="w-full rounded-full px-4 py-3.5 text-sm btn-3d"
-              style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
-              🏁 Inizia
-            </button>
-          )}
-          {tracking && (
-            <button onClick={stop} className="w-full rounded-full px-4 py-3.5 text-sm btn-3d"
-              style={{ backgroundColor: "#DC2626", color: "#FFFFFF", fontWeight: 700 }}>
-              ⏹ Termina
-            </button>
-          )}
-          {!tracking && points.length > 0 && (
-            <div className="flex gap-2">
-              <button onClick={() => { setPoints([]); setElapsedSec(0); }} className="c-ghost flex-1 rounded-full px-4 py-3.5 text-sm font-medium"
-                style={{ border: "1px solid var(--line)", color: "var(--ink-2)" }}>
-                Scarta
+          <div className="mt-auto">
+            {!tracking && points.length === 0 && (
+              <button onClick={start} className="w-full rounded-full px-4 py-4 text-base btn-3d flex items-center justify-center gap-2"
+                style={{ backgroundImage: `linear-gradient(135deg, ${accent}, ${accent}CC)`, color: "#FFFFFF", fontWeight: 800, boxShadow: `0 8px 22px ${accent}4D` }}>
+                Inizia
               </button>
-              <button onClick={save} disabled={saving} className="flex-1 rounded-full px-4 py-3.5 text-sm btn-3d disabled:opacity-60"
-                style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
-                {saving ? "Salvo…" : "Salva attività"}
+            )}
+            {tracking && (
+              <button onClick={stop} className="w-full rounded-full px-4 py-4 text-base btn-3d"
+                style={{ backgroundColor: "#DC2626", color: "#FFFFFF", fontWeight: 800, boxShadow: "0 8px 22px rgba(220,38,38,0.35)" }}>
+                Termina
               </button>
-            </div>
-          )}
+            )}
+            {!tracking && points.length > 0 && (
+              <div className="flex gap-2.5">
+                <button onClick={() => { setPoints([]); setElapsedSec(0); }} className="flex-1 rounded-full px-4 py-4 text-sm font-semibold"
+                  style={{ border: "1px solid var(--line)", color: "var(--ink-2)", backgroundColor: "transparent" }}>
+                  Scarta
+                </button>
+                <button onClick={save} disabled={saving} className="flex-[2] rounded-full px-4 py-4 text-sm btn-3d disabled:opacity-60"
+                  style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 800 }}>
+                  {saving ? "Salvo…" : "Salva attività"}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </Portal>
@@ -2747,7 +2769,10 @@ function CardioSection({ supabase, userId, accent }) {
       <div className="flex items-center justify-between mb-1">
         <p className="label flex items-center gap-1.5"><Route size={13} style={{ color: accent }} />Cardio</p>
         {logs && logs.length > 0 && (
-          <span className="font-data text-xs font-bold" style={{ color: accent }}>{thisWeekMin} min questa settimana</span>
+          <span className="rounded-full px-2.5 py-1 font-data text-xs font-bold"
+            style={{ backgroundColor: `${accent}18`, color: accent }}>
+            {thisWeekMin} min questa settimana
+          </span>
         )}
       </div>
       <p className="h1 mb-3">Registra un'attività</p>
@@ -2757,19 +2782,32 @@ function CardioSection({ supabase, userId, accent }) {
           per chi preferisce scrivere i numeri a mano dopo o non vuole tenere
           il telefono con il GPS attivo per tutta la sessione. */}
       <button onClick={() => setGpsOpen(true)} type="button"
-        className="w-full flex items-center justify-center gap-2 rounded-full px-4 py-3 text-sm mb-3 btn-3d"
-        style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
-        <Route size={16} /> Traccia con GPS
+        className="w-full flex items-center justify-center gap-2.5 rounded-2xl px-4 py-4 text-sm mb-3 btn-3d transition-transform active:scale-[0.98]"
+        style={{
+          backgroundImage: "linear-gradient(120deg, var(--title-a), var(--title-b))",
+          color: "#FFFFFF", fontWeight: 800, boxShadow: "0 10px 24px -8px rgba(0,0,0,0.35)",
+        }}>
+        <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.22)" }}>
+          <Route size={16} />
+        </span>
+        <span className="text-left">
+          <span className="block" style={{ fontSize: "0.9rem", lineHeight: 1.15 }}>Traccia con GPS</span>
+          <span className="block" style={{ fontSize: "0.65rem", fontWeight: 500, opacity: 0.85 }}>percorso, distanza e passo in tempo reale</span>
+        </span>
       </button>
-      <p className="meta text-center mb-3" style={{ fontSize: "0.68rem" }}>oppure inserisci a mano i dati qui sotto</p>
+      <div className="flex items-center gap-2 mb-4">
+        <div className="flex-1 h-px" style={{ backgroundColor: "var(--line)" }} />
+        <p className="meta" style={{ fontSize: "0.65rem" }}>oppure inserisci a mano</p>
+        <div className="flex-1 h-px" style={{ backgroundColor: "var(--line)" }} />
+      </div>
 
       <div className="flex flex-wrap gap-1.5 mb-3">
         {CARDIO_ACTIVITIES.map((a) => {
           const on = activityType === a.id;
           return (
             <button key={a.id} onClick={() => setActivityType(a.id)} type="button"
-              className="rounded-full px-3 py-2 text-xs flex items-center gap-1.5"
-              style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }
+              className="rounded-full px-3 py-2 text-xs flex items-center gap-1.5 transition-transform active:scale-95"
+              style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700, boxShadow: `0 3px 10px ${accent}55` }
                         : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
               <span aria-hidden="true">{a.icon}</span>{a.label}
             </button>
@@ -2793,9 +2831,11 @@ function CardioSection({ supabase, userId, accent }) {
         placeholder="Note (facoltativo, es. percorso, sensazioni...)"
         className="input w-full px-4 py-3 text-sm mb-3" />
 
-      {error && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{error}</p>}
+      {error && (
+        <p className="text-xs mb-3 rounded-xl px-3.5 py-2.5" style={{ backgroundColor: "rgba(220,38,38,0.08)", color: "#DC2626" }}>{error}</p>
+      )}
 
-      <button onClick={save} disabled={saving} className="w-full rounded-full px-4 py-3 text-sm btn-3d disabled:opacity-60"
+      <button onClick={save} disabled={saving} className="w-full rounded-full px-4 py-3.5 text-sm btn-3d disabled:opacity-60"
         style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
         {saving ? "Salvo…" : "Registra attività"}
       </button>
@@ -2811,33 +2851,41 @@ function CardioSection({ supabase, userId, accent }) {
             const pace = paceLabel(l.duration_min, l.distance_km);
             const hasRoute = Array.isArray(l.route) && l.route.length > 1;
             return (
-              <div key={l.id} className="inner px-4 py-3">
+              <div key={l.id} className="rounded-2xl px-4 py-3.5" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm flex items-center gap-1.5" style={{ color: "var(--ink)", fontWeight: 600 }}>
-                      <span aria-hidden="true">{meta.icon}</span>{meta.label}
-                      <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>
-                        · {new Date(`${l.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
-                      </span>
-                    </p>
-                    <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-soft)" }}>
-                      {l.duration_min} min{l.distance_km ? ` · ${l.distance_km} km` : ""}{pace ? ` · ${pace}` : ""}
-                    </p>
-                    {l.notes && <p className="meta text-xs mt-0.5 leading-relaxed">{l.notes}</p>}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}18`, fontSize: "1rem" }} aria-hidden="true">
+                      {meta.icon}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>
+                        {meta.label}
+                        <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>
+                          {" · "}{new Date(`${l.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
+                        </span>
+                      </p>
+                      <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-soft)" }}>
+                        {l.duration_min} min{l.distance_km ? ` · ${l.distance_km} km` : ""}{pace ? ` · ${pace}` : ""}
+                      </p>
+                      {l.notes && <p className="meta text-xs mt-0.5 leading-relaxed">{l.notes}</p>}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {hasRoute && (
                       <>
-                        <button onClick={() => shareCardioLog(l, meta.label)} aria-label="Condividi" className="p-1.5">
-                          <Route size={15} style={{ color: accent }} />
+                        <button onClick={() => shareCardioLog(l, meta.label)} aria-label="Condividi"
+                          className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: `${accent}18` }}>
+                          <Route size={14} style={{ color: accent }} />
                         </button>
-                        <button onClick={() => setExpandedRoute((id) => (id === l.id ? null : l.id))} aria-label="Vedi percorso" className="p-1.5">
-                          <ChevronDown size={15} style={{ color: "var(--ink-tertiary)", transform: expandedRoute === l.id ? "rotate(180deg)" : "none" }} />
+                        <button onClick={() => setExpandedRoute((id) => (id === l.id ? null : l.id))} aria-label="Vedi percorso"
+                          className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: "var(--surface)" }}>
+                          <ChevronDown size={14} style={{ color: "var(--ink-tertiary)", transform: expandedRoute === l.id ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
                         </button>
                       </>
                     )}
-                    <button onClick={() => remove(l.id)} aria-label="Elimina attività" className="p-1.5">
-                      <Trash2 size={15} style={{ color: "var(--ink-tertiary)" }} />
+                    <button onClick={() => remove(l.id)} aria-label="Elimina attività"
+                      className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: "var(--surface)" }}>
+                      <Trash2 size={14} style={{ color: "var(--ink-tertiary)" }} />
                     </button>
                   </div>
                 </div>
@@ -4925,21 +4973,36 @@ function NutritionTabs({
                       {/* Form "nuovo alimento": indipendente da dropOpen (mai più
                           nascosto da un blur mentre ci si sta scrivendo dentro). */}
                       {manualAddOpen && !selected && (
-                        <div className="inner p-4 mb-2.5">
-                          <div className="flex items-center justify-between mb-2">
-                            <p className="label" style={{ margin: 0 }}>Nuovo alimento — "{query}" (valori per 100 g a crudo)</p>
-                            <button onClick={() => setManualAddOpen(false)} aria-label="Annulla"><X size={15} style={{ color: "var(--ink-2)" }} /></button>
+                        <div className="rounded-2xl p-4 mb-2.5"
+                          style={{ backgroundColor: `${accent}0D`, border: `1.5px solid ${accent}40` }}>
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: `${accent}22` }}>
+                                <Plus size={14} style={{ color: accent }} />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold truncate" style={{ color: "var(--ink)" }}>Nuovo alimento — "{query}"</p>
+                                <p className="meta" style={{ fontSize: "0.65rem" }}>valori per 100 g a crudo</p>
+                              </div>
+                            </div>
+                            <button onClick={() => setManualAddOpen(false)} aria-label="Annulla"
+                              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: "var(--surface)" }}>
+                              <X size={13} style={{ color: "var(--ink-2)" }} />
+                            </button>
                           </div>
                           <div className="grid grid-cols-2 gap-2 mb-3">
                             {[["kcal", "Kcal"], ["p", "Proteine g"], ["c", "Carbo g"], ["f", "Grassi g"]].map(([k, lab]) => (
-                              <input key={k} type="number" min="0" value={manualMacros[k]}
-                                onChange={(e) => setManualMacros((m) => ({ ...m, [k]: e.target.value }))}
-                                placeholder={lab} className="input px-3 py-2.5 text-sm" aria-label={lab} />
+                              <label key={k} className="block">
+                                <span className="label block mb-1" style={{ fontSize: "0.62rem" }}>{lab}</span>
+                                <input type="number" min="0" value={manualMacros[k]}
+                                  onChange={(e) => setManualMacros((m) => ({ ...m, [k]: e.target.value }))}
+                                  placeholder="0" className="input w-full px-3 py-2.5 text-sm font-data" aria-label={lab} />
+                              </label>
                             ))}
                           </div>
                           <button onClick={saveManualFood}
-                            className="w-full rounded-full px-4 py-2.5 text-sm btn-3d"
-                            style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
+                            className="w-full rounded-full px-4 py-3 text-sm btn-3d transition-transform active:scale-[0.98]"
+                            style={{ backgroundImage: `linear-gradient(120deg, ${accent}, ${accent}CC)`, color: "#FFFFFF", fontWeight: 700, boxShadow: `0 6px 16px ${accent}40` }}>
                             Salva nel catalogo e usa
                           </button>
                         </div>
