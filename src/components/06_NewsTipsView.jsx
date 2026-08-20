@@ -50,7 +50,7 @@
    ========================================================================== */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Heart, Bookmark, Lock } from "lucide-react";
+import { Heart, Bookmark, Lock, Newspaper } from "lucide-react";
 
 /* ============================================================================
    1 · UTILITÀ
@@ -719,7 +719,11 @@ function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave
 
   if (feed.items.length === 0) {
     return (
-      <div className="news-card px-8 py-12 text-center">
+      <div className="news-card px-8 py-12 text-center flex flex-col items-center">
+        <span style={{ width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center",
+                justifyContent: "center", backgroundColor: "rgba(161,161,170,0.12)", marginBottom: "0.7rem" }}>
+          <Newspaper size={19} style={{ color: "var(--satin-gray)" }} />
+        </span>
         <p style={{ color: "var(--satin-gray)", fontSize: "0.9rem" }}>Nessun contenuto in questo canale, per ora.</p>
       </div>
     );

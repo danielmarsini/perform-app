@@ -2881,9 +2881,16 @@ function CardioSection({ supabase, userId, accent }) {
       </button>
 
       {logs === null ? (
-        <p className="meta text-sm mt-4">Carico lo storico…</p>
+        <div className="space-y-2 mt-4">
+          {[0, 1].map((i) => <div key={i} className="skeleton" style={{ height: 58 }} />)}
+        </div>
       ) : logs.length === 0 ? (
-        <p className="meta text-sm mt-4">Nessuna attività registrata ancora — la prima comparirà qui.</p>
+        <div className="flex flex-col items-center text-center mt-6 py-4">
+          <span className="w-11 h-11 rounded-full flex items-center justify-center mb-2.5" style={{ backgroundColor: "var(--surface-2)" }}>
+            <Route size={18} style={{ color: "var(--ink-tertiary)" }} />
+          </span>
+          <p className="meta text-sm">Nessuna attività registrata ancora — la prima comparirà qui.</p>
+        </div>
       ) : (
         <div className="space-y-2 mt-4">
           {logs.map((l) => {
