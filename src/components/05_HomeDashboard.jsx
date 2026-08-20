@@ -1992,9 +1992,30 @@ export function HomeDashboard({
 
   /* ------------------------------ ALLENAMENTO ---------------------------- */
   if (screen === "workout") {
+    // Auto-regolazione da recupero reale: il sonno è l'unico dato di
+    // recupero disponibile a TUTTI i piani (HRV/RHR sono Premium+ e spesso
+    // manuali) — se la notte scorsa è stata corta, un avviso concreto
+    // prima di iniziare la sessione, non solo un numero su un grafico.
+    const lastNightSleep = sleep?.hours || fullHistory?.sleep?.[fullHistory.sleep.length - 1] || null;
+    const poorSleep = lastNightSleep != null && lastNightSleep > 0 && lastNightSleep < THRESH.sleep.bad;
     return (
       <div className="spring-in">
         {back("Allenamento")}
+        {poorSleep && day.isTraining && (
+          <div className="rounded-2xl px-4 py-3.5 mb-4 flex items-start gap-3"
+               style={{ backgroundColor: "rgba(240,160,32,0.1)", border: "1px solid rgba(240,160,32,0.35)" }}>
+            <span style={{ fontSize: "1.2rem" }}>😴</span>
+            <div>
+              <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>
+                Hai dormito {lastNightSleep.toFixed(1)}h — sotto le {THRESH.sleep.bad}h consigliate
+              </p>
+              <p className="meta mt-0.5" style={{ lineHeight: 1.5 }}>
+                Il recupero del sistema nervoso è ridotto: valuta di scendere di 1-2 RIR sull'ultima serie di ogni
+                esercizio o di togliere una serie sugli esercizi più pesanti. Non serve saltare la sessione.
+              </p>
+            </div>
+          </div>
+        )}
         {access.pro ? (
           <>
             <WorkoutCalendarStrip weekPlan={weekPlan} selectedIso={selectedCalendarIso} onSelectIso={setSelectedCalendarIso} />
