@@ -1523,7 +1523,7 @@ export async function adminDeleteAccount(supabase, clientId) {
 export async function fetchCardioLogs(supabase, userId, limit = 20) {
   const { data, error } = await supabase
     .from("cardio_logs")
-    .select("id, date, activity_type, duration_min, distance_km, notes, created_at")
+    .select("id, date, activity_type, duration_min, distance_km, notes, created_at, route, avg_speed_kmh, max_speed_kmh")
     .eq("user_id", userId)
     .order("date", { ascending: false })
     .order("created_at", { ascending: false })
@@ -1532,10 +1532,11 @@ export async function fetchCardioLogs(supabase, userId, limit = 20) {
   return data ?? [];
 }
 
-export async function addCardioLog(supabase, userId, { date, activityType, durationMin, distanceKm, notes }) {
+export async function addCardioLog(supabase, userId, { date, activityType, durationMin, distanceKm, notes, route, avgSpeedKmh, maxSpeedKmh }) {
   const { error } = await supabase.from("cardio_logs").insert({
     user_id: userId, date, activity_type: activityType, duration_min: durationMin,
     distance_km: distanceKm || null, notes: notes || null,
+    route: route || null, avg_speed_kmh: avgSpeedKmh || null, max_speed_kmh: maxSpeedKmh || null,
   });
   if (error) throw error;
 }

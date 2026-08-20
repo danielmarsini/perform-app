@@ -26,6 +26,12 @@ import {
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
+// Leaflet + OpenStreetMap: mappa del percorso reale, gratuita e senza
+// chiave API (nessun account Google Maps da pagare/gestire) — stesso
+// principio già scelto per Open Food Facts e PubMed in questa app. Il CSS
+// è leggero (pochi KB) quindi statico; il JS (~150KB) si carica solo
+// quando una mappa serve davvero (import dinamico, vedi RouteMap sotto).
+import "leaflet/dist/leaflet.css";
 // @zxing/browser (~450 KB) è importato SOLO quando il mirino barcode si apre
 // davvero (import() dinamico dentro BarcodeScannerModal), non nel bundle
 // principale: la stragrande maggioranza delle sessioni non lo usa mai.
@@ -2416,6 +2422,239 @@ function paceLabel(durationMin, distanceKm) {
   return `${m}:${String(s).padStart(2, "0")} min/km`;
 }
 
+// Distanza reale fra due punti GPS (formula di haversine, km) — nessuna
+// libreria esterna, è poche righe di trigonometria sferica standard.
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const la1 = a.lat * Math.PI / 180, la2 = b.lat * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+/* Mappa del percorso — Leaflet + tile OpenStreetMap, caricati SOLO qui
+   (import dinamico) quando una mappa serve davvero. `live=true` ricentra
+   la vista sull'ultimo punto ad ogni aggiornamento (tracciamento in
+   corso); `live=false` inquadra l'intero percorso una volta sola (storico). */
+function RouteMap({ points, live, accent, height = 220 }) {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const polylineRef = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    import("leaflet").then((L) => {
+      if (cancelled || !containerRef.current || mapRef.current) return;
+      const map = L.map(containerRef.current, { zoomControl: live, attributionControl: true, dragging: true, scrollWheelZoom: false });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>',
+        maxZoom: 19,
+      }).addTo(map);
+      const start = points?.[0] || { lat: 45.4642, lng: 9.19 }; // Milano come centro neutro se non c'è ancora un punto
+      map.setView([start.lat, start.lng], 15);
+      polylineRef.current = L.polyline([], { color: accent, weight: 4, opacity: 0.9 }).addTo(map);
+      mapRef.current = map;
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !mapRef.current || !polylineRef.current || !points?.length) return;
+    const latlngs = points.map((p) => [p.lat, p.lng]);
+    polylineRef.current.setLatLngs(latlngs);
+    if (live) {
+      mapRef.current.panTo(latlngs[latlngs.length - 1]);
+    } else {
+      mapRef.current.fitBounds(latlngs, { padding: [24, 24] });
+    }
+  }, [ready, points, live]);
+
+  return <div ref={containerRef} style={{ height, width: "100%", borderRadius: 16, overflow: "hidden", backgroundColor: "var(--surface-2)" }} />;
+}
+
+/* Tracciamento GPS in diretta — stile Strava: percorso disegnato sulla
+   mappa in tempo reale, distanza/tempo/passo calcolati dai punti veri del
+   GPS del telefono (watchPosition), non inseriti a mano. */
+function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
+  const [activityType, setActivityType] = useState("corsa");
+  const [tracking, setTracking] = useState(false);
+  const [points, setPoints] = useState([]);
+  const [startedAt, setStartedAt] = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [gpsError, setGpsError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const watchIdRef = useRef(null);
+
+  useEffect(() => {
+    if (!tracking) return undefined;
+    const timer = setInterval(() => setElapsedSec(Math.round((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [tracking, startedAt]);
+
+  const start = () => {
+    if (!navigator.geolocation) { setGpsError("Il tuo browser non supporta la geolocalizzazione."); return; }
+    setGpsError("");
+    setPoints([]);
+    setStartedAt(Date.now());
+    setTracking(true);
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, t: Date.now() };
+        setPoints((pts) => (pts.length && haversineKm(pts[pts.length - 1], p) < 0.002 ? pts : [...pts, p])); // filtra micro-jitter GPS fermo
+      },
+      (err) => {
+        console.error("PERFORM: errore GPS", err);
+        setGpsError(err.code === 1 ? "Serve il permesso di geolocalizzazione per tracciare il percorso." : "Segnale GPS non disponibile — prova all'aperto.");
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
+    );
+  };
+
+  const stop = () => {
+    if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
+    watchIdRef.current = null;
+    setTracking(false);
+  };
+
+  useEffect(() => () => { if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current); }, []);
+
+  const distanceKm = useMemo(() => {
+    let d = 0;
+    for (let i = 1; i < points.length; i++) d += haversineKm(points[i - 1], points[i]);
+    return d;
+  }, [points]);
+
+  const durationMin = elapsedSec / 60;
+  const avgSpeedKmh = durationMin > 0 ? distanceKm / (durationMin / 60) : 0;
+  const maxSpeedKmh = useMemo(() => {
+    let max = 0;
+    for (let i = 1; i < points.length; i++) {
+      const dtH = (points[i].t - points[i - 1].t) / 3_600_000;
+      if (dtH > 0) max = Math.max(max, haversineKm(points[i - 1], points[i]) / dtH);
+    }
+    return max;
+  }, [points]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await addCardioLog(supabase, userId, {
+        date: toLocalISODate(), activityType, durationMin: Math.max(1, Math.round(durationMin)),
+        distanceKm: distanceKm > 0 ? Math.round(distanceKm * 100) / 100 : null,
+        route: points.length > 1 ? points : null,
+        avgSpeedKmh: avgSpeedKmh > 0 ? Math.round(avgSpeedKmh * 10) / 10 : null,
+        maxSpeedKmh: maxSpeedKmh > 0 ? Math.round(maxSpeedKmh * 10) / 10 : null,
+      });
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error("PERFORM: errore salvataggio attività GPS", err);
+      setGpsError("Non sono riuscito a salvare l'attività.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const mm = String(Math.floor(elapsedSec / 60)).padStart(2, "0");
+  const ss = String(elapsedSec % 60).padStart(2, "0");
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "var(--page)" }}>
+        <div className="flex items-center justify-between px-4 py-3.5">
+          <p className="h2" style={{ margin: 0 }}>Cardio GPS</p>
+          <button onClick={() => { stop(); onClose(); }} aria-label="Chiudi"><X size={20} style={{ color: "var(--ink-2)" }} /></button>
+        </div>
+
+        <div className="px-4">
+          <RouteMap points={points} live accent={accent} height={260} />
+        </div>
+
+        <div className="px-4 py-4">
+          {!tracking && points.length === 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {CARDIO_ACTIVITIES.map((a) => {
+                const on = activityType === a.id;
+                return (
+                  <button key={a.id} onClick={() => setActivityType(a.id)} type="button"
+                    className="rounded-full px-3 py-2 text-xs flex items-center gap-1.5"
+                    style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }
+                              : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                    <span aria-hidden="true">{a.icon}</span>{a.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 gap-2.5 mb-4">
+            <div className="inner px-3 py-3 text-center">
+              <p className="label mb-1">Tempo</p>
+              <p className="font-data text-lg font-bold" style={{ color: "var(--ink)" }}>{mm}:{ss}</p>
+            </div>
+            <div className="inner px-3 py-3 text-center">
+              <p className="label mb-1">Distanza</p>
+              <p className="font-data text-lg font-bold" style={{ color: "var(--ink)" }}>{distanceKm.toFixed(2)} km</p>
+            </div>
+            <div className="inner px-3 py-3 text-center">
+              <p className="label mb-1">Passo medio</p>
+              <p className="font-data text-lg font-bold" style={{ color: "var(--ink)" }}>{paceLabel(durationMin, distanceKm) || "—"}</p>
+            </div>
+          </div>
+
+          {gpsError && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{gpsError}</p>}
+
+          {!tracking && points.length === 0 && (
+            <button onClick={start} className="w-full rounded-full px-4 py-3.5 text-sm btn-3d"
+              style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
+              🏁 Inizia
+            </button>
+          )}
+          {tracking && (
+            <button onClick={stop} className="w-full rounded-full px-4 py-3.5 text-sm btn-3d"
+              style={{ backgroundColor: "#DC2626", color: "#FFFFFF", fontWeight: 700 }}>
+              ⏹ Termina
+            </button>
+          )}
+          {!tracking && points.length > 0 && (
+            <div className="flex gap-2">
+              <button onClick={() => { setPoints([]); setElapsedSec(0); }} className="c-ghost flex-1 rounded-full px-4 py-3.5 text-sm font-medium"
+                style={{ border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                Scarta
+              </button>
+              <button onClick={save} disabled={saving} className="flex-1 rounded-full px-4 py-3.5 text-sm btn-3d disabled:opacity-60"
+                style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
+                {saving ? "Salvo…" : "Salva attività"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* Condivisione reale del percorso — Web Share API (apre il pannello di
+   condivisione nativo del telefono: Instagram, WhatsApp, Messaggi...),
+   con fallback "copia testo" sui browser desktop che non la supportano. */
+function shareCardioLog(log, activityLabel) {
+  const pace = paceLabel(log.duration_min, log.distance_km);
+  const text = `${activityLabel} · ${log.distance_km ? `${log.distance_km} km · ` : ""}${log.duration_min} min${pace ? ` · ${pace}` : ""} 💪 #PERFORM`;
+  if (navigator.share) {
+    navigator.share({ text, title: "La mia attività PERFORM" }).catch(() => {});
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(text);
+  }
+}
+
 function CardioSection({ supabase, userId, accent }) {
   const isRealMode = Boolean(supabase && userId);
   const [logs, setLogs] = useState(null); // null finché non caricato (solo isRealMode)
@@ -2425,6 +2664,8 @@ function CardioSection({ supabase, userId, accent }) {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [gpsOpen, setGpsOpen] = useState(false);
+  const [expandedRoute, setExpandedRoute] = useState(null); // id del log con la mappa aperta
 
   const loadLogs = useCallback(() => {
     if (!isRealMode) return;
@@ -2480,6 +2721,17 @@ function CardioSection({ supabase, userId, accent }) {
       </div>
       <p className="h1 mb-3">Registra un'attività</p>
 
+      {/* Tracciamento GPS reale (percorso su mappa, distanza/passo dai punti
+          veri) accanto all'inserimento manuale di sempre — non lo sostituisce,
+          per chi preferisce scrivere i numeri a mano dopo o non vuole tenere
+          il telefono con il GPS attivo per tutta la sessione. */}
+      <button onClick={() => setGpsOpen(true)} type="button"
+        className="w-full flex items-center justify-center gap-2 rounded-full px-4 py-3 text-sm mb-3 btn-3d"
+        style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
+        <Route size={16} /> Traccia con GPS
+      </button>
+      <p className="meta text-center mb-3" style={{ fontSize: "0.68rem" }}>oppure inserisci a mano i dati qui sotto</p>
+
       <div className="flex flex-wrap gap-1.5 mb-3">
         {CARDIO_ACTIVITIES.map((a) => {
           const on = activityType === a.id;
@@ -2526,27 +2778,57 @@ function CardioSection({ supabase, userId, accent }) {
           {logs.map((l) => {
             const meta = CARDIO_ACTIVITIES.find((a) => a.id === l.activity_type) || CARDIO_ACTIVITIES[CARDIO_ACTIVITIES.length - 1];
             const pace = paceLabel(l.duration_min, l.distance_km);
+            const hasRoute = Array.isArray(l.route) && l.route.length > 1;
             return (
-              <div key={l.id} className="inner px-4 py-3 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm flex items-center gap-1.5" style={{ color: "var(--ink)", fontWeight: 600 }}>
-                    <span aria-hidden="true">{meta.icon}</span>{meta.label}
-                    <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>
-                      · {new Date(`${l.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
-                    </span>
-                  </p>
-                  <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-soft)" }}>
-                    {l.duration_min} min{l.distance_km ? ` · ${l.distance_km} km` : ""}{pace ? ` · ${pace}` : ""}
-                  </p>
-                  {l.notes && <p className="meta text-xs mt-0.5 leading-relaxed">{l.notes}</p>}
+              <div key={l.id} className="inner px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm flex items-center gap-1.5" style={{ color: "var(--ink)", fontWeight: 600 }}>
+                      <span aria-hidden="true">{meta.icon}</span>{meta.label}
+                      <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>
+                        · {new Date(`${l.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
+                      </span>
+                    </p>
+                    <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-soft)" }}>
+                      {l.duration_min} min{l.distance_km ? ` · ${l.distance_km} km` : ""}{pace ? ` · ${pace}` : ""}
+                    </p>
+                    {l.notes && <p className="meta text-xs mt-0.5 leading-relaxed">{l.notes}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {hasRoute && (
+                      <>
+                        <button onClick={() => shareCardioLog(l, meta.label)} aria-label="Condividi" className="p-1.5">
+                          <Route size={15} style={{ color: accent }} />
+                        </button>
+                        <button onClick={() => setExpandedRoute((id) => (id === l.id ? null : l.id))} aria-label="Vedi percorso" className="p-1.5">
+                          <ChevronDown size={15} style={{ color: "var(--ink-tertiary)", transform: expandedRoute === l.id ? "rotate(180deg)" : "none" }} />
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => remove(l.id)} aria-label="Elimina attività" className="p-1.5">
+                      <Trash2 size={15} style={{ color: "var(--ink-tertiary)" }} />
+                    </button>
+                  </div>
                 </div>
-                <button onClick={() => remove(l.id)} aria-label="Elimina attività" className="shrink-0 p-1.5">
-                  <Trash2 size={15} style={{ color: "var(--ink-tertiary)" }} />
-                </button>
+                {hasRoute && expandedRoute === l.id && (
+                  <div className="mt-3">
+                    <RouteMap points={l.route} live={false} accent={accent} height={180} />
+                    {(l.avg_speed_kmh || l.max_speed_kmh) && (
+                      <p className="meta text-xs mt-2">
+                        {l.avg_speed_kmh ? `Velocità media ${l.avg_speed_kmh} km/h` : ""}{l.avg_speed_kmh && l.max_speed_kmh ? " · " : ""}{l.max_speed_kmh ? `Massima ${l.max_speed_kmh} km/h` : ""}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+      )}
+
+      {gpsOpen && (
+        <GpsTrackerModal accent={accent} supabase={supabase} userId={userId}
+          onClose={() => setGpsOpen(false)} onSaved={loadLogs} />
       )}
     </div>
   );
