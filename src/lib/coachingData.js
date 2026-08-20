@@ -1574,4 +1574,47 @@ export async function fetchLegalConsents(supabase, userId) {
   return data;
 }
 
+// Punteggio di ricomposizione: legge peso e vita (non "un numero" arbitrario
+// — un'etichetta onesta derivata da due delta reali già misurati) per capire
+// se sta succedendo dimagrimento, bulk o vera ricomposizione (peso stabile/su,
+// vita giù = grasso perso e muscolo guadagnato). Serve almeno 2 check con
+// entrambe le misure per dare una lettura — altrimenti torna null, mai un
+// giudizio su dati insufficienti.
+export function recompositionReading(weightPoints, circPoints) {
+  const w = (weightPoints || []).filter((p) => p.kg != null);
+  const waistSeries = (circPoints || []).filter((p) => p.waist != null);
+  if (w.length < 2 || waistSeries.length < 2) return null;
+
+  const weightDeltaPct = ((w[w.length - 1].kg - w[0].kg) / w[0].kg) * 100;
+  const waistDeltaPct = ((waistSeries[waistSeries.length - 1].waist - waistSeries[0].waist) / waistSeries[0].waist) * 100;
+
+  const weightFlat = Math.abs(weightDeltaPct) < 1;
+  const weightUp = weightDeltaPct >= 1;
+  const weightDown = weightDeltaPct <= -1;
+  const waistDown = waistDeltaPct <= -1;
+  const waistUp = waistDeltaPct >= 1;
+
+  let label, detail, tone;
+  if (weightUp && waistDown) {
+    label = "Ricomposizione avanzata"; tone = "good";
+    detail = "Peso su e vita giù insieme: segno chiaro di massa magra guadagnata e grasso perso nello stesso periodo.";
+  } else if (weightFlat && waistDown) {
+    label = "Ricomposizione"; tone = "good";
+    detail = "Peso stabile ma vita in calo: probabile scambio grasso-muscolo, il peso da solo non lo racconterebbe.";
+  } else if (weightDown && waistDown) {
+    label = "Dimagrimento"; tone = "good";
+    detail = "Peso e vita in calo insieme: perdita di massa grassa in corso.";
+  } else if (weightUp && waistUp) {
+    label = "Bulk"; tone = "neutral";
+    detail = "Peso e vita in aumento insieme: fase di surplus, normale in una fase di crescita programmata.";
+  } else if (weightDown && waistUp) {
+    label = "Da verificare"; tone = "warn";
+    detail = "Peso giù ma vita su: dato incoerente, possibile misurazione imprecisa o perdita di massa magra — vale la pena approfondire.";
+  } else {
+    label = "Stallo"; tone = "neutral";
+    detail = "Peso e vita sostanzialmente invariati nel periodo osservato.";
+  }
+  return { label, detail, tone, weightDeltaPct, waistDeltaPct };
+}
+
 export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, computeVolume, parseRepsTarget };

@@ -38,7 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading } from "../lib/coachingData.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import { WeeklyCheckModal, PauseSection } from "./05_HomeDashboard.jsx";
@@ -626,6 +626,25 @@ export function CircumferenceChart({ points, accent }) {
   );
 }
 
+const RECOMP_TONE_COLOR = { good: "#10B981", warn: "#B45309", neutral: "var(--ink-2)" };
+
+/* Punteggio di ricomposizione: un'etichetta onesta (mai un numero
+   inventato) derivata dal confronto reale peso/vita già mostrato sopra —
+   il cliente spesso guarda solo il peso e si scoraggia quando resta
+   fermo, senza notare che la vita nel frattempo è scesa. */
+function RecompositionBadge({ weightPoints, circPoints }) {
+  const reading = recompositionReading(weightPoints, circPoints);
+  if (!reading) return null;
+  const color = RECOMP_TONE_COLOR[reading.tone];
+  return (
+    <div className="inner px-4 py-3 mt-3">
+      <p className="label mb-1">Lettura del periodo</p>
+      <p className="text-sm mb-1" style={{ color, fontWeight: 800 }}>{reading.label}</p>
+      <p className="meta" style={{ lineHeight: 1.5 }}>{reading.detail}</p>
+    </div>
+  );
+}
+
 /* Progressione settimanale di un singolo esercizio: peso del set migliore
    seduta per seduta. Stesso linguaggio visivo di WeightChart, generalizzato:
    qui il valore è il carico sollevato, non il peso corporeo. */
@@ -998,6 +1017,7 @@ export function ClientProfileView({
 
         <p className="label mt-6 mb-2">Confronto circonferenze</p>
         <CircumferenceChart points={circPoints} accent={accent} />
+        <RecompositionBadge weightPoints={weightPoints} circPoints={circPoints} />
 
         <p className="label mt-6 mb-2">{t.archive.photoGallery}</p>
         <p className="h2 mb-2" style={{ fontSize: "0.95rem" }}>{t.archive.compareTitle}</p>
