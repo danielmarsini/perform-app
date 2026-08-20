@@ -629,6 +629,11 @@ export function AppShell({
   const activeTab = tab === "coach" && !isCoach ? "home" : tab;
   const current = screens[activeTab] ?? fallback[activeTab];
 
+  // Stessa correzione di HomeDashboard: cambiare tab (Home/News/Classifica/
+  // Profilo) non deve lasciare la nuova schermata scrollata dov'era rimasta
+  // quella precedente.
+  useEffect(() => { window.scrollTo(0, 0); }, [activeTab]);
+
   return (
     <div
       className="app-root min-h-screen"

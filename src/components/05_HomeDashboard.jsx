@@ -24,6 +24,7 @@ import {
   Loader2, AlertTriangle,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
+import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import Portal from "./Portal.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
 // Leaflet + OpenStreetMap: mappa del percorso reale, gratuita e senza
@@ -967,10 +968,10 @@ function CompliancePopup({ ring, onClose }) {
   const tier = isNeutral ? { color: "var(--ink-2)", label: "Nessun dato" } : complianceTier(ring.pct);
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-           style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
-        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6"
-             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{
+             backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)", overflowY: "auto" }} onClick={onClose}>
+        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 overflow-y-auto"
+             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "88vh" }}
              onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4">
             <p className="h1 flex items-center gap-2">
@@ -1401,10 +1402,10 @@ function PauseRequestModal({ supabase, userId, accent, accentText, onClose, onSa
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-           style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
-        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6" onClick={(e) => e.stopPropagation()}
-             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{
+             backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)", overflowY: "auto" }} onClick={onClose}>
+        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 overflow-y-auto" onClick={(e) => e.stopPropagation()}
+             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "88vh" }}>
           <div className="flex items-center justify-between mb-4">
             <p className="h1-gradient">Pausa dal programma</p>
             <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
@@ -1541,7 +1542,7 @@ export function HomeDashboard({
   onSetSleep, onSetSteps, onToggleAutoSteps, onAddWater, onSetTargetOn, onSetTargetOff, onSetRhr, onSetHrv, onSetWaterTarget,
   targetOn, targetOff, isTrainingDay, onToggleTrainingDay,
   onAddFood, onRemoveFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
-  onGenerateSimilar, onApplyReschedule, onDismissReschedule,
+  onApplyReschedule, onDismissReschedule,
   onUpgrade, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
   userPlan, // 'free' | 'performance_pack' | 'full_coaching' — letta da Supabase, qui simulata
   stressLevel, onSetStressLevel, nightWakeups, onSetNightWakeups, morningEnergy, onSetMorningEnergy,
@@ -1551,6 +1552,14 @@ export function HomeDashboard({
   const [screen, setScreen] = useState("dash");   // dash | workout | nutrition | recovery
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [digestValue, setDigestValue] = useState(0);
+
+  // BUG PRESO: cambiare schermata (Allenamento/Alimentazione/Recupero/
+  // Integrazione, o tornare alla Home) lasciava la pagina alla stessa
+  // posizione di scroll di prima — la nuova schermata poteva apparire già
+  // scrollata a metà invece che dall'inizio. Swipe da bordo sinistro →
+  // stesso "indietro" del pulsante freccia, come il gesto nativo iOS.
+  useEffect(() => { window.scrollTo(0, 0); }, [screen]);
+  useEdgeSwipeBack(() => setScreen("dash"), screen !== "dash");
 
   /* Check Domenica/Lunedì: si attiva da solo a fine settimana e blocca la
      navigazione dell'app finché l'atleta non lo compila. Una volta inviato,
@@ -2131,7 +2140,6 @@ export function HomeDashboard({
           mealGuide={mealGuide} substitutions={substitutions}
           onAddFood={onAddFood} onRemoveFood={onRemoveFood} onOpenScanner={onOpenScanner} onOpenPhoto={onOpenPhoto} onAddCustomFood={onAddCustomFood}
           onCopyYesterday={onCopyYesterday} onShoppingList={onShoppingList} supabase={supabase}
-          onGenerateSimilar={onGenerateSimilar}
           targetOn={targetOn} targetOff={targetOff}
           onSetTargetOn={onSetTargetOn} onSetTargetOff={onSetTargetOff}
           isTrainingDay={isTrainingDay} onToggleTrainingDay={onToggleTrainingDay}
@@ -2176,6 +2184,7 @@ export function HomeDashboard({
 
       {/* sonno: casella pulita sopra al grafico, niente card/etichette/legenda colori attorno */}
       <div className="mb-4">
+        <p className="label mb-1.5">Inserisci l'ora in cui ti sei addormentato e l'ora della sveglia</p>
         <div className="flex items-center gap-2 mb-2">
           <input type="time" value={sleep.start || ""} onChange={(e) => onSetSleep("start", e.target.value)}
                  aria-label="Ora in cui ti sei addormentato" className="input flex-1 px-3 py-2 text-sm font-data" />
@@ -2599,9 +2608,17 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
 
   const activityMeta = CARDIO_ACTIVITIES.find((a) => a.id === activityType) || CARDIO_ACTIVITIES[0];
 
+  const modalRef = useRef(null);
+  useSwipeDownClose(modalRef, () => { stop(); onClose(); });
+
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "var(--page)" }}>
+      {/* env(safe-area-inset-top): su iPhone con notch/Dynamic Island la X
+          altrimenti finisce sotto la barra di stato ed è impossibile da
+          toccare — il modale a tutto schermo parte da y:0, non eredita il
+          padding che l'header normale dell'app ha altrove. */}
+      <div ref={modalRef} className="fixed inset-0 z-50 flex flex-col"
+        style={{ backgroundColor: "var(--page)", paddingTop: "env(safe-area-inset-top)" }}>
         <div className="flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-2">
             <span aria-hidden="true" style={{ fontSize: "1.2rem" }}>{activityMeta.icon}</span>
@@ -2614,7 +2631,7 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
           </button>
         </div>
 
-        <div className="px-5">
+        <div className="px-5" data-no-swipe="true">
           <RouteMap points={points} live accent={accent} height={260} />
         </div>
 
@@ -4639,9 +4656,13 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
     if (code) onDetected(code);
   };
 
+  const modalRef = useRef(null);
+  useSwipeDownClose(modalRef, onClose);
+
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "#0A0A0C" }}>
+      <div ref={modalRef} className="fixed inset-0 z-50 flex flex-col"
+        style={{ backgroundColor: "#0A0A0C", paddingTop: "env(safe-area-inset-top)" }}>
         <div className="flex items-center justify-between px-5 py-4">
           <div>
             <p className="text-sm font-semibold" style={{ color: "#FFFFFF" }}>Codice a barre</p>
@@ -4654,7 +4675,7 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
           </button>
         </div>
 
-        <div className="relative flex-1 overflow-hidden mx-5 rounded-3xl" style={{ minHeight: 220 }}>
+        <div className="relative flex-1 overflow-hidden mx-5 rounded-3xl" data-no-swipe="true" style={{ minHeight: 220 }}>
           <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
           {status === "scanning" && (
             <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 pointer-events-none">
@@ -4714,7 +4735,7 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
 function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide, substitutions,
   onAddFood, onRemoveFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
-  onGenerateSimilar, targetOn, targetOff, onSetTargetOn, onSetTargetOff,
+  targetOn, targetOff, onSetTargetOn, onSetTargetOff,
   isTrainingDay, onToggleTrainingDay, waterTarget, onSetWaterTarget, fullAccess, subsAccess, onUpgrade,
   userPlan, gender, waterMl, digestValue, onDigestChange, supabase,
 }) {
@@ -4726,6 +4747,23 @@ function NutritionTabs({
   const [dropOpen, setDropOpen] = useState(false);
   const [manualAddOpen, setManualAddOpen] = useState(false);
   const [manualMacros, setManualMacros] = useState({ kcal: "", p: "", c: "", f: "" });
+
+  // Diario Libero e I Miei Target restano sempre disponibili (il secondo è
+  // l'unico modo per un cliente FREE di impostare i propri macro, senza un
+  // coach che lo faccia per lui). Sostituzioni si sblocca da Performance
+  // Pack/Scheda Personalizzata in su (subsAccess); Dieta Tipo, scritta dal
+  // coach, solo con Coaching/Full Coaching (fullAccess) — visibili solo i
+  // tab a cui il piano dà davvero accesso, non mostrati-ma-bloccati.
+  const visibleTabs = [
+    ["diary", "Diario Libero"],
+    ["targets", "I Miei Target"],
+    ...(subsAccess ? [["subs", "Sostituzioni"]] : []),
+    ...(fullAccess ? [["plan", "Dieta Tipo"]] : []),
+  ];
+  useEffect(() => {
+    if (!visibleTabs.some(([id]) => id === tab)) setTab("diary");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subsAccess, fullAccess]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -4825,8 +4863,8 @@ function NutritionTabs({
 
   return (
     <>
-      <div className="grid grid-cols-4 gap-1.5 mb-5">
-        {[["diary", "Diario Libero"], ["targets", "I Miei Target"], ["plan", "Dieta Tipo"], ["subs", "Sostituzioni"]].map(([id, lab]) => {
+      <div className="grid gap-1.5 mb-5" style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}>
+        {visibleTabs.map(([id, lab]) => {
           const on = tab === id;
           return (
             <button key={id} onClick={() => setTab(id)}
@@ -5092,67 +5130,54 @@ function NutritionTabs({
           isPro={fullAccess} onUpgrade={onUpgrade} />
       )}
 
-      {/* ---------------- DIETA TIPO ---------------- */}
-      {tab === "plan" && (
+      {/* ---------------- DIETA TIPO (solo Coaching/Full Coaching, il tab
+          stesso è nascosto agli altri piani — vedi visibleTabs sopra) ---------------- */}
+      {tab === "plan" && fullAccess && (
         <div className="spring-in">
-          {!fullAccess ? (
-            <LockedPanel onUpgrade={onUpgrade} accent={accent}
-              text="La dieta su misura è parte del Full Coaching: fatti aiutare da un professionista del settore che la scrive sui tuoi macro reali." />
-          ) : (
-            <div className="card">
-              <p className="label mb-1">Dieta scritta dal coach</p>
-              <p className="h1 mb-1">La tua dieta tipo</p>
-              <p className="body mb-4">
-                Costruita sui macro di oggi ({target.kcal} kcal · P{target.p} / C{target.c} / G{target.f}).
-                Le grammature sono già scalate: è la traccia, il Diario Libero resta il posto dove registri
-                ciò che mangi davvero.
-              </p>
-              <button onClick={onShoppingList}
-                className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full mb-4"
-                style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
-                <ShoppingCart size={15} style={{ color: "#FFFFFF" }} />
-                Genera la lista della spesa
-              </button>
-              <div className="space-y-3">
-                {mealGuide.map((slot, i) => (
-                  <div key={MEAL_SLOTS[i].id} className="inner px-4 py-3.5">
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <p className="text-sm flex items-center gap-2" style={{ color: "var(--ink)", fontWeight: 500 }}>
-                        <span aria-hidden="true">{MEAL_SLOTS[i].icon}</span>{MEAL_SLOTS[i].label}
-                      </p>
-                      <span className="meta font-data text-xs shrink-0">
-                        {slot.tot.kcal} kcal · P{slot.tot.p} / C{slot.tot.c} / G{slot.tot.f}
-                      </span>
-                    </div>
-                    {slot.items.map((it) => (
-                      <p key={it.name} className="font-data text-xs flex justify-between py-0.5">
-                        <span style={{ color: "var(--ink)" }}>{it.name}</span>
-                        <span style={{ color: accentText, fontWeight: 600 }}>{it.grams} g</span>
-                      </p>
-                    ))}
+          <div className="card">
+            <p className="label mb-1">Dieta scritta dal coach</p>
+            <p className="h1 mb-1">La tua dieta tipo</p>
+            <p className="body mb-4">
+              Costruita sui macro di oggi ({target.kcal} kcal · P{target.p} / C{target.c} / G{target.f}).
+              Le grammature sono già scalate: è la traccia, il Diario Libero resta il posto dove registri
+              ciò che mangi davvero.
+            </p>
+            <button onClick={onShoppingList}
+              className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full mb-4"
+              style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
+              <ShoppingCart size={15} style={{ color: "#FFFFFF" }} />
+              Genera la lista della spesa
+            </button>
+            <div className="space-y-3">
+              {mealGuide.map((slot, i) => (
+                <div key={MEAL_SLOTS[i].id} className="inner px-4 py-3.5">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-sm flex items-center gap-2" style={{ color: "var(--ink)", fontWeight: 500 }}>
+                      <span aria-hidden="true">{MEAL_SLOTS[i].icon}</span>{MEAL_SLOTS[i].label}
+                    </p>
+                    <span className="meta font-data text-xs shrink-0">
+                      {slot.tot.kcal} kcal · P{slot.tot.p} / C{slot.tot.c} / G{slot.tot.f}
+                    </span>
                   </div>
-                ))}
-              </div>
+                  {slot.items.map((it) => (
+                    <p key={it.name} className="font-data text-xs flex justify-between py-0.5">
+                      <span style={{ color: "var(--ink)" }}>{it.name}</span>
+                      <span style={{ color: accentText, fontWeight: 600 }}>{it.grams} g</span>
+                    </p>
+                  ))}
+                </div>
+              ))}
             </div>
-          )}
+          </div>
         </div>
       )}
 
-      {/* ---------------- SOSTITUZIONI (Premium e superiori) ----------------
-          A differenza degli altri tab qui sopra (piano scritto dal coach
-          reale, target precisi) le sostituzioni sono un calcolo, non lavoro
-          del coach — su richiesta esplicita, sbloccate anche per chi ha solo
-          Performance Pack, non solo Full Coaching (subsAccess invece di
-          fullAccess, unico tab con questa soglia più bassa). */}
-      {tab === "subs" && (
+      {/* ---------------- SOSTITUZIONI (Premium/Scheda Personalizzata e
+          superiori, tab nascosto sotto — vedi visibleTabs sopra) ---------------- */}
+      {tab === "subs" && subsAccess && (
         <div className="spring-in">
-          {!subsAccess ? (
-            <LockedPanel onUpgrade={onUpgrade} accent={accent}
-              text="Le sostituzioni intelligenti sono incluse dal Performance Pack in su: passa a un piano superiore per sbloccarle." />
-          ) : (
-            <SubsPanel substitutions={substitutions} accent={accent} accentSoft={accentSoft}
-                       accentText={accentText} onGenerateSimilar={onGenerateSimilar} />
-          )}
+          <SubsPanel substitutions={substitutions} foods={foods} accent={accent} accentSoft={accentSoft}
+                     accentText={accentText} />
         </div>
       )}
     </>
@@ -5197,72 +5222,144 @@ function LockedPanel({ text, onUpgrade, accent }) {
   );
 }
 
-function SubsPanel({ substitutions, accent, accentSoft, accentText, onGenerateSimilar }) {
-  const [source, setSource] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(null);
-  const [err, setErr] = useState("");
-
-  const run = async () => {
-    if (source.trim().length < 3) { setErr("Scrivi il nome di un alimento."); return; }
-    setErr(""); setLoading(true); setResults(null);
-    try { setResults((await onGenerateSimilar(source.trim())) || []); }
-    catch { setErr("Non sono riuscito a generare le alternative. Riprova."); }
-    finally { setLoading(false); }
+/* Sostituzioni: calcolo deterministico sul catalogo REALE (base + alimenti
+   condivisi dagli utenti), non più un testo libero interpretato da un'IA.
+   BUG PRESO: la versione precedente pareggiava UN SOLO macro dominante
+   (proteine O carbo O grassi) su una manciata di alimenti hardcoded — "100g
+   fiocchi di avena" tornava con carbo giusti ma proteine/grassi a caso.
+   Ora: si sceglie l'alimento vero dal catalogo + i grammi, si calcolano le
+   sue kcal/macro esatti, e si cercano nello stesso catalogo gli alimenti che,
+   a parità di kcal, si avvicinano di più su TUTTI e tre i macro insieme —
+   l'unica cosa che cambia è la fonte e la quantità, non il totale nutrizionale. */
+function computeFoodAt(food, grams) {
+  const scale = grams / 100;
+  return {
+    kcal: food.kcal * scale, p: food.p * scale, c: food.c * scale, f: food.f * scale,
   };
+}
+
+function findSubstitutes(sourceFood, grams, foods, count = 4) {
+  const target = computeFoodAt(sourceFood, grams);
+  if (!target.kcal) return [];
+  return foods
+    .filter((f) => f.name !== sourceFood.name && f.kcal > 0)
+    .map((alt) => {
+      // Stessa quantità di calorie del piatto originale: è il vincolo che
+      // definisce una "sostituzione" (non ha senso pareggiare i macro se poi
+      // cambiano le calorie totali del pasto).
+      const altGrams = Math.max(1, Math.round((target.kcal / alt.kcal) * 100));
+      const at = computeFoodAt(alt, altGrams);
+      const pctErr = (val, ref) => (ref > 0 ? Math.abs(val - ref) / ref : val > 0 ? 1 : 0);
+      const errP = pctErr(at.p, target.p), errC = pctErr(at.c, target.c), errF = pctErr(at.f, target.f);
+      const avgErrPct = Math.round(((errP + errC + errF) / 3) * 100);
+      return { alt, altGrams, at, avgErrPct };
+    })
+    .sort((a, b) => a.avgErrPct - b.avgErrPct)
+    .slice(0, count);
+}
+
+function SubsPanel({ substitutions, foods, accent, accentSoft, accentText }) {
+  const [query, setQuery] = useState("");
+  const [source, setSource] = useState(null);
+  const [grams, setGrams] = useState("100");
+  const [dropOpen, setDropOpen] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return foods.slice(0, 8);
+    return foods.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [query, foods]);
+
+  const gramsNum = Number(grams) || 0;
+  const target = source && gramsNum > 0 ? computeFoodAt(source, gramsNum) : null;
+  const results = source && gramsNum > 0 ? findSubstitutes(source, gramsNum, foods) : [];
 
   return (
     <div className="spring-in">
       <div className="card mb-5">
-        <p className="label mb-1">Intelligenza artificiale</p>
-        <p className="h1 mb-1">Genera alimento simile</p>
+        <p className="label mb-1">Calcolo esatto sul catalogo reale</p>
+        <p className="h1 mb-1">Trova un alimento equivalente</p>
         <p className="body mb-4">
-          Scrivi cosa ti manca o non ti va: ti propongo alternative con lo stesso profilo
-          nutrizionale e la grammatura già corretta per pareggiare i macro.
+          Scegli l'alimento e la quantità: cerco nel catalogo le fonti che, alla stessa quantità di
+          calorie, hanno lo scarto più basso su proteine, carboidrati e grassi insieme.
         </p>
 
-        <div className="flex gap-2 mb-3">
-          <input type="text" value={source}
-            onChange={(e) => { setSource(e.target.value); setErr(""); }}
-            onKeyDown={(e) => { if (e.key === "Enter") run(); }}
-            placeholder="es. 150 g di petto di pollo"
-            className="input flex-1 min-w-0 px-4 py-3 text-sm" aria-label="Alimento da sostituire" />
-          <button onClick={run} disabled={loading}
-            className="shrink-0 px-4 rounded-xl flex items-center gap-2 text-sm transition-transform active:scale-95 disabled:opacity-50 btn-3d"
-            style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 500 }}>
-            <Sparkles size={15} style={{ color: accent }} />
-            Genera
-          </button>
+        <div className="relative mb-2.5">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: "var(--ink-2)" }} />
+          <input type="text" value={query}
+            onChange={(e) => { setQuery(e.target.value); setSource(null); setDropOpen(true); }}
+            onFocus={() => setDropOpen(true)}
+            onBlur={() => setTimeout(() => setDropOpen(false), 180)}
+            placeholder="Cerca l'alimento di partenza…"
+            className="input search-strong w-full pl-10 pr-9 py-3"
+            aria-label="Alimento di partenza" />
+          {source && (
+            <button onMouseDown={() => { setSource(null); setQuery(""); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1" style={{ color: "var(--ink-2)" }} aria-label="Svuota">
+              <X size={14} />
+            </button>
+          )}
+          {dropOpen && !source && (
+            <div className="absolute z-30 left-0 right-0 mt-1.5 rounded-xl overflow-hidden"
+                 style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)",
+                          boxShadow: "0 16px 40px rgba(0,0,0,0.16)", maxHeight: 260, overflowY: "auto" }}>
+              {filtered.map((f) => (
+                <button key={f.name}
+                  onMouseDown={() => { setSource(f); setQuery(f.name); setDropOpen(false); }}
+                  className="search-strong w-full text-left px-4 py-3"
+                  style={{ borderBottom: "1px solid var(--line)" }}>
+                  {f.name}
+                </button>
+              ))}
+              {filtered.length === 0 && <p className="meta text-sm px-4 py-3">Nessun risultato per "{query}".</p>}
+            </div>
+          )}
         </div>
 
-        {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
+        <div className="flex items-center gap-2 mb-4">
+          <input type="number" min="1" inputMode="numeric" value={grams} onChange={(e) => setGrams(e.target.value)}
+            placeholder="Grammi" className="input flex-1 px-4 py-3 font-data text-sm" aria-label="Grammi dell'alimento di partenza" />
+          <span className="meta shrink-0">grammi a crudo</span>
+        </div>
 
-        {loading && (
-          <div className="space-y-2">
-            {[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 62 }} />)}
+        {target && (
+          <div className="inner px-4 py-3 mb-4">
+            <p className="label mb-1.5">{source.name} · {gramsNum} g</p>
+            <div className="flex gap-3">
+              <span className="font-data text-xs" style={{ color: MACRO_COLORS.kcal.base, fontWeight: 700 }}>{Math.round(target.kcal)} kcal</span>
+              <span className="font-data text-xs" style={{ color: MACRO_COLORS.p.base, fontWeight: 700 }}>P {Math.round(target.p)}</span>
+              <span className="font-data text-xs" style={{ color: MACRO_COLORS.c.base, fontWeight: 700 }}>C {Math.round(target.c)}</span>
+              <span className="font-data text-xs" style={{ color: MACRO_COLORS.f.base, fontWeight: 700 }}>G {Math.round(target.f)}</span>
+            </div>
           </div>
         )}
 
-        {results && !loading && (
+        {source && results.length === 0 && (
+          <p className="body">Nessuna alternativa sensata nel catalogo per questo alimento — prova con una quantità diversa.</p>
+        )}
+
+        {results.length > 0 && (
           <div className="space-y-2">
-            {results.length === 0 && <p className="body">Nessuna alternativa sensata per questo alimento.</p>}
             {results.map((r) => (
-              <div key={r.name} className="inner px-4 py-3">
+              <div key={r.alt.name} className="inner px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 500 }}>{r.name}</span>
-                  <span className="font-data text-xs shrink-0" style={{ color: accentText, fontWeight: 700 }}>{r.grams} g</span>
+                  <span className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 500 }}>{r.alt.name}</span>
+                  <span className="font-data text-xs shrink-0" style={{ color: accentText, fontWeight: 700 }}>{r.altGrams} g</span>
                 </div>
                 <div className="flex gap-3 mt-1.5">
-                  <span className="font-data text-xs" style={{ color: MACRO_COLORS.kcal.base, fontWeight: 700 }}>{r.kcal} kcal</span>
-                  <span className="font-data text-xs" style={{ color: MACRO_COLORS.p.base, fontWeight: 700 }}>P {r.p}</span>
-                  <span className="font-data text-xs" style={{ color: MACRO_COLORS.c.base, fontWeight: 700 }}>C {r.c}</span>
-                  <span className="font-data text-xs" style={{ color: MACRO_COLORS.f.base, fontWeight: 700 }}>G {r.f}</span>
+                  <span className="font-data text-xs" style={{ color: MACRO_COLORS.kcal.base, fontWeight: 700 }}>{Math.round(r.at.kcal)} kcal</span>
+                  <span className="font-data text-xs" style={{ color: MACRO_COLORS.p.base, fontWeight: 700 }}>P {Math.round(r.at.p)}</span>
+                  <span className="font-data text-xs" style={{ color: MACRO_COLORS.c.base, fontWeight: 700 }}>C {Math.round(r.at.c)}</span>
+                  <span className="font-data text-xs" style={{ color: MACRO_COLORS.f.base, fontWeight: 700 }}>G {Math.round(r.at.f)}</span>
                 </div>
-                {r.note && <p className="meta mt-1.5 leading-relaxed text-xs">{r.note}</p>}
+                <p className="meta mt-1.5 leading-relaxed text-xs">
+                  {r.avgErrPct <= 5 ? "Macro praticamente identici" : `~${r.avgErrPct}% di scarto medio sui macro`} a parità di calorie.
+                </p>
               </div>
             ))}
             <p className="meta mt-2 leading-relaxed" style={{ fontSize: "0.68rem" }}>
-              Le alternative pareggiano i macro, non i micronutrienti: se un alimento è nel piano per
+              Le alternative pareggiano calorie e macro, non i micronutrienti: se un alimento è nel piano per
               un motivo specifico (ferro, omega-3, fibre), il coach te lo segnala.
             </p>
           </div>
@@ -6617,23 +6714,16 @@ const F = [
   { name: "Olio Extravergine d'Oliva", kcal: 899, p: 0, c: 0, f: 100, na: 2, k: 1, fe: 0.56, ca: 1, mg: 0 },
   { name: "Mandorle", kcal: 603, p: 22, c: 4, f: 55, na: 1, k: 733, fe: 3.71, ca: 269, mg: 270 },
   { name: "Sale da cucina", kcal: 0, p: 0, c: 0, f: 0, na: 39340, k: 8, fe: 1.2, ca: 24, mg: 1 },
-];
-
-/* Database per categoria macro (valori generici per 100 g), usato dal generatore
-   di alternative: sostituisce sempre entro la stessa categoria (proteica ↔
-   proteica, carboidrato ↔ carboidrato, lipidica ↔ lipidica). */
-/* Database alimenti "da crudo", organizzato per categoria macro, con macros
-   reali per 100g: base italiana pronta per la ricerca nel generatore di
-   alternative e nel diario. */
-const PROTEIN_FOODS = [
-  { name: "Petto di Pollo", kcal: 110, p: 23, c: 0, f: 2 },
+  // Catalogo base ampliato (era usato solo dal vecchio generatore IA di
+  // sostituzioni, ora sostituito da un calcolo esatto sul catalogo reale —
+  // vedi SubsPanel/findSubstitutes sopra — ma i valori restano utili come
+  // base sempre disponibile per TUTTI, oltre agli alimenti condivisi dagli
+  // utenti in custom_foods).
   { name: "Fesa di Tacchino", kcal: 104, p: 24, c: 0, f: 1 },
   { name: "Merluzzo", kcal: 82, p: 18, c: 0, f: 0.7 },
   { name: "Orata", kcal: 121, p: 20, c: 0, f: 4.5 },
   { name: "Uova Intere", kcal: 143, p: 13, c: 1, f: 10 },
   { name: "Albume d'Uovo", kcal: 52, p: 11, c: 0.7, f: 0.2 },
-  { name: "Salmone Fresco", kcal: 185, p: 20, c: 0, f: 12 },
-  { name: "Yogurt Greco 0%", kcal: 57, p: 10, c: 4, f: 0 },
   { name: "Bresaola", kcal: 151, p: 32, c: 0.4, f: 2.6 },
   { name: "Tonno al Naturale", kcal: 116, p: 26, c: 0, f: 1 },
   { name: "Manzo Magro (scottona)", kcal: 137, p: 21, c: 0, f: 5.5 },
@@ -6642,26 +6732,15 @@ const PROTEIN_FOODS = [
   { name: "Ceci Secchi", kcal: 364, p: 19, c: 61, f: 6 },
   { name: "Lenticchie Secche", kcal: 352, p: 24, c: 60, f: 1 },
   { name: "Tofu", kcal: 76, p: 8, c: 1.9, f: 4.8 },
-];
-
-const CARB_FOODS = [
-  { name: "Riso Basmati", kcal: 350, p: 8, c: 78, f: 1 },
   { name: "Pasta", kcal: 353, p: 12, c: 71, f: 1.5 },
   { name: "Patate", kcal: 77, p: 2, c: 17, f: 0.1 },
   { name: "Pane Integrale", kcal: 247, p: 13, c: 41, f: 3.4 },
   { name: "Pane Comune", kcal: 289, p: 8, c: 59, f: 1 },
-  { name: "Avena in Fiocchi", kcal: 370, p: 13, c: 60, f: 7 },
   { name: "Quinoa", kcal: 368, p: 14, c: 64, f: 6 },
   { name: "Farro", kcal: 335, p: 15, c: 67, f: 2.5 },
   { name: "Cous Cous", kcal: 376, p: 13, c: 77, f: 1 },
-  { name: "Banana", kcal: 89, p: 1, c: 23, f: 0 },
   { name: "Piselli", kcal: 81, p: 5, c: 14, f: 0.4 },
   { name: "Mais Dolce", kcal: 86, p: 3.2, c: 19, f: 1.2 },
-];
-
-const FAT_FOODS = [
-  { name: "Olio Extravergine d'Oliva", kcal: 899, p: 0, c: 0, f: 100 },
-  { name: "Mandorle", kcal: 603, p: 22, c: 4, f: 55 },
   { name: "Burro d'Arachidi", kcal: 588, p: 25, c: 20, f: 50 },
   { name: "Avocado", kcal: 160, p: 2, c: 9, f: 15 },
   { name: "Noci", kcal: 654, p: 15, c: 14, f: 65 },
@@ -6671,103 +6750,6 @@ const FAT_FOODS = [
   { name: "Burro", kcal: 717, p: 0.9, c: 0.1, f: 81 },
   { name: "Cocco Essiccato", kcal: 660, p: 7, c: 24, f: 65 },
 ];
-
-const ALL_FOODS_DB = [...PROTEIN_FOODS, ...CARB_FOODS, ...FAT_FOODS];
-
-/* Vista organizzata per categoria, pronta per una futura UI a schede nella
-   ricerca alimenti (Carboidrati / Proteine / Grassi). */
-const FOOD_DB = { Carboidrati: CARB_FOODS, Proteine: PROTEIN_FOODS, Grassi: FAT_FOODS };
-
-
-/* Categoria dominante di un alimento in base a quale macro pesa di più in kcal. */
-function categorizeMacro(food) {
-  const pk = food.p * 4, ck = food.c * 4, fk = food.f * 9;
-  if (pk >= ck && pk >= fk) return "p";
-  if (ck >= pk && ck >= fk) return "c";
-  return "f";
-}
-
-function findFoodInText(text) {
-  const t = text.toLowerCase();
-  let best = null, bestLen = 0;
-  for (const f of ALL_FOODS_DB) {
-    const nameLower = f.name.toLowerCase();
-    if (t.includes(nameLower) && nameLower.length > bestLen) { best = f; bestLen = nameLower.length; }
-  }
-  return best;
-}
-
-function guessCategoryFromKeywords(text) {
-  const t = text.toLowerCase();
-  if (/pollo|tacchino|pesce|merluzzo|salmone|tonno|uov|carne|manzo|maiale|yogurt|bresaola|protein/.test(t)) return "p";
-  if (/riso|pasta|pane|patat|cereal|avena|farro|quinoa|banana|carboidrat/.test(t)) return "c";
-  if (/olio|burro|mandorl|noci|avocado|frutta secca|grass/.test(t)) return "f";
-  return null;
-}
-
-function parseGrams(text) {
-  const m = text.match(/(\d+(?:[.,]\d+)?)\s*g\b/i) || text.match(/(\d+(?:[.,]\d+)?)/);
-  if (!m) return 100;
-  return Math.max(1, parseFloat(m[1].replace(",", ".")));
-}
-
-/* Genera alternative sempre entro la stessa categoria macro dell'alimento
-   richiesto (proteica→proteica, carbo→carbo, lipidica→lipidica), pareggiando
-   la grammatura sulla quota del macro dominante. */
-// Sostituzione precisa al grammo: per ogni alternativa nel pool calcola la
-// grammatura ESATTA (arrotondata a 1 g, non più a 5 g) che pareggia la
-// macro dominante dell'alimento originale — è il modo corretto in nutrizione
-// clinica di sostituire una fonte proteica/di carboidrati/di grassi (stessa
-// quota della macro che conta per quella categoria, non le 4 macro a caso:
-// due alimenti diversi hanno rapporti macro diversi, nessuna grammatura di
-// UN SOLO alimento alternativo può pareggiare tutte e 4 le macro insieme a
-// meno che i due alimenti abbiano lo stesso identico rapporto). Fra le
-// alternative possibili, ordina per chi si avvicina di più anche alle
-// CALORIE totali dell'originale — il criterio in più richiesto esplicitamente,
-// non solo la macro dominante — così le prime proposte sono le migliori su
-// entrambi i fronti, non solo le prime del pool in ordine casuale.
-function generateSimilarFood(sourceText) {
-  const grams = parseGrams(sourceText);
-  const matched = findFoodInText(sourceText);
-  const category = matched ? categorizeMacro(matched) : (guessCategoryFromKeywords(sourceText) || "p");
-
-  const pool = category === "p" ? PROTEIN_FOODS : category === "c" ? CARB_FOODS : FAT_FOODS;
-  const refFood = matched || pool[0];
-  const dominantKey = category;
-  const refDominantGrams = (refFood[dominantKey] * grams) / 100;
-  const sourceKcal = (refFood.kcal * grams) / 100;
-
-  const candidates = pool
-    .filter((f) => f.name !== refFood.name)
-    .map((alt) => {
-      const altPer100Dominant = alt[dominantKey];
-      const altGrams = altPer100Dominant > 0
-        ? Math.max(1, Math.round((refDominantGrams / altPer100Dominant) * 100))
-        : 100;
-      const scale = altGrams / 100;
-      const altKcal = alt.kcal * scale;
-      return { alt, altGrams, scale, altKcal, kcalDiff: Math.abs(altKcal - sourceKcal) };
-    })
-    .sort((a, b) => a.kcalDiff - b.kcalDiff)
-    .slice(0, 3);
-
-  return candidates.map(({ alt, altGrams, scale, altKcal }) => {
-    const kcalDeltaPct = sourceKcal > 0 ? Math.round((Math.abs(altKcal - sourceKcal) / sourceKcal) * 100) : 0;
-    const kcalNote = kcalDeltaPct <= 3
-      ? "calorie praticamente identiche"
-      : `${Math.round(altKcal)} kcal contro ${Math.round(sourceKcal)} kcal originali`;
-    const note = category === "p"
-      ? `Stessa quota proteica (~${Math.round(refDominantGrams)} g), ${kcalNote}. Macro secondari leggermente diversi.`
-      : category === "c"
-      ? `Stessa quota di carboidrati (~${Math.round(refDominantGrams)} g), ${kcalNote}. Fibre e indice glicemico diversi.`
-      : `Stessa quota di grassi (~${Math.round(refDominantGrams)} g), ${kcalNote}. Profilo di grassi (saturi/insaturi) diverso.`;
-    return {
-      name: alt.name, grams: altGrams,
-      kcal: Math.round(altKcal), p: Math.round(alt.p * scale),
-      c: Math.round(alt.c * scale), f: Math.round(alt.f * scale), note,
-    };
-  });
-}
 
 const GUIDE = MEAL_SLOTS.map((_, i) => ({
   items: [{ name: F[i % F.length].name, grams: 80 + i * 10, kcal: 200 + i * 20 }],
@@ -7187,9 +7169,6 @@ export default function HomePreview({
     ? { nutrition: true, recovery: true, pro: true, paid: true }
     : { nutrition: true, recovery: true, pro: planTier === "PRO", paid: planTier === "BASE" || planTier === "PRO" };
 
-  const generateSimilar = (sourceText) =>
-    new Promise((res) => setTimeout(() => res(generateSimilarFood(sourceText)), 900));
-
   return (
     <div className={isControlled ? "app-root" : "app-root min-h-screen"} data-theme={dark ? "dark" : "light"}
          style={{ backgroundColor: isControlled ? "transparent" : (dark ? "#09090B" : "#FFFFFF"),
@@ -7373,7 +7352,6 @@ export default function HomePreview({
           }}
           onOpenScanner={() => {}} onOpenPhoto={() => {}} onAddCustomFood={addCustomFood}
           onCopyYesterday={() => {}} onShoppingList={() => {}}
-          onGenerateSimilar={generateSimilar}
           onApplyReschedule={() => {}} onDismissReschedule={() => {}}
           onUpgrade={() => {}}
         />
