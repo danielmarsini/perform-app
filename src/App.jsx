@@ -6,6 +6,8 @@ import HomeScreen from "./components/05_HomeDashboard.jsx";
 import { NewsTipsView, NewsTipsViewStyles } from "./components/06_NewsTipsView.jsx";
 import ProfileScreen, { SettingsDrawer } from "./components/08_ClientProfileView.jsx";
 import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
+import { subscribeToPush } from "./lib/pushNotifications.js";
+import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 
 // Caricati solo quando servono davvero (React.lazy → chunk separato), non
 // nel bundle iniziale: sono schermate secondarie (CoachDashboard esiste solo
@@ -203,7 +205,17 @@ export default function App() {
       <AuthScreen
         auth={auth}
         dark={dark}
-        onAuthenticated={({ user }) => setSession({ user })}
+        onAuthenticated={({ user, isNew }) => {
+          setSession({ user });
+          // Richiesta automatica su richiesta esplicita del coach: niente
+          // toggle da scovare nelle Impostazioni, il permesso del browser
+          // (l'unico vero "sì" possibile — nessun sito può attivarle da solo
+          // in silenzio) parte subito dopo la registrazione. Se il
+          // dispositivo/browser non supporta le push (es. iPhone non ancora
+          // aggiunto a Home, richiesto da Apple) fallisce silenziosamente:
+          // resta comunque attivabile a mano dal Profilo in un secondo momento.
+          if (isNew) subscribeToPush(supabase, user.id).catch(() => {});
+        }}
       />
     );
   }
@@ -238,6 +250,8 @@ export default function App() {
     <>
       {/* CSS scoped del modulo News/Tips: va montata una sola volta a livello App */}
       <NewsTipsViewStyles />
+
+      <AddToHomeScreenBanner accent={accent} dark={dark} />
 
       <Suspense fallback={<ScreenFallback dark={dark} />}>
       <AppShell

@@ -229,13 +229,22 @@ Deno.serve(async (req) => {
         row = { title: article.title, body: firstSentences(article.abstract, 3), bodyExtended: [article.abstract] }; // meglio inglese che niente
       }
 
+      // News legge come una notizia scientifica: citazione (Rivista, Anno) in
+      // chiaro nel testo, coerente con quel formato. Tips deve leggersi come
+      // un consiglio pratico, non una citazione accademica in mezzo al
+      // consiglio — niente "(Journal, Year)" incollato al testo, la fonte
+      // resta comunque verificabile mai nascosta, solo spostata nel link
+      // discreto sotto (SourceLink, vedi 06_NewsTipsView.jsx).
       const sourceLine = article.journal && article.year ? ` (${article.journal}, ${article.year})` : "";
+      const isNews = channel === "news";
       const { error: insertError } = await supabase.from("coach_news_tips").insert({
         channel,
         eyebrow: topic.eyebrow,
         title: row.title,
-        body: `${row.body}${sourceLine}`,
-        body_extended: [...row.bodyExtended, sourceLine ? `Fonte: studio reale pubblicato su${sourceLine}.` : null].filter(Boolean),
+        body: isNews ? `${row.body}${sourceLine}` : row.body,
+        body_extended: isNews
+          ? [...row.bodyExtended, sourceLine ? `Fonte: studio reale pubblicato su${sourceLine}.` : null].filter(Boolean)
+          : row.bodyExtended,
         source_query: pmid,
         published_at: new Date().toISOString(),
       });

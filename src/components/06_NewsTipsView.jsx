@@ -96,10 +96,17 @@ export function formatCountdown(ms) {
   return `${h}h ${m}m`;
 }
 
-/* Link reale e verificabile su PubMed a partire da parole chiave.
-   Mai un PMID o un DOI inventato. */
-export function pubmedSearchUrl(keywords) {
-  return `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(keywords)}`;
+/* Link reale e verificabile su PubMed. refresh-news-feed salva il PMID vero
+   dello studio pubblicato in source_query (es. "38234567") — in quel caso
+   punta dritto alla pagina dell'articolo invece che a una ricerca per
+   parole chiave, più preciso e mai ambiguo. I seed di anteprima usano
+   ancora parole chiave libere (mai un PMID/DOI inventato), quindi si
+   riconosce il caso reale con un semplice controllo "è tutto numerico". */
+export function pubmedSearchUrl(sourceQuery) {
+  if (/^\d+$/.test(String(sourceQuery).trim())) {
+    return `https://pubmed.ncbi.nlm.nih.gov/${sourceQuery}/`;
+  }
+  return `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(sourceQuery)}`;
 }
 
 /* Accento dinamico per icone e micro-bordi attivi. */
@@ -277,7 +284,20 @@ function VaultButton({ count, onClick }) {
   );
 }
 
-function SourceLink({ href, accent }) {
+/* News è pensata per leggere come una notizia scientifica — verificare la
+   fonte primaria ha senso in primo piano. Tips deve leggersi come un
+   consiglio pratico, non una citazione accademica: stesso link (mai un
+   consiglio senza uno studio reale dietro), ma un richiamo più discreto,
+   da nota a piè di pagina invece che da bottone in evidenza. */
+function SourceLink({ href, accent, channel }) {
+  if (channel === "tips") {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="source-link-subtle"
+         style={{ "--accent": accent }} onClick={(e) => e.stopPropagation()}>
+        Basato su uno studio scientifico reale · vedi la fonte
+      </a>
+    );
+  }
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className="source-link"
        style={{ "--accent": accent }} onClick={(e) => e.stopPropagation()}>
@@ -607,7 +627,7 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
             ))}
           </div>
 
-          {item.source_query && <SourceLink href={pubmedSearchUrl(item.source_query)} accent={accent} />}
+          {item.source_query && <SourceLink href={pubmedSearchUrl(item.source_query)} accent={accent} channel={channel} />}
 
           <div className="mt-8 pt-6 flex items-center justify-between" style={{ borderTop: "1px solid var(--line)" }}>
             <div className="flex items-center gap-5">
@@ -953,6 +973,13 @@ export function NewsTipsViewStyles() {
         border-color: var(--accent, var(--line));
         background: color-mix(in srgb, var(--accent, transparent) 8%, transparent);
       }
+      .source-link-subtle {
+        display: inline-block; margin-top: 1.2rem;
+        font-size: 0.7rem; font-weight: 400; font-style: italic;
+        color: var(--satin-gray); text-decoration: underline; text-underline-offset: 2px;
+        text-decoration-color: color-mix(in srgb, var(--satin-gray) 40%, transparent);
+      }
+      .source-link-subtle:hover { color: var(--accent, var(--ink)); }
 
       /* Lettura profonda: prima si apriva sempre in basso come un foglio a
          comparsa (align-items: flex-end) — spostato al centro dello
