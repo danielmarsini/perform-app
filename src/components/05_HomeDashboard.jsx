@@ -2464,13 +2464,70 @@ export function HomeDashboard({
    la distanza, niente dati finti — vuoto finché il cliente non registra
    davvero un'attività (stesso principio già applicato a sonno/passi).
    ========================================================================== */
+// BUG PRESO: "Canottaggio/Vogatore" mischiava in una sola voce la voga
+// all'aperto (che ha senso tracciare col GPS, si muove nello spazio) e il
+// vogatore da palestra (fermo, GPS inutile, ma con SPM/passo /500m — le
+// metriche che chi voga davvero guarda). Separati: canottaggio resta
+// all'aperto, "Vogatore" è ora un macchinario a sé con i suoi campi.
+//
+// group: "outdoor" (GPS reale possibile, vedi GPS_CAPABLE/LOOP_ROUTE_CAPABLE
+// sotto) o "machine" (fermo, mai GPS — la sezione mostra invece i campi di
+// MACHINE_FIELDS specifici per quell'attrezzo, non un form generico uguale
+// per tutti). "altro"/"nuoto" restano fuori da entrambi i gruppi: manuale
+// puro, nessun campo extra dedicato.
 const CARDIO_ACTIVITIES = [
-  { id: "corsa", label: "Corsa", icon: "🏃" },
-  { id: "camminata", label: "Camminata", icon: "🚶" },
-  { id: "bici", label: "Bici", icon: "🚴" },
+  { id: "corsa", label: "Corsa", icon: "🏃", group: "outdoor" },
+  { id: "camminata", label: "Camminata", icon: "🚶", group: "outdoor" },
+  { id: "bici", label: "Bici", icon: "🚴", group: "outdoor" },
+  { id: "canottaggio", label: "Canottaggio", icon: "🚣", group: "outdoor" },
   { id: "nuoto", label: "Nuoto", icon: "🏊" },
-  { id: "canottaggio", label: "Canottaggio/Vogatore", icon: "🚣" },
+  { id: "tapis_roulant", label: "Tapis Roulant", icon: "🏃‍♂️", group: "machine" },
+  { id: "cyclette", label: "Cyclette", icon: "🚲", group: "machine" },
+  { id: "ellittica", label: "Ellittica", icon: "🌀", group: "machine" },
+  { id: "vogatore", label: "Vogatore", icon: "🛶", group: "machine" },
+  { id: "scalatore", label: "Scalatore", icon: "🪜", group: "machine" },
   { id: "altro", label: "Altro", icon: "🔥" },
+];
+const CARDIO_ACTIVITY_GROUPS = [
+  { id: "outdoor", label: "All'aperto — GPS" },
+  { id: "machine", label: "In palestra" },
+  { id: null, label: "Altro" },
+];
+// Canottaggio resta GPS-capace (si muove davvero nello spazio, sull'acqua)
+// ma senza le strade da seguire di corsa/camminata/bici — LOOP_ROUTE_CAPABLE
+// è il sottoinsieme più stretto per cui ha senso chiedere a Mapbox un
+// percorso su strada.
+const GPS_CAPABLE = new Set(["corsa", "camminata", "bici", "canottaggio"]);
+const LOOP_ROUTE_CAPABLE = new Set(["corsa", "camminata", "bici"]);
+
+// Metriche reali per macchinario, non un form generico uguale per tutti:
+// ognuna è quella che chi usa davvero quell'attrezzo guarda sul display.
+const MACHINE_FIELDS = {
+  tapis_roulant: [
+    { key: "incline_pct", label: "Pendenza media (%)", placeholder: "es. 2.5", step: "0.5" },
+    { key: "speed_avg_kmh", label: "Velocità media (km/h)", placeholder: "es. 10.5", step: "0.1" },
+  ],
+  cyclette: [
+    { key: "resistance_level", label: "Resistenza (livello)", placeholder: "es. 12", step: "1" },
+    { key: "power_avg_w", label: "Potenza media (W)", placeholder: "es. 180", step: "1" },
+  ],
+  ellittica: [
+    { key: "resistance_level", label: "Resistenza (livello)", placeholder: "es. 8", step: "1" },
+  ],
+  vogatore: [
+    { key: "spm", label: "Colpi al minuto (SPM)", placeholder: "es. 24", step: "1" },
+    { key: "split_500m_sec", label: "Passo medio /500m (sec)", placeholder: "es. 128", step: "1" },
+  ],
+  scalatore: [
+    { key: "floors", label: "Piani saliti", placeholder: "es. 45", step: "1" },
+    { key: "resistance_level", label: "Resistenza (livello)", placeholder: "es. 10", step: "1" },
+  ],
+};
+
+const INTENSITY_STYLES = [
+  { id: "liss", label: "LISS", full: "Bassa intensità costante" },
+  { id: "moderate", label: "Moderata", full: "Ritmo medio, senza intervalli" },
+  { id: "hiit", label: "HIIT", full: "Alta intensità a intervalli" },
 ];
 
 function paceLabel(durationMin, distanceKm) {
@@ -2796,7 +2853,7 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
         <div className="px-5 py-5 flex-1 flex flex-col">
           {!tracking && points.length === 0 && (
             <div className="flex flex-wrap gap-1.5 mb-3">
-              {CARDIO_ACTIVITIES.map((a) => {
+              {CARDIO_ACTIVITIES.filter((a) => GPS_CAPABLE.has(a.id)).map((a) => {
                 const on = activityType === a.id;
                 return (
                   <button key={a.id} onClick={() => { setActivityType(a.id); setSuggestedRoute(null); }} type="button"
@@ -2810,7 +2867,7 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
             </div>
           )}
 
-          {!tracking && points.length === 0 && activityType !== "nuoto" && activityType !== "canottaggio" && (
+          {!tracking && points.length === 0 && LOOP_ROUTE_CAPABLE.has(activityType) && (
             subsAccess ? (
               suggestedRoute ? (
                 <div className="rounded-2xl px-4 py-3 mb-5 flex items-center justify-between gap-3"
@@ -2960,6 +3017,20 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
   const [error, setError] = useState("");
   const [gpsOpen, setGpsOpen] = useState(false);
   const [expandedRoute, setExpandedRoute] = useState(null); // id del log con la mappa aperta
+  const [intensityStyle, setIntensityStyle] = useState(null); // liss | moderate | hiit | null (non specificato)
+  const [hiitRounds, setHiitRounds] = useState("");
+  const [hiitWorkSec, setHiitWorkSec] = useState("");
+  const [hiitRestSec, setHiitRestSec] = useState("");
+  const [machineValues, setMachineValues] = useState({}); // { [fieldKey]: string }
+
+  const activityMeta = CARDIO_ACTIVITIES.find((a) => a.id === activityType);
+  const machineFields = MACHINE_FIELDS[activityType] || null;
+
+  const resetForm = () => {
+    setDuration(""); setDistance(""); setNotes("");
+    setIntensityStyle(null); setHiitRounds(""); setHiitWorkSec(""); setHiitRestSec("");
+    setMachineValues({});
+  };
 
   const loadLogs = useCallback(() => {
     if (!isRealMode) return;
@@ -2976,12 +3047,18 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
     setError("");
     setSaving(true);
     try {
+      const machineMetrics = {};
+      (machineFields || []).forEach((f) => {
+        if (machineValues[f.key]) machineMetrics[f.key] = Number(machineValues[f.key]);
+      });
       await addCardioLog(supabase, userId, {
         date: toLocalISODate(), activityType,
         durationMin: mins, distanceKm: distance ? Number(distance) : null, notes: notes.trim() || null,
+        intensityStyle, hiitRounds: Number(hiitRounds) || null, hiitWorkSec: Number(hiitWorkSec) || null, hiitRestSec: Number(hiitRestSec) || null,
+        machineMetrics,
       });
       haptic("confirm");
-      setDuration(""); setDistance(""); setNotes("");
+      resetForm();
       loadLogs();
     } catch (err) {
       console.error("PERFORM: errore salvataggio attività cardio", err);
@@ -3020,45 +3097,60 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
       </div>
       <p className="h1 mb-3">Registra un'attività</p>
 
-      {/* Tracciamento GPS reale (percorso su mappa, distanza/passo dai punti
-          veri) accanto all'inserimento manuale di sempre — non lo sostituisce,
-          per chi preferisce scrivere i numeri a mano dopo o non vuole tenere
-          il telefono con il GPS attivo per tutta la sessione. */}
-      <button onClick={() => setGpsOpen(true)} type="button"
-        className="w-full flex items-center justify-center gap-2.5 rounded-2xl px-4 py-4 text-sm mb-3 btn-3d transition-transform active:scale-[0.98]"
-        style={{
-          backgroundImage: "linear-gradient(120deg, var(--title-a), var(--title-b))",
-          color: "#FFFFFF", fontWeight: 800, boxShadow: "0 10px 24px -8px rgba(0,0,0,0.35)",
-        }}>
-        <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.22)" }}>
-          <Route size={16} />
-        </span>
-        <span className="text-left">
-          <span className="block" style={{ fontSize: "0.9rem", lineHeight: 1.15 }}>Traccia con GPS</span>
-          <span className="block" style={{ fontSize: "0.65rem", fontWeight: 500, opacity: 0.85 }}>percorso, distanza e passo in tempo reale</span>
-        </span>
-      </button>
-      <div className="flex items-center gap-2 mb-4">
-        <div className="flex-1 h-px" style={{ backgroundColor: "var(--line)" }} />
-        <p className="meta" style={{ fontSize: "0.65rem" }}>oppure inserisci a mano</p>
-        <div className="flex-1 h-px" style={{ backgroundColor: "var(--line)" }} />
-      </div>
+      {/* Il tipo di attività va scelto PRIMA di tutto: da lì dipende sia se
+          mostrare "Traccia con GPS" (ha senso solo all'aperto, mai su un
+          macchinario fermo) sia quali campi extra servono davvero. Raggruppati
+          per categoria (all'aperto/palestra/altro) invece di un'unica fila di
+          11 pill indistinte — si capisce a colpo d'occhio cosa è tracciabile
+          col GPS e cosa no. */}
+      {CARDIO_ACTIVITY_GROUPS.map((g) => {
+        const items = CARDIO_ACTIVITIES.filter((a) => (a.group || null) === g.id);
+        if (items.length === 0) return null;
+        return (
+          <div key={g.id || "altro"} className="mb-2.5">
+            <p className="meta mb-1.5" style={{ fontSize: "0.62rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>{g.label}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {items.map((a) => {
+                const on = activityType === a.id;
+                return (
+                  <button key={a.id} onClick={() => { setActivityType(a.id); setMachineValues({}); }} type="button"
+                    className="rounded-full px-3 py-2 text-xs flex items-center gap-1.5 transition-transform active:scale-95"
+                    style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700, boxShadow: `0 3px 10px ${accent}55` }
+                              : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                    <span aria-hidden="true">{a.icon}</span>{a.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        {CARDIO_ACTIVITIES.map((a) => {
-          const on = activityType === a.id;
-          return (
-            <button key={a.id} onClick={() => setActivityType(a.id)} type="button"
-              className="rounded-full px-3 py-2 text-xs flex items-center gap-1.5 transition-transform active:scale-95"
-              style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700, boxShadow: `0 3px 10px ${accent}55` }
-                        : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
-              <span aria-hidden="true">{a.icon}</span>{a.label}
-            </button>
-          );
-        })}
-      </div>
+      {GPS_CAPABLE.has(activityType) && (
+        <>
+          <button onClick={() => setGpsOpen(true)} type="button"
+            className="w-full flex items-center justify-center gap-2.5 rounded-2xl px-4 py-4 text-sm mt-3 mb-3 btn-3d transition-transform active:scale-[0.98]"
+            style={{
+              backgroundImage: "linear-gradient(120deg, var(--title-a), var(--title-b))",
+              color: "#FFFFFF", fontWeight: 800, boxShadow: "0 10px 24px -8px rgba(0,0,0,0.35)",
+            }}>
+            <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.22)" }}>
+              <Route size={16} />
+            </span>
+            <span className="text-left">
+              <span className="block" style={{ fontSize: "0.9rem", lineHeight: 1.15 }}>Traccia con GPS</span>
+              <span className="block" style={{ fontSize: "0.65rem", fontWeight: 500, opacity: 0.85 }}>percorso, distanza e passo in tempo reale</span>
+            </span>
+          </button>
+          <div className="flex items-center gap-2 mb-4">
+            <div className="flex-1 h-px" style={{ backgroundColor: "var(--line)" }} />
+            <p className="meta" style={{ fontSize: "0.65rem" }}>oppure inserisci a mano</p>
+            <div className="flex-1 h-px" style={{ backgroundColor: "var(--line)" }} />
+          </div>
+        </>
+      )}
 
-      <div className="grid grid-cols-2 gap-3 mb-3">
+      <div className="grid grid-cols-2 gap-3 mb-3 mt-3">
         <label className="block">
           <span className="label block mb-1.5">Durata (min)</span>
           <input type="number" min="1" value={duration} onChange={(e) => setDuration(e.target.value)}
@@ -3070,6 +3162,64 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
             placeholder="es. 5.2" className="input w-full px-4 py-3 font-data" />
         </label>
       </div>
+
+      {/* Campi specifici del macchinario: quelli che chi lo usa davvero legge
+          sul display — non un form generico identico per tapis roulant e
+          vogatore. */}
+      {machineFields && (
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          {machineFields.map((f) => (
+            <label key={f.key} className="block">
+              <span className="label block mb-1.5">{f.label}</span>
+              <input type="number" step={f.step} value={machineValues[f.key] || ""}
+                onChange={(e) => setMachineValues((m) => ({ ...m, [f.key]: e.target.value }))}
+                placeholder={f.placeholder} className="input w-full px-4 py-3 font-data" />
+            </label>
+          ))}
+        </div>
+      )}
+
+      {/* Stile di intensità: si applica a qualunque attività, non solo alle
+          macchine — è una scelta di metodo (costante vs a intervalli), mai
+          obbligatoria (facoltativo → nessuna etichetta, non "moderata" di
+          default: mai un dato mai scelto dall'atleta). */}
+      <div className="mb-3">
+        <span className="label block mb-1.5">Intensità (facoltativo)</span>
+        <div className="flex gap-1.5">
+          {INTENSITY_STYLES.map((s) => {
+            const on = intensityStyle === s.id;
+            return (
+              <button key={s.id} type="button" onClick={() => setIntensityStyle(on ? null : s.id)}
+                title={s.full}
+                className="flex-1 rounded-xl px-2 py-2.5 text-xs transition-transform active:scale-95"
+                style={on ? { backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }
+                          : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+        {intensityStyle === "hiit" && (
+          <div className="grid grid-cols-3 gap-2 mt-2.5">
+            <label className="block">
+              <span className="label block mb-1" style={{ fontSize: "0.58rem" }}>Round</span>
+              <input type="number" min="1" value={hiitRounds} onChange={(e) => setHiitRounds(e.target.value)}
+                placeholder="es. 8" className="input w-full px-3 py-2.5 font-data text-sm" />
+            </label>
+            <label className="block">
+              <span className="label block mb-1" style={{ fontSize: "0.58rem" }}>Lavoro (sec)</span>
+              <input type="number" min="1" value={hiitWorkSec} onChange={(e) => setHiitWorkSec(e.target.value)}
+                placeholder="es. 30" className="input w-full px-3 py-2.5 font-data text-sm" />
+            </label>
+            <label className="block">
+              <span className="label block mb-1" style={{ fontSize: "0.58rem" }}>Recupero (sec)</span>
+              <input type="number" min="0" value={hiitRestSec} onChange={(e) => setHiitRestSec(e.target.value)}
+                placeholder="es. 90" className="input w-full px-3 py-2.5 font-data text-sm" />
+            </label>
+          </div>
+        )}
+      </div>
+
       <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
         placeholder="Note (facoltativo, es. percorso, sensazioni...)"
         className="input w-full px-4 py-3 text-sm mb-3" />
@@ -3100,6 +3250,11 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
             const meta = CARDIO_ACTIVITIES.find((a) => a.id === l.activity_type) || CARDIO_ACTIVITIES[CARDIO_ACTIVITIES.length - 1];
             const pace = paceLabel(l.duration_min, l.distance_km);
             const hasRoute = Array.isArray(l.route) && l.route.length > 1;
+            const intensityMeta = INTENSITY_STYLES.find((s) => s.id === l.intensity_style);
+            const machineFieldsForLog = MACHINE_FIELDS[l.activity_type] || [];
+            const machineSummary = machineFieldsForLog
+              .filter((f) => l.machine_metrics?.[f.key] != null)
+              .map((f) => `${f.label.replace(/\s*\(.*\)$/, "")} ${l.machine_metrics[f.key]}`);
             return (
               <div key={l.id} className="rounded-2xl px-4 py-3.5" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
                 <div className="flex items-center justify-between gap-3">
@@ -3108,15 +3263,30 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
                       {meta.icon}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>
+                      <p className="text-sm flex items-center flex-wrap gap-1.5" style={{ color: "var(--ink)", fontWeight: 700 }}>
                         {meta.label}
                         <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>
-                          {" · "}{new Date(`${l.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
+                          · {new Date(`${l.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
                         </span>
+                        {intensityMeta && (
+                          <span className="rounded-full px-2 py-0.5 font-data" style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: `${accent}20`, color: accent }}>
+                            {intensityMeta.label}
+                          </span>
+                        )}
                       </p>
                       <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-soft)" }}>
                         {l.duration_min} min{l.distance_km ? ` · ${l.distance_km} km` : ""}{pace ? ` · ${pace}` : ""}
                       </p>
+                      {l.intensity_style === "hiit" && l.hiit_rounds && (
+                        <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-tertiary)" }}>
+                          {l.hiit_rounds}× {l.hiit_work_sec}s lavoro / {l.hiit_rest_sec}s recupero
+                        </p>
+                      )}
+                      {machineSummary.length > 0 && (
+                        <p className="font-data text-xs mt-0.5" style={{ color: "var(--ink-tertiary)" }}>
+                          {machineSummary.join(" · ")}
+                        </p>
+                      )}
                       {l.notes && <p className="meta text-xs mt-0.5 leading-relaxed">{l.notes}</p>}
                     </div>
                   </div>
