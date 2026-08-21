@@ -5391,12 +5391,23 @@ function NutritionTabs({
                           <div className="absolute z-30 left-0 right-0 mt-1.5 rounded-xl overflow-hidden"
                                style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)",
                                         boxShadow: "0 16px 40px rgba(0,0,0,0.16)", maxHeight: 288, overflowY: "auto" }}>
+                            {/* Kcal/macro per 100g già in dropdown, non solo dopo aver scelto:
+                                pane, pasta, yogurt... esistono in decine di varianti con valori
+                                diversi — l'utente riconosce quello giusto (o il più vicino a
+                                quello mangiato) dai numeri, non deve indovinarlo dal solo nome. */}
                             {filtered.map((f) => (
                               <button key={f.name}
                                 onMouseDown={() => { setSelected(f); setQuery(f.name); setDropOpen(false); }}
-                                className="search-strong w-full text-left px-4 py-3"
+                                className="search-strong w-full text-left px-4 py-2.5"
                                 style={{ borderBottom: "1px solid var(--line)" }}>
-                                {f.name}
+                                <span className="block truncate">{f.name}</span>
+                                <span className="font-data flex gap-2.5 mt-0.5" style={{ fontSize: "0.68rem", fontWeight: 600 }}>
+                                  <span style={{ color: MACRO_COLORS.kcal.base }}>{f.kcal} kcal</span>
+                                  <span style={{ color: MACRO_COLORS.p.base }}>P{f.p}</span>
+                                  <span style={{ color: MACRO_COLORS.c.base }}>C{f.c}</span>
+                                  <span style={{ color: MACRO_COLORS.f.base }}>G{f.f}</span>
+                                  <span style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>/100g</span>
+                                </span>
                               </button>
                             ))}
                             {filtered.length === 0 && (
@@ -5712,9 +5723,16 @@ function SubsPanel({ substitutions, foods, accent, accentSoft, accentText }) {
               {filtered.map((f) => (
                 <button key={f.name}
                   onMouseDown={() => { setSource(f); setQuery(f.name); setDropOpen(false); }}
-                  className="search-strong w-full text-left px-4 py-3"
+                  className="search-strong w-full text-left px-4 py-2.5"
                   style={{ borderBottom: "1px solid var(--line)" }}>
-                  {f.name}
+                  <span className="block truncate">{f.name}</span>
+                  <span className="font-data flex gap-2.5 mt-0.5" style={{ fontSize: "0.68rem", fontWeight: 600 }}>
+                    <span style={{ color: MACRO_COLORS.kcal.base }}>{f.kcal} kcal</span>
+                    <span style={{ color: MACRO_COLORS.p.base }}>P{f.p}</span>
+                    <span style={{ color: MACRO_COLORS.c.base }}>C{f.c}</span>
+                    <span style={{ color: MACRO_COLORS.f.base }}>G{f.f}</span>
+                    <span style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>/100g</span>
+                  </span>
                 </button>
               ))}
               {filtered.length === 0 && <p className="meta text-sm px-4 py-3">Nessun risultato per "{query}".</p>}

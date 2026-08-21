@@ -2266,6 +2266,42 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   }));
   const removeEx = (i) => setDay((d) => ({ ...d, exercises: d.exercises.filter((_, j) => j !== i) }));
   const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, sets: 3, reps: "8-10", rest: 120, rirTarget: "", technique: "Nessuna" }] }));
+
+  // Elimina l'intera giornata (tutti gli esercizi, non solo uno): conferma
+  // in due tocchi invece di un window.confirm nativo — è distruttivo (nessun
+  // annulla) ma un solo click accidentale non deve bastare a cancellarla.
+  const [confirmDeleteDay, setConfirmDeleteDay] = useState(false);
+  const deleteDayRef = useRef(null);
+  const deleteDay = () => {
+    if (!confirmDeleteDay) {
+      setConfirmDeleteDay(true);
+      deleteDayRef.current = setTimeout(() => setConfirmDeleteDay(false), 3000);
+      return;
+    }
+    clearTimeout(deleteDayRef.current);
+    setConfirmDeleteDay(false);
+    setDay(() => null);
+  };
+  useEffect(() => { setConfirmDeleteDay(false); }, [selDay]);
+
+  // Copia la giornata corrente su altri giorni della settimana — utile per
+  // le frequenze alte (stesso allenamento ripetuto 2-3 volte a settimana):
+  // esercizi clonati con id nuovi (stesso principio di deepCloneWeek più
+  // sotto), mai gli stessi riferimenti condivisi fra giorni diversi.
+  const [copyPickerOpen, setCopyPickerOpen] = useState(false);
+  const [copyTargets, setCopyTargets] = useState([]);
+  const toggleCopyTarget = (i) => setCopyTargets((t) => (t.includes(i) ? t.filter((x) => x !== i) : [...t, i]));
+  const applyCopyDay = () => {
+    if (!day || copyTargets.length === 0) return;
+    onChange({
+      ...week,
+      workout: week.workout.map((d, i) => (copyTargets.includes(i)
+        ? { label: day.label, exercises: day.exercises.map((e) => ({ ...e, id: uid() })) }
+        : d)),
+    });
+    setCopyPickerOpen(false);
+    setCopyTargets([]);
+  };
   const volume = useMemo(() => computeVolume(week.workout, exerciseLib), [week.workout, exerciseLib]);
   const [savedToLib, setSavedToLib] = useState({}); // { exId: true } — feedback visivo dopo "Salva in libreria"
   const saveExerciseToLib = async (ex) => {
@@ -2302,10 +2338,57 @@ function WeekWorkoutEditor({ week, onChange, client }) {
         <button onClick={toggleRest} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium mb-5">Trasforma in giorno di allenamento</button>
       ) : (
         <div className="c-card mb-5">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <input value={day.label} onChange={(e) => setDay((d) => ({ ...d, label: e.target.value }))} className="t-input flex-1 text-sm rounded-lg px-3 py-2" />
-            <button onClick={toggleRest} className="c-ghost px-3 py-2 rounded-lg text-xs font-data uppercase">Riposo</button>
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <input value={day.label} onChange={(e) => setDay((d) => ({ ...d, label: e.target.value }))} className="t-input flex-1 min-w-[140px] text-sm rounded-lg px-3 py-2" />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button onClick={() => { setCopyPickerOpen((v) => !v); setCopyTargets([]); }}
+                className="c-ghost px-3 py-2 rounded-lg text-xs font-data uppercase">
+                Copia su…
+              </button>
+              <button onClick={toggleRest} className="c-ghost px-3 py-2 rounded-lg text-xs font-data uppercase">Riposo</button>
+              <button onClick={deleteDay}
+                className="px-3 py-2 rounded-lg text-xs font-data uppercase transition-colors"
+                style={confirmDeleteDay ? { backgroundColor: "#DC2626", color: "#FFFFFF" } : { backgroundColor: "transparent", border: "1px solid #FCA5A5", color: "#DC2626" }}>
+                {confirmDeleteDay ? "Conferma?" : "Elimina giornata"}
+              </button>
+            </div>
           </div>
+
+          {/* Copia questa giornata (esercizi inclusi) su altri giorni della
+              settimana — pensato per le frequenze alte, stesso allenamento
+              ripetuto 2-3 volte a settimana senza doverlo ricostruire a mano
+              ogni volta. */}
+          {copyPickerOpen && (
+            <div className="t-inner px-3 py-3 mb-3">
+              <p className="c-label mb-2">Copia "{day.label}" su:</p>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {WEEK_DAYS.map((label, i) => {
+                  if (i === selDay) return null;
+                  const on = copyTargets.includes(i);
+                  return (
+                    <button key={i} type="button" onClick={() => toggleCopyTarget(i)}
+                      className="rounded-lg px-3 py-2 text-xs font-data uppercase transition-colors"
+                      style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+                      {label}{!week.workout[i] && " · riposo"}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={applyCopyDay} disabled={copyTargets.length === 0}
+                  className="c-btn px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-40">
+                  Copia su {copyTargets.length || ""} {copyTargets.length === 1 ? "giorno" : "giorni"}
+                </button>
+                <button onClick={() => { setCopyPickerOpen(false); setCopyTargets([]); }} className="c-ghost px-3 py-2 rounded-lg text-xs font-data uppercase">
+                  Annulla
+                </button>
+              </div>
+              <p className="c-muted text-[10px] mt-2">
+                Sovrascrive gli esercizi già presenti nei giorni selezionati — non li somma.
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2.5 mb-3">
             {day.exercises.map((ex, i) => (
               <div key={ex.id} className="t-inner px-3 py-3">
@@ -2373,7 +2456,14 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                                 const next = active ? cur.filter((x) => x !== m) : [...cur, m];
                                 updateEx(i, "synergists", next);
                               }}
-                              className={`px-2 py-1 rounded-full text-[11px] border transition-colors ${active ? "bg-[var(--ink)] text-white border-[var(--ink)]" : "c-ghost border-[var(--line)]"}`}
+                              // BUG PRESO: text-white fisso su bg-[var(--ink)] — --ink è scuro in
+                              // tema chiaro ma CHIARO in tema scuro (vedi DesignSystem, File 4), quindi
+                              // in dark mode diventava testo bianco su sfondo quasi bianco, illeggibile
+                              // dopo il click. var(--page) è sempre il colore che contrasta con --ink
+                              // in entrambi i temi, per costruzione (è la coppia sfondo/testo base
+                              // dell'intero design system).
+                              className={`px-2 py-1 rounded-full text-[11px] border transition-colors ${active ? "bg-[var(--ink)] border-[var(--ink)]" : "c-ghost border-[var(--line)]"}`}
+                              style={active ? { color: "var(--page)" } : undefined}
                             >
                               {m}
                             </button>
