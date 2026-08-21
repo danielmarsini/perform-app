@@ -4966,12 +4966,48 @@ async function lookupBarcodeProduct(barcode) {
 
 /* Fotocamera in diretta + decodifica barcode client-side (ZXing, nessun
    server coinvolto nella lettura): funziona anche su iOS Safari, dove
-   l'API nativa BarcodeDetector non esiste. */
+   l'API nativa BarcodeDetector non esiste.
+   BUG PRESO (3 segnalati insieme):
+   1. "Non è veloce e non prende tutti i codici, alcuni in verticale" —
+      detect() guardava solo il fotogramma così com'è. Un barcode stampato
+      verticale sulla confezione (comune) ha bassa probabilità di essere
+      letto da un motore ottimizzato per barre orizzontali. Ora un
+      fotogramma ogni 3 viene ANCHE provato ruotato di 90° su un canvas
+      offscreen — quasi nessun costo in più (un frame su tre), ma i codici
+      verticali ora vengono davvero intercettati. Aggiunta anche una
+      richiesta di risoluzione più alta (1920×1080 ideale, non il default
+      spesso basso del browser) e autofocus continuo dove il dispositivo lo
+      espone — entrambi shorthand per "a fuoco e leggibile", non solo
+      "veloce".
+   2. "Quando scrivo il codice a mano si bugga la fotocamera" — il video
+      era sempre a schermo intero con altezza flessibile (flex-1): quando
+      si apre la tastiera per scrivere, il viewport visibile si restringe
+      di colpo e quel contenitore si ridimensionava sotto al video live in
+      diretta, dando l'effetto di schermata che "salta"/si rompe. Ora
+      scrivere a mano è una modalità A SÉ (si passa da un link, non un
+      campo sempre visibile sotto alla fotocamera): la fotocamera si
+      nasconde del tutto e la traccia video si disattiva (niente calcolo
+      sprecato mentre l'attenzione è sulla tastiera), niente più
+      ridimensionamento in conflitto con la tastiera. */
 function BarcodeScannerModal({ onDetected, onClose, accent }) {
   const videoRef = useRef(null);
   const [status, setStatus] = useState("starting"); // starting | scanning | denied | error
   const [errorMsg, setErrorMsg] = useState("");
   const [manualCode, setManualCode] = useState("");
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
+  const manualEntryOpenRef = useRef(false);
+  const trackRef = useRef(null);
+  const rotationCanvasRef = useRef(null);
+
+  useEffect(() => {
+    manualEntryOpenRef.current = manualEntryOpen;
+    // Niente frame da decodificare mentre si scrive a mano: disattivare la
+    // traccia video (non fermarla) permette di riattivarla istantaneamente
+    // tornando alla fotocamera, senza dover richiedere di nuovo il permesso
+    // o ricreare lo stream.
+    if (trackRef.current) trackRef.current.enabled = !manualEntryOpen;
+  }, [manualEntryOpen]);
+
   // BUG EVITATO: onDetected è una funzione inline nel genitore, ricreata ad
   // ogni suo render — se fosse nell'array di dipendenze dell'effetto sotto,
   // ogni render di NutritionTabs (es. digitando in un altro campo) avrebbe
@@ -4988,11 +5024,26 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
 
     async function startScanning() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+        });
       } catch (err) {
         throw err; // permesso negato o nessuna fotocamera — gestito nel catch sotto
       }
       if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+      const track = stream.getVideoTracks()[0];
+      trackRef.current = track;
+
+      // Autofocus continuo dove il dispositivo lo espone (non tutti i
+      // browser/fotocamere lo supportano): un codice a barre va letto da
+      // vicino, l'autofocus di default a volte resta tarato su distanza
+      // media e sfoca proprio l'inquadratura ravvicinata che serve qui.
+      try {
+        const caps = track.getCapabilities?.();
+        if (caps?.focusMode?.includes("continuous")) {
+          await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+        }
+      } catch { /* non supportato: si scansiona comunque con l'autofocus di default */ }
 
       const video = videoRef.current;
       video.srcObject = stream;
@@ -5016,10 +5067,29 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
         } catch {
           detector = new window.BarcodeDetector();
         }
+        let frameCount = 0;
         const loop = async () => {
           if (cancelled) return;
+          if (manualEntryOpenRef.current) { rafId = requestAnimationFrame(loop); return; } // in pausa mentre si scrive a mano
           try {
-            const codes = await detector.detect(video);
+            frameCount++;
+            // Un fotogramma ogni 3 viene provato anche ruotato di 90°, per
+            // intercettare i codici stampati in verticale sulla confezione
+            // senza raddoppiare il costo di calcolo su OGNI fotogramma.
+            let source = video;
+            if (frameCount % 3 === 0 && video.videoWidth && video.videoHeight) {
+              const canvas = rotationCanvasRef.current || (rotationCanvasRef.current = document.createElement("canvas"));
+              const vw = video.videoWidth, vh = video.videoHeight;
+              canvas.width = vh; canvas.height = vw;
+              const ctx = canvas.getContext("2d");
+              ctx.save();
+              ctx.translate(vh / 2, vw / 2);
+              ctx.rotate(Math.PI / 2);
+              ctx.drawImage(video, -vw / 2, -vh / 2);
+              ctx.restore();
+              source = canvas;
+            }
+            const codes = await detector.detect(source);
             if (codes.length > 0) { onDetectedRef.current(codes[0].rawValue); return; }
           } catch {
             // frame non ancora pronto o errore di decodifica transitorio: si riprova al giro dopo
@@ -5030,11 +5100,18 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
         return;
       }
 
-      const { BrowserMultiFormatReader } = await import("@zxing/browser");
+      const [{ BrowserMultiFormatReader }, zxingLib] = await Promise.all([
+        import("@zxing/browser"), import("@zxing/library"),
+      ]);
       if (cancelled) return;
-      const reader = new BrowserMultiFormatReader();
+      // TRY_HARDER: zxing prova anche letture più costose (incluse rotazioni
+      // marcate) invece di arrendersi al primo tentativo pulito — su iOS
+      // Safari, unica via senza BarcodeDetector nativo, vale il costo extra.
+      const hints = new Map();
+      hints.set(zxingLib.DecodeHintType.TRY_HARDER, true);
+      const reader = new BrowserMultiFormatReader(hints);
       zxingControls = await reader.decodeFromStream(stream, video, (result) => {
-        if (cancelled || !result) return;
+        if (cancelled || !result || manualEntryOpenRef.current) return;
         onDetectedRef.current(result.getText());
       });
     }
@@ -5069,7 +5146,9 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
         style={{ backgroundColor: "#0A0A0C", paddingTop: "env(safe-area-inset-top)" }}>
         <div className="flex items-center justify-between px-5 py-4">
           <div>
-            <p className="text-sm font-semibold" style={{ color: "#FFFFFF" }}>Codice a barre</p>
+            <p className="text-sm font-semibold" style={{ color: "#FFFFFF" }}>
+              {manualEntryOpen ? "Scrivi il codice" : "Codice a barre"}
+            </p>
             <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.68rem" }}>Open Food Facts — database aperto e gratuito</p>
           </div>
           <button onClick={onClose} aria-label="Chiudi"
@@ -5079,58 +5158,75 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
           </button>
         </div>
 
-        <div className="relative flex-1 overflow-hidden mx-5 rounded-3xl" data-no-swipe="true" style={{ minHeight: 220 }}>
-          <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
-          {status === "scanning" && (
-            <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 pointer-events-none">
-              <div className="relative rounded-2xl" style={{ height: 130, boxShadow: "0 0 0 2000px rgba(0,0,0,0.5)" }}>
-                {[["top", "left"], ["top", "right"], ["bottom", "left"], ["bottom", "right"]].map(([v, h]) => (
-                  <div key={`${v}-${h}`} className="absolute" style={{
-                    [v]: -2, [h]: -2, width: 26, height: 26,
-                    borderTop: v === "top" ? `3px solid ${accent}` : "none",
-                    borderBottom: v === "bottom" ? `3px solid ${accent}` : "none",
-                    borderLeft: h === "left" ? `3px solid ${accent}` : "none",
-                    borderRight: h === "right" ? `3px solid ${accent}` : "none",
-                    borderRadius: 6,
-                  }} />
-                ))}
-              </div>
-            </div>
-          )}
-          {(status === "denied" || status === "error") && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
-              <AlertTriangle size={26} style={{ color: "#F0A020" }} />
-              <p className="text-sm" style={{ color: "#FFFFFF" }}>
-                {status === "denied" ? "Serve il permesso della fotocamera per scansionare — controlla le impostazioni del browser." : errorMsg}
+        {manualEntryOpen ? (
+          // Modalità a sé, non un campo sotto alla fotocamera in diretta:
+          // niente più conflitto di ridimensionamento con la tastiera che
+          // si apre — vedi BUG PRESO in cima al file.
+          <div className="flex-1 flex flex-col px-5 py-2">
+            <form onSubmit={submitManualCode} className="flex-1 flex flex-col justify-center">
+              <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.75rem" }} className="mb-3">
+                Il codice a barre è stampato sotto le barre nere, di solito 8 o 13 cifre.
               </p>
-            </div>
-          )}
-          {status === "starting" && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 size={26} className="animate-spin" style={{ color: "#FFFFFF" }} />
-            </div>
-          )}
-        </div>
-
-        {/* Fallback sempre visibile, non solo se la fotocamera fallisce: un
-            codice illeggibile (etichetta rovinata, scarsa luce) o nessuna
-            fotocamera restano gestibili senza bloccare il cliente. */}
-        <form onSubmit={submitManualCode} className="px-5 py-4">
-          <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.68rem" }} className="mb-2">
-            Il codice non si legge? Scrivilo a mano:
-          </p>
-          <div className="flex gap-2">
-            <input type="text" inputMode="numeric" value={manualCode} onChange={(e) => setManualCode(e.target.value)}
-              placeholder="es. 8001505005707" aria-label="Codice a barre manuale"
-              className="flex-1 min-w-0 rounded-xl px-4 py-3 text-sm font-data"
-              style={{ backgroundColor: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#FFFFFF" }} />
-            <button type="submit" disabled={!manualCode.trim()}
-              className="shrink-0 rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-40"
-              style={{ backgroundColor: accent, color: "#FFFFFF" }}>
-              Cerca
+              <input type="text" inputMode="numeric" value={manualCode} onChange={(e) => setManualCode(e.target.value)}
+                placeholder="es. 8001505005707" aria-label="Codice a barre manuale" autoFocus
+                className="w-full rounded-xl px-4 py-4 text-lg font-data mb-3"
+                style={{ backgroundColor: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", color: "#FFFFFF" }} />
+              <button type="submit" disabled={!manualCode.trim()}
+                className="w-full rounded-xl px-4 py-3.5 text-sm font-semibold disabled:opacity-40"
+                style={{ backgroundColor: accent, color: "#FFFFFF" }}>
+                Cerca
+              </button>
+            </form>
+            <button onClick={() => setManualEntryOpen(false)}
+              className="text-sm py-4 text-center"
+              style={{ color: "rgba(255,255,255,0.6)" }}>
+              ← Torna alla fotocamera
             </button>
           </div>
-        </form>
+        ) : (
+          <>
+            <div className="relative flex-1 overflow-hidden mx-5 rounded-3xl" data-no-swipe="true" style={{ minHeight: 220 }}>
+              <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
+              {status === "scanning" && (
+                <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <div className="relative rounded-2xl" style={{ height: 130, boxShadow: "0 0 0 2000px rgba(0,0,0,0.5)" }}>
+                    {[["top", "left"], ["top", "right"], ["bottom", "left"], ["bottom", "right"]].map(([v, h]) => (
+                      <div key={`${v}-${h}`} className="absolute" style={{
+                        [v]: -2, [h]: -2, width: 26, height: 26,
+                        borderTop: v === "top" ? `3px solid ${accent}` : "none",
+                        borderBottom: v === "bottom" ? `3px solid ${accent}` : "none",
+                        borderLeft: h === "left" ? `3px solid ${accent}` : "none",
+                        borderRight: h === "right" ? `3px solid ${accent}` : "none",
+                        borderRadius: 6,
+                      }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {(status === "denied" || status === "error") && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
+                  <AlertTriangle size={26} style={{ color: "#F0A020" }} />
+                  <p className="text-sm" style={{ color: "#FFFFFF" }}>
+                    {status === "denied" ? "Serve il permesso della fotocamera per scansionare — controlla le impostazioni del browser." : errorMsg}
+                  </p>
+                </div>
+              )}
+              {status === "starting" && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Loader2 size={26} className="animate-spin" style={{ color: "#FFFFFF" }} />
+                </div>
+              )}
+            </div>
+
+            {/* Sempre visibile, non solo se la fotocamera fallisce: un
+                codice illeggibile (etichetta rovinata, scarsa luce) o nessuna
+                fotocamera restano gestibili senza bloccare il cliente. */}
+            <button onClick={() => setManualEntryOpen(true)} className="px-5 py-4 text-sm text-center"
+              style={{ color: "rgba(255,255,255,0.6)" }}>
+              Il codice non si legge? <span style={{ color: accent, fontWeight: 600 }}>Scrivilo a mano</span>
+            </button>
+          </>
+        )}
       </div>
     </Portal>
   );
