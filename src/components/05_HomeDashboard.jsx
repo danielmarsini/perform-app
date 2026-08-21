@@ -26,6 +26,7 @@ import {
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
+import { isMapboxConfigured, snapRouteToRoads, generateLoopRoute } from "../lib/mapbox.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
@@ -2416,7 +2417,7 @@ export function HomeDashboard({
         );
       })()}
 
-      <CardioSection supabase={supabase} userId={userId} accent={accent} />
+      <CardioSection supabase={supabase} userId={userId} accent={accent} subsAccess={access.paid} onUpgrade={onUpgrade} />
 
       {!access.pro && <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
         text="Sonno e passi dicono molto, ma solo se qualcuno li legge nel contesto giusto. Fatti aiutare da un professionista del settore che li integra nel tuo piano completo: vedi gli abbonamenti per iniziare." />}
@@ -2464,10 +2465,11 @@ function haversineKm(a, b) {
    (import dinamico) quando una mappa serve davvero. `live=true` ricentra
    la vista sull'ultimo punto ad ogni aggiornamento (tracciamento in
    corso); `live=false` inquadra l'intero percorso una volta sola (storico). */
-function RouteMap({ points, live, accent, height = 220 }) {
+function RouteMap({ points, live, accent, height = 220, guidePoints }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polylineRef = useRef(null);
+  const guideLineRef = useRef(null); // percorso ad anello suggerito, tratteggiato, solo guida visiva
   const markerRef = useRef(null); // puntino blu della posizione attuale, solo live
   const leafletRef = useRef(null);
   const [ready, setReady] = useState(false);
@@ -2485,6 +2487,7 @@ function RouteMap({ points, live, accent, height = 220 }) {
       const start = points?.[0] || { lat: 45.4642, lng: 9.19 }; // Milano come centro neutro se non c'è ancora un punto
       map.setView([start.lat, start.lng], live ? 17 : 15);
       polylineRef.current = L.polyline([], { color: accent, weight: 5, opacity: 0.95, lineJoin: "round", lineCap: "round" }).addTo(map);
+      guideLineRef.current = L.polyline([], { color: accent, weight: 3, opacity: 0.55, dashArray: "2, 10", lineCap: "round" }).addTo(map);
       mapRef.current = map;
       setReady(true);
       // Leaflet calcola le dimensioni al momento della creazione: se il
@@ -2535,13 +2538,23 @@ function RouteMap({ points, live, accent, height = 220 }) {
     }
   }, [ready, points, live]);
 
+  // Percorso ad anello suggerito (Premium/Coaching, vedi generateLoopRoute):
+  // tratteggiato, sotto al percorso reale — resta visibile come guida anche
+  // mentre il tracciamento vero disegna sopra man mano che ci si muove.
+  useEffect(() => {
+    if (!ready || !mapRef.current || !guideLineRef.current) return;
+    const latlngs = (guidePoints || []).map((p) => [p.lat, p.lng]);
+    guideLineRef.current.setLatLngs(latlngs);
+    if (latlngs.length && !points?.length) mapRef.current.fitBounds(latlngs, { padding: [24, 24] });
+  }, [ready, guidePoints, points]);
+
   return <div ref={containerRef} style={{ height, width: "100%", borderRadius: 16, overflow: "hidden", backgroundColor: "var(--surface-2)" }} />;
 }
 
 /* Tracciamento GPS in diretta — stile Strava: percorso disegnato sulla
    mappa in tempo reale, distanza/tempo/passo calcolati dai punti veri del
    GPS del telefono (watchPosition), non inseriti a mano. */
-function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
+function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAccess, onUpgrade }) {
   const [activityType, setActivityType] = useState("corsa");
   const [tracking, setTracking] = useState(false);
   const [points, setPoints] = useState([]);
@@ -2549,7 +2562,19 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [gpsError, setGpsError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [snapping, setSnapping] = useState(false); // allineamento a strada in corso dopo lo stop
   const watchIdRef = useRef(null);
+
+  // Percorso ad anello suggerito (Premium/Scheda Personalizzata e superiori,
+  // vedi subsAccess): resta solo una guida VISIVA tratteggiata sulla mappa,
+  // il tracciamento GPS vero funziona esattamente come senza — la distanza/
+  // il tempo salvati vengono sempre dai punti GPS reali, mai dal percorso
+  // suggerito.
+  const [routePickerOpen, setRoutePickerOpen] = useState(false);
+  const [suggestedRoute, setSuggestedRoute] = useState(null); // { points, distanceKm, durationMin }
+  const [startLocation, setStartLocation] = useState(null);
+  const [generatingRoute, setGeneratingRoute] = useState(false);
+  const [routeGenError, setRouteGenError] = useState("");
 
   useEffect(() => {
     if (!tracking) return undefined;
@@ -2582,6 +2607,53 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
     if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
     watchIdRef.current = null;
     setTracking(false);
+    // Il percorso grezzo del GPS "salta" leggermente anche restando fermi —
+    // non è mai su una strada precisa come su Google Maps. Un'unica chiamata
+    // a Mapbox Map Matching a fine sessione (mai in diretta: costerebbe una
+    // richiesta ad ogni punto) allinea l'intero tracciato alla rete stradale
+    // reale prima di mostrarlo/salvarlo. Se fallisce o l'attività non ha
+    // strade (nuoto/canottaggio), resta il percorso grezzo — mai un dato
+    // inventato al posto di quello vero.
+    setPoints((currentPoints) => {
+      if (currentPoints.length > 1 && isMapboxConfigured()) {
+        setSnapping(true);
+        snapRouteToRoads(currentPoints, activityType)
+          .then((snapped) => { if (snapped) setPoints(snapped); })
+          .catch(() => {})
+          .finally(() => setSnapping(false));
+      }
+      return currentPoints;
+    });
+  };
+
+  // Percorsi ad anello suggeriti: legge la posizione attuale una volta sola
+  // quando si apre il selettore, poi genera un anello reale su strada per
+  // la distanza scelta (Mapbox Directions, vedi generateLoopRoute).
+  const openRoutePicker = () => {
+    setRoutePickerOpen(true);
+    setRouteGenError("");
+    if (startLocation) return;
+    if (!navigator.geolocation) { setRouteGenError("Il tuo browser non supporta la geolocalizzazione."); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setStartLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => setRouteGenError("Non riesco a leggere la tua posizione — controlla il permesso di geolocalizzazione."),
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
+    );
+  };
+
+  const generateRoute = async (km) => {
+    if (!startLocation) return;
+    setGeneratingRoute(true);
+    setRouteGenError("");
+    try {
+      const route = await generateLoopRoute(startLocation, km, activityType);
+      if (!route) { setRouteGenError("Non sono riuscito a generare un percorso da qui — riprova o scegli un'altra distanza."); return; }
+      setSuggestedRoute(route);
+      setRoutePickerOpen(false);
+      haptic("confirm");
+    } finally {
+      setGeneratingRoute(false);
+    }
   };
 
   useEffect(() => () => { if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current); }, []);
@@ -2652,17 +2724,24 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
           </button>
         </div>
 
-        <div className="px-5" data-no-swipe="true">
-          <RouteMap points={points} live accent={accent} height={260} />
+        <div className="px-5 relative" data-no-swipe="true">
+          <RouteMap points={points} live accent={accent} height={260} guidePoints={suggestedRoute?.points} />
+          {snapping && (
+            <div className="absolute inset-x-5 top-3 rounded-full px-3.5 py-2 flex items-center gap-2"
+              style={{ backgroundColor: "rgba(17,17,17,0.85)", backdropFilter: "blur(6px)" }}>
+              <Loader2 size={13} className="animate-spin" style={{ color: "#FFFFFF" }} />
+              <span style={{ color: "#FFFFFF", fontSize: "0.72rem", fontWeight: 600 }}>Allineo il percorso alle strade reali…</span>
+            </div>
+          )}
         </div>
 
         <div className="px-5 py-5 flex-1 flex flex-col">
           {!tracking && points.length === 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-5">
+            <div className="flex flex-wrap gap-1.5 mb-3">
               {CARDIO_ACTIVITIES.map((a) => {
                 const on = activityType === a.id;
                 return (
-                  <button key={a.id} onClick={() => setActivityType(a.id)} type="button"
+                  <button key={a.id} onClick={() => { setActivityType(a.id); setSuggestedRoute(null); }} type="button"
                     className="rounded-full px-3.5 py-2 text-xs flex items-center gap-1.5 transition-transform active:scale-95"
                     style={on ? { backgroundColor: accent, color: "#FFFFFF", fontWeight: 700, boxShadow: `0 3px 10px ${accent}55` }
                               : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
@@ -2670,6 +2749,63 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId }) {
                   </button>
                 );
               })}
+            </div>
+          )}
+
+          {!tracking && points.length === 0 && activityType !== "nuoto" && activityType !== "canottaggio" && (
+            subsAccess ? (
+              suggestedRoute ? (
+                <div className="rounded-2xl px-4 py-3 mb-5 flex items-center justify-between gap-3"
+                  style={{ backgroundColor: `${accent}14`, border: `1px solid ${accent}40` }}>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold" style={{ color: "var(--ink)" }}>Percorso ad anello · {suggestedRoute.distanceKm} km</p>
+                    <p className="meta" style={{ fontSize: "0.65rem" }}>~{suggestedRoute.durationMin} min stimati · torna al punto di partenza</p>
+                  </div>
+                  <button onClick={() => setSuggestedRoute(null)} className="shrink-0 p-1.5 rounded-full" style={{ backgroundColor: "var(--surface)" }} aria-label="Rimuovi percorso suggerito">
+                    <X size={13} style={{ color: "var(--ink-2)" }} />
+                  </button>
+                </div>
+              ) : (
+                <button onClick={openRoutePicker} type="button"
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm mb-5"
+                  style={{ backgroundColor: "var(--surface-2)", border: `1px dashed ${accent}80`, color: "var(--ink)", fontWeight: 600 }}>
+                  <Route size={15} style={{ color: accent }} /> Percorsi ad anello suggeriti
+                </button>
+              )
+            ) : (
+              <button onClick={onUpgrade} type="button"
+                className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm mb-5"
+                style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
+                <Lock size={13} /> Percorsi ad anello suggeriti — dal Performance Pack
+              </button>
+            )
+          )}
+
+          {routePickerOpen && (
+            <div className="rounded-2xl px-4 py-4 mb-5" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold" style={{ color: "var(--ink)" }}>Quanti km vuoi percorrere?</p>
+                <button onClick={() => setRoutePickerOpen(false)} aria-label="Chiudi" className="p-1">
+                  <X size={15} style={{ color: "var(--ink-2)" }} />
+                </button>
+              </div>
+              {!startLocation && !routeGenError && (
+                <p className="meta text-xs mb-3 flex items-center gap-2"><Loader2 size={12} className="animate-spin" />Leggo la tua posizione…</p>
+              )}
+              {routeGenError && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{routeGenError}</p>}
+              <div className="flex flex-wrap gap-2">
+                {[1, 2, 3, 4, 5].map((km) => (
+                  <button key={km} onClick={() => generateRoute(km)} disabled={!startLocation || generatingRoute}
+                    className="rounded-full px-4 py-2.5 text-sm font-data disabled:opacity-40 transition-transform active:scale-95"
+                    style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
+                    {generatingRoute ? <Loader2 size={13} className="animate-spin" /> : `${km} km`}
+                  </button>
+                ))}
+              </div>
+              <p className="meta mt-3 leading-relaxed" style={{ fontSize: "0.65rem" }}>
+                Anello su strade reali che parte e torna qui — la distanza esatta arriva da Mapbox e può discostarsi
+                un po' da quella scelta: le strade vere non sono mai un cerchio perfetto.
+              </p>
             </div>
           )}
 
@@ -2746,7 +2882,7 @@ function shareCardioLog(log, activityLabel) {
   }
 }
 
-function CardioSection({ supabase, userId, accent }) {
+function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
   const isRealMode = Boolean(supabase && userId);
   const [logs, setLogs] = useState(null); // null finché non caricato (solo isRealMode)
   const [activityType, setActivityType] = useState("corsa");
@@ -2954,6 +3090,7 @@ function CardioSection({ supabase, userId, accent }) {
 
       {gpsOpen && (
         <GpsTrackerModal accent={accent} supabase={supabase} userId={userId}
+          subsAccess={subsAccess} onUpgrade={onUpgrade}
           onClose={() => setGpsOpen(false)} onSaved={loadLogs} />
       )}
     </div>
