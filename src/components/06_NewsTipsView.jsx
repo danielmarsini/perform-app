@@ -50,7 +50,8 @@
    ========================================================================== */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Heart, Bookmark, Lock, Newspaper } from "lucide-react";
+import { Heart, Bookmark, Lock, Newspaper, ArrowLeft } from "lucide-react";
+import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 
 /* ============================================================================
    1 · UTILITÀ
@@ -595,12 +596,18 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
   const expires = channelExpires(channel);
   const aiUnlocked = hasAIAccess(plan);
 
+  const rootRef = useRef(null);
+  useSwipeDownClose(rootRef, onClose);
+  useEdgeSwipeBack(onClose, true);
+
   return (
-    <div className="expand-overlay" style={{ zIndex }} onClick={onClose}>
-      <div className="expand-sheet spring-in" onClick={(e) => e.stopPropagation()}>
+    <div ref={rootRef} className="expand-overlay" style={{ zIndex, paddingTop: "env(safe-area-inset-top)" }}>
+      <div className="expand-sheet spring-in">
         <div className="expand-scroll">
           <div className="flex items-center justify-between mb-6">
-            <button className="expand-close" onClick={onClose} aria-label="Chiudi approfondimento">✕</button>
+            <button className="expand-close" onClick={onClose} aria-label="Torna al feed">
+              <ArrowLeft size={17} />
+            </button>
             {expires ? (
               <ExpiryCountdown publishedAt={item.published_at} />
             ) : (
@@ -989,24 +996,24 @@ export function NewsTipsViewStyles() {
          comparsa (align-items: flex-end) — spostato al centro dello
          schermo, dove si trova davvero il cliente, come ogni altro popup
          dell'app (Portal). */
+      /* BUG PRESO: "Approfondisci" apriva un pop-up (card centrata, sfondo
+         scurito) — su richiesta esplicita ora è una vera schermata interna a
+         piena pagina, come Allenamento/Alimentazione/Recupero, non un
+         pop-up sopra al feed. */
       .expand-overlay {
         position: fixed; inset: 0; z-index: 100;
-        background: rgba(0,0,0,0.32);
-        display: flex; align-items: center; justify-content: center;
-        padding: 1rem;
-        backdrop-filter: blur(4px);
+        background: var(--page);
+        display: flex; flex-direction: column;
       }
       .expand-sheet {
-        width: 100%; max-width: 640px; max-height: 90vh;
-        background: var(--page); border-radius: 1.5rem;
-        border: 1px solid var(--line);
+        width: 100%; height: 100%;
+        background: var(--page);
         overflow: hidden; display: flex; flex-direction: column;
       }
-      .expand-scroll { overflow-y: auto; padding: 1.6rem 1.75rem 2.4rem; }
+      .expand-scroll { overflow-y: auto; padding: 1.2rem 1.5rem 2.4rem; flex: 1; }
       .expand-close {
-        width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--line);
-        background: var(--surface-2); color: var(--ink-2); font-size: 0.85rem;
-        display: flex; align-items: center; justify-content: center;
+        width: 40px; height: 40px; border-radius: 999px; border: 1px solid var(--line);
+        background: var(--surface-2); color: var(--ink); display: flex; align-items: center; justify-content: center;
       }
       @keyframes sheetIn {
         0%   { opacity: 0; transform: translateY(16px) scale(0.97); }
