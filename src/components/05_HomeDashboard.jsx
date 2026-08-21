@@ -1571,6 +1571,11 @@ export function HomeDashboard({
   const [screen, setScreen] = useState("dash");   // dash | workout | nutrition | recovery
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [digestValue, setDigestValue] = useState(0);
+  // Allenamento ora si divide in 3: Pesi (scheda/esercizi/volumi, era tutto
+  // lo schermo), Cardio (spostato qui da Recupero — è allenamento, non
+  // recupero), Wiki (invariata, solo spostata sotto ai 3 bottoni invece che
+  // sempre visibile in fondo alla pagina Pesi).
+  const [workoutTab, setWorkoutTab] = useState("pesi"); // pesi | cardio | wiki
 
   // BUG PRESO: cambiare schermata (Allenamento/Alimentazione/Recupero/
   // Integrazione, o tornare alla Home) lasciava la pagina alla stessa
@@ -2039,73 +2044,101 @@ export function HomeDashboard({
     return (
       <div className="spring-in">
         {back("Allenamento")}
-        {poorSleep && day.isTraining && (
-          <div className="rounded-2xl px-4 py-3.5 mb-4 flex items-start gap-3"
-               style={{ backgroundColor: "rgba(240,160,32,0.1)", border: "1px solid rgba(240,160,32,0.35)" }}>
-            <span style={{ fontSize: "1.2rem" }}>😴</span>
-            <div>
-              <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>
-                Hai dormito {lastNightSleep.toFixed(1)}h — sotto le {THRESH.sleep.bad}h consigliate
-              </p>
-              <p className="meta mt-0.5" style={{ lineHeight: 1.5 }}>
-                Il recupero del sistema nervoso è ridotto: valuta di scendere di 1-2 RIR sull'ultima serie di ogni
-                esercizio o di togliere una serie sugli esercizi più pesanti. Non serve saltare la sessione.
-              </p>
-            </div>
-          </div>
-        )}
-        {access.pro ? (
-          <>
-            <WorkoutCalendarStrip weekPlan={weekPlan} selectedIso={selectedCalendarIso} onSelectIso={setSelectedCalendarIso} />
-            {selectedCalendarIso ? (
-              <CalendarDayReadOnlyView date={new Date(selectedCalendarIso)} weekPlan={weekPlan} />
-            ) : !day.isTraining ? (
-              <div className="card text-center py-10">
-                <BedDouble size={26} className="mx-auto mb-3" style={{ color: accent }} />
-                <p className="h2 mb-1">Oggi è un giorno di riposo</p>
-                <p className="body max-w-xs mx-auto">
-                  Nessuna sessione programmata: il recupero è parte del piano, non una pausa dal piano.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {exercises.map((ex, exIdx) => (
-                  <ExerciseCard
-                    key={ex.id}
-                    ex={ex}
-                    index={exIdx}
-                    rows={setsFor(ex)}
-                    onSetField={onSetField}
-                    accent={accent}
-                    accentText={accentText}
-                    userPlan={userPlan}
-                    gender={profile.gender}
-                    onUpgrade={onUpgrade}
-                    onCoachSync={onCoachSync}
-                  />
-                ))}
+
+        <div className="grid grid-cols-3 gap-1.5 mb-5">
+          {[["pesi", "Allenamento Pesi"], ["cardio", "Allenamento Cardio"], ["wiki", "Wiki Allenamento"]].map(([id, lab]) => {
+            const on = workoutTab === id;
+            return (
+              <button key={id} onClick={() => setWorkoutTab(id)}
+                className="rounded-2xl px-1.5 py-3 transition-all duration-300"
+                style={on ? { backgroundColor: "var(--ink)", color: "var(--page)" }
+                          : { backgroundColor: "var(--surface)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                <span className="font-data block leading-tight" style={{ fontSize: "0.52rem", letterSpacing: "0.04em",
+                        textTransform: "uppercase", fontWeight: on ? 600 : 400 }}>{lab}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {workoutTab === "pesi" && (
+          <div className="spring-in">
+            {poorSleep && day.isTraining && (
+              <div className="rounded-2xl px-4 py-3.5 mb-4 flex items-start gap-3"
+                   style={{ backgroundColor: "rgba(240,160,32,0.1)", border: "1px solid rgba(240,160,32,0.35)" }}>
+                <span style={{ fontSize: "1.2rem" }}>😴</span>
+                <div>
+                  <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>
+                    Hai dormito {lastNightSleep.toFixed(1)}h — sotto le {THRESH.sleep.bad}h consigliate
+                  </p>
+                  <p className="meta mt-0.5" style={{ lineHeight: 1.5 }}>
+                    Il recupero del sistema nervoso è ridotto: valuta di scendere di 1-2 RIR sull'ultima serie di ogni
+                    esercizio o di togliere una serie sugli esercizi più pesanti. Non serve saltare la sessione.
+                  </p>
+                </div>
               </div>
             )}
-            <div className="mt-4">
-              <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} />
-            </div>
-          </>
-        ) : (
-          <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
-                               day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
-                               supabase={supabase} userId={userId} />
+            {access.pro ? (
+              <>
+                <WorkoutCalendarStrip weekPlan={weekPlan} selectedIso={selectedCalendarIso} onSelectIso={setSelectedCalendarIso} />
+                {selectedCalendarIso ? (
+                  <CalendarDayReadOnlyView date={new Date(selectedCalendarIso)} weekPlan={weekPlan} />
+                ) : !day.isTraining ? (
+                  <div className="card text-center py-10">
+                    <BedDouble size={26} className="mx-auto mb-3" style={{ color: accent }} />
+                    <p className="h2 mb-1">Oggi è un giorno di riposo</p>
+                    <p className="body max-w-xs mx-auto">
+                      Nessuna sessione programmata: il recupero è parte del piano, non una pausa dal piano.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {exercises.map((ex, exIdx) => (
+                      <ExerciseCard
+                        key={ex.id}
+                        ex={ex}
+                        index={exIdx}
+                        rows={setsFor(ex)}
+                        onSetField={onSetField}
+                        accent={accent}
+                        accentText={accentText}
+                        userPlan={userPlan}
+                        gender={profile.gender}
+                        onUpgrade={onUpgrade}
+                        onCoachSync={onCoachSync}
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="mt-4">
+                  <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} />
+                </div>
+              </>
+            ) : (
+              <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
+                                   day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
+                                   supabase={supabase} userId={userId} />
+            )}
+          </div>
         )}
 
-        <div className="mt-5">
-          {access.paid ? (
-            <WikiBrowser title="Wiki Allenamento" subtitle="I principi dietro un piano che funziona" data={TRAINING_WIKI} accent={accent}
-              intro="Volume, intensità, frequenza e sovraccarico progressivo non sono concetti nati in sala pesi: sono i principi con cui il corpo umano si adatta a qualsiasi sforzo ripetuto — servono a mantenere la massa muscolare e la densità ossea con l'età (prevenzione di sarcopenia e cadute), a costruire la base atletica in qualunque sport, a riabilitarsi dopo un infortunio, e più in generale a restare funzionali nella vita di tutti i giorni. La sala pesi è semplicemente il contesto più controllato e misurabile per applicarli: pro, un ambiente prevedibile dove ogni variabile (carico, serie, recupero) si programma e si verifica; contro, richiede attrezzatura e costanza, e un piano tarato solo sull'estetica può trascurare mobilità e pattern di movimento utili fuori dalla palestra."
-              searchPlaceholder="Cerca un argomento (es. volume, RIR, deload...)" />
-          ) : (
-            <LockedPanel onUpgrade={onUpgrade} accent={accent}
-              text="La Wiki Allenamento è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
-          )}
-        </div>
+        {workoutTab === "cardio" && (
+          <div className="spring-in">
+            <CardioSection supabase={supabase} userId={userId} accent={accent} subsAccess={access.paid} onUpgrade={onUpgrade} />
+          </div>
+        )}
+
+        {workoutTab === "wiki" && (
+          <div className="spring-in">
+            {access.paid ? (
+              <WikiBrowser title="Wiki Allenamento" subtitle="I principi dietro un piano che funziona" data={TRAINING_WIKI} accent={accent}
+                intro="Volume, intensità, frequenza e sovraccarico progressivo non sono concetti nati in sala pesi: sono i principi con cui il corpo umano si adatta a qualsiasi sforzo ripetuto — servono a mantenere la massa muscolare e la densità ossea con l'età (prevenzione di sarcopenia e cadute), a costruire la base atletica in qualunque sport, a riabilitarsi dopo un infortunio, e più in generale a restare funzionali nella vita di tutti i giorni. La sala pesi è semplicemente il contesto più controllato e misurabile per applicarli: pro, un ambiente prevedibile dove ogni variabile (carico, serie, recupero) si programma e si verifica; contro, richiede attrezzatura e costanza, e un piano tarato solo sull'estetica può trascurare mobilità e pattern di movimento utili fuori dalla palestra."
+                searchPlaceholder="Cerca un argomento (es. volume, RIR, deload...)" />
+            ) : (
+              <LockedPanel onUpgrade={onUpgrade} accent={accent}
+                text="La Wiki Allenamento è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -2417,8 +2450,6 @@ export function HomeDashboard({
         );
       })()}
 
-      <CardioSection supabase={supabase} userId={userId} accent={accent} subsAccess={access.paid} onUpgrade={onUpgrade} />
-
       {!access.pro && <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
         text="Sonno e passi dicono molto, ma solo se qualcuno li legge nel contesto giusto. Fatti aiutare da un professionista del settore che li integra nel tuo piano completo: vedi gli abbonamenti per iniziare." />}
     </div>
@@ -2564,6 +2595,8 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
   const [saving, setSaving] = useState(false);
   const [snapping, setSnapping] = useState(false); // allineamento a strada in corso dopo lo stop
   const watchIdRef = useRef(null);
+  const lastSnapCountRef = useRef(0); // quanti punti aveva il percorso all'ultimo riallineamento live
+  const snapInFlightRef = useRef(false); // evita richieste di riallineamento sovrapposte
 
   // Percorso ad anello suggerito (Premium/Scheda Personalizzata e superiori,
   // vedi subsAccess): resta solo una guida VISIVA tratteggiata sulla mappa,
@@ -2575,6 +2608,7 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
   const [startLocation, setStartLocation] = useState(null);
   const [generatingRoute, setGeneratingRoute] = useState(false);
   const [routeGenError, setRouteGenError] = useState("");
+  const [customKm, setCustomKm] = useState("");
 
   useEffect(() => {
     if (!tracking) return undefined;
@@ -2589,10 +2623,34 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
     setPoints([]);
     setStartedAt(Date.now());
     setTracking(true);
+    lastSnapCountRef.current = 0;
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        // Un fix GPS con un'incertezza dichiarata troppo alta (edifici alti,
+        // sottopassi, meteo) è spesso la causa dei "salti" a caso sulla
+        // mappa — meglio scartarlo che disegnarlo. 30 m è già largo (un
+        // buon segnale all'aperto sta sotto i 10 m).
+        if (pos.coords.accuracy != null && pos.coords.accuracy > 30) return;
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude, t: Date.now() };
-        setPoints((pts) => (pts.length && haversineKm(pts[pts.length - 1], p) < 0.002 ? pts : [...pts, p])); // filtra micro-jitter GPS fermo
+        setPoints((pts) => {
+          if (pts.length && haversineKm(pts[pts.length - 1], p) < 0.002) return pts; // micro-jitter da fermo
+          const next = [...pts, p];
+          // Riallineamento periodico ANCHE in diretta (non solo a fine
+          // sessione): ogni ~10 punti nuovi si rimanda l'intero tracciato
+          // a Mapbox Map Matching, così la linea che si vede muoversi segue
+          // davvero le strade invece del solo rumore GPS grezzo. Una
+          // richiesta ogni ~10 punti (non una per punto) tiene i costi
+          // bassi; snapInFlightRef evita chiamate sovrapposte se una
+          // risposta tarda ad arrivare.
+          if (!snapInFlightRef.current && next.length - lastSnapCountRef.current >= 10 && isMapboxConfigured()) {
+            snapInFlightRef.current = true;
+            snapRouteToRoads(next, activityType)
+              .then((snapped) => { if (snapped) { lastSnapCountRef.current = snapped.length; setPoints(snapped); } else { lastSnapCountRef.current = next.length; } })
+              .catch(() => { lastSnapCountRef.current = next.length; })
+              .finally(() => { snapInFlightRef.current = false; });
+          }
+          return next;
+        });
       },
       (err) => {
         console.error("PERFORM: errore GPS", err);
@@ -2793,14 +2851,23 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
                 <p className="meta text-xs mb-3 flex items-center gap-2"><Loader2 size={12} className="animate-spin" />Leggo la tua posizione…</p>
               )}
               {routeGenError && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{routeGenError}</p>}
-              <div className="flex flex-wrap gap-2">
-                {[1, 2, 3, 4, 5].map((km) => (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {[1, 3, 5, 10, 15].map((km) => (
                   <button key={km} onClick={() => generateRoute(km)} disabled={!startLocation || generatingRoute}
                     className="rounded-full px-4 py-2.5 text-sm font-data disabled:opacity-40 transition-transform active:scale-95"
                     style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
                     {generatingRoute ? <Loader2 size={13} className="animate-spin" /> : `${km} km`}
                   </button>
                 ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0.5" step="0.5" value={customKm} onChange={(e) => setCustomKm(e.target.value)}
+                  placeholder="Altra distanza (km)" className="input flex-1 px-4 py-2.5 font-data text-sm" aria-label="Distanza personalizzata in km" />
+                <button onClick={() => generateRoute(Number(customKm))} disabled={!startLocation || generatingRoute || !(Number(customKm) > 0)}
+                  className="shrink-0 rounded-full px-4 py-2.5 text-sm disabled:opacity-40 transition-transform active:scale-95"
+                  style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
+                  Genera
+                </button>
               </div>
               <p className="meta mt-3 leading-relaxed" style={{ fontSize: "0.65rem" }}>
                 Anello su strade reali che parte e torna qui — la distanza esatta arriva da Mapbox e può discostarsi

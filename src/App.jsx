@@ -131,6 +131,12 @@ export default function App() {
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession ? { user: newSession.user } : null);
+      // Copre OGNI via di uscita dalla sessione (non solo il pulsante Esci
+      // nelle Impostazioni: scadenza token, sign-out da un'altra scheda...):
+      // senza reset, il prossimo login su questa stessa scheda del browser
+      // (App.jsx non si smonta mai tra un logout e un login) ripresentava
+      // l'ultima tab/pannello aperti invece della Home pulita.
+      if (!newSession) { setSettingsOpen(false); setTab("home"); }
     });
     return () => {
       mounted = false;
@@ -370,8 +376,12 @@ export default function App() {
             // + cascata su profiles/checkins/... secondo le policy GDPR).
           }}
           onLogout={async () => {
+            // Il reset di tab/settingsOpen (BUG PRESO: restavano quelli di
+            // prima del logout, riportando l'utente su Impostazioni invece
+            // che sulla Home al prossimo login) vive centralizzato in
+            // onAuthStateChange qui sopra — copre questo pulsante e ogni
+            // altra via di uscita dalla sessione allo stesso modo.
             await supabase.auth.signOut();
-            setSession(null);
           }}
         />
       </div>

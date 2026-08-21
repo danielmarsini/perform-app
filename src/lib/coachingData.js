@@ -1212,8 +1212,15 @@ export async function fetchMonthlyLeaderboard(supabase, monthKey) {
   const nextMonthKey = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}`;
   const isCurrentMonth = monthKey === toLocalISODate().slice(0, 7);
 
+  // leaderboard_profiles (non profiles direttamente, vedi SCHEMA_v45): la
+  // RLS su profiles è "id = auth.uid() OR is_coach()" — corretta per
+  // proteggere email/piano/stripe/whitelist, ma per un cliente normale
+  // (non il coach) significa vedere SOLO la propria riga, quindi una
+  // classifica sempre vuota per chiunque non fosse il coach. La view espone
+  // solo le colonne davvero pubbliche ed è leggibile da qualsiasi utente
+  // autenticato.
   const [{ data: profiles, error: profilesError }, { data: startSnaps, error: startError }, endResult] = await Promise.all([
-    supabase.from("profiles").select("id, nickname, full_name, xp_total, current_streak, avatar_url, bio, longest_streak").eq("role", "user"),
+    supabase.from("leaderboard_profiles").select("id, nickname, full_name, xp_total, current_streak, avatar_url, bio, longest_streak").eq("role", "user"),
     supabase.from("monthly_xp_snapshots").select("user_id, xp_total_at_snapshot").eq("month", monthKey),
     isCurrentMonth ? Promise.resolve({ data: [] }) : supabase.from("monthly_xp_snapshots").select("user_id, xp_total_at_snapshot").eq("month", nextMonthKey),
   ]);

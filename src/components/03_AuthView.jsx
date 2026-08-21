@@ -546,8 +546,16 @@ export function AuthScreen({ auth, dark = false, onAuthenticated, redirectTo = "
   const signupLabel = "CREA ACCOUNT";
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ backgroundColor: page, fontFamily: SANS }}>
+    <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ backgroundColor: page, fontFamily: SANS, overflowX: "hidden" }}>
       <style>{`
+        /* BUG PRESO: il campo Data di nascita usciva dallo schermo a destra
+           su alcuni Chrome desktop (Windows in particolare) — il controllo
+           nativo del browser per giorno/mese/anno ha una larghezza minima
+           intrinseca che, sommata al padding riservato alla nostra icona
+           Calendar a sinistra, può superare i 100% del contenitore. min-width
+           0 lascia che si restringa davvero fino a riempire lo spazio
+           disponibile invece di imporre la sua larghezza "naturale". */
+        input[type="date"] { min-width: 0; }
         @keyframes performGlow {
           0%, 100% { background-position: 0% 50%; }
           50% { background-position: 100% 50%; }

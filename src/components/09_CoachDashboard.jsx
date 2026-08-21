@@ -158,7 +158,7 @@ const STATUS_META = {
 import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
-  assignNutritionTarget, saveWeekSupplements, computeTrainingCompliance,
+  assignNutritionTarget, fetchBothNutritionTargets, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
   awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange, fetchClientPauses,
   fetchMesocycleWeeksRange, saveMesocycleWeek,
@@ -3196,6 +3196,56 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     else setWeek((w) => ({ ...w, supplements: nextSupplements }));
   };
 
+  // --- DIETA (kcal/macro ON-OFF) REALE ------------------------------------
+  // STESSO identico bug preso sopra per gli integratori: WeekDietEditor
+  // partiva sempre da makeDefaultWeek. Il salvataggio (assignNutritionTarget)
+  // scriveva davvero su nutrition_targets, ma riaprendo il cliente l'editor
+  // mostrava di nuovo il target calcolato di default — sembrava che il
+  // salvataggio non avesse mai avuto effetto. Non è per-settimana
+  // (nutrition_targets non ha un concetto di settimana, solo effective_from):
+  // un solo fetch al mount, i pasti (meals) restano locali come prima —
+  // nessuna tabella li persiste ancora, è un gap distinto da questo.
+  const [realDietTargets, setRealDietTargets] = useState(null); // null = non ancora caricato
+  const [dietTargetsLoading, setDietTargetsLoading] = useState(isRealMode);
+  useEffect(() => {
+    if (!isRealMode) return undefined;
+    let cancelled = false;
+    setDietTargetsLoading(true);
+    fetchBothNutritionTargets(supabase, client.id)
+      .then(({ targetOn, targetOff }) => { if (!cancelled) setRealDietTargets({ ON: targetOn, OFF: targetOff }); })
+      .catch((err) => { console.error("PERFORM: errore lettura nutrition_targets reali", err); if (!cancelled) setRealDietTargets({ ON: null, OFF: null }); })
+      .finally(() => { if (!cancelled) setDietTargetsLoading(false); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+
+  // week.diet resta la fonte per i pasti (meals, ancora locali); il target
+  // ON/OFF viene sovrascritto con quello reale appena caricato, se esiste
+  // già un'assegnazione salvata — altrimenti resta il calcolo di default
+  // (un cliente mai assegnato prima deve comunque vedere un punto di
+  // partenza sensato, non zero).
+  const weekForEditor = (isRealMode && realDietTargets)
+    ? {
+        ...week,
+        diet: {
+          ON: { ...week.diet.ON, target: realDietTargets.ON ? { p: realDietTargets.ON.p, c: realDietTargets.ON.c, f: realDietTargets.ON.f } : week.diet.ON.target },
+          OFF: { ...week.diet.OFF, target: realDietTargets.OFF ? { p: realDietTargets.OFF.p, c: realDietTargets.OFF.c, f: realDietTargets.OFF.f } : week.diet.OFF.target },
+        },
+      }
+    : week;
+  const handleDietChange = (nextWeek) => {
+    setWeek(() => nextWeek);
+    // La modifica in editor deve riflettersi subito anche nel target "reale"
+    // tenuto qui — altrimenti il prossimo giro di weekForEditor la
+    // sovrascriverebbe di nuovo con l'ultimo valore fetchato, cancellando
+    // la modifica appena fatta prima ancora che l'utente prema Salva.
+    if (isRealMode) {
+      setRealDietTargets((prev) => ({
+        ON: { ...(prev?.ON || {}), ...nextWeek.diet.ON.target },
+        OFF: { ...(prev?.OFF || {}), ...nextWeek.diet.OFF.target },
+      }));
+    }
+  };
+
   const cloneToNext = async () => {
     if (selOffset >= MAX_FORWARD_WEEKS) return;
     const nextOffset = selOffset + 1;
@@ -3404,7 +3454,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
           </>
         )
       )}
-      {section === "dieta" && <WeekDietEditor week={week} onChange={(w) => setWeek(() => w)} client={client} />}
+      {section === "dieta" && <WeekDietEditor week={weekForEditor} onChange={handleDietChange} client={client} />}
       {section === "integratori" && (
         isRealMode && suppsLoading ? (
           <p className="c-muted text-sm px-1">Caricamento protocollo…</p>
