@@ -964,42 +964,26 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   const isNeutral = pct == null;
   const color = isNeutral ? "var(--ink-2)" : complianceColor(pct);
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
-  // BUG PRESO (2 giri di correzione): il primo tentativo faceva ruotare
-  // l'INTERO riflesso a 360° sopra il cerchio — per un pct basso (es. 10%)
-  // il riflesso passava per la maggior parte del tempo sopra il tratto
-  // GRIGIO ancora scoperto, non sopra l'arco colorato: da qui "una riga
-  // grigia che si muove" segnalata. Ora il riflesso è vincolato a restare
-  // SEMPRE dentro l'arco colorato: anima solo stroke-dashoffset (mai un
-  // transform/rotate), spostandosi dall'inizio dell'arco fino alla sua
-  // punta e poi da capo — stesso principio della barra XP (un bagliore che
-  // scorre dentro l'area già colorata, mai fuori), ma sul colore reale del
-  // cerchio (rosso/arancio/verde), non un oro/rosa fisso.
+  // BUG PRESO (3 giri di correzione — via il riflesso, non solo aggiustato):
+  // ogni versione del "riflesso lucido" (un arco/segmento bianco separato
+  // sopra il colore) continuava a leggersi come una barretta grigia/bianca
+  // estranea al cerchio, qualunque animazione ci si mettesse sopra. Tolto
+  // del tutto: "vivo" ora viene da un bagliore che pulsa nel COLORE REALE
+  // del cerchio stesso (rosso/arancio/verde secondo il pct) — mai bianco,
+  // mai grigio, mai un elemento separato dall'arco colorato.
   const filledLen = c * (Math.max(0, Math.min(100, pct ?? 0)) / 100);
-  const shineLen = Math.min(filledLen, Math.max(stroke * 1.2, filledLen * 0.45));
   return (
     <div className="relative shrink-0 ring-breathe" style={{ width: size, height: size }}>
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={stroke} />
         {!isNeutral && (
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
+          <circle className="ring-glow-pulse" cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
                   strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
-                  style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease",
-                           filter: `drop-shadow(0 0 5px ${color}99)` }} />
+                  style={{ "--ring-color": color, transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease" }} />
         )}
         {isNeutral && (
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
                   strokeDasharray="4 5" strokeOpacity="0.55" />
-        )}
-        {/* riflesso animato: scorre avanti e indietro DENTRO l'arco colorato,
-            mai oltre — vincolo dato dai due estremi shineFrom/shineTo qui
-            sotto, passati come custom property CSS (uno per anello, il
-            keyframe è condiviso). */}
-        {!isNeutral && pct > 2 && (
-          <circle className="ring-shine" cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.9"
-                  strokeWidth={Math.max(1.5, stroke * 0.5)} strokeLinecap="round"
-                  strokeDasharray={`${shineLen} ${c}`} transform={`rotate(-90 ${cx} ${cy})`}
-                  style={{ "--shine-from": c, "--shine-to": c - filledLen + shineLen,
-                           filter: `drop-shadow(0 0 4px ${color})` }} />
         )}
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
@@ -8037,16 +8021,15 @@ export default function HomePreview({
         .xp-bar-shine{background-image:linear-gradient(90deg, var(--title-a), var(--title-b), var(--title-c), var(--title-b), var(--title-a));
           background-size:220% auto;animation:xpBarShine 3.5s linear infinite}
         @media (prefers-reduced-motion: reduce){.xp-bar-shine{animation:none}}
-        /* riflesso dei cerchi di compliance: scorre avanti e indietro
-           dentro l'arco colorato (vedi ComplianceCircle per --shine-from/
-           --shine-to, calcolati per restare sempre entro la parte piena). */
-        .ring-shine{animation:ringShine 2.4s ease-in-out infinite}
-        @keyframes ringShine{
-          0%{stroke-dashoffset:var(--shine-from)}
-          50%{stroke-dashoffset:var(--shine-to)}
-          100%{stroke-dashoffset:var(--shine-from)}
+        /* Bagliore vivo dei cerchi di compliance: pulsa nel colore REALE
+           dell'arco (--ring-color, impostato per anello in ComplianceCircle)
+           — mai un elemento bianco/grigio separato sopra il colore. */
+        .ring-glow-pulse{animation:ringGlowPulse 2.6s ease-in-out infinite}
+        @keyframes ringGlowPulse{
+          0%, 100%{filter:drop-shadow(0 0 3px var(--ring-color))}
+          50%{filter:drop-shadow(0 0 9px var(--ring-color))}
         }
-        @media (prefers-reduced-motion: reduce){.ring-shine{animation:none}}
+        @media (prefers-reduced-motion: reduce){.ring-glow-pulse{animation:none}}
         /* toast XP: entra dall'alto, resta un attimo, si dissolve da sola */
         .xp-toast-wrap{position:fixed;top:calc(env(safe-area-inset-top, 0px) + 14px);left:0;right:0;
           display:flex;justify-content:center;z-index:70;pointer-events:none}

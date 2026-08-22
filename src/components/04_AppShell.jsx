@@ -114,26 +114,30 @@ export function DesignSystem() {
         --bar-line:  rgba(255,255,255,0.09);
       }
 
-      /* Sfondo vivo: due bagliori (oro o rosa, vedi --bg-glow-1/2 impostati
-         inline da AppShell in base a genere/tema) che derivano lentamente
-         sopra il --page nero/bianco piatto, invece di restare statici.
-         Stessa tecnica già in uso su .xp-bar-shine/.title-shine (gradiente
-         più grande del contenitore + background-position animato), qui
-         applicata allo sfondo dell'intera app anziché a un singolo testo/
-         barra — visibile soprattutto negli spazi tra le card, mai sopra il
-         testo (le card restano --surface pieno, sempre leggibili). */
-      .app-bg-live {
-        background-image: linear-gradient(120deg,
-          transparent 0%, var(--bg-glow-1, transparent) 22%, transparent 45%,
-          var(--bg-glow-2, transparent) 68%, transparent 100%);
-        background-size: 320% 320%;
-        animation: appBgDrift 34s ease-in-out infinite;
+      /* Sfondo vivo — nastri di luce oro/rosa che scorrono su fondo scuro,
+         più scintillio (vedi LiveBackground più sotto): il tentativo
+         precedente (solo un lieve gradiente diagonale) era troppo timido,
+         "vivi ma questo qui e basta". Il nastro anima lo stroke-dashoffset
+         (una luce che viaggia lungo la curva, mai un blocco di colore
+         piatto), l'intero gruppo deriva anche lentamente di posizione. Ogni
+         scintilla ha il proprio ritardo/durata per non lampeggiare in sync. */
+      .live-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+      .live-bg-drift { animation: liveBgDrift 40s ease-in-out infinite; transform-origin: 50% 50%; }
+      @keyframes liveBgDrift {
+        0%, 100% { transform: translate(0, 0) rotate(0deg); }
+        50% { transform: translate(-1.5%, 1.5%) rotate(1deg); }
       }
-      @keyframes appBgDrift {
-        0%, 100% { background-position: 0% 30%; }
-        50% { background-position: 100% 70%; }
+      .live-bg-ribbon { animation: liveBgFlow 7s linear infinite; }
+      .live-bg-ribbon.rev { animation-direction: reverse; }
+      @keyframes liveBgFlow { to { stroke-dashoffset: -400; } }
+      .live-bg-sparkle { animation: liveBgTwinkle 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      @keyframes liveBgTwinkle {
+        0%, 100% { opacity: 0.15; transform: scale(0.7); }
+        50% { opacity: 1; transform: scale(1.15); }
       }
-      @media (prefers-reduced-motion: reduce) { .app-bg-live { animation: none; } }
+      @media (prefers-reduced-motion: reduce) {
+        .live-bg-drift, .live-bg-ribbon, .live-bg-sparkle { animation: none; }
+      }
 
       /* --- tipografia ----------------------------------------------------
          Ogni etichetta, label e micro-testo eredita var(--font-sans) da
@@ -608,6 +612,65 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false }) {
    sostituibile allo stesso modo via `screens.news` / `screens.ranking`.
    ========================================================================== */
 
+/* Sfondo vivo di tutta l'app: nastri di luce oro (uomo) o rosa cipria
+   (donna) che scorrono su fondo scuro/chiaro, con scintille sparse — stile
+   di riferimento fornito dal coach (nastro dorato animato su nero, stile
+   "app di lusso"). Fisso dietro a tutto il contenuto (z-index:0, le card
+   restano --surface pieno sopra e sempre leggibili), non intercetta il
+   tocco (pointer-events:none). Mai un'immagine esterna: sarebbe un asset
+   di terzi (il riferimento veniva da un sito stock con watermark) — qui è
+   ricreato con SVG/CSS, leggero e già animato invece che statico. */
+function LiveBackground({ gender, dark }) {
+  const isFemale = gender === "F";
+  const stops = isFemale ? ["#F4E0E6", "#D4A5A5", "#9D6666"] : ["#F0DCA0", "#C5A059", "#8C6E33"];
+  const ribbonOpacity = dark ? 0.55 : 0.22;
+  const sparkleColor = isFemale ? "#F4E0E6" : "#F0DCA0";
+  const sparkles = [
+    [78, 18, 0], [340, 60, 1.1], [300, 150, 2.4], [60, 230, 0.6], [370, 300, 1.8],
+    [230, 340, 0.3], [120, 420, 2.1], [350, 460, 0.9], [30, 520, 1.5], [270, 560, 0.2],
+    [180, 610, 2.7], [390, 640, 1.3], [90, 680, 0.7], [320, 720, 2.0], [200, 760, 1.6],
+  ];
+  return (
+    <div className="live-bg" aria-hidden="true" style={{ backgroundColor: "var(--page)" }}>
+      <svg viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">
+        <defs>
+          <linearGradient id="liveBgGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={stops[2]} />
+            <stop offset="50%" stopColor={stops[1]} />
+            <stop offset="100%" stopColor={stops[0]} />
+          </linearGradient>
+          <filter id="liveBgBlur" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="6" />
+          </filter>
+        </defs>
+        <g className="live-bg-drift">
+          {/* alone sfocato sotto (bloom) + tratto nitido sopra: senza il primo
+              le linee restano un filo dritto e piatto, con il bloom si legge
+              come una scia di luce vera, più simile al riferimento. */}
+          <path d="M -20 620 C 60 520 140 560 210 480 C 280 400 320 460 420 380"
+                fill="none" stroke="url(#liveBgGrad)" strokeWidth="14" strokeLinecap="round"
+                opacity={ribbonOpacity * 0.5} filter="url(#liveBgBlur)" />
+          <path d="M -20 660 C 70 580 150 600 220 530 C 290 460 330 500 420 430"
+                fill="none" stroke="url(#liveBgGrad)" strokeWidth="10" strokeLinecap="round"
+                opacity={ribbonOpacity * 0.4} filter="url(#liveBgBlur)" />
+          <path d="M -20 620 C 60 520 140 560 210 480 C 280 400 320 460 420 380"
+                fill="none" stroke="url(#liveBgGrad)" strokeWidth="3" strokeLinecap="round"
+                strokeDasharray="8 16" opacity={ribbonOpacity} className="live-bg-ribbon" />
+          <path d="M -20 660 C 70 580 150 600 220 530 C 290 460 330 500 420 430"
+                fill="none" stroke="url(#liveBgGrad)" strokeWidth="1.6" strokeLinecap="round"
+                strokeDasharray="5 12" opacity={ribbonOpacity * 0.8} className="live-bg-ribbon rev" />
+          <g opacity={dark ? 1 : 0.5}>
+            {sparkles.map(([x, y, delay], i) => (
+              <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 2.2 : 1.3} fill={sparkleColor}
+                      className="live-bg-sparkle" style={{ animationDelay: `${delay}s` }} />
+            ))}
+          </g>
+        </g>
+      </svg>
+    </div>
+  );
+}
+
 export function AppShell({
   gender = "M",
   dark = false,
@@ -620,13 +683,6 @@ export function AppShell({
   screens = {},          // { home, news, ranking, profile, coach }
 }) {
   const accent = accentFor(gender, dark);
-  // Sfondo vivo: due bagliori oro (uomo) o rosa cipria (donna) sopra il
-  // --page nero/bianco, che deriva lentamente invece di restare uno sfondo
-  // piatto statico — coerente col brand (stesse tonalità di accentFor),
-  // ma a bassissima opacità apposta: deve restare uno sfondo, non un poster.
-  const [bgGlow1, bgGlow2] = gender === "F"
-    ? [dark ? "rgba(212,165,165,0.12)" : "rgba(212,165,165,0.07)", dark ? "rgba(157,102,102,0.09)" : "rgba(157,102,102,0.05)"]
-    : [dark ? "rgba(197,160,89,0.12)" : "rgba(197,160,89,0.07)", dark ? "rgba(140,110,51,0.09)" : "rgba(140,110,51,0.05)"];
 
   /* Confronto case-insensitive e senza spazi accidentali: unico varco. */
   const isCoach = userEmail.trim().toLowerCase() === COACH_EMAIL;
@@ -680,30 +736,36 @@ export function AppShell({
 
   return (
     <div
-      className="app-root app-bg-live min-h-screen"
+      className="app-root min-h-screen"
       data-theme={dark ? "dark" : "light"}
-      style={{ backgroundColor: "var(--page)", transition: "background-color 0.4s ease",
-               "--bg-glow-1": bgGlow1, "--bg-glow-2": bgGlow2 }}
+      style={{ backgroundColor: "var(--page)", transition: "background-color 0.4s ease" }}
     >
       <DesignSystem />
+      <LiveBackground gender={gender} dark={dark} />
 
-      <AppHeader
-        dark={dark}
-        accent={accent}
-        userLabel={userLabel}
-        onOpenSettings={onOpenSettings}
-      />
+      {/* position:relative + z-index:1: garantisce che tutto il contenuto
+          reale stia SEMPRE sopra a .live-bg (position:fixed, z-index:0),
+          senza affidarsi alle regole di stacking di default del browser
+          per elementi non posizionati (che possono variare). */}
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <AppHeader
+          dark={dark}
+          accent={accent}
+          userLabel={userLabel}
+          onOpenSettings={onOpenSettings}
+        />
 
-      <main className="max-w-2xl mx-auto px-4 py-6" style={{ paddingBottom: 108 }}>
-        {[...visitedTabs].map((key) => (
-          <div key={key} className={key === activeTab ? "spring-in" : undefined}
-               style={{ display: key === activeTab ? "block" : "none", minHeight: "calc(100vh - 230px)" }}>
-            {screens[key] ?? fallback[key]}
-          </div>
-        ))}
-      </main>
+        <main className="max-w-2xl mx-auto px-4 py-6" style={{ paddingBottom: 108 }}>
+          {[...visitedTabs].map((key) => (
+            <div key={key} className={key === activeTab ? "spring-in" : undefined}
+                 style={{ display: key === activeTab ? "block" : "none", minHeight: "calc(100vh - 230px)" }}>
+              {screens[key] ?? fallback[key]}
+            </div>
+          ))}
+        </main>
 
-      <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} />
+        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} />
+      </div>
     </div>
   );
 }
