@@ -115,7 +115,17 @@ export default function App() {
   const [gender, setGender] = useState("M");           // 'M' | 'F' — da profiles.gender
   const [lang, setLang] = useState("it");               // 'it' | 'en' | 'es' | 'fr'
   const [userPlan, setUserPlan] = useState("free");      // 'free' | 'performance_pack' | 'full_coaching'
-  const [tab, setTab] = useState("home");
+  // BUG PRESO: su mobile (specie PWA), cambiare app per pochi secondi e
+  // tornare indietro spesso fa sì che il sistema operativo scarichi dalla
+  // memoria la pagina in background — al ritorno il browser la ricarica da
+  // zero, e senza persistenza si ripartiva sempre dalla Home anche se prima
+  // si era su un'altra schermata (Alimentazione, Classifica...). Non è un
+  // bug eliminabile del tutto (è il sistema operativo a decidere quando
+  // scaricare una pagina in background per risparmiare memoria, JS non può
+  // impedirlo), ma si può far ripartire l'app dall'ultima schermata aperta
+  // invece che sempre dalla Home — localStorage sopravvive al reload.
+  const [tab, setTab] = useState(() => localStorage.getItem("perform_last_tab") || "home");
+  useEffect(() => { localStorage.setItem("perform_last_tab", tab); }, [tab]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [notifications, setNotifications] = useState({
     meals: true, steps: true, sleep: true, motivation: true,
@@ -136,7 +146,18 @@ export default function App() {
       // senza reset, il prossimo login su questa stessa scheda del browser
       // (App.jsx non si smonta mai tra un logout e un login) ripresentava
       // l'ultima tab/pannello aperti invece della Home pulita.
-      if (!newSession) { setSettingsOpen(false); setTab("home"); }
+      if (!newSession) {
+        setSettingsOpen(false); setTab("home");
+        // Stesso identico motivo del reset di tab qui sopra, ma per lo
+        // screen interno di HomeDashboard (05_HomeDashboard.jsx): quello è
+        // persistito in localStorage per sopravvivere a un reload mentre
+        // l'app è in background (vedi lì), ma sopravviverebbe ANCHE a un
+        // logout — il prossimo account che fa login sullo stesso browser
+        // atterrerebbe sull'ultima sotto-schermata dell'account precedente
+        // invece che sulla Home. Va ripulito qui, l'unico posto che copre
+        // davvero ogni via di uscita dalla sessione.
+        localStorage.removeItem("perform_last_screen");
+      }
     });
     return () => {
       mounted = false;
