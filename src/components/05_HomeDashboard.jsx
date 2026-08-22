@@ -302,9 +302,9 @@ function Chart3D({ kind, series, title, onEditDay }) {
 
   return (
     <div className="relative rounded-2xl p-4 overflow-hidden"
-         style={{ backgroundColor: "rgba(255,255,255,0.07)", backdropFilter: "blur(16px) saturate(160%)",
+         style={{ backgroundColor: "var(--glass)", backdropFilter: "blur(16px) saturate(160%)",
                   WebkitBackdropFilter: "blur(16px) saturate(160%)",
-                  border: "0.5px solid rgba(255,255,255,0.4)", boxShadow: "0 12px 34px rgba(0,0,0,0.14)" }}>
+                  border: "0.5px solid var(--glass-line)", boxShadow: "0 12px 34px rgba(0,0,0,0.14)" }}>
       {/* Etichetta esplicita: prima i due grafici (sonno/passi) erano
           identici nella forma e distinguibili solo dal contesto sopra —
           poco chiaro, specie scorrendo velocemente. */}
