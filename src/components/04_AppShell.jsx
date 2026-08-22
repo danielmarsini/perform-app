@@ -97,6 +97,14 @@ export function DesignSystem() {
         /* fascia superiore e inferiore */
         --bar:       rgba(255,255,255,0.88);
         --bar-line:  rgba(17,17,17,0.06);
+
+        /* Card "vetro": prima erano troppo trasparenti (7% bianco) — con lo
+           sfondo vivo dietro a tutte le schermate, il colore ci filtrava
+           attraverso e la card sembrava avere lo stesso colore dello
+           sfondo. Quasi piena: resta un velo di vetro (blur/bordo), ma il
+           distacco dallo sfondo è netto anche a sfondo acceso. */
+        --glass:      rgba(255,255,255,0.94);
+        --glass-line: rgba(255,255,255,0.4);
       }
 
       .app-root[data-theme="dark"] {
@@ -112,6 +120,9 @@ export function DesignSystem() {
 
         --bar:       rgba(9,9,11,0.88);
         --bar-line:  rgba(255,255,255,0.09);
+
+        --glass:      rgba(24,24,27,0.94);
+        --glass-line: rgba(255,255,255,0.09);
       }
 
       /* Sfondo vivo — due macchie di luce morbide (oro/rosa) su fondo
@@ -123,7 +134,7 @@ export function DesignSystem() {
       .live-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
       .live-bg-blob {
         position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%;
-        filter: blur(60px); will-change: transform;
+        filter: blur(32px); will-change: transform;
       }
       .live-bg-blob-1 { top: -10%; right: -20%; animation: liveBgDrift1 26s ease-in-out infinite; }
       .live-bg-blob-2 { bottom: -25%; left: -20%; animation: liveBgDrift2 32s ease-in-out infinite; }
@@ -622,10 +633,12 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false }) {
    blur, animazione di posizione lenta) invece di un asset stock statico. */
 function LiveBackground({ gender, dark }) {
   const isFemale = gender === "F";
-  const bright = isFemale ? "#F4E0E6" : "#F0DCA0";
-  const deep = isFemale ? "#9D6666" : "#8C6E33";
-  const op1 = dark ? 0.5 : 0.22;
-  const op2 = dark ? 0.4 : 0.16;
+  // Colori più accesi/saturi (prima "rosa cipria" pallido, poco "vivo"
+  // in confronto al nero): rosa acceso vero per lei, oro pieno per lui.
+  const bright = isFemale ? "#E0578C" : "#E3B45C";
+  const deep = isFemale ? "#7A2848" : "#6B4F1F";
+  const op1 = dark ? 0.75 : 0.32;
+  const op2 = dark ? 0.62 : 0.24;
   return (
     <div className="live-bg" aria-hidden="true" style={{ backgroundColor: "var(--page)" }}>
       <div className="live-bg-blob live-bg-blob-1"

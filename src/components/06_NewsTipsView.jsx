@@ -950,11 +950,18 @@ export function NewsTipsViewStyles() {
         color: var(--ink-2); font-size: 0.78rem; font-weight: 700; white-space: nowrap;
       }
 
+      /* BUG PRESO: era un vetro semi-trasparente (46% di opacità in Onyx) —
+         con lo sfondo vivo dell'app (macchie di luce oro/rosa dietro a
+         tutte le schermate) il colore filtrava attraverso la card, che
+         sembrava avere lo stesso colore dello sfondo invece di staccarsene.
+         Ora quasi piena (94%): resta un velo di vetro (bordo/ombra/blur
+         leggeri), ma il distacco dallo sfondo è netto anche a schermo
+         acceso. */
       .news-card {
         cursor: pointer;
-        background: rgba(255,255,255,0.5);
-        backdrop-filter: blur(30px) saturate(180%);
-        -webkit-backdrop-filter: blur(30px) saturate(180%);
+        background: rgba(255,255,255,0.94);
+        backdrop-filter: blur(20px) saturate(140%);
+        -webkit-backdrop-filter: blur(20px) saturate(140%);
         border: 1px solid var(--line);
         border-radius: 1.25rem;
         box-shadow: 0 10px 34px rgba(0,0,0,0.03), inset 0 1px 0 rgba(255,255,255,0.55);
@@ -962,7 +969,7 @@ export function NewsTipsViewStyles() {
       }
       .news-card:hover { transform: translateY(-2px); }
       [data-theme="dark"] .news-card {
-        background: rgba(24,24,27,0.46);
+        background: rgba(24,24,27,0.94);
         border: 1px solid rgba(255,255,255,0.09);
         box-shadow: 0 14px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
       }
