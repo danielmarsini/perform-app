@@ -2260,6 +2260,21 @@ function WeekWorkoutEditor({ week, onChange, client }) {
     ...d,
     exercises: d.exercises.map((e, j) => (j === i ? { ...e, [field]: field === "sets" ? Math.max(1, Math.min(8, Number(value) || 1)) : field === "rest" ? Math.max(0, Number(value) || 0) : value } : e)),
   }));
+  // BUG PRESO (stesso identico difetto già preso sul campo Kcal in
+  // WeekDietEditor): "Serie" e "Recupero" applicavano Math.max/min a OGNI
+  // tasto premuto — un numero temporaneamente fuori range durante la
+  // digitazione (o anche solo lo stesso valore ricalcolato) faceva
+  // "correggere" il campo a metà digitazione, che su mobile sembra
+  // rifiutare alcune cifre. Ora una bozza di testo locale assorbe la
+  // digitazione per entrambi i campi; il vincolo (1-8 serie, recupero ≥0)
+  // si applica solo al blur, tramite updateEx come già faceva.
+  const [fieldDrafts, setFieldDrafts] = useState({}); // `${exId}-${field}` -> stringa in corso di modifica
+  const draftKey = (exId, field) => `${exId}-${field}`;
+  const commitDraft = (i, exId, field) => {
+    const key = draftKey(exId, field);
+    if (key in fieldDrafts) updateEx(i, field, fieldDrafts[key]);
+    setFieldDrafts((d) => { const next = { ...d }; delete next[key]; return next; });
+  };
   const toggleCustom = (i) => setDay((d) => ({
     ...d,
     exercises: d.exercises.map((e, j) => (j === i ? { ...e, custom: !e.custom, name: e.custom ? EX_NAMES[0] : "" } : e)),
@@ -2415,7 +2430,11 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="text-center">
                     <span className="c-label block mb-1">Serie</span>
-                    <input type="number" value={ex.sets} onChange={(e) => updateEx(i, "sets", e.target.value)} className="t-input w-14 text-sm rounded-md px-2 py-1.5 font-data text-center" />
+                    <input type="number" value={fieldDrafts[draftKey(ex.id, "sets")] ?? ex.sets}
+                      onFocus={() => setFieldDrafts((d) => ({ ...d, [draftKey(ex.id, "sets")]: String(ex.sets) }))}
+                      onChange={(e) => setFieldDrafts((d) => ({ ...d, [draftKey(ex.id, "sets")]: e.target.value }))}
+                      onBlur={() => commitDraft(i, ex.id, "sets")}
+                      className="t-input w-14 text-sm rounded-md px-2 py-1.5 font-data text-center" />
                   </label>
                   <label className="text-center">
                     <span className="c-label block mb-1">Reps</span>
@@ -2423,7 +2442,11 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                   </label>
                   <label className="text-center">
                     <span className="c-label block mb-1">Recupero (s)</span>
-                    <input type="number" step="15" value={ex.rest} onChange={(e) => updateEx(i, "rest", e.target.value)} className="t-input w-20 text-sm rounded-md px-2 py-1.5 font-data text-center" />
+                    <input type="number" step="15" value={fieldDrafts[draftKey(ex.id, "rest")] ?? ex.rest}
+                      onFocus={() => setFieldDrafts((d) => ({ ...d, [draftKey(ex.id, "rest")]: String(ex.rest) }))}
+                      onChange={(e) => setFieldDrafts((d) => ({ ...d, [draftKey(ex.id, "rest")]: e.target.value }))}
+                      onBlur={() => commitDraft(i, ex.id, "rest")}
+                      className="t-input w-20 text-sm rounded-md px-2 py-1.5 font-data text-center" />
                   </label>
                   <label className="text-center">
                     <span className="c-label block mb-1">RIR target</span>
