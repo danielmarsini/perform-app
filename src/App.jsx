@@ -163,7 +163,7 @@ export default function App() {
     const loadProfile = (attempt = 0) => {
       supabase
         .from("profiles")
-        .select("gender, plan, onboarding_completed, nickname, full_name")
+        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon")
         .eq("id", session.user.id)
         .single()
         .then(({ data, error }) => {
@@ -276,6 +276,7 @@ export default function App() {
               dark={dark}
               planTier={userPlan}
               isOwner={isCoach}
+              microAddon={!!profile?.micro_addon}
               supabase={supabase}
               userId={session.user.id}
               profileOverride={{
