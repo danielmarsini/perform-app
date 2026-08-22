@@ -571,9 +571,16 @@ function MicroBar({ id, value, target, accent }) {
   );
 }
 
-/* Griglia dei 5 micronutrienti: sbloccata da Performance Pack in su, coperta
-   dal lucchetto glassmorphism per i profili FREE. */
-function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, accent, waterMl }) {
+/* Griglia dei 5 micronutrienti — sblocco a 3 livelli:
+   · FREE → bloccata, upgrade a Performance Pack.
+   · Full Coaching → sbloccata sempre, inclusa nel piano.
+   · Performance Pack → sbloccata sempre (invariato, è il piano che vende
+     proprio i grafici avanzati).
+   · Scheda Personalizzata / Solo Allenamento Coaching → NON inclusa: è un
+     componente aggiuntivo a pagamento separato (micro_addon su profiles,
+     lo attiva il coach quando il cliente lo richiede/paga), diverso dal
+     semplice upgrade di piano — copy e CTA dedicate. */
+function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, accent, waterMl, microAddon }) {
   if (userPlan === "free") {
     return (
       <div className="mt-4">
@@ -581,6 +588,17 @@ function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, accent, w
         <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
           title="🔒 SBLOCCA IL LABORATORIO CHIMICO CELLULARE"
           text="Passa al Performance Pack (€5/mese) per sbloccare l'analisi in tempo reale di Sodio, Potassio, Ferro, Calcio e Magnesio. Monitora le tue carenze croniche ed ottieni i consigli AI per prevenire crampi, ritenzione idrica sotto la pelle e svuotamento muscolare in palestra." />
+      </div>
+    );
+  }
+  const needsAddon = (userPlan === "scheda_personalizzata" || userPlan === "training") && !microAddon;
+  if (needsAddon) {
+    return (
+      <div className="mt-4">
+        <p className="label mb-2">Micronutrienti · target giornaliero</p>
+        <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
+          title="🔒 COMPONENTE AGGIUNTIVO"
+          text="L'analisi di Sodio, Potassio, Ferro, Calcio e Magnesio non è inclusa nel tuo piano: è un componente a parte. Parlane con il tuo coach per attivarlo." />
       </div>
     );
   }
@@ -1560,10 +1578,11 @@ export function HomeDashboard({
   access,             // { nutrition, recovery }
   onSetSleep, onSetSteps, onToggleAutoSteps, onAddWater, onSetTargetOn, onSetTargetOff, onSetRhr, onSetHrv, onSetWaterTarget,
   targetOn, targetOff, isTrainingDay, onToggleTrainingDay,
-  onAddFood, onRemoveFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
+  onAddFood, onRemoveFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
   onApplyReschedule, onDismissReschedule,
   onUpgrade, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
-  userPlan, // 'free' | 'performance_pack' | 'full_coaching' — letta da Supabase, qui simulata
+  userPlan, // 'free' | 'performance_pack' | 'scheda_personalizzata' | 'training' | 'full_coaching' — letta da Supabase
+  microAddon, // profiles.micro_addon — componente aggiuntivo micronutrienti per Scheda/Training, attivato dal coach
   stressLevel, onSetStressLevel, nightWakeups, onSetNightWakeups, morningEnergy, onSetMorningEnergy,
   caffeineMg, onSetCaffeineMg, caffeineTime, onSetCaffeineTime,
   supabase, userId, // solo per il protocollo integratori reale (prescribed_supplements)
@@ -1571,6 +1590,10 @@ export function HomeDashboard({
   const [screen, setScreen] = useState("dash");   // dash | workout | nutrition | recovery
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [digestValue, setDigestValue] = useState(0);
+  // Alimentazione: "I tuoi target" ora è un pannello compatto in cima alla
+  // pagina, non più un tab tra Diario Libero e Sostituzioni — chiuso di
+  // default, si espande solo quando il cliente vuole davvero modificarli.
+  const [targetsOpen, setTargetsOpen] = useState(false);
   // Allenamento ora si divide in 3: Pesi (scheda/esercizi/volumi, era tutto
   // lo schermo), Cardio (spostato qui da Recupero — è allenamento, non
   // recupero), Wiki (invariata, solo spostata sotto ai 3 bottoni invece che
@@ -2145,59 +2168,86 @@ export function HomeDashboard({
 
   /* ------------------------------ ALIMENTAZIONE ------------------------- */
   if (screen === "nutrition") {
+    // Full Coaching: dieta tipo/target la fissa il coach. Tutti gli altri
+    // piani (FREE, Performance Pack, Scheda Personalizzata, Solo Allenamento
+    // Coaching) se li calcolano/impostano da soli — vedi NutritionTargetsPanel.
+    const targetIsCoachSet = userPlan === "full_coaching";
     return (
       <div className="spring-in">
         {back("Alimentazione")}
-        <div className="card mb-5">
-          <p className="label mb-3">Rimanenti oggi</p>
-          <MacroRow values={remaining} />
-          <p className="meta font-data mt-3 text-center">
-            {consumed.kcal} / {target.kcal} kcal consumate
-          </p>
-        </div>
 
-        {/* idratazione: spostata qui dal Recupero, fa parte dell'Alimentazione */}
-        <div className="card mb-5">
-          <p className="label mb-3">Idratazione</p>
-          <div className="flex items-center gap-4">
-            <button onClick={() => { haptic("tap"); onAddWater(); }} aria-label="Aggiungi 250 ml"
-                    className="relative rounded-2xl overflow-hidden shrink-0 transition-transform active:scale-95"
-                    style={{ width: 62, height: 96,
-                             background: "linear-gradient(145deg, var(--surface-2) 0%, var(--surface) 100%)",
-                             border: "2px solid var(--line)",
-                             boxShadow: "inset 0 2px 4px rgba(255,255,255,0.5), 0 6px 16px rgba(0,0,0,0.12)" }}>
-              <span className="water-wave absolute left-0 right-0 bottom-0"
-                    style={{ height: `${Math.min(100, (water / waterTarget) * 100)}%`,
-                             background: water >= waterTarget
-                               ? `linear-gradient(180deg, ${accentSoft} 0%, ${accent} 100%)`
-                               : "linear-gradient(180deg, #BFD9E8 0%, #7FB3D0 100%)",
-                             transition: "height 0.5s cubic-bezier(0.22,1,0.36,1)" }} />
-              <span className="absolute inset-0 flex items-center justify-center">
-                <Droplets size={21} style={{ color: water >= waterTarget ? "#111111" : "#4A6B7C" }} />
-              </span>
+        {/* I tuoi target + Idratazione: in cima, compatti e affiancati — non
+            più un box grande "Rimanenti oggi" seguito da un tab separato "I
+            Miei Target" più sotto. "Modifica"/"Dettagli" espande il pannello
+            completo (calcolo con le formule, o sola lettura se Full Coaching)
+            qui sotto, senza lasciare la pagina. */}
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className="card">
+            <p className="label mb-1.5">I tuoi target · oggi</p>
+            <p className="font-data" style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--ink)" }}>
+              {remaining.kcal} <span className="meta" style={{ fontSize: "0.7rem", fontWeight: 600 }}>kcal rimanenti</span>
+            </p>
+            <p className="meta font-data mb-2.5" style={{ fontSize: "0.68rem" }}>
+              {consumed.kcal} / {target.kcal} kcal · P{target.p} C{target.c} G{target.f}
+            </p>
+            <button onClick={() => setTargetsOpen((v) => !v)}
+              className="w-full rounded-full px-3 py-2 text-xs transition-transform active:scale-[0.98]"
+              style={{ backgroundColor: targetsOpen ? "var(--ink)" : "var(--surface-2)",
+                       color: targetsOpen ? "var(--page)" : "var(--ink-2)",
+                       border: targetsOpen ? "none" : "1px solid var(--line)", fontWeight: 600 }}>
+              {targetsOpen ? "Chiudi" : targetIsCoachSet ? "Dettagli" : "Modifica"}
             </button>
-            <div className="flex-1 min-w-0">
-              <p style={{ color: "var(--ink)", fontSize: "1.3rem", fontWeight: 500 }}>
-                {(water / 1000).toFixed(2)} L
-                <span className="meta"> / {(waterTarget / 1000).toFixed(1)} L</span>
-              </p>
-              <p className="meta mt-1">Ogni tocco aggiunge 250 ml</p>
+          </div>
+
+          <div className="card">
+            <p className="label mb-1.5">Idratazione</p>
+            <div className="flex items-center gap-2.5">
+              <button onClick={() => { haptic("tap"); onAddWater(); }} aria-label="Aggiungi 250 ml"
+                      className="relative rounded-xl overflow-hidden shrink-0 transition-transform active:scale-95"
+                      style={{ width: 40, height: 62,
+                               background: "linear-gradient(145deg, var(--surface-2) 0%, var(--surface) 100%)",
+                               border: "2px solid var(--line)",
+                               boxShadow: "inset 0 2px 4px rgba(255,255,255,0.5), 0 6px 16px rgba(0,0,0,0.12)" }}>
+                <span className="water-wave absolute left-0 right-0 bottom-0"
+                      style={{ height: `${Math.min(100, (water / waterTarget) * 100)}%`,
+                               background: water >= waterTarget
+                                 ? `linear-gradient(180deg, ${accentSoft} 0%, ${accent} 100%)`
+                                 : "linear-gradient(180deg, #BFD9E8 0%, #7FB3D0 100%)",
+                               transition: "height 0.5s cubic-bezier(0.22,1,0.36,1)" }} />
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <Droplets size={15} style={{ color: water >= waterTarget ? "#111111" : "#4A6B7C" }} />
+                </span>
+              </button>
+              <div className="min-w-0">
+                <p className="font-data" style={{ color: "var(--ink)", fontSize: "1.05rem", fontWeight: 700 }}>
+                  {(water / 1000).toFixed(2)} L
+                </p>
+                <p className="meta" style={{ fontSize: "0.65rem" }}>/ {(waterTarget / 1000).toFixed(1)} L</p>
+              </div>
             </div>
           </div>
         </div>
+
+        {targetsOpen && (
+          <div className="mb-5">
+            <NutritionTargetsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
+              targetOn={targetOn} targetOff={targetOff} onSetTargetOn={onSetTargetOn} onSetTargetOff={onSetTargetOff}
+              isTrainingDay={isTrainingDay} onToggleTrainingDay={onToggleTrainingDay}
+              waterTarget={waterTarget} onSetWaterTarget={onSetWaterTarget}
+              isPro={targetIsCoachSet} onUpgrade={onUpgrade} />
+          </div>
+        )}
 
         <NutritionTabs
           accent={accent} accentSoft={accentSoft} accentText={accentText}
           target={target} mealsBySlot={mealsBySlot} foods={foods}
           mealGuide={mealGuide} substitutions={substitutions}
-          onAddFood={onAddFood} onRemoveFood={onRemoveFood} onOpenScanner={onOpenScanner} onOpenPhoto={onOpenPhoto} onAddCustomFood={onAddCustomFood}
+          onAddFood={onAddFood} onRemoveFood={onRemoveFood} onOpenScanner={onOpenScanner} onAddCustomFood={onAddCustomFood}
           onCopyYesterday={onCopyYesterday} onShoppingList={onShoppingList} supabase={supabase}
-          targetOn={targetOn} targetOff={targetOff}
-          onSetTargetOn={onSetTargetOn} onSetTargetOff={onSetTargetOff}
-          isTrainingDay={isTrainingDay} onToggleTrainingDay={onToggleTrainingDay}
-          waterTarget={waterTarget} onSetWaterTarget={onSetWaterTarget}
-          fullAccess={access.pro} subsAccess={access.paid} onUpgrade={onUpgrade}
-          userPlan={userPlan} gender={profile.gender} waterMl={water}
+          fullAccess={targetIsCoachSet}
+          subsAccess={userPlan === "performance_pack" || userPlan === "full_coaching"}
+          onUpgrade={onUpgrade}
+          userPlan={userPlan} gender={profile.gender} waterMl={water} microAddon={microAddon}
           digestValue={digestValue}
           onDigestChange={(v) => { setDigestValue(v); onCoachSync && onCoachSync({ type: "bio-symptom", symptom: "digest", value: v }); }}
         />
@@ -4964,6 +5014,41 @@ async function lookupBarcodeProduct(barcode) {
   };
 }
 
+/* Ricerca testuale (non da barcode) sullo stesso Open Food Facts: il
+   catalogo condiviso locale (Supabase) parte vuoto e cresce solo con quello
+   che i clienti aggiungono — alimenti "basic" come miele o proteine in
+   polvere possono non esserci ancora. Quando i risultati locali sono pochi,
+   si interroga anche il database mondiale reale (milioni di prodotti con
+   marca, non solo l'ipotetico "generico"), mostrato in una sezione separata
+   nella tendina: se il cliente ne sceglie uno, arricchisce comunque il
+   catalogo condiviso locale come una scansione barcode. */
+async function searchOpenFoodFactsByName(query) {
+  const res = await fetch(
+    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}` +
+    `&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments`
+  );
+  if (!res.ok) throw new Error(`Open Food Facts ${res.status}`);
+  const data = await res.json();
+  return (data.products || [])
+    .map((product) => {
+      const n = product.nutriments || {};
+      const kcal = n["energy-kcal_100g"];
+      if (kcal == null) return null; // scarta prodotti senza valori nutrizionali compilati
+      const name = [product.product_name, product.brands].filter(Boolean).join(" — ");
+      if (!name) return null;
+      return {
+        name,
+        kcal: Math.round(kcal),
+        p: Math.round((n["proteins_100g"] ?? 0) * 10) / 10,
+        c: Math.round((n["carbohydrates_100g"] ?? 0) * 10) / 10,
+        f: Math.round((n["fat_100g"] ?? 0) * 10) / 10,
+        na: n["sodium_100g"] != null ? Math.round(n["sodium_100g"] * 1000) : undefined,
+        k: n["potassium_100g"] != null ? Math.round(n["potassium_100g"] * 1000) : undefined,
+      };
+    })
+    .filter(Boolean);
+}
+
 /* Fotocamera in diretta + decodifica barcode client-side (ZXing, nessun
    server coinvolto nella lettura): funziona anche su iOS Safari, dove
    l'API nativa BarcodeDetector non esiste.
@@ -5234,10 +5319,9 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
 
 function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide, substitutions,
-  onAddFood, onRemoveFood, onOpenScanner, onOpenPhoto, onAddCustomFood, onCopyYesterday, onShoppingList,
-  targetOn, targetOff, onSetTargetOn, onSetTargetOff,
-  isTrainingDay, onToggleTrainingDay, waterTarget, onSetWaterTarget, fullAccess, subsAccess, onUpgrade,
-  userPlan, gender, waterMl, digestValue, onDigestChange, supabase,
+  onAddFood, onRemoveFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
+  fullAccess, subsAccess, onUpgrade,
+  userPlan, gender, waterMl, microAddon, digestValue, onDigestChange, supabase,
 }) {
   const [tab, setTab] = useState("diary");        // diary è il default
   const [openSlot, setOpenSlot] = useState(null);
@@ -5248,15 +5332,16 @@ function NutritionTabs({
   const [manualAddOpen, setManualAddOpen] = useState(false);
   const [manualMacros, setManualMacros] = useState({ kcal: "", p: "", c: "", f: "" });
 
-  // Diario Libero e I Miei Target restano sempre disponibili (il secondo è
-  // l'unico modo per un cliente FREE di impostare i propri macro, senza un
-  // coach che lo faccia per lui). Sostituzioni si sblocca da Performance
-  // Pack/Scheda Personalizzata in su (subsAccess); Dieta Tipo, scritta dal
-  // coach, solo con Coaching/Full Coaching (fullAccess) — visibili solo i
-  // tab a cui il piano dà davvero accesso, non mostrati-ma-bloccati.
+  // Diario Libero resta sempre disponibile. "I Miei Target" non è più un tab
+  // qui accanto: i target vivono ora in cima alla schermata Alimentazione
+  // (fuori da questi tab, sempre visibili e modificabili da lì — vedi
+  // screen === "nutrition"), così non serve cercarli in un tab separato.
+  // Sostituzioni solo Performance Pack/Full Coaching (subsAccess, più
+  // stretto di "qualunque piano a pagamento"); Dieta Tipo, scritta dal
+  // coach, solo Full Coaching (fullAccess) — visibili solo i tab a cui il
+  // piano dà davvero accesso, non mostrati-ma-bloccati.
   const visibleTabs = [
     ["diary", "Diario Libero"],
-    ["targets", "I Miei Target"],
     ...(subsAccess ? [["subs", "Sostituzioni"]] : []),
     ...(fullAccess ? [["plan", "Dieta Tipo"]] : []),
   ];
@@ -5270,6 +5355,29 @@ function NutritionTabs({
     if (!q) return foods.slice(0, 10);
     return foods.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 10);
   }, [query, foods]);
+
+  /* Il catalogo condiviso locale non ha ancora tutto (parte vuoto e cresce
+     con quello che i clienti aggiungono) — quando i risultati locali sono
+     pochi, si cerca anche su Open Food Facts (milioni di prodotti reali),
+     con un piccolo debounce per non interrogarlo a ogni singola lettera. */
+  const [offResults, setOffResults] = useState([]);
+  const [offSearching, setOffSearching] = useState(false);
+  useEffect(() => {
+    const q = query.trim();
+    if (!dropOpen || selected || manualAddOpen || q.length < 3 || filtered.length >= 6) {
+      setOffResults([]);
+      return;
+    }
+    let cancelled = false;
+    setOffSearching(true);
+    const t = setTimeout(() => {
+      searchOpenFoodFactsByName(q)
+        .then((results) => { if (!cancelled) setOffResults(results); })
+        .catch((err) => { console.error("PERFORM: errore ricerca Open Food Facts", err); if (!cancelled) setOffResults([]); })
+        .finally(() => { if (!cancelled) setOffSearching(false); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [query, dropOpen, selected, manualAddOpen, filtered.length]);
 
   const preview = selected && grams ? {
     name: selected.name, grams: Number(grams),
@@ -5311,39 +5419,6 @@ function NutritionTabs({
       setScanError("Non sono riuscito a cercare il prodotto — controlla la connessione e riprova.");
     } finally {
       setScanLookupBusy(false);
-    }
-  };
-
-  /* Foto del piatto: stima reale da PERFORM AI (Claude, vision) via Edge
-     Function estimate-food-photo — non più un valore fisso finto. Resta
-     sempre una STIMA (etichettata come tale), mai un dato certo come una
-     scansione barcode o un inserimento manuale. */
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const [photoError, setPhotoError] = useState("");
-  const photoInputRef = useRef(null);
-  const handlePhotoFile = async (file) => {
-    if (!file || !supabase) return;
-    setPhotoBusy(true);
-    setPhotoError("");
-    try {
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const { data, error } = await supabase.functions.invoke("estimate-food-photo", {
-        body: { imageBase64: base64, mediaType: file.type || "image/jpeg" },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      const food = { name: `${data.name} (stima AI)`, kcal: data.kcal, p: data.p, c: data.c, f: data.f };
-      setSelected(food); setQuery(food.name); setDropOpen(false);
-    } catch (err) {
-      console.error("PERFORM: errore stima foto piatto", err);
-      setPhotoError(err.message || "Non sono riuscito a stimare il piatto dalla foto — riprova o inseriscilo a mano.");
-    } finally {
-      setPhotoBusy(false);
     }
   };
 
@@ -5506,7 +5581,39 @@ function NutritionTabs({
                                 </span>
                               </button>
                             ))}
-                            {filtered.length === 0 && (
+
+                            {/* Open Food Facts: solo quando il catalogo condiviso locale
+                                ne ha pochi o nessuno — un alimento scelto da qui arricchisce
+                                comunque il catalogo locale, come una scansione barcode. */}
+                            {(offSearching || offResults.length > 0) && (
+                              <div className="px-4 py-2" style={{ backgroundColor: "var(--surface-2)" }}>
+                                <p className="meta" style={{ fontSize: "0.6rem", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                                  🌍 Dal database globale (Open Food Facts)
+                                </p>
+                              </div>
+                            )}
+                            {offSearching && (
+                              <p className="meta text-sm px-4 py-3 flex items-center gap-2">
+                                <Loader2 size={13} className="animate-spin" /> Cerco nel database globale…
+                              </p>
+                            )}
+                            {offResults.map((f) => (
+                              <button key={`off-${f.name}`}
+                                onMouseDown={() => { onAddCustomFood && onAddCustomFood(f); setSelected(f); setQuery(f.name); setDropOpen(false); }}
+                                className="search-strong w-full text-left px-4 py-2.5"
+                                style={{ borderBottom: "1px solid var(--line)" }}>
+                                <span className="block truncate">{f.name}</span>
+                                <span className="font-data flex gap-2.5 mt-0.5" style={{ fontSize: "0.68rem", fontWeight: 600 }}>
+                                  <span style={{ color: MACRO_COLORS.kcal.base }}>{f.kcal} kcal</span>
+                                  <span style={{ color: MACRO_COLORS.p.base }}>P{f.p}</span>
+                                  <span style={{ color: MACRO_COLORS.c.base }}>C{f.c}</span>
+                                  <span style={{ color: MACRO_COLORS.f.base }}>G{f.f}</span>
+                                  <span style={{ color: "var(--ink-tertiary)", fontWeight: 400 }}>/100g</span>
+                                </span>
+                              </button>
+                            ))}
+
+                            {filtered.length === 0 && !offSearching && offResults.length === 0 && (
                               <div className="px-4 py-3">
                                 <p className="meta text-sm mb-2">Nessun risultato per "{query}".</p>
                                 <button onMouseDown={() => setManualAddOpen(true)}
@@ -5568,20 +5675,18 @@ function NutritionTabs({
                           style={{ backgroundColor: "#111111" }}>
                           {scanLookupBusy ? <Loader2 size={19} className="animate-spin" style={{ color: accent }} /> : <Barcode size={19} style={{ color: accent }} />}
                         </button>
-                        <button onClick={() => { onOpenPhoto && onOpenPhoto(slot.id); photoInputRef.current?.click(); }} aria-label="Fotografa il piatto" disabled={photoBusy}
+                        {/* Inserimento manuale al posto della vecchia stima AI da foto:
+                            sempre raggiungibile (non solo quando la ricerca non trova
+                            nulla), apre subito il form nome + valori/100g qui sotto. */}
+                        <button onClick={() => { setManualAddOpen(true); setDropOpen(false); }} aria-label="Aggiungi alimento manualmente"
                           className="shrink-0 w-12 h-12 rounded-xl flex items-center justify-center transition-transform active:scale-95"
                           style={{ backgroundColor: "#111111" }}>
-                          {photoBusy ? <Loader2 size={19} className="animate-spin" style={{ color: accent }} /> : <Camera size={19} style={{ color: accent }} />}
+                          <Plus size={19} style={{ color: accent }} />
                         </button>
-                        <input ref={photoInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoFile(f); e.target.value = ""; }} />
                       </div>
 
                       {scanError && (
                         <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(240,160,32,0.12)", color: "#B45309" }}>{scanError}</p>
-                      )}
-                      {photoError && (
-                        <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626" }}>{photoError}</p>
                       )}
                       {scannerSlot === slot.id && (
                         <BarcodeScannerModal accent={accent} onClose={() => setScannerSlot(null)} onDetected={handleBarcodeDetected} />
@@ -5619,10 +5724,16 @@ function NutritionTabs({
             })}
           </div>
 
-        <MicronutrientGrid mealsBySlot={mealsBySlot} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} waterMl={waterMl} />
+        <MicronutrientGrid mealsBySlot={mealsBySlot} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} waterMl={waterMl} microAddon={microAddon} />
 
-        {!fullAccess && <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
-          text="Registrare cosa mangi è il primo passo. Il secondo è sapere se sta davvero funzionando: fatti aiutare da un professionista del settore che legge il tuo diario e aggiusta il piano per te." />}
+        {/* Non "!fullAccess" (che ora significa solo "non è Full Coaching"):
+            Scheda Personalizzata e Solo Allenamento Coaching hanno già un
+            coach vero, non ha senso proporgli di trovarne uno. Il nudge ha
+            senso solo per chi non ne ha nessuno. */}
+        {(userPlan === "free" || userPlan === "performance_pack") && (
+          <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
+            text="Registrare cosa mangi è il primo passo. Il secondo è sapere se sta davvero funzionando: fatti aiutare da un professionista del settore che legge il tuo diario e aggiusta il piano per te." />
+        )}
 
         {/* ultima cosa del Diario Libero: check-in digestivo, facoltativo */}
         <div className="card mt-4">
@@ -5633,16 +5744,10 @@ function NutritionTabs({
         </div>
       )}
 
-      {/* ---------------- I MIEI TARGET ---------------- */}
-      {tab === "targets" && (
-        <NutritionTargetsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
-          targetOn={targetOn} targetOff={targetOff} onSetTargetOn={onSetTargetOn} onSetTargetOff={onSetTargetOff}
-          isTrainingDay={isTrainingDay} onToggleTrainingDay={onToggleTrainingDay}
-          waterTarget={waterTarget} onSetWaterTarget={onSetWaterTarget}
-          isPro={fullAccess} onUpgrade={onUpgrade} />
-      )}
+      {/* "I Miei Target" non è più un tab qui: vive in cima alla schermata
+          Alimentazione (screen === "nutrition"), sempre visibile. */}
 
-      {/* ---------------- DIETA TIPO (solo Coaching/Full Coaching, il tab
+      {/* ---------------- DIETA TIPO (solo Full Coaching, il tab
           stesso è nascosto agli altri piani — vedi visibleTabs sopra) ---------------- */}
       {tab === "plan" && fullAccess && (
         <div className="spring-in">
@@ -7324,6 +7429,7 @@ export default function HomePreview({
   planTier: planProp,      // 'free' | 'performance_pack' | 'full_coaching' — mappato da App.jsx (Supabase, qui simulato)
   isOwner,                 // true solo per danielmarsini@coach.com (App.jsx) — il proprietario non ha bisogno di abbonamenti
   profileOverride,         // { name, nickname } dalla sessione reale, sostituisce i valori di preview
+  microAddon: microAddonProp, // profiles.micro_addon reale — componente aggiuntivo micronutrienti per Scheda/Training
   supabase: supabaseProp,  // se passato insieme a userId, sostituisce scheda/target finti con quelli reali assegnati dal coach
   userId,
 } = {}) {
@@ -7838,7 +7944,18 @@ export default function HomePreview({
           weekPlan={weekPlan} musclesOf={MUSCLES_OF} missedDayIdx={-1}
           access={access}
           supabase={supabaseProp} userId={userId}
-          userPlan={planTier === "FREE" ? "free" : planTier === "BASE" ? "performance_pack" : "full_coaching"}
+          // BUG PRESO: qui sotto veniva SEMPRE derivato dal bucket a 3 valori
+          // FREE/BASE/PRO (vedi planTier più sotto) — utile per i gate larghi
+          // "è un piano a pagamento?"/"è un piano da coaching?", ma quel
+          // bucket comprime scheda_personalizzata e training nello stesso
+          // "PRO" di full_coaching. Passato così a valle, Sostituzioni/Dieta
+          // Tipo/Micronutrienti (che devono distinguere Full Coaching dagli
+          // altri due piani da coaching) vedevano SEMPRE "full_coaching" per
+          // tutti e tre. planProp (il piano reale da Supabase, via App.jsx)
+          // resta quello vero; il bucket demo serve solo quando non c'è
+          // un App.jsx reale a fornirlo (preview isolata).
+          userPlan={planProp ?? (planTier === "FREE" ? "free" : planTier === "BASE" ? "performance_pack" : "full_coaching")}
+          microAddon={microAddonProp}
           onSetSleep={(k, v) => setSleep((s) => {
             const next = { ...s, [k]: v };
             if (next.start && next.end) {
@@ -7880,7 +7997,7 @@ export default function HomePreview({
               return { ...m, [slot]: m[slot].filter((_, i) => i !== index) };
             });
           }}
-          onOpenScanner={() => {}} onOpenPhoto={() => {}} onAddCustomFood={addCustomFood}
+          onOpenScanner={() => {}} onAddCustomFood={addCustomFood}
           onCopyYesterday={() => {}} onShoppingList={() => {}}
           onApplyReschedule={() => {}} onDismissReschedule={() => {}}
           onUpgrade={() => {}}

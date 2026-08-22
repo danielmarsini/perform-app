@@ -2394,8 +2394,14 @@ function WeekWorkoutEditor({ week, onChange, client }) {
               <div key={ex.id} className="t-inner px-3 py-3">
                 <div className="flex items-center gap-2 flex-wrap mb-2">
                   {ex.custom ? (
+                    // BUG PRESO: autoFocus qui scattava per OGNI esercizio "libero" della
+                    // giornata a ogni apertura dell'editor (non solo per uno appena
+                    // aggiunto) — il browser porta automaticamente in vista l'ultimo
+                    // elemento che riceve il focus, quindi l'editor si apriva già
+                    // scrollato in fondo, sull'ultimo esercizio. Via l'autofocus: si apre
+                    // in cima, il cursore va dove lo mette il coach.
                     <input value={ex.name} onChange={(e) => updateEx(i, "name", e.target.value)} placeholder="Scrivi il nome dell'esercizio…"
-                      className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[180px]" autoFocus />
+                      className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[180px]" />
                   ) : (
                     <select value={ex.name} onChange={(e) => updateEx(i, "name", e.target.value)} className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[180px]">
                       {EX_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -2658,6 +2664,20 @@ function WeekDietEditor({ week, onChange, client }) {
   const totals = dayMacros(current.meals);
   const remaining = { p: current.target.p - totals.p, c: current.target.c - totals.c, f: current.target.f - totals.f, kcal: targetKcal - totals.kcal };
 
+  // BUG PRESO (mobile): il campo Kcal mostrava value={targetKcal}, un valore
+  // DERIVATO da p/c/f e ricalcolato a ogni render. Digitare in questo campo
+  // ridistribuiva p/c/f con arrotondamento (Math.round) e il nuovo targetKcal
+  // che ne usciva (kcalFromMacros dei grammi arrotondati) quasi mai coincideva
+  // col numero appena scritto — il campo "correggeva" ogni singola cifra
+  // digitata, che su mobile appare come selezione/cancellazione automatica.
+  // Fix: una bozza di testo locale, sincronizzata dal valore derivato solo
+  // quando il campo NON ha il focus (cambio giorno ON/OFF, modifica dei
+  // grammi, generazione AI) — mentre si scrive, il campo mostra esattamente
+  // ciò che l'utente digita, e la ridistribuzione scatta solo al blur.
+  const [kcalFocused, setKcalFocused] = useState(false);
+  const [kcalDraft, setKcalDraft] = useState(String(targetKcal));
+  useEffect(() => { if (!kcalFocused) setKcalDraft(String(targetKcal)); }, [targetKcal, kcalFocused]);
+
   return (
     <div>
       <ConfirmToggle label="Dieta" checked={week.confirmed.diet} onToggle={() => onChange({ ...week, confirmed: { ...week.confirmed, diet: !week.confirmed.diet } })} />
@@ -2686,7 +2706,10 @@ function WeekDietEditor({ week, onChange, client }) {
         <div className="flex items-center justify-between mb-1">
           <p className="c-label">Target giornaliero · {profile === "ON" ? "Allenamento" : "Riposo"}</p>
           <div className="flex items-center gap-1.5">
-            <input type="number" min={0} value={targetKcal} onChange={(e) => updTargetKcal(e.target.value)}
+            <input type="number" min={0} value={kcalDraft}
+              onFocus={() => setKcalFocused(true)}
+              onChange={(e) => setKcalDraft(e.target.value)}
+              onBlur={() => { setKcalFocused(false); updTargetKcal(kcalDraft); }}
               className="t-input w-24 text-right text-lg font-bold font-data rounded-md px-2 py-1" style={{ color: "var(--ink)" }} />
             <span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}>kcal</span>
           </div>
