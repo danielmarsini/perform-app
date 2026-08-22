@@ -964,22 +964,25 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   const isNeutral = pct == null;
   const color = isNeutral ? "var(--ink-2)" : complianceColor(pct);
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
-  // BUG PRESO: l'arco usava un gradiente diagonale (0%→100% di opacità
-  // sull'intera bounding box del cerchio) invece di un colore pieno — nel
-  // punto in cui l'arco INIZIA (ore 12, in alto) quel gradiente ricadeva
-  // spesso vicino al capo più trasparente (0.78 di opacità), che su sfondo
-  // scuro leggeva come una sbavatura grigia proprio "all'inizio" del cerchio
-  // invece del colore acceso. Ora l'arco è un colore pieno — lucido dato dal
-  // velo bianco statico + un riflesso che gira in senso orario in continuo
-  // (stesso principio della barra XP, ma sul colore reale del cerchio, non
-  // un oro/rosa fisso: qui il colore deve restare quello legato al pct).
+  // BUG PRESO (2 giri di correzione): il primo tentativo faceva ruotare
+  // l'INTERO riflesso a 360° sopra il cerchio — per un pct basso (es. 10%)
+  // il riflesso passava per la maggior parte del tempo sopra il tratto
+  // GRIGIO ancora scoperto, non sopra l'arco colorato: da qui "una riga
+  // grigia che si muove" segnalata. Ora il riflesso è vincolato a restare
+  // SEMPRE dentro l'arco colorato: anima solo stroke-dashoffset (mai un
+  // transform/rotate), spostandosi dall'inizio dell'arco fino alla sua
+  // punta e poi da capo — stesso principio della barra XP (un bagliore che
+  // scorre dentro l'area già colorata, mai fuori), ma sul colore reale del
+  // cerchio (rosso/arancio/verde), non un oro/rosa fisso.
+  const filledLen = c * (Math.max(0, Math.min(100, pct ?? 0)) / 100);
+  const shineLen = Math.min(filledLen, Math.max(stroke * 1.2, filledLen * 0.45));
   return (
     <div className="relative shrink-0 ring-breathe" style={{ width: size, height: size }}>
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={stroke} />
         {!isNeutral && (
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
-                  strokeDasharray={c} strokeDashoffset={c - c * (pct / 100)} transform={`rotate(-90 ${cx} ${cy})`}
+                  strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
                   style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease",
                            filter: `drop-shadow(0 0 5px ${color}99)` }} />
         )}
@@ -987,19 +990,16 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
                   strokeDasharray="4 5" strokeOpacity="0.55" />
         )}
-        {/* velo lucido statico: piccolo arco bianco fisso in alto, per la tridimensionalità */}
-        {!isNeutral && (
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.35"
-                  strokeWidth={Math.max(1.5, stroke * 0.22)} strokeLinecap="round"
-                  strokeDasharray={`${c * 0.12} ${c}`} strokeDashoffset={c * 0.06} transform={`rotate(-90 ${cx} ${cy})`} />
-        )}
-        {/* riflesso animato: gira in senso orario in continuo, sempre col
-            colore attuale del cerchio (rosso/arancio/verde in base al pct). */}
-        {!isNeutral && (
-          <circle className="ring-shine" cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.85"
-                  strokeWidth={Math.max(1.5, stroke * 0.26)} strokeLinecap="round"
-                  strokeDasharray={`${c * 0.05} ${c}`} transform={`rotate(-90 ${cx} ${cy})`}
-                  style={{ transformOrigin: `${cx}px ${cy}px`, filter: `drop-shadow(0 0 3px ${color})` }} />
+        {/* riflesso animato: scorre avanti e indietro DENTRO l'arco colorato,
+            mai oltre — vincolo dato dai due estremi shineFrom/shineTo qui
+            sotto, passati come custom property CSS (uno per anello, il
+            keyframe è condiviso). */}
+        {!isNeutral && pct > 2 && (
+          <circle className="ring-shine" cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.9"
+                  strokeWidth={Math.max(1.5, stroke * 0.5)} strokeLinecap="round"
+                  strokeDasharray={`${shineLen} ${c}`} transform={`rotate(-90 ${cx} ${cy})`}
+                  style={{ "--shine-from": c, "--shine-to": c - filledLen + shineLen,
+                           filter: `drop-shadow(0 0 4px ${color})` }} />
         )}
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
@@ -2268,14 +2268,16 @@ export function HomeDashboard({
             {/* consumato/target per ciascun valore, non più solo "rimanenti":
                 il numero a sinistra (consumato) sale con calcolo preciso ad
                 ogni alimento aggiunto — stessa fonte (consumed) del diario. */}
-            <p className="font-data mb-1" style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--ink)" }}>
-              {consumed.kcal}<span className="meta" style={{ fontSize: "0.85rem", fontWeight: 600 }}>/{target.kcal}</span>
+            <p className="font-data mb-1.5" style={{ fontSize: "1.15rem", fontWeight: 800, color: accent }}>
+              {consumed.kcal}<span style={{ fontSize: "0.85rem", fontWeight: 600, opacity: 0.75 }}>/{target.kcal}</span>
               <span className="meta" style={{ fontSize: "0.62rem", fontWeight: 600, marginLeft: 4 }}>kcal consumate</span>
             </p>
-            <div className="flex items-center gap-2.5 font-data mb-2.5" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
-              <span style={{ color: MACRO_COLORS.p.base }}>{consumed.p}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.p}</span>P</span>
-              <span style={{ color: MACRO_COLORS.c.base }}>{consumed.c}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.c}</span>C</span>
-              <span style={{ color: MACRO_COLORS.f.base }}>{consumed.f}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.f}</span>G</span>
+            {/* un macro per riga: affiancati andavano a capo male su schermi
+                stretti (spaginava), qui ogni riga sta sempre su una colonna. */}
+            <div className="space-y-0.5 font-data mb-2.5" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
+              <p style={{ color: MACRO_COLORS.p.base }}>Proteine {consumed.p}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.p}g</span></p>
+              <p style={{ color: MACRO_COLORS.c.base }}>Carboidrati {consumed.c}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.c}g</span></p>
+              <p style={{ color: MACRO_COLORS.f.base }}>Grassi {consumed.f}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.f}g</span></p>
             </div>
             <button onClick={() => setTargetsOpen((v) => !v)}
               className="w-full rounded-full px-3 py-2 text-xs transition-transform active:scale-[0.98]"
@@ -4469,13 +4471,15 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
    Sottomoduli dell'Alimentazione: Diario Libero per primo.
    ------------------------------------------------------------------------- */
 
+// Icone più sobrie/professionali (pancake, panino, bicchiere col cannuccino
+// leggevano "menù per bambini") — stesso set riconoscibile, tono più adulto.
 export const MEAL_SLOTS = [
-  { id: "colazione", label: "Colazione",  icon: "🥞" },
-  { id: "spuntino1", label: "Spuntino 1", icon: "🥤" },
-  { id: "pranzo",    label: "Pranzo",     icon: "🥙" },
-  { id: "merenda",   label: "Merenda",    icon: "🥪" },
+  { id: "colazione", label: "Colazione",  icon: "🍳" },
+  { id: "spuntino1", label: "Spuntino 1", icon: "🍎" },
+  { id: "pranzo",    label: "Pranzo",     icon: "🥗" },
+  { id: "merenda",   label: "Merenda",    icon: "🍊" },
   { id: "cena",      label: "Cena",       icon: "🍽️" },
-  { id: "prenanna",  label: "Prenanna",   icon: "🥛" },
+  { id: "prenanna",  label: "Prenanna",   icon: "🌙" },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -8033,12 +8037,15 @@ export default function HomePreview({
         .xp-bar-shine{background-image:linear-gradient(90deg, var(--title-a), var(--title-b), var(--title-c), var(--title-b), var(--title-a));
           background-size:220% auto;animation:xpBarShine 3.5s linear infinite}
         @media (prefers-reduced-motion: reduce){.xp-bar-shine{animation:none}}
-        /* riflesso dei cerchi di compliance: gira in senso orario in modo
-           continuo (transform-box:fill-box rende l'origine "centro della
-           forma", non dell'intero SVG — necessario perché il cerchio non
-           riempie tutto il viewBox). */
-        .ring-shine{transform-box:fill-box;animation:ringShine 2.6s linear infinite}
-        @keyframes ringShine{from{transform:rotate(-90deg)}to{transform:rotate(270deg)}}
+        /* riflesso dei cerchi di compliance: scorre avanti e indietro
+           dentro l'arco colorato (vedi ComplianceCircle per --shine-from/
+           --shine-to, calcolati per restare sempre entro la parte piena). */
+        .ring-shine{animation:ringShine 2.4s ease-in-out infinite}
+        @keyframes ringShine{
+          0%{stroke-dashoffset:var(--shine-from)}
+          50%{stroke-dashoffset:var(--shine-to)}
+          100%{stroke-dashoffset:var(--shine-from)}
+        }
         @media (prefers-reduced-motion: reduce){.ring-shine{animation:none}}
         /* toast XP: entra dall'alto, resta un attimo, si dissolve da sola */
         .xp-toast-wrap{position:fixed;top:calc(env(safe-area-inset-top, 0px) + 14px);left:0;right:0;

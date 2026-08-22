@@ -114,6 +114,27 @@ export function DesignSystem() {
         --bar-line:  rgba(255,255,255,0.09);
       }
 
+      /* Sfondo vivo: due bagliori (oro o rosa, vedi --bg-glow-1/2 impostati
+         inline da AppShell in base a genere/tema) che derivano lentamente
+         sopra il --page nero/bianco piatto, invece di restare statici.
+         Stessa tecnica già in uso su .xp-bar-shine/.title-shine (gradiente
+         più grande del contenitore + background-position animato), qui
+         applicata allo sfondo dell'intera app anziché a un singolo testo/
+         barra — visibile soprattutto negli spazi tra le card, mai sopra il
+         testo (le card restano --surface pieno, sempre leggibili). */
+      .app-bg-live {
+        background-image: linear-gradient(120deg,
+          transparent 0%, var(--bg-glow-1, transparent) 22%, transparent 45%,
+          var(--bg-glow-2, transparent) 68%, transparent 100%);
+        background-size: 320% 320%;
+        animation: appBgDrift 34s ease-in-out infinite;
+      }
+      @keyframes appBgDrift {
+        0%, 100% { background-position: 0% 30%; }
+        50% { background-position: 100% 70%; }
+      }
+      @media (prefers-reduced-motion: reduce) { .app-bg-live { animation: none; } }
+
       /* --- tipografia ----------------------------------------------------
          Ogni etichetta, label e micro-testo eredita var(--font-sans) da
          .app-root. .font-data resta l'unica eccezione, per le cifre. */
@@ -599,6 +620,13 @@ export function AppShell({
   screens = {},          // { home, news, ranking, profile, coach }
 }) {
   const accent = accentFor(gender, dark);
+  // Sfondo vivo: due bagliori oro (uomo) o rosa cipria (donna) sopra il
+  // --page nero/bianco, che deriva lentamente invece di restare uno sfondo
+  // piatto statico — coerente col brand (stesse tonalità di accentFor),
+  // ma a bassissima opacità apposta: deve restare uno sfondo, non un poster.
+  const [bgGlow1, bgGlow2] = gender === "F"
+    ? [dark ? "rgba(212,165,165,0.12)" : "rgba(212,165,165,0.07)", dark ? "rgba(157,102,102,0.09)" : "rgba(157,102,102,0.05)"]
+    : [dark ? "rgba(197,160,89,0.12)" : "rgba(197,160,89,0.07)", dark ? "rgba(140,110,51,0.09)" : "rgba(140,110,51,0.05)"];
 
   /* Confronto case-insensitive e senza spazi accidentali: unico varco. */
   const isCoach = userEmail.trim().toLowerCase() === COACH_EMAIL;
@@ -627,7 +655,23 @@ export function AppShell({
   };
 
   const activeTab = tab === "coach" && !isCoach ? "home" : tab;
-  const current = screens[activeTab] ?? fallback[activeTab];
+
+  // BUG PRESO: <div key={activeTab}> qui sotto forzava React a SMONTARE e
+  // rimontare da zero l'intera schermata a OGNI cambio tab (Home/News/
+  // Classifica/Profilo) — anche per una tab già visitata pochi secondi
+  // prima. Ogni rimonto rilanciava da capo tutti i fetch Supabase di quella
+  // schermata (scheda assegnata, daily_metrics, nutrition_logs...), e per
+  // la durata di quei fetch si vedeva il suo stato di caricamento — da qui
+  // il "si ricarica ogni volta" e il lampo scuro riportato. Ora ogni tab,
+  // una volta visitata, resta montata (solo nascosta con display:none):
+  // cambiare tab torna a mostrarla così com'era, senza rifare nulla. Il
+  // costo è la piccola animazione di ingresso (spring-in) che prima si
+  // rivedeva a ogni switch — non si vede più dalla seconda visita in poi,
+  // scambio corretto per una navigazione che non lampeggia.
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set([activeTab]));
+  useEffect(() => {
+    setVisitedTabs((v) => (v.has(activeTab) ? v : new Set(v).add(activeTab)));
+  }, [activeTab]);
 
   // Stessa correzione di HomeDashboard: cambiare tab (Home/News/Classifica/
   // Profilo) non deve lasciare la nuova schermata scrollata dov'era rimasta
@@ -636,9 +680,10 @@ export function AppShell({
 
   return (
     <div
-      className="app-root min-h-screen"
+      className="app-root app-bg-live min-h-screen"
       data-theme={dark ? "dark" : "light"}
-      style={{ backgroundColor: "var(--page)", transition: "background-color 0.4s ease" }}
+      style={{ backgroundColor: "var(--page)", transition: "background-color 0.4s ease",
+               "--bg-glow-1": bgGlow1, "--bg-glow-2": bgGlow2 }}
     >
       <DesignSystem />
 
@@ -650,9 +695,12 @@ export function AppShell({
       />
 
       <main className="max-w-2xl mx-auto px-4 py-6" style={{ paddingBottom: 108 }}>
-        <div key={activeTab} className="spring-in" style={{ minHeight: "calc(100vh - 230px)" }}>
-          {current}
-        </div>
+        {[...visitedTabs].map((key) => (
+          <div key={key} className={key === activeTab ? "spring-in" : undefined}
+               style={{ display: key === activeTab ? "block" : "none", minHeight: "calc(100vh - 230px)" }}>
+            {screens[key] ?? fallback[key]}
+          </div>
+        ))}
       </main>
 
       <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} />
