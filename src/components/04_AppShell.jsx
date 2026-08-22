@@ -114,29 +114,29 @@ export function DesignSystem() {
         --bar-line:  rgba(255,255,255,0.09);
       }
 
-      /* Sfondo vivo — nastri di luce oro/rosa che scorrono su fondo scuro,
-         più scintillio (vedi LiveBackground più sotto): il tentativo
-         precedente (solo un lieve gradiente diagonale) era troppo timido,
-         "vivi ma questo qui e basta". Il nastro anima lo stroke-dashoffset
-         (una luce che viaggia lungo la curva, mai un blocco di colore
-         piatto), l'intero gruppo deriva anche lentamente di posizione. Ogni
-         scintilla ha il proprio ritardo/durata per non lampeggiare in sync. */
+      /* Sfondo vivo — due macchie di luce morbide (oro/rosa) su fondo
+         scuro/chiaro, stile "photo backdrop" da studio (secondo riferimento
+         del coach: due bagliori sfumati eleganti, non nastri/scintille del
+         primo tentativo). Ogni macchia è un radial-gradient enorme e molto
+         sfocato che deriva lentamente di posizione — mai ferma, ma un
+         movimento impercettibile, non una luce che lampeggia o scorre. */
       .live-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-      .live-bg-drift { animation: liveBgDrift 40s ease-in-out infinite; transform-origin: 50% 50%; }
-      @keyframes liveBgDrift {
-        0%, 100% { transform: translate(0, 0) rotate(0deg); }
-        50% { transform: translate(-1.5%, 1.5%) rotate(1deg); }
+      .live-bg-blob {
+        position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%;
+        filter: blur(60px); will-change: transform;
       }
-      .live-bg-ribbon { animation: liveBgFlow 7s linear infinite; }
-      .live-bg-ribbon.rev { animation-direction: reverse; }
-      @keyframes liveBgFlow { to { stroke-dashoffset: -400; } }
-      .live-bg-sparkle { animation: liveBgTwinkle 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-      @keyframes liveBgTwinkle {
-        0%, 100% { opacity: 0.15; transform: scale(0.7); }
-        50% { opacity: 1; transform: scale(1.15); }
+      .live-bg-blob-1 { top: -10%; right: -20%; animation: liveBgDrift1 26s ease-in-out infinite; }
+      .live-bg-blob-2 { bottom: -25%; left: -20%; animation: liveBgDrift2 32s ease-in-out infinite; }
+      @keyframes liveBgDrift1 {
+        0%, 100% { transform: translate(0, 0) scale(1); }
+        50% { transform: translate(-6%, 6%) scale(1.08); }
+      }
+      @keyframes liveBgDrift2 {
+        0%, 100% { transform: translate(0, 0) scale(1); }
+        50% { transform: translate(6%, -6%) scale(1.1); }
       }
       @media (prefers-reduced-motion: reduce) {
-        .live-bg-drift, .live-bg-ribbon, .live-bg-sparkle { animation: none; }
+        .live-bg-blob-1, .live-bg-blob-2 { animation: none; }
       }
 
       /* --- tipografia ----------------------------------------------------
@@ -612,61 +612,26 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false }) {
    sostituibile allo stesso modo via `screens.news` / `screens.ranking`.
    ========================================================================== */
 
-/* Sfondo vivo di tutta l'app: nastri di luce oro (uomo) o rosa cipria
-   (donna) che scorrono su fondo scuro/chiaro, con scintille sparse — stile
-   di riferimento fornito dal coach (nastro dorato animato su nero, stile
-   "app di lusso"). Fisso dietro a tutto il contenuto (z-index:0, le card
-   restano --surface pieno sopra e sempre leggibili), non intercetta il
-   tocco (pointer-events:none). Mai un'immagine esterna: sarebbe un asset
-   di terzi (il riferimento veniva da un sito stock con watermark) — qui è
-   ricreato con SVG/CSS, leggero e già animato invece che statico. */
+/* Sfondo vivo di tutta l'app: due macchie di luce morbide (oro per l'uomo,
+   rosa cipria per la donna) su fondo scuro/chiaro, stile "photo backdrop"
+   da studio — secondo riferimento fornito dal coach (due bagliori sfumati
+   su nero, elegante, non nastri/scintille come il primo tentativo). Fisso
+   dietro a tutto il contenuto (z-index:0, le card restano --surface pieno
+   sopra e sempre leggibili), non intercetta il tocco (pointer-events:none).
+   Mai un'immagine esterna: qui ricreato in puro CSS (radial-gradient +
+   blur, animazione di posizione lenta) invece di un asset stock statico. */
 function LiveBackground({ gender, dark }) {
   const isFemale = gender === "F";
-  const stops = isFemale ? ["#F4E0E6", "#D4A5A5", "#9D6666"] : ["#F0DCA0", "#C5A059", "#8C6E33"];
-  const ribbonOpacity = dark ? 0.55 : 0.22;
-  const sparkleColor = isFemale ? "#F4E0E6" : "#F0DCA0";
-  const sparkles = [
-    [78, 18, 0], [340, 60, 1.1], [300, 150, 2.4], [60, 230, 0.6], [370, 300, 1.8],
-    [230, 340, 0.3], [120, 420, 2.1], [350, 460, 0.9], [30, 520, 1.5], [270, 560, 0.2],
-    [180, 610, 2.7], [390, 640, 1.3], [90, 680, 0.7], [320, 720, 2.0], [200, 760, 1.6],
-  ];
+  const bright = isFemale ? "#F4E0E6" : "#F0DCA0";
+  const deep = isFemale ? "#9D6666" : "#8C6E33";
+  const op1 = dark ? 0.5 : 0.22;
+  const op2 = dark ? 0.4 : 0.16;
   return (
     <div className="live-bg" aria-hidden="true" style={{ backgroundColor: "var(--page)" }}>
-      <svg viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">
-        <defs>
-          <linearGradient id="liveBgGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={stops[2]} />
-            <stop offset="50%" stopColor={stops[1]} />
-            <stop offset="100%" stopColor={stops[0]} />
-          </linearGradient>
-          <filter id="liveBgBlur" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="6" />
-          </filter>
-        </defs>
-        <g className="live-bg-drift">
-          {/* alone sfocato sotto (bloom) + tratto nitido sopra: senza il primo
-              le linee restano un filo dritto e piatto, con il bloom si legge
-              come una scia di luce vera, più simile al riferimento. */}
-          <path d="M -20 620 C 60 520 140 560 210 480 C 280 400 320 460 420 380"
-                fill="none" stroke="url(#liveBgGrad)" strokeWidth="14" strokeLinecap="round"
-                opacity={ribbonOpacity * 0.5} filter="url(#liveBgBlur)" />
-          <path d="M -20 660 C 70 580 150 600 220 530 C 290 460 330 500 420 430"
-                fill="none" stroke="url(#liveBgGrad)" strokeWidth="10" strokeLinecap="round"
-                opacity={ribbonOpacity * 0.4} filter="url(#liveBgBlur)" />
-          <path d="M -20 620 C 60 520 140 560 210 480 C 280 400 320 460 420 380"
-                fill="none" stroke="url(#liveBgGrad)" strokeWidth="3" strokeLinecap="round"
-                strokeDasharray="8 16" opacity={ribbonOpacity} className="live-bg-ribbon" />
-          <path d="M -20 660 C 70 580 150 600 220 530 C 290 460 330 500 420 430"
-                fill="none" stroke="url(#liveBgGrad)" strokeWidth="1.6" strokeLinecap="round"
-                strokeDasharray="5 12" opacity={ribbonOpacity * 0.8} className="live-bg-ribbon rev" />
-          <g opacity={dark ? 1 : 0.5}>
-            {sparkles.map(([x, y, delay], i) => (
-              <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 2.2 : 1.3} fill={sparkleColor}
-                      className="live-bg-sparkle" style={{ animationDelay: `${delay}s` }} />
-            ))}
-          </g>
-        </g>
-      </svg>
+      <div className="live-bg-blob live-bg-blob-1"
+           style={{ background: `radial-gradient(closest-side, ${bright}, transparent)`, opacity: op1 }} />
+      <div className="live-bg-blob live-bg-blob-2"
+           style={{ background: `radial-gradient(closest-side, ${deep}, transparent)`, opacity: op2 }} />
     </div>
   );
 }

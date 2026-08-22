@@ -964,13 +964,15 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   const isNeutral = pct == null;
   const color = isNeutral ? "var(--ink-2)" : complianceColor(pct);
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
-  // BUG PRESO (3 giri di correzione — via il riflesso, non solo aggiustato):
-  // ogni versione del "riflesso lucido" (un arco/segmento bianco separato
-  // sopra il colore) continuava a leggersi come una barretta grigia/bianca
-  // estranea al cerchio, qualunque animazione ci si mettesse sopra. Tolto
-  // del tutto: "vivo" ora viene da un bagliore che pulsa nel COLORE REALE
-  // del cerchio stesso (rosso/arancio/verde secondo il pct) — mai bianco,
-  // mai grigio, mai un elemento separato dall'arco colorato.
+  // BUG PRESO (4 giri di correzione): ogni versione precedente del
+  // "bagliore" usava un filter:drop-shadow, che per costruzione proietta
+  // luce FUORI dal contorno dell'arco — sull'<svg> (che clippa di default
+  // tutto ciò che esce dal suo viewBox) quel bagliore risultava tagliato
+  // di netto sui 4 lati, leggendosi come un "quadrato" intorno al cerchio.
+  // Tolto il drop-shadow: il pulsare ora è solo brightness()/saturate() —
+  // modula i pixel del tratto stesso (più vivido/più tenue), non aggiunge
+  // nulla al di fuori del contorno del cerchio, quindi niente più da
+  // clippare o far vedere come un alone estraneo.
   const filledLen = c * (Math.max(0, Math.min(100, pct ?? 0)) / 100);
   return (
     <div className="relative shrink-0 ring-breathe" style={{ width: size, height: size }}>
@@ -979,7 +981,7 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
         {!isNeutral && (
           <circle className="ring-glow-pulse" cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
                   strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
-                  style={{ "--ring-color": color, transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease" }} />
+                  style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease" }} />
         )}
         {isNeutral && (
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
@@ -8026,8 +8028,8 @@ export default function HomePreview({
            — mai un elemento bianco/grigio separato sopra il colore. */
         .ring-glow-pulse{animation:ringGlowPulse 2.6s ease-in-out infinite}
         @keyframes ringGlowPulse{
-          0%, 100%{filter:drop-shadow(0 0 3px var(--ring-color))}
-          50%{filter:drop-shadow(0 0 9px var(--ring-color))}
+          0%, 100%{filter:brightness(0.94) saturate(0.92)}
+          50%{filter:brightness(1.28) saturate(1.2)}
         }
         @media (prefers-reduced-motion: reduce){.ring-glow-pulse{animation:none}}
         /* toast XP: entra dall'alto, resta un attimo, si dissolve da sola */
