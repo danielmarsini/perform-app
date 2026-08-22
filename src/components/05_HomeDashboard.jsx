@@ -16,7 +16,7 @@
    Dipende dai token CSS del File 4 (AppShell / DesignSystem).
    ========================================================================== */
 
-import React, { useState, useMemo, useEffect, useId, useRef, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
@@ -236,9 +236,16 @@ function useDragScroll(ref) {
    continuo, scorrimento libero e continuo (swipe/drag) su tutto lo storico. */
 const BAR_H = 176; // altezza dell'area candele — le righe soglia e il calcolo hPct condividono questo numero
 
-function Chart3D({ kind, series, title }) {
+function Chart3D({ kind, series, title, onEditDay }) {
   const scrollRef = useRef(null);
   useDragScroll(scrollRef);
+  // Modifica di un giorno passato: può capitare di scordarsi di inserire
+  // sonno/passi lo stesso giorno — cliccando la candela di un giorno già
+  // passato si può correggere il valore direttamente da qui, invece di
+  // restare bloccati con uno storico sbagliato per sempre. "Oggi" non è
+  // modificabile da qui: ha già i suoi campi di inserimento sopra al grafico.
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
   // Le candele sono ora anche pulsanti cliccabili (per il dettaglio del
   // valore): senza questa guardia, un trascinamento per scorrere lo
   // storico (useDragScroll) faceva scattare anche un click spurio sulla
@@ -261,6 +268,7 @@ function Chart3D({ kind, series, title }) {
   // passi/ore ho fatto".
   const [selectedIdx, setSelectedIdx] = useState(null);
   useEffect(() => { setSelectedIdx(null); }, [series.length]); // nuovo giorno arrivato: torna a mostrare "oggi"
+  useEffect(() => { setEditing(false); }, [selectedIdx]); // cambio candela: chiudi un editor eventualmente aperto
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
@@ -272,6 +280,11 @@ function Chart3D({ kind, series, title }) {
     const d = new Date();
     d.setDate(d.getDate() - idxFromEnd);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  const dateIsoFor = (idxFromEnd) => {
+    const d = new Date();
+    d.setDate(d.getDate() - idxFromEnd);
+    return toLocalISODate(d);
   };
 
   // Piano cartesiano vero, stile app Salute di iPhone: righe orizzontali a
@@ -356,14 +369,42 @@ function Chart3D({ kind, series, title }) {
           );
         })}
       </div>
-      <div className="mt-3">
-        <span className="font-data" style={{ fontSize: "0.95rem", fontWeight: 800, color: "var(--ink)" }}>
-          {t.fmt(activeVal)}
-        </span>
-        <span className="meta ml-1.5" style={{ fontSize: "0.72rem" }}>
-          {selectedIdx == null ? "oggi" : dateLabelFor(activeIdxFromEnd) === "Oggi" || dateLabelFor(activeIdxFromEnd) === "Ieri" ? dateLabelFor(activeIdxFromEnd).toLowerCase() : dateLabelFor(activeIdxFromEnd)}
-        </span>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div>
+          <span className="font-data" style={{ fontSize: "0.95rem", fontWeight: 800, color: "var(--ink)" }}>
+            {t.fmt(activeVal)}
+          </span>
+          <span className="meta ml-1.5" style={{ fontSize: "0.72rem" }}>
+            {selectedIdx == null ? "oggi" : dateLabelFor(activeIdxFromEnd) === "Oggi" || dateLabelFor(activeIdxFromEnd) === "Ieri" ? dateLabelFor(activeIdxFromEnd).toLowerCase() : dateLabelFor(activeIdxFromEnd)}
+          </span>
+        </div>
+        {/* Modifica: solo su un giorno PASSATO selezionato (mai "oggi", che
+            ha già i suoi campi di inserimento sopra al grafico) — per
+            correggere un giorno dimenticato senza restare bloccati con uno
+            storico sbagliato per sempre. */}
+        {onEditDay && activeIdxFromEnd > 0 && !editing && (
+          <button onClick={() => { setEditValue(String(activeVal)); setEditing(true); }}
+            className="shrink-0 text-xs rounded-full px-3 py-1.5"
+            style={{ backgroundColor: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.25)", color: "var(--ink-2)", fontWeight: 600 }}>
+            Modifica
+          </button>
+        )}
       </div>
+      {editing && (
+        <div className="flex items-center gap-2 mt-2.5">
+          <input type="number" min="0" step={kind === "sleep" ? "0.5" : "1"} inputMode="decimal" value={editValue}
+            onChange={(e) => setEditValue(e.target.value)} autoFocus
+            className="input flex-1 min-w-0 px-3 py-2 text-sm font-data" aria-label={`Correggi ${dateLabelFor(activeIdxFromEnd)}`} />
+          <button onClick={() => { onEditDay(dateIsoFor(activeIdxFromEnd), Number(editValue) || 0); setEditing(false); }}
+            className="shrink-0 rounded-full px-3.5 py-2 text-xs transition-transform active:scale-95"
+            style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 600 }}>
+            Salva
+          </button>
+          <button onClick={() => setEditing(false)} className="shrink-0 rounded-full px-3 py-2 text-xs" style={{ color: "var(--ink-2)" }}>
+            Annulla
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -918,24 +959,26 @@ function nutritionPrecision(target, consumed) {
 /* Anello singolo: vivo, fluido, con lucentezza 3D (sheen + glow), colore
    continuo che si intensifica agli estremi. */
 function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
-  const uid = useId();
   // pct === null → nulla da misurare questa settimana (es. niente assegnato):
   // stato neutro esplicito, non un 0% (allarme) né un 100% (falso completo).
   const isNeutral = pct == null;
   const color = isNeutral ? "var(--ink-2)" : complianceColor(pct);
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
+  // BUG PRESO: l'arco usava un gradiente diagonale (0%→100% di opacità
+  // sull'intera bounding box del cerchio) invece di un colore pieno — nel
+  // punto in cui l'arco INIZIA (ore 12, in alto) quel gradiente ricadeva
+  // spesso vicino al capo più trasparente (0.78 di opacità), che su sfondo
+  // scuro leggeva come una sbavatura grigia proprio "all'inizio" del cerchio
+  // invece del colore acceso. Ora l'arco è un colore pieno — lucido dato dal
+  // velo bianco statico + un riflesso che gira in senso orario in continuo
+  // (stesso principio della barra XP, ma sul colore reale del cerchio, non
+  // un oro/rosa fisso: qui il colore deve restare quello legato al pct).
   return (
     <div className="relative shrink-0 ring-breathe" style={{ width: size, height: size }}>
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
-        <defs>
-          <linearGradient id={`ringGrad-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={color} stopOpacity="0.78" />
-            <stop offset="100%" stopColor={color} stopOpacity="1" />
-          </linearGradient>
-        </defs>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={stroke} />
         {!isNeutral && (
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke={`url(#ringGrad-${uid})`} strokeWidth={stroke} strokeLinecap="round"
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
                   strokeDasharray={c} strokeDashoffset={c - c * (pct / 100)} transform={`rotate(-90 ${cx} ${cy})`}
                   style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease",
                            filter: `drop-shadow(0 0 5px ${color}99)` }} />
@@ -944,11 +987,19 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
                   strokeDasharray="4 5" strokeOpacity="0.55" />
         )}
-        {/* velo lucido: piccolo arco più chiaro in alto, per dare tridimensionalità */}
+        {/* velo lucido statico: piccolo arco bianco fisso in alto, per la tridimensionalità */}
         {!isNeutral && (
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.4"
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.35"
                   strokeWidth={Math.max(1.5, stroke * 0.22)} strokeLinecap="round"
                   strokeDasharray={`${c * 0.12} ${c}`} strokeDashoffset={c * 0.06} transform={`rotate(-90 ${cx} ${cy})`} />
+        )}
+        {/* riflesso animato: gira in senso orario in continuo, sempre col
+            colore attuale del cerchio (rosso/arancio/verde in base al pct). */}
+        {!isNeutral && (
+          <circle className="ring-shine" cx={cx} cy={cy} r={r} fill="none" stroke="#FFFFFF" strokeOpacity="0.85"
+                  strokeWidth={Math.max(1.5, stroke * 0.26)} strokeLinecap="round"
+                  strokeDasharray={`${c * 0.05} ${c}`} transform={`rotate(-90 ${cx} ${cy})`}
+                  style={{ transformOrigin: `${cx}px ${cy}px`, filter: `drop-shadow(0 0 3px ${color})` }} />
         )}
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
@@ -1015,6 +1066,25 @@ function CompliancePopup({ ring, onClose }) {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* Animazione breve "hai guadagnato XP": sostituisce l'elenco permanente
+   "obiettivi di oggi" che prima restava aperto a spiegare le regole — qui
+   appare solo nell'istante in cui un'azione sblocca davvero i punti, si
+   dissolve da sola, non richiede alcuna interazione. */
+function XpToastBanner({ toast }) {
+  if (!toast) return null;
+  return (
+    <Portal>
+      <div key={toast.key} className="xp-toast-wrap" aria-live="polite">
+        <div className="xp-toast">
+          <Sparkles size={14} style={{ color: "#FFFFFF" }} />
+          <span>+{toast.amount} XP</span>
+          <span className="xp-toast-label">{toast.label}</span>
         </div>
       </div>
     </Portal>
@@ -1577,6 +1647,7 @@ export function HomeDashboard({
   missedDayIdx,       // indice del giorno saltato, -1 se nessuno
   access,             // { nutrition, recovery }
   onSetSleep, onSetSteps, onToggleAutoSteps, onAddWater, onSetTargetOn, onSetTargetOff, onSetRhr, onSetHrv, onSetWaterTarget,
+  onEditSleepDay, onEditStepsDay, // corregge un giorno PASSATO di sonno/passi cliccando la sua candela (mai "oggi")
   targetOn, targetOff, isTrainingDay, onToggleTrainingDay,
   onAddFood, onRemoveFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
   onApplyReschedule, onDismissReschedule,
@@ -1587,8 +1658,12 @@ export function HomeDashboard({
   caffeineMg, onSetCaffeineMg, caffeineTime, onSetCaffeineTime,
   supabase, userId, // solo per il protocollo integratori reale (prescribed_supplements)
 }) {
-  const [screen, setScreen] = useState("dash");   // dash | workout | nutrition | recovery
-  const [checklistOpen, setChecklistOpen] = useState(false);
+  // Persistito (stesso principio del tab principale in App.jsx): se il
+  // sistema operativo scarica la pagina dalla memoria mentre l'app è in
+  // background e il browser la ricarica al ritorno, si riparte dalla
+  // stessa sotto-schermata invece che sempre dalla Home.
+  const [screen, setScreen] = useState(() => localStorage.getItem("perform_last_screen") || "dash");   // dash | workout | nutrition | recovery
+  useEffect(() => { localStorage.setItem("perform_last_screen", screen); }, [screen]);
   const [digestValue, setDigestValue] = useState(0);
   // Alimentazione: "I tuoi target" ora è un pannello compatto in cima alla
   // pagina, non più un tab tra Diario Libero e Sostituzioni — chiuso di
@@ -1667,6 +1742,41 @@ export function HomeDashboard({
      sulle task di oggi: +2% di XP per ogni giorno di streak, fino a un tetto
      del +50% per non farlo esplodere con streak molto lunghi. */
   const streakXpBonus = Math.min(0.5, streak * 0.02);
+
+  // XP: niente più spiegazione permanente in UI (l'elenco "obiettivi di
+  // oggi" con task + XP restava aperto ingombrando la Home) — solo
+  // un'animazione breve nel momento esatto in cui un'azione sblocca
+  // davvero i punti, ovunque ci si trovi nell'app in quel momento.
+  const [xpToast, setXpToast] = useState(null); // { key, label, amount } | null
+  const xpToastTimer = useRef(null);
+  const fireXpToast = (label, amount) => {
+    if (xpToastTimer.current) clearTimeout(xpToastTimer.current);
+    setXpToast({ key: `${label}-${Date.now()}`, label, amount });
+    xpToastTimer.current = setTimeout(() => setXpToast(null), 2600);
+  };
+  useEffect(() => () => { if (xpToastTimer.current) clearTimeout(xpToastTimer.current); }, []);
+
+  // Stessi 6 obiettivi di sempre (ora non più elencati in permanenza):
+  // un ref tiene il valore visto all'ultimo render, un toast scatta solo
+  // alla transizione false→true (mai al primo mount, per non festeggiare
+  // qualcosa già completato prima di aprire l'app oggi).
+  const dailyGoals = [
+    ["Allenamento completato", day.isTraining, 50],
+    ["Sonno nel range 7-9h", sleep.hours >= 7 && sleep.hours <= 9, 20],
+    ["Passi oltre 8.000", Number(steps) >= 8000, 20],
+    ["Idratazione al target", water >= waterTarget, 20],
+    ["Macros nel target", Math.abs(consumed.kcal - target.kcal) <= target.kcal * 0.05, 25],
+    ["Almeno 4 pasti su 6", Object.values(mealsBySlot).filter((a) => a.length).length >= 4, 15],
+  ];
+  const prevGoalsRef = useRef({});
+  useEffect(() => {
+    dailyGoals.forEach(([label, done, baseXp]) => {
+      const was = prevGoalsRef.current[label];
+      if (done && was === false) fireXpToast(label, Math.round(baseXp * (1 + streakXpBonus)));
+      prevGoalsRef.current[label] = done;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day.isTraining, sleep.hours, steps, water, waterTarget, consumed.kcal, target.kcal, mealsBySlot, streakXpBonus]);
 
   const remaining = {
     kcal: Math.max(0, target.kcal - consumed.kcal),
@@ -1856,6 +1966,7 @@ export function HomeDashboard({
 
     return (
       <div className="spring-in">
+        <XpToastBanner toast={xpToast} />
         {/* banner unico: saluto, gamification, mesociclo, cerchi, livello e XP — niente più card separate */}
         <div className="gradient-border rounded-2xl px-5 py-5 mb-4" style={{ backgroundColor: "var(--surface)" }}>
           <div className="min-w-0" style={{ position: "relative", zIndex: 1 }}>
@@ -1892,20 +2003,15 @@ export function HomeDashboard({
             <ComplianceRings rings={complianceRings} onSelect={setActiveRingPopup} />
           </div>
 
-          {/* barra XP: la checklist vive qui dentro, stesso banner */}
-          <button onClick={() => setChecklistOpen((v) => !v)} className="w-full mt-4 pt-4 text-left"
-                  style={{ borderTop: "1px solid var(--line)" }}>
+          {/* barra XP: pulita, niente più elenco "obiettivi di oggi" da
+              espandere — il feedback su cosa fa guadagnare punti arriva
+              come animazione (XpToastBanner) nel momento in cui succede. */}
+          <div className="w-full mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
             <div className="flex items-center justify-between mb-2">
-              <span className="flex items-center gap-1.5" style={{ color: "var(--ink)", fontSize: "0.9rem", fontWeight: 500 }}>
+              <span style={{ color: "var(--ink)", fontSize: "0.9rem", fontWeight: 500 }}>
                 Livello {level}
-                <span className="label" style={{ fontSize: "0.55rem" }}>
-                  {checklistOpen ? "chiudi" : "obiettivi di oggi"}
-                </span>
               </span>
-              <span className="meta font-data flex items-center gap-1.5">
-                {xpInLevel} / {xpNeeded} XP
-                {checklistOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              </span>
+              <span className="meta font-data">{xpInLevel} / {xpNeeded} XP</span>
             </div>
             <div className="rounded-full overflow-hidden" style={{ height: 10, backgroundColor: "var(--surface-2)" }}>
               <div className="xp-bar xp-bar-shine relative h-full rounded-full overflow-hidden"
@@ -1915,34 +2021,7 @@ export function HomeDashboard({
                        background: "linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0))" }} />
               </div>
             </div>
-          </button>
-
-          {checklistOpen && (
-            <div className="spring-in mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
-              <p className="text-xs mb-2.5" style={{ color: accentText, fontWeight: 700 }}>
-                Bonus streak: +{Math.round(streakXpBonus * 100)}% XP su ogni task di oggi
-              </p>
-              <div className="space-y-2">
-                {[
-                  ["Allenamento completato", day.isTraining, 50],
-                  ["Sonno nel range 7-9h", sleep.hours >= 7 && sleep.hours <= 9, 20],
-                  ["Passi oltre 8.000", Number(steps) >= 8000, 20],
-                  ["Idratazione al target", water >= waterTarget, 20],
-                  ["Macros nel target", Math.abs(consumed.kcal - target.kcal) <= target.kcal * 0.05, 25],
-                  ["Almeno 4 pasti su 6", Object.values(mealsBySlot).filter((a) => a.length).length >= 4, 15],
-                ].map(([label, done, baseXp]) => (
-                  <div key={label} className="inner flex items-center gap-3 px-4 py-2.5">
-                    {done ? <CheckCircle2 size={16} style={{ color: accentText }} className="shrink-0" />
-                          : <span className="shrink-0 rounded-full" style={{ width: 15, height: 15, border: "1.5px solid var(--ink-2)" }} />}
-                    <span className="text-sm flex-1" style={{ color: "var(--ink)" }}>{label}</span>
-                    <span className="font-data text-xs shrink-0" style={{ color: done ? accentText : "var(--ink-2)" }}>
-                      +{Math.round(baseXp * (1 + streakXpBonus))} XP
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          </div>
           </div>
         </div>
 
@@ -2066,6 +2145,7 @@ export function HomeDashboard({
     const poorSleep = lastNightSleep != null && lastNightSleep > 0 && lastNightSleep < THRESH.sleep.bad;
     return (
       <div className="spring-in">
+        <XpToastBanner toast={xpToast} />
         {back("Allenamento")}
 
         <div className="grid grid-cols-3 gap-1.5 mb-5">
@@ -2174,6 +2254,7 @@ export function HomeDashboard({
     const targetIsCoachSet = userPlan === "full_coaching";
     return (
       <div className="spring-in">
+        <XpToastBanner toast={xpToast} />
         {back("Alimentazione")}
 
         {/* I tuoi target + Idratazione: in cima, compatti e affiancati — non
@@ -2184,12 +2265,18 @@ export function HomeDashboard({
         <div className="grid grid-cols-2 gap-3 mb-5">
           <div className="card">
             <p className="label mb-1.5">I tuoi target · oggi</p>
-            <p className="font-data" style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--ink)" }}>
-              {remaining.kcal} <span className="meta" style={{ fontSize: "0.7rem", fontWeight: 600 }}>kcal rimanenti</span>
+            {/* consumato/target per ciascun valore, non più solo "rimanenti":
+                il numero a sinistra (consumato) sale con calcolo preciso ad
+                ogni alimento aggiunto — stessa fonte (consumed) del diario. */}
+            <p className="font-data mb-1" style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--ink)" }}>
+              {consumed.kcal}<span className="meta" style={{ fontSize: "0.85rem", fontWeight: 600 }}>/{target.kcal}</span>
+              <span className="meta" style={{ fontSize: "0.62rem", fontWeight: 600, marginLeft: 4 }}>kcal consumate</span>
             </p>
-            <p className="meta font-data mb-2.5" style={{ fontSize: "0.68rem" }}>
-              {consumed.kcal} / {target.kcal} kcal · P{target.p} C{target.c} G{target.f}
-            </p>
+            <div className="flex items-center gap-2.5 font-data mb-2.5" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
+              <span style={{ color: MACRO_COLORS.p.base }}>{consumed.p}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.p}</span>P</span>
+              <span style={{ color: MACRO_COLORS.c.base }}>{consumed.c}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.c}</span>C</span>
+              <span style={{ color: MACRO_COLORS.f.base }}>{consumed.f}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.f}</span>G</span>
+            </div>
             <button onClick={() => setTargetsOpen((v) => !v)}
               className="w-full rounded-full px-3 py-2 text-xs transition-transform active:scale-[0.98]"
               style={{ backgroundColor: targetsOpen ? "var(--ink)" : "var(--surface-2)",
@@ -2251,17 +2338,6 @@ export function HomeDashboard({
           digestValue={digestValue}
           onDigestChange={(v) => { setDigestValue(v); onCoachSync && onCoachSync({ type: "bio-symptom", symptom: "digest", value: v }); }}
         />
-
-        <div className="mt-5">
-          {access.paid ? (
-            <WikiBrowser title="Wiki Alimentazione" subtitle="Cosa sappiamo davvero" data={NUTRITION_WIKI} accent={accent}
-              intro="Proteine, deficit/surplus calorico e micronutrienti contano per chiunque, non solo per chi si allena: energia quotidiana, funzione immunitaria, lucidità mentale, salute ossea e longevità dipendono dalla stessa base nutrizionale. In un percorso in sala pesi questi principi vengono applicati con più precisione — si pesano gli alimenti, si calcola un target di macro, si programmano fasi di surplus o deficit — perché servono risultati misurabili in tempi definiti: pro, un controllo molto più fine su composizione corporea e performance; contro, richiede tracking costante e, se vissuto in modo ossessivo, può peggiorare il rapporto con il cibo invece di migliorarlo — per la sola salute generale bastano abitudini molto più semplici."
-              searchPlaceholder="Cerca un argomento (es. proteine, deficit, digiuno...)" />
-          ) : (
-            <LockedPanel onUpgrade={onUpgrade} accent={accent}
-              text="La Wiki Alimentazione è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
-          )}
-        </div>
       </div>
     );
   }
@@ -2270,10 +2346,11 @@ export function HomeDashboard({
   if (screen === "supplements") {
     return (
       <div className="spring-in">
+        <XpToastBanner toast={xpToast} />
         {back("Integrazione e Timing")}
         <SupplementsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
-                           isPro={!!access.pro} isPaid={!!access.paid} isTrainingDay={isTrainingDay}
-                           onUpgrade={onUpgrade} onCoachSync={onCoachSync}
+                           isPro={userPlan === "full_coaching"} isPaid={!!access.paid} isTrainingDay={isTrainingDay}
+                           onUpgrade={onUpgrade} onCoachSync={onCoachSync} onXpEarned={fireXpToast}
                            supabase={supabase} userId={userId} />
       </div>
     );
@@ -2282,6 +2359,7 @@ export function HomeDashboard({
   /* ------------------------------ RECUPERO ------------------------------ */
   return (
     <div className="spring-in">
+      <XpToastBanner toast={xpToast} />
       {back("Recupero e Attività")}
 
       {/* sonno: casella pulita sopra al grafico, niente card/etichette/legenda colori attorno */}
@@ -2299,7 +2377,7 @@ export function HomeDashboard({
             </span>
           )}
         </div>
-        <Chart3D kind="sleep" series={liveHistory.sleep} title="😴 Sonno — ore per notte" />
+        <Chart3D kind="sleep" series={liveHistory.sleep} title="😴 Sonno — ore per notte" onEditDay={onEditSleepDay} />
       </div>
 
       {/* passi: stessa casella pulita sopra al grafico */}
@@ -2310,7 +2388,7 @@ export function HomeDashboard({
                  disabled={isRealMode ? false : autoSteps} placeholder="Passi di oggi"
                  aria-label="Passi di oggi" className="input flex-1 px-3 py-2 text-sm font-data disabled:opacity-70" />
         </div>
-        <Chart3D kind="steps" series={liveHistory.steps} title="👣 Passi — al giorno" />
+        <Chart3D kind="steps" series={liveHistory.steps} title="👣 Passi — al giorno" onEditDay={onEditStepsDay} />
         {isRealMode ? (
           isAndroid() && isGoogleFitConfigured() ? (
             <GoogleFitStepsSync accent={accent} onSetSteps={onSetSteps} />
@@ -4996,8 +5074,14 @@ export const SUPP_PLAN_PRO = {
    prodotto è nel loro database, arriva già con nome e nutrienti reali
    per 100g; se non lo trovano, il cliente lo aggiunge a mano come sempre
    (e arricchisce anche il nostro catalogo condiviso, custom_foods). */
+// BUG PRESO: le richieste a Open Food Facts non specificavano una lingua —
+// l'API rispondeva col nome prodotto nella lingua con cui è stato inserito
+// da chi l'ha caricato (spesso francese, essendo un progetto nato in
+// Francia, con più contributori francofoni per molti prodotti europei).
+// &lc=it chiede la versione localizzata in italiano del nome quando esiste
+// (fallback automatico all'originale se un prodotto non ce l'ha).
 async function lookupBarcodeProduct(barcode) {
-  const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=product_name,brands,nutriments`);
+  const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=product_name,brands,nutriments&lc=it`);
   if (!res.ok) throw new Error(`Open Food Facts ${res.status}`);
   const data = await res.json();
   if (data.status !== 1 || !data.product) return null;
@@ -5009,8 +5093,14 @@ async function lookupBarcodeProduct(barcode) {
     p: Math.round((n["proteins_100g"] ?? 0) * 10) / 10,
     c: Math.round((n["carbohydrates_100g"] ?? 0) * 10) / 10,
     f: Math.round((n["fat_100g"] ?? 0) * 10) / 10,
-    na: n["sodium_100g"] != null ? Math.round(n["sodium_100g"] * 1000) : undefined, // g → mg
+    // g → mg: stesso fattore usato per tutti e 3 i minerali già tracciati
+    // nel diario (na/k qui, fe/ca/mg mancavano del tutto — restavano
+    // sempre 0 nella Griglia Micronutrienti anche con dati OFF disponibili).
+    na: n["sodium_100g"] != null ? Math.round(n["sodium_100g"] * 1000) : undefined,
     k: n["potassium_100g"] != null ? Math.round(n["potassium_100g"] * 1000) : undefined,
+    fe: n["iron_100g"] != null ? Math.round(n["iron_100g"] * 1000 * 10) / 10 : undefined,
+    ca: n["calcium_100g"] != null ? Math.round(n["calcium_100g"] * 1000) : undefined,
+    mg: n["magnesium_100g"] != null ? Math.round(n["magnesium_100g"] * 1000) : undefined,
   };
 }
 
@@ -5025,7 +5115,11 @@ async function lookupBarcodeProduct(barcode) {
 async function searchOpenFoodFactsByName(query) {
   const res = await fetch(
     `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}` +
-    `&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments`
+    // lc=it: nome prodotto localizzato in italiano quando esiste (stesso fix
+    // di lookupBarcodeProduct — di default arrivava spesso in francese).
+    // cc=it: dà priorità nel ranking ai prodotti diffusi/venduti in Italia,
+    // senza escludere gli altri se non ce ne sono di locali.
+    `&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments&lc=it&cc=it`
   );
   if (!res.ok) throw new Error(`Open Food Facts ${res.status}`);
   const data = await res.json();
@@ -5044,6 +5138,9 @@ async function searchOpenFoodFactsByName(query) {
         f: Math.round((n["fat_100g"] ?? 0) * 10) / 10,
         na: n["sodium_100g"] != null ? Math.round(n["sodium_100g"] * 1000) : undefined,
         k: n["potassium_100g"] != null ? Math.round(n["potassium_100g"] * 1000) : undefined,
+        fe: n["iron_100g"] != null ? Math.round(n["iron_100g"] * 1000 * 10) / 10 : undefined,
+        ca: n["calcium_100g"] != null ? Math.round(n["calcium_100g"] * 1000) : undefined,
+        mg: n["magnesium_100g"] != null ? Math.round(n["magnesium_100g"] * 1000) : undefined,
       };
     })
     .filter(Boolean);
@@ -5344,6 +5441,11 @@ function NutritionTabs({
     ["diary", "Diario Libero"],
     ...(subsAccess ? [["subs", "Sostituzioni"]] : []),
     ...(fullAccess ? [["plan", "Dieta Tipo"]] : []),
+    // Wiki Alimentazione: bottone sempre visibile qui in alto (come Wiki
+    // Allenamento tra i 3 di Allenamento Pesi/Cardio/Wiki) invece di stare
+    // in fondo alla pagina sotto tutto il resto — il contenuto resta
+    // bloccato per FREE, ma il bottone si vede e basta un tap per scoprirlo.
+    ["wiki", "Wiki Alimentazione"],
   ];
   useEffect(() => {
     if (!visibleTabs.some(([id]) => id === tab)) setTab("diary");
@@ -5795,6 +5897,19 @@ function NutritionTabs({
         <div className="spring-in">
           <SubsPanel substitutions={substitutions} foods={foods} accent={accent} accentSoft={accentSoft}
                      accentText={accentText} />
+        </div>
+      )}
+
+      {tab === "wiki" && (
+        <div className="spring-in">
+          {userPlan !== "free" ? (
+            <WikiBrowser title="Wiki Alimentazione" subtitle="Cosa sappiamo davvero" data={NUTRITION_WIKI} accent={accent}
+              intro="Proteine, deficit/surplus calorico e micronutrienti contano per chiunque, non solo per chi si allena: energia quotidiana, funzione immunitaria, lucidità mentale, salute ossea e longevità dipendono dalla stessa base nutrizionale. In un percorso in sala pesi questi principi vengono applicati con più precisione — si pesano gli alimenti, si calcola un target di macro, si programmano fasi di surplus o deficit — perché servono risultati misurabili in tempi definiti: pro, un controllo molto più fine su composizione corporea e performance; contro, richiede tracking costante e, se vissuto in modo ossessivo, può peggiorare il rapporto con il cibo invece di migliorarlo — per la sola salute generale bastano abitudini molto più semplici."
+              searchPlaceholder="Cerca un argomento (es. proteine, deficit, digiuno...)" />
+          ) : (
+            <LockedPanel onUpgrade={onUpgrade} accent={accent}
+              text="La Wiki Alimentazione è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
+          )}
         </div>
       )}
     </>
@@ -6391,13 +6506,49 @@ function NutritionTargetsPanel({ accent, accentSoft, accentText, targetOn, targe
    Integrazione e Timing: FREE → diario libero + wiki; PRO → piano bloccato + XP.
    ------------------------------------------------------------------------- */
 
-function SupplementsPanel({ accent, accentSoft, accentText, isPro, isPaid, isTrainingDay, onUpgrade, onCoachSync, supabase, userId }) {
-  return isPro
-    ? <SupplementsPlanLocked accent={accent} accentSoft={accentSoft} accentText={accentText} isTrainingDay={isTrainingDay} onCoachSync={onCoachSync} supabase={supabase} userId={userId} />
-    : <SupplementsFreeDiary accent={accent} accentSoft={accentSoft} accentText={accentText} isPaid={isPaid} isTrainingDay={isTrainingDay} onUpgrade={onUpgrade} onCoachSync={onCoachSync} />;
+// BUG PRESO: la Wiki Integratori viveva SEMPRE in fondo alla pagina, sotto
+// tutta la checklist del giorno — poco visibile, ingombrante da scorrere
+// per arrivarci. Ora è un bottone in alto, stesso principio dei 3 di
+// Allenamento (Pesi/Cardio/Wiki): apre la sua schermata dedicata invece di
+// stare in coda a tutto il resto.
+function SupplementsPanel({ accent, accentSoft, accentText, isPro, isPaid, isTrainingDay, onUpgrade, onCoachSync, onXpEarned, supabase, userId }) {
+  const [suppTab, setSuppTab] = useState("diario");
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-1.5 mb-5">
+        {[["diario", "Integrazione"], ["wiki", "Wiki Integratori"]].map(([id, lab]) => {
+          const on = suppTab === id;
+          return (
+            <button key={id} onClick={() => setSuppTab(id)}
+              className="rounded-2xl px-1.5 py-3 transition-all duration-300"
+              style={on ? { backgroundColor: "var(--ink)", color: "var(--page)" }
+                        : { backgroundColor: "var(--surface)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+              <span className="font-data block leading-tight" style={{ fontSize: "0.52rem", letterSpacing: "0.04em",
+                      textTransform: "uppercase", fontWeight: on ? 600 : 400 }}>{lab}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {suppTab === "diario" ? (
+        isPro
+          ? <SupplementsPlanLocked accent={accent} accentSoft={accentSoft} accentText={accentText} isTrainingDay={isTrainingDay} onCoachSync={onCoachSync} onXpEarned={onXpEarned} supabase={supabase} userId={userId} />
+          : <SupplementsFreeDiary accent={accent} accentSoft={accentSoft} accentText={accentText} isPaid={isPaid} isTrainingDay={isTrainingDay} onUpgrade={onUpgrade} onCoachSync={onCoachSync} onXpEarned={onXpEarned} />
+      ) : (
+        <div className="spring-in">
+          {isPaid ? (
+            <SupplementWikiBrowser accent={accent} />
+          ) : (
+            <LockedPanel onUpgrade={onUpgrade} accent={accent}
+              text="La Wiki Integratori è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: fatti aiutare da un professionista del settore a capire cosa vale davvero la pena assumere." />
+          )}
+        </div>
+      )}
+    </>
+  );
 }
 
-function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTrainingDay, onUpgrade, onCoachSync }) {
+function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTrainingDay, onUpgrade, onCoachSync, onXpEarned }) {
   const [customMoments, setCustomMoments] = useState([]);
   const [newMomentName, setNewMomentName] = useState("");
   const allMoments = useMemo(() => [...SUPP_MOMENTS, ...customMoments], [customMoments]);
@@ -6482,32 +6633,32 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
     setEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, time } : e)) }));
 
   /* XP solo se si completa TUTTO il protocollo del giorno: chi ha costruito
-     una lista più lunga non guadagna più punti di chi ne ha una più corta. */
+     una lista più lunga non guadagna più punti di chi ne ha una più corta.
+     Niente più spiegazione permanente in UI — il toast (onXpEarned) scatta
+     nel momento esatto in cui si completa tutto, non prima. */
   const allEntries = Object.values(entries).flat();
   const totalEntries = allEntries.length;
   const takenEntries = allEntries.filter((e) => e.taken).length;
   const allDone = totalEntries > 0 && takenEntries === totalEntries;
+  const wasAllDoneRef = useRef(false);
+  useEffect(() => {
+    if (allDone && !wasAllDoneRef.current) onXpEarned && onXpEarned("Integrazione completata", 50);
+    wasAllDoneRef.current = allDone;
+  }, [allDone, onXpEarned]);
 
   return (
     <div className="spring-in">
-      {/* stato di completamento: XP solo se si spunta tutto il protocollo di oggi */}
-      <div className="card mb-4">
-        <p className="label mb-1">Il tuo protocollo libero</p>
-        <p className="h1 mb-1">Costruiscilo tu, momento per momento</p>
-        <p className="body mb-4">
-          Aggiungi i tuoi integratori qui sotto, per ogni momento della giornata. Gli XP si sbloccano solo
-          completando <b>tutto</b> quello che hai programmato per oggi, così chi costruisce una lista più
-          lunga non guadagna più punti di chi ne ha una più corta.
-        </p>
-        <div className="inner px-4 py-3.5 flex items-center justify-between gap-3">
-          <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
-            {takenEntries} / {totalEntries} completati oggi
-          </span>
-          <span style={{ color: allDone ? accentText : "var(--ink-2)", fontWeight: 700 }}>
-            {totalEntries === 0 ? "Aggiungi il tuo primo integratore" : allDone ? "+50 XP sbloccati" : "+50 XP se completi tutto"}
-          </span>
+      {totalEntries > 0 && (
+        <div className="card mb-4">
+          <p className="label mb-1">Il tuo protocollo</p>
+          <div className="inner px-4 py-3.5 flex items-center justify-between gap-3">
+            <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
+              {takenEntries} / {totalEntries} completati oggi
+            </span>
+            {allDone && <CheckCircle2 size={18} style={{ color: accentText }} />}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* diario per momenti, come nella dieta: banner con nome, quantità, spunta e orario */}
       <div className="space-y-4 mb-6">
@@ -6632,13 +6783,6 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
           Sempre, solo nei giorni ON o solo nei giorni OFF — tutto incluso, su qualsiasi piano.
         </p>
       </div>
-
-      {isPaid ? (
-        <SupplementWikiBrowser accent={accent} />
-      ) : (
-        <LockedPanel onUpgrade={onUpgrade} accent={accent}
-          text="La Wiki Integratori è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: fatti aiutare da un professionista del settore a capire cosa vale davvero la pena assumere." />
-      )}
 
       <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
         text="Sai quali integratori scegliere, con quali dosi e in che momento assumerli? Fatti aiutare da un professionista del settore che ti scrive un protocollo su misura anche su questo: vedi gli abbonamenti per iniziare." />
@@ -7184,7 +7328,7 @@ function SupplementWikiBrowser({ accent }) {
   );
 }
 
-function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, onCoachSync, supabase, userId }) {
+function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, onCoachSync, onXpEarned, supabase, userId }) {
   const [checked, setChecked] = useState({});
   const isRealMode = Boolean(supabase && userId);
 
@@ -7258,7 +7402,11 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
   const totalItems = groups.reduce((n, g) => n + g.items.length, 0);
   const doneItems = groups.reduce((n, g) => n + g.items.filter((it) => checked[`${g.id}-${it.id}`]).length, 0);
   const allDone = totalItems > 0 && doneItems === totalItems;
-  const xpEarned = allDone ? 50 : 0;
+  const wasAllDoneRef = useRef(false);
+  useEffect(() => {
+    if (allDone && !wasAllDoneRef.current) onXpEarned && onXpEarned("Integrazione completata", 50);
+    wasAllDoneRef.current = allDone;
+  }, [allDone, onXpEarned]);
 
   if (isRealMode && prescribed === null) {
     return <p className="body px-1">Caricamento protocollo…</p>;
@@ -7266,25 +7414,17 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
 
   return (
     <div className="spring-in">
-      <div className="card mb-5">
-        <p className="label mb-1">Piano scritto dal coach</p>
-        <p className="h1 mb-1">Il tuo protocollo di integrazione</p>
-        <p className="body mb-4">
-          Scritto sui tuoi dati dal tuo coach: dosi e timing non sono modificabili da qui. Spunta ogni
-          voce quando l'assumi: gli XP si sbloccano solo completando <b>tutto</b> il protocollo del giorno,
-          così chi ha più integratori prescritti non guadagna più punti di chi ne ha meno.
-        </p>
-        {totalItems > 0 && (
-          <div className="inner px-4 py-3.5 flex items-center justify-between gap-3">
-            <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
-              {doneItems} / {totalItems} completate oggi
-            </span>
-            <span className="font-data text-sm" style={{ color: allDone ? accentText : "var(--ink-2)", fontWeight: 700 }}>
-              {allDone ? `+${xpEarned} XP sbloccati` : `+50 XP se completi tutto`}
-            </span>
-          </div>
-        )}
-      </div>
+      {/* Niente più card "Piano scritto dal coach" con la spiegazione delle
+          regole XP — solo i momenti della giornata in ordine, come chiesto:
+          la pagina resta il protocollo, non un testo da leggere prima. */}
+      {totalItems > 0 && (
+        <div className="inner px-4 py-3 flex items-center justify-between gap-3 mb-4">
+          <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
+            {doneItems} / {totalItems} completate oggi
+          </span>
+          {allDone && <CheckCircle2 size={18} style={{ color: accentText }} />}
+        </div>
+      )}
 
       {totalItems === 0 ? (
         <div className="card text-center py-8">
@@ -7327,10 +7467,6 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
           ))}
         </div>
       )}
-
-      <div className="mt-4">
-        <SupplementWikiBrowser accent={accent} />
-      </div>
     </div>
   );
 }
@@ -7354,36 +7490,43 @@ const F = [
   // vedi SubsPanel/findSubstitutes sopra — ma i valori restano utili come
   // base sempre disponibile per TUTTI, oltre agli alimenti condivisi dagli
   // utenti in custom_foods).
-  { name: "Fesa di Tacchino", kcal: 104, p: 24, c: 0, f: 1 },
-  { name: "Merluzzo", kcal: 82, p: 18, c: 0, f: 0.7 },
-  { name: "Orata", kcal: 121, p: 20, c: 0, f: 4.5 },
-  { name: "Uova Intere", kcal: 143, p: 13, c: 1, f: 10 },
-  { name: "Albume d'Uovo", kcal: 52, p: 11, c: 0.7, f: 0.2 },
-  { name: "Bresaola", kcal: 151, p: 32, c: 0.4, f: 2.6 },
-  { name: "Tonno al Naturale", kcal: 116, p: 26, c: 0, f: 1 },
-  { name: "Manzo Magro (scottona)", kcal: 137, p: 21, c: 0, f: 5.5 },
-  { name: "Lonza di Maiale", kcal: 143, p: 21, c: 0, f: 6 },
-  { name: "Fiocchi di Latte", kcal: 98, p: 11, c: 3.4, f: 4.3 },
-  { name: "Ceci Secchi", kcal: 364, p: 19, c: 61, f: 6 },
-  { name: "Lenticchie Secche", kcal: 352, p: 24, c: 60, f: 1 },
-  { name: "Tofu", kcal: 76, p: 8, c: 1.9, f: 4.8 },
-  { name: "Pasta", kcal: 353, p: 12, c: 71, f: 1.5 },
-  { name: "Patate", kcal: 77, p: 2, c: 17, f: 0.1 },
-  { name: "Pane Integrale", kcal: 247, p: 13, c: 41, f: 3.4 },
-  { name: "Pane Comune", kcal: 289, p: 8, c: 59, f: 1 },
-  { name: "Quinoa", kcal: 368, p: 14, c: 64, f: 6 },
-  { name: "Farro", kcal: 335, p: 15, c: 67, f: 2.5 },
-  { name: "Cous Cous", kcal: 376, p: 13, c: 77, f: 1 },
-  { name: "Piselli", kcal: 81, p: 5, c: 14, f: 0.4 },
-  { name: "Mais Dolce", kcal: 86, p: 3.2, c: 19, f: 1.2 },
-  { name: "Burro d'Arachidi", kcal: 588, p: 25, c: 20, f: 50 },
-  { name: "Avocado", kcal: 160, p: 2, c: 9, f: 15 },
-  { name: "Noci", kcal: 654, p: 15, c: 14, f: 65 },
-  { name: "Noci di Macadamia", kcal: 718, p: 8, c: 14, f: 76 },
-  { name: "Semi di Chia", kcal: 486, p: 17, c: 42, f: 31 },
-  { name: "Semi di Lino", kcal: 534, p: 18, c: 29, f: 42 },
-  { name: "Burro", kcal: 717, p: 0.9, c: 0.1, f: 81 },
-  { name: "Cocco Essiccato", kcal: 660, p: 7, c: 24, f: 65 },
+  // BUG PRESO: questi 29 alimenti (tra i più comuni in assoluto — pollo,
+  // pasta, uova, tonno...) non avevano na/k/fe/ca/mg, a differenza dei primi
+  // 9 della lista sopra. Chiunque registrasse un pasto reale con QUESTI
+  // alimenti vedeva Sodio/Potassio/Ferro/Calcio/Magnesio restare a zero
+  // nella Griglia Micronutrienti anche avendo loggato tutta la giornata —
+  // non un dato mancante isolato, ma la normalità per la maggior parte dei
+  // pasti reali. Valori per 100g (riferimento USDA FoodData Central).
+  { name: "Fesa di Tacchino", kcal: 104, p: 24, c: 0, f: 1, na: 50, k: 250, fe: 0.7, ca: 8, mg: 25 },
+  { name: "Merluzzo", kcal: 82, p: 18, c: 0, f: 0.7, na: 54, k: 413, fe: 0.25, ca: 12, mg: 24 },
+  { name: "Orata", kcal: 121, p: 20, c: 0, f: 4.5, na: 65, k: 380, fe: 0.4, ca: 15, mg: 25 },
+  { name: "Uova Intere", kcal: 143, p: 13, c: 1, f: 10, na: 142, k: 126, fe: 1.75, ca: 56, mg: 12 },
+  { name: "Albume d'Uovo", kcal: 52, p: 11, c: 0.7, f: 0.2, na: 166, k: 163, fe: 0.08, ca: 7, mg: 11 },
+  { name: "Bresaola", kcal: 151, p: 32, c: 0.4, f: 2.6, na: 1500, k: 400, fe: 3, ca: 10, mg: 25 },
+  { name: "Tonno al Naturale", kcal: 116, p: 26, c: 0, f: 1, na: 250, k: 260, fe: 1, ca: 5, mg: 30 },
+  { name: "Manzo Magro (scottona)", kcal: 137, p: 21, c: 0, f: 5.5, na: 55, k: 320, fe: 2, ca: 5, mg: 21 },
+  { name: "Lonza di Maiale", kcal: 143, p: 21, c: 0, f: 6, na: 55, k: 350, fe: 0.8, ca: 5, mg: 22 },
+  { name: "Fiocchi di Latte", kcal: 98, p: 11, c: 3.4, f: 4.3, na: 350, k: 100, fe: 0.1, ca: 60, mg: 8 },
+  { name: "Ceci Secchi", kcal: 364, p: 19, c: 61, f: 6, na: 24, k: 875, fe: 6.24, ca: 105, mg: 79 },
+  { name: "Lenticchie Secche", kcal: 352, p: 24, c: 60, f: 1, na: 6, k: 677, fe: 6.51, ca: 35, mg: 47 },
+  { name: "Tofu", kcal: 76, p: 8, c: 1.9, f: 4.8, na: 7, k: 121, fe: 5.36, ca: 350, mg: 30 },
+  { name: "Pasta", kcal: 353, p: 12, c: 71, f: 1.5, na: 6, k: 223, fe: 1.8, ca: 21, mg: 53 },
+  { name: "Patate", kcal: 77, p: 2, c: 17, f: 0.1, na: 6, k: 425, fe: 0.8, ca: 12, mg: 23 },
+  { name: "Pane Integrale", kcal: 247, p: 13, c: 41, f: 3.4, na: 450, k: 230, fe: 2.5, ca: 40, mg: 65 },
+  { name: "Pane Comune", kcal: 289, p: 8, c: 59, f: 1, na: 500, k: 115, fe: 1.2, ca: 30, mg: 25 },
+  { name: "Quinoa", kcal: 368, p: 14, c: 64, f: 6, na: 5, k: 563, fe: 4.57, ca: 47, mg: 197 },
+  { name: "Farro", kcal: 335, p: 15, c: 67, f: 2.5, na: 8, k: 388, fe: 3.5, ca: 27, mg: 105 },
+  { name: "Cous Cous", kcal: 376, p: 13, c: 77, f: 1, na: 10, k: 166, fe: 1.1, ca: 24, mg: 44 },
+  { name: "Piselli", kcal: 81, p: 5, c: 14, f: 0.4, na: 5, k: 244, fe: 1.47, ca: 25, mg: 33 },
+  { name: "Mais Dolce", kcal: 86, p: 3.2, c: 19, f: 1.2, na: 15, k: 270, fe: 0.5, ca: 2, mg: 37 },
+  { name: "Burro d'Arachidi", kcal: 588, p: 25, c: 20, f: 50, na: 430, k: 649, fe: 1.9, ca: 43, mg: 168 },
+  { name: "Avocado", kcal: 160, p: 2, c: 9, f: 15, na: 7, k: 485, fe: 0.55, ca: 12, mg: 29 },
+  { name: "Noci", kcal: 654, p: 15, c: 14, f: 65, na: 2, k: 441, fe: 2.91, ca: 98, mg: 158 },
+  { name: "Noci di Macadamia", kcal: 718, p: 8, c: 14, f: 76, na: 5, k: 368, fe: 3.69, ca: 85, mg: 130 },
+  { name: "Semi di Chia", kcal: 486, p: 17, c: 42, f: 31, na: 16, k: 407, fe: 7.72, ca: 631, mg: 335 },
+  { name: "Semi di Lino", kcal: 534, p: 18, c: 29, f: 42, na: 30, k: 813, fe: 5.73, ca: 255, mg: 392 },
+  { name: "Burro", kcal: 717, p: 0.9, c: 0.1, f: 81, na: 15, k: 24, fe: 0.02, ca: 24, mg: 2 },
+  { name: "Cocco Essiccato", kcal: 660, p: 7, c: 24, f: 65, na: 37, k: 543, fe: 3.3, ca: 26, mg: 90 },
 ];
 
 const GUIDE = MEAL_SLOTS.map((_, i) => ({
@@ -7632,6 +7775,28 @@ export default function HomePreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sleep.start, sleep.end, sleep.hours, steps, supabaseProp, userId, realHistory]);
 
+  // Correzione di un giorno PASSATO di sonno/passi (candela cliccata nel
+  // grafico storico) — "oggi" non passa da qui, ha già i suoi campi sopra
+  // al grafico e la scrittura debounced qui sopra. Aggiorna sia Supabase
+  // sia lo stato locale (altrimenti il grafico tornerebbe al vecchio
+  // valore al prossimo re-render, prima del prossimo fetch completo).
+  const editDailyMetricDay = (kind, dateISO, value) => {
+    if (!supabaseProp || !userId) return;
+    const patch = kind === "sleep" ? { sleep_hours: value } : { steps: value };
+    upsertDailyMetrics(supabaseProp, userId, dateISO, patch)
+      .then(() => {
+        setRealHistory((h) => {
+          if (!h) return h;
+          const idx = pastDatesUntilYesterday(HISTORY_DAYS).indexOf(dateISO);
+          if (idx === -1) return h;
+          const nextArr = [...h[kind]];
+          nextArr[idx] = value;
+          return { ...h, [kind]: nextArr };
+        });
+      })
+      .catch((err) => console.error("PERFORM: errore modifica giorno storico", err));
+  };
+
   // Diario pasti reale di oggi (nutrition_logs): se il cliente aveva già
   // registrato qualcosa oggi (stessa sessione precedente, o riapertura
   // dell'app), lo ricarica al posto del diario vuoto di default. Ogni item
@@ -7868,6 +8033,25 @@ export default function HomePreview({
         .xp-bar-shine{background-image:linear-gradient(90deg, var(--title-a), var(--title-b), var(--title-c), var(--title-b), var(--title-a));
           background-size:220% auto;animation:xpBarShine 3.5s linear infinite}
         @media (prefers-reduced-motion: reduce){.xp-bar-shine{animation:none}}
+        /* riflesso dei cerchi di compliance: gira in senso orario in modo
+           continuo (transform-box:fill-box rende l'origine "centro della
+           forma", non dell'intero SVG — necessario perché il cerchio non
+           riempie tutto il viewBox). */
+        .ring-shine{transform-box:fill-box;animation:ringShine 2.6s linear infinite}
+        @keyframes ringShine{from{transform:rotate(-90deg)}to{transform:rotate(270deg)}}
+        @media (prefers-reduced-motion: reduce){.ring-shine{animation:none}}
+        /* toast XP: entra dall'alto, resta un attimo, si dissolve da sola */
+        .xp-toast-wrap{position:fixed;top:calc(env(safe-area-inset-top, 0px) + 14px);left:0;right:0;
+          display:flex;justify-content:center;z-index:70;pointer-events:none}
+        .xp-toast{display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;
+          background:linear-gradient(120deg, var(--title-a), var(--title-b));color:#FFFFFF;
+          font-size:0.8rem;font-weight:700;box-shadow:0 10px 24px -6px rgba(0,0,0,0.4);
+          animation:xpToastPop 2.6s cubic-bezier(.22,1,.36,1) both}
+        .xp-toast-label{font-weight:500;opacity:0.9}
+        @keyframes xpToastPop{0%{opacity:0;transform:translateY(-14px) scale(.9)}
+          12%{opacity:1;transform:translateY(0) scale(1)}82%{opacity:1;transform:translateY(0) scale(1)}
+          100%{opacity:0;transform:translateY(-8px) scale(.96)}}
+        @media (prefers-reduced-motion: reduce){.xp-toast{animation:none}}
         @keyframes springIn{0%{opacity:0;transform:translateY(10px) scale(.985)}
           55%{opacity:1;transform:translateY(-2px) scale(1.004)}100%{opacity:1;transform:none}}
         .spring-in{animation:springIn .3s cubic-bezier(.22,1.2,.36,1) both}
@@ -7939,6 +8123,8 @@ export default function HomePreview({
           exercises={exercises} setsFor={setsFor} onSetField={onSetField}
           sleep={sleep} steps={steps} water={water} waterTarget={waterTarget} autoSteps={autoSteps}
           onSetWaterTarget={setWaterTarget}
+          onEditSleepDay={(dateISO, v) => editDailyMetricDay("sleep", dateISO, v)}
+          onEditStepsDay={(dateISO, v) => editDailyMetricDay("steps", dateISO, v)}
           rhr={rhr} hrv={hrv}
           fullHistory={fullHistory}
           weekPlan={weekPlan} musclesOf={MUSCLES_OF} missedDayIdx={-1}
