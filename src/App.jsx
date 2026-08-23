@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, Suspense, lazy } from "react";
+import { ArrowLeft } from "lucide-react";
 
 import { supabase, makeAuth, AuthScreen } from "./components/03_AuthView.jsx";
 import { AppShell, COACH_EMAIL, accentFor, SplashScreen } from "./components/04_AppShell.jsx";
@@ -9,7 +10,7 @@ import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox } from "./lib/coachingData.js";
 
 // Piani a coaching reale (Scheda Personalizzata, Coaching Allenamento, Full
 // Coaching): solo questi sbloccano il pulsante Chat (terzo tab, subito dopo
@@ -19,15 +20,118 @@ const REAL_COACHING_PLANS = new Set(["scheda_personalizzata", "training", "full_
 
 /* Schermata Chat a schermo intero, dietro il tab di navigazione dedicato —
    include anche il video-check tecnica (invio video esercizi dentro la
-   stessa conversazione, non più una sezione a sé nel Profilo). */
-function ChatScreen({ supabase, userId, accent }) {
+   stessa conversazione, non più una sezione a sé nel Profilo). Il
+   contenitore fisso (posizione/altezza) lo decide AppShell qui sopra; questo
+   componente riempie semplicemente tutto lo spazio che riceve, in colonna:
+   intestazione fissa in alto, messaggi che scorrono, input in fondo — mai
+   la pagina intera a scorrere. */
+function ChatScreen({ supabase, userId, accent, gender }) {
   return (
-    <div className="card">
-      <p className="h1 mb-1">Chat con il coach</p>
-      <p className="body mb-4" style={{ color: "var(--ink-2)" }}>
-        Scrivi feedback, aggiornamenti, o manda foto, video, vocali e file — come su WhatsApp.
-      </p>
-      <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} />
+    <div className="flex flex-col h-full px-4 pt-4">
+      <div className="mb-3 shrink-0">
+        <p className="h1 mb-1">Chat con il coach</p>
+        <p className="body" style={{ color: "var(--ink-2)" }}>
+          Scrivi feedback, aggiornamenti, o manda foto, video, vocali e file — come su WhatsApp.
+        </p>
+      </div>
+      <div className="flex-1 min-h-0">
+        <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} gender={gender} />
+      </div>
+    </div>
+  );
+}
+
+/* Inbox del coach (tab Chat sul proprio account): a differenza
+   dell'atleta, il coach non ha "una" conversazione — ne ha una per ogni
+   cliente. Elenco stile WhatsApp (ultimo messaggio, orario, badge non
+   letti), tap per aprire la chat privata di quel cliente — la stessa
+   ChatThread già usata lato atleta, stesso componente, stessi permessi
+   RLS (client_id = quel cliente, sender_id = il coach). */
+function CoachChatInboxScreen({ supabase, coachId, accent, gender }) {
+  const [rows, setRows] = useState(null); // null = non ancora caricato
+  const [openClientId, setOpenClientId] = useState(null);
+  const [loadError, setLoadError] = useState("");
+
+  const load = React.useCallback(() => {
+    fetchCoachChatInbox(supabase, coachId)
+      .then((data) => { setRows(data); setLoadError(""); })
+      .catch((err) => { console.error("PERFORM: errore caricamento inbox chat coach", err); setLoadError("Non sono riuscito a caricare le conversazioni."); setRows([]); });
+  }, [supabase, coachId]);
+  useEffect(() => { load(); }, [load]);
+  // Rete di sicurezza per nuovi messaggi/letture senza un canale realtime
+  // dedicato (evita di introdurre un altro punto a rischio di collisione
+  // canale, vedi ChatThread) — un refresh periodico basta per un'inbox.
+  useEffect(() => {
+    const id = setInterval(load, 20000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const openClient = rows?.find((r) => r.id === openClientId);
+
+  if (openClient) {
+    return (
+      <div className="flex flex-col h-full px-4 pt-4">
+        <div className="flex items-center gap-3 mb-3 shrink-0">
+          <button onClick={() => { setOpenClientId(null); load(); }} aria-label="Torna alle conversazioni"
+                  className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+            <ArrowLeft size={16} style={{ color: "var(--ink)" }} />
+          </button>
+          <p className="h2 truncate">{openClient.name}</p>
+        </div>
+        <div className="flex-1 min-h-0">
+          <ChatThread supabase={supabase} clientId={openClient.id} meId={coachId} accent={accent} gender={gender}
+            emptyText={`Nessun messaggio ancora con ${openClient.name} — scrivi il primo.`} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full px-4 pt-4">
+      <p className="h1 mb-3 shrink-0">Chat</p>
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 pb-3">
+        {loadError && <p className="meta mb-2" style={{ color: "#B91C1C" }}>{loadError}</p>}
+        {rows === null ? (
+          <p className="meta">Carico le conversazioni…</p>
+        ) : rows.length === 0 ? (
+          <p className="meta text-center mt-8">Nessun cliente con un piano a coaching reale ancora.</p>
+        ) : (
+          rows.map((r) => (
+            <button key={r.id} onClick={() => setOpenClientId(r.id)}
+              className="w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-left transition-transform active:scale-[0.98]"
+              style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+              <span className="shrink-0 rounded-full flex items-center justify-center font-data"
+                    style={{ width: 42, height: 42, backgroundColor: accent, color: "#FFFFFF", fontWeight: 700, fontSize: "1rem" }}>
+                {r.name.charAt(0).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 600 }}>{r.name}</span>
+                  {r.lastMessageAt && (
+                    <span className="shrink-0" style={{ fontSize: "0.65rem", color: "var(--ink-2)" }}>
+                      {new Date(r.lastMessageAt).toLocaleDateString("it-IT") === new Date().toLocaleDateString("it-IT")
+                        ? new Date(r.lastMessageAt).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
+                        : new Date(r.lastMessageAt).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-xs truncate" style={{ color: "var(--ink-2)" }}>
+                    {r.lastMessage ? `${r.lastMessageMine ? "Tu: " : ""}${r.lastMessage}` : "Nessun messaggio ancora"}
+                  </span>
+                  {r.unreadCount > 0 && (
+                    <span className="shrink-0 rounded-full flex items-center justify-center font-data"
+                          style={{ minWidth: 18, height: 18, padding: "0 5px", backgroundColor: "#DC2626", color: "#FFFFFF", fontSize: "0.62rem", fontWeight: 700 }}>
+                      {r.unreadCount}
+                    </span>
+                  )}
+                </span>
+              </span>
+            </button>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -240,7 +344,10 @@ export default function App() {
 
   const accent = accentFor(gender, dark);
   const isCoach = (session?.user?.email || "").trim().toLowerCase() === COACH_EMAIL;
-  const hasCoachChat = REAL_COACHING_PLANS.has(userPlan);
+  // Il coach vede sempre il tab Chat (la sua inbox con tutti i clienti),
+  // a prescindere dal piano sulla SUA riga profiles — non sta "consumando"
+  // un coaching, lo sta fornendo.
+  const hasCoachChat = isCoach || REAL_COACHING_PLANS.has(userPlan);
 
   const stripePlanId =
     userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : "free";
@@ -370,7 +477,12 @@ export default function App() {
           // il nome di un cliente dentro il Pannello Coach (ClientDetail \u2192
           // tab "editor"), due percorsi per la stessa azione.
           coach: isCoach ? <CoachDashboard supabase={supabase} coachId={session.user.id} dark={dark} /> : null,
-          chat: hasCoachChat ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} /> : null,
+          // Il coach non ha "una" conversazione (con se stesso) ma una per
+          // ogni cliente: sul suo account il tab Chat è l'inbox di tutte le
+          // conversazioni, non la ChatScreen dell'atleta.
+          chat: isCoach
+            ? <CoachChatInboxScreen supabase={supabase} coachId={session.user.id} accent={accent} gender={gender} />
+            : (hasCoachChat ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} gender={gender} /> : null),
         }}
       />
       </Suspense>

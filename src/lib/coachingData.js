@@ -2053,6 +2053,47 @@ export async function sendChatMessage(supabase, clientId, senderId, body, attach
   return data;
 }
 
+// Inbox chat del coach: una riga per cliente con coaching reale (Scheda
+// Personalizzata/Coaching Allenamento/Full Coaching — Free/Premium non hanno
+// una conversazione), con l'ultimo messaggio e il conteggio dei non letti,
+// stile WhatsApp. Il coach non ha "una" conversazione come il cliente: ne
+// ha una per ciascuno, qui elencate tutte insieme.
+export async function fetchCoachChatInbox(supabase, coachId) {
+  const { data: profiles, error } = await supabase
+    .from("profiles")
+    .select("id, nickname, full_name")
+    .eq("role", "user")
+    .in("plan", ["scheda_personalizzata", "training", "full"]);
+  if (error) throw error;
+  if (!profiles || profiles.length === 0) return [];
+
+  const rows = await Promise.all(profiles.map(async (p) => {
+    const [{ data: lastRows }, { count: unreadCount }] = await Promise.all([
+      supabase.from("chat_messages").select("body, attachment_type, sender_id, created_at")
+        .eq("client_id", p.id).order("created_at", { ascending: false }).limit(1),
+      supabase.from("chat_messages").select("id", { count: "exact", head: true })
+        .eq("client_id", p.id).neq("sender_id", coachId).is("read_at", null),
+    ]);
+    const last = lastRows?.[0] || null;
+    return {
+      id: p.id,
+      name: p.full_name || p.nickname || "Atleta",
+      lastMessage: last ? (last.body || (last.attachment_type ? "📎 Allegato" : null)) : null,
+      lastMessageAt: last?.created_at || null,
+      lastMessageMine: last ? last.sender_id === coachId : false,
+      unreadCount: unreadCount || 0,
+    };
+  }));
+
+  // Più recente prima (stile WhatsApp); chi non ha ancora scritto niente in fondo, per nome.
+  return rows.sort((a, b) => {
+    if (!a.lastMessageAt && !b.lastMessageAt) return a.name.localeCompare(b.name, "it");
+    if (!a.lastMessageAt) return 1;
+    if (!b.lastMessageAt) return -1;
+    return b.lastMessageAt.localeCompare(a.lastMessageAt);
+  });
+}
+
 // Segna come letti solo i messaggi dell'ALTRA parte (mai i propri) — chiamata
 // quando il thread viene aperto, sia lato cliente sia lato coach.
 export async function markChatMessagesRead(supabase, clientId, readerId) {
