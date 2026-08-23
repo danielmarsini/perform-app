@@ -36,11 +36,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
-  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2,
+  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, MessageCircle,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchUnreadChatCount } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
+import ChatThread from "./ChatThread.jsx";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -960,14 +961,15 @@ function MonthlyReportView({ profile, accent, level, xp, streak, weightPoints, c
   );
 }
 
-function Section({ id, icon: Icon, title, sub, openId, setOpenId, children }) {
+function Section({ id, icon: Icon, title, sub, openId, setOpenId, children, badge }) {
   const on = openId === id;
   return (
     <div className="card mb-3">
       <button onClick={() => setOpenId(on ? null : id)} className="w-full flex items-center gap-3.5 text-left">
-        <span className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+        <span className="relative w-10 h-10 rounded-full flex items-center justify-center shrink-0"
               style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
           <Icon size={17} style={{ color: "var(--ink)" }} />
+          {badge}
         </span>
         <span className="min-w-0 flex-1">
           <span className="h2 block">{title}</span>
@@ -1046,6 +1048,15 @@ export function ClientProfileView({
   const [exFilter, setExFilter] = useState("all"); // "all" | "compound" | "favorites"
   const [reportOpen, setReportOpen] = useState(false);
   const fileRef = useRef(null);
+
+  // Pallino "nuovo messaggio" sull'icona Messaggi, visibile anche a sezione
+  // chiusa — si azzera aprendola (ChatThread segna come letto da solo).
+  const [unreadChat, setUnreadChat] = useState(0);
+  const hasCoachChat = isRealMode && ["scheda", "training", "full"].includes(plan);
+  useEffect(() => {
+    if (!hasCoachChat) { setUnreadChat(0); return; }
+    fetchUnreadChatCount(supabase, userId, userId).then(setUnreadChat).catch(() => {});
+  }, [hasCoachChat, supabase, userId, openSection]);
 
   const save = () => {
     const n = nick.trim();
@@ -1208,6 +1219,21 @@ export function ClientProfileView({
         <div className="mb-4">
           <PauseSection supabase={supabase} userId={userId} accent={accent} accentText={accentText} />
         </div>
+      )}
+
+      {/* Chat col coach: stessa esclusiva dei check settimanali e della
+          pausa — solo chi ha davvero un coach dietro (Free/Premium restano
+          autogestiti, non hanno nessuno con cui parlare qui). */}
+      {hasCoachChat && (
+        <Section id="chat" icon={MessageCircle}
+                 title={<GradientText gender={gender}>Messaggi</GradientText>}
+                 sub="Scrivi direttamente al tuo coach"
+                 openId={openSection} setOpenId={setOpenSection}
+                 badge={unreadChat > 0 && (
+                   <span className="absolute rounded-full" style={{ top: -1, right: -1, width: 9, height: 9, backgroundColor: "#DC2626", border: "1.5px solid var(--surface)" }} />
+                 )}>
+          <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} />
+        </Section>
       )}
 
       {/* ---------- Il Mio Archivio Check ---------- */}
