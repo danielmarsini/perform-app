@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, Suspense, lazy } from "react";
 
 import { supabase, makeAuth, AuthScreen } from "./components/03_AuthView.jsx";
-import { AppShell, COACH_EMAIL, accentFor } from "./components/04_AppShell.jsx";
+import { AppShell, COACH_EMAIL, accentFor, SplashScreen } from "./components/04_AppShell.jsx";
 import HomeScreen from "./components/05_HomeDashboard.jsx";
 import { NewsTipsView, NewsTipsViewStyles } from "./components/06_NewsTipsView.jsx";
 import ProfileScreen, { SettingsDrawer } from "./components/08_ClientProfileView.jsx";
@@ -224,7 +224,7 @@ export default function App() {
     userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : "free";
 
   if (authLoading) {
-    return <ScreenFallback dark minHeight="100vh" />;
+    return <SplashScreen dark={dark} />;
   }
 
   if (!session) {
@@ -248,7 +248,7 @@ export default function App() {
   }
 
   if (profileLoading) {
-    return <ScreenFallback dark={dark} minHeight="100vh" />;
+    return <SplashScreen dark={dark} />;
   }
 
   // Gate di onboarding (SPECIFICA_FUNZIONALE.md § 1, 5): dopo la registrazione,
