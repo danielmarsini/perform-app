@@ -23,7 +23,7 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, fetchCheckins, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
 import { isMapboxConfigured, snapRouteToRoads, generateLoopRoute } from "../lib/mapbox.js";
@@ -1185,7 +1185,7 @@ function EmojiRating({ label, icon, emojis, value, onChange }) {
    1 (peggio) a 10 (meglio), coerente con le altre scale a 10 punti dell'app. */
 const CHECK_SCALE_10 = Array.from({ length: 10 }, (_, i) => i + 1);
 
-/* Pop-up del Check Domenica/Lunedì: bloccante, idro-satinato, con i 5 campi
+/* Pop-up del Check settimanale (lunedì): bloccante, idro-satinato, con i 5 campi
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
    parametri biometrici storici su Supabase (legati all'ID utente) e sblocca
    di nuovo la navigazione della Home. */
@@ -1203,7 +1203,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const isRealMode = Boolean(supabase && userId);
-  // Check obbligatorio di domenica/lunedì (onClose assente): tutti i campi
+  // Check obbligatorio del lunedì (onClose assente): tutti i campi
   // servono davvero al coach ogni settimana. "Registra" libero nell'Archivio
   // Check (onClose presente): serve poter loggare anche solo il peso di oggi
   // senza dover per forza valutare dolori/stress/digestione/sonno — prima
@@ -1237,7 +1237,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
       cyclePhase: cyclePhase || null,
     };
     // Check reale: scrive su checkins (coachingData.js) — stessa funzione sia
-    // per il check obbligatorio di domenica/lunedì sia per il pulsante
+    // per il check obbligatorio del lunedì sia per il pulsante
     // "Registra ora" libero nel Profilo. In demo (!isRealMode) resta il
     // vecchio comportamento simulato con un breve delay di feedback visivo.
     if (isRealMode) {
@@ -1286,8 +1286,8 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           <p className="h1 mb-2">{onClose ? "Registra un check" : "Check settimanale"}</p>
           <p className="body mb-4">
             {onClose
-              ? "Registra misure e stato del momento quando vuoi, non solo di domenica/lunedì: ogni check in più affina il trend che vedi qui e che vede il coach."
-              : "Fine settimana: registra le misure e rispondi a quello che l'app non può dedurre da sola da " +
+              ? "Registra misure e stato del momento quando vuoi, non solo il lunedì: ogni check in più affina il trend che vedi qui e che vede il coach."
+              : "Nuova settimana: registra le misure e rispondi a quello che l'app non può dedurre da sola da " +
                 "ciò che hai già tracciato durante la settimana. Serve tutto al coach per calibrare dieta e " +
                 "allenamento sui tuoi progressi reali."}
           </p>
@@ -1635,7 +1635,7 @@ export function HomeDashboard({
   onSetSleep, onSetSteps, onToggleAutoSteps, onAddWater, onSetTargetOn, onSetTargetOff, onSetRhr, onSetHrv, onSetWaterTarget,
   onEditSleepDay, onEditStepsDay, // corregge un giorno PASSATO di sonno/passi cliccando la sua candela (mai "oggi")
   targetOn, targetOff, isTrainingDay, onToggleTrainingDay,
-  onAddFood, onRemoveFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
+  onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
   onApplyReschedule, onDismissReschedule,
   onUpgrade, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
   userPlan, // 'free' | 'performance_pack' | 'scheda_personalizzata' | 'training' | 'full_coaching' — letta da Supabase
@@ -1669,15 +1669,34 @@ export function HomeDashboard({
   useEffect(() => { window.scrollTo(0, 0); }, [screen]);
   useEdgeSwipeBack(() => setScreen("dash"), screen !== "dash");
 
-  /* Check Domenica/Lunedì: si attiva da solo a fine settimana e blocca la
-     navigazione dell'app finché l'atleta non lo compila. Una volta inviato,
-     resta chiuso per il resto della sessione. */
+  /* Check settimanale: si attiva da solo appena scatta lunedì (non più anche
+     domenica) e blocca la navigazione finché l'atleta non lo compila — solo
+     per chi ha davvero un coach (access.pro: full_coaching/scheda
+     personalizzata/training), MAI per free/Performance Pack, che registrano
+     i propri dati quando vogliono dal Profilo (SEZIONE Recupero/"Registra un
+     check", sempre disponibile a tutti). BUG PRESO: "compilato" viveva solo
+     in uno stato locale (weeklyCheckDone) che si azzerava a ogni refresh —
+     bastava ricaricare la pagina per rivederlo ricomparire lo stesso lunedì.
+     Ora si verifica il vero ultimo check salvato (checkins, la stessa
+     tabella che legge anche il coach): se è di questa settimana (da lunedì
+     in poi) resta chiuso fino al lunedì successivo, altrimenti ricompare. */
   const [showWeeklyCheck, setShowWeeklyCheck] = useState(false);
   const [weeklyCheckDone, setWeeklyCheckDone] = useState(false);
   useEffect(() => {
-    const dow = new Date().getDay(); // 0 = domenica, 1 = lunedì
-    if ((dow === 0 || dow === 1) && !weeklyCheckDone && access.pro) setShowWeeklyCheck(true);
-  }, [weeklyCheckDone, access.pro]);
+    const dow = new Date().getDay(); // 1 = lunedì
+    if (dow !== 1 || weeklyCheckDone || !access.pro) return;
+    if (!(supabase && userId)) { setShowWeeklyCheck(true); return; } // anteprima demo: comportamento invariato
+    let cancelled = false;
+    const mondayIso = toLocalISODate(mondayOfLocal());
+    fetchCheckins(supabase, userId, 1)
+      .then((rows) => {
+        if (cancelled) return;
+        const last = rows[rows.length - 1];
+        if (!last || last.date < mondayIso) setShowWeeklyCheck(true);
+      })
+      .catch((err) => console.error("PERFORM: errore verifica check settimanale già fatto", err));
+    return () => { cancelled = true; };
+  }, [weeklyCheckDone, access.pro, supabase, userId]);
 
   /* Cerchi di compliance biometrica: modello grafico di test, override manuali
      (solo per provare colori/soglie), popup analitico aperto. */
@@ -1736,6 +1755,18 @@ export function HomeDashboard({
         removeNutritionLogItem(supabase, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto giorno passato", err));
       }
       return { ...(m || {}), [slot]: ((m || {})[slot] || []).filter((_, i) => i !== index) };
+    });
+  };
+  const updateFoodForPastDay = (slot, index, newGrams) => {
+    setPastMeals((m) => {
+      const items = (m || {})[slot] || [];
+      const item = items[index];
+      if (!item) return m;
+      const patched = scaleFoodItem(item, newGrams);
+      if (supabase && userId && item.id) {
+        updateNutritionLogItem(supabase, item.id, patched).catch((err) => console.error("PERFORM: errore modifica pasto giorno passato", err));
+      }
+      return { ...(m || {}), [slot]: items.map((it, i) => (i === index ? patched : it)) };
     });
   };
   // Uscendo da Alimentazione si riparte sempre da "oggi" al prossimo ingresso,
@@ -1983,7 +2014,7 @@ export function HomeDashboard({
     </div>
   );
 
-  /* Check Domenica/Lunedì: blocca TUTTA la navigazione, qualunque schermata
+  /* Check del lunedì: blocca TUTTA la navigazione, qualunque schermata
      sia attiva, finché l'atleta non lo compila e invia. */
   if (showWeeklyCheck) {
     return (
@@ -2404,6 +2435,7 @@ export function HomeDashboard({
             mealGuide={mealGuide} substitutions={substitutions}
             onAddFood={selectedNutritionIso ? addFoodForPastDay : onAddFood}
             onRemoveFood={selectedNutritionIso ? removeFoodForPastDay : onRemoveFood}
+            onUpdateFood={selectedNutritionIso ? updateFoodForPastDay : onUpdateFood}
             onOpenScanner={onOpenScanner} onAddCustomFood={onAddCustomFood}
             onCopyYesterday={selectedNutritionIso ? null : onCopyYesterday} onShoppingList={onShoppingList} supabase={supabase}
             fullAccess={targetIsCoachSet}
@@ -4591,6 +4623,28 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
    Sottomoduli dell'Alimentazione: Diario Libero per primo.
    ------------------------------------------------------------------------- */
 
+// Corregge la quantità di un alimento già nel diario (grammi cambiati, o
+// sbagliati in partenza) riscalando kcal/macro/micro in proporzione, invece
+// di dover cancellare la riga e ricercare/reinserire tutto da capo. Usa i
+// valori GIÀ salvati sull'item (non richiede di riandare a cercare
+// l'alimento originale nel catalogo): perG = valore attuale / grammi attuali.
+function scaleFoodItem(item, newGrams) {
+  const g = Math.max(1, Math.round(Number(newGrams) || 0));
+  const oldGrams = Number(item.grams) || 0;
+  if (!oldGrams || g === oldGrams) return { ...item, grams: g };
+  const ratio = g / oldGrams;
+  const round = (v) => Math.round((Number(v) || 0) * ratio);
+  return {
+    ...item, grams: g,
+    kcal: round(item.kcal), p: round(item.p), c: round(item.c), f: round(item.f),
+    na: item.na != null ? round(item.na) : item.na,
+    k: item.k != null ? round(item.k) : item.k,
+    fe: item.fe != null ? Math.round((Number(item.fe) || 0) * ratio * 10) / 10 : item.fe,
+    ca: item.ca != null ? round(item.ca) : item.ca,
+    mg: item.mg != null ? round(item.mg) : item.mg,
+  };
+}
+
 // Icone più sobrie/professionali (pancake, panino, bicchiere col cannuccino
 // leggevano "menù per bambini") — stesso set riconoscibile, tono più adulto.
 export const MEAL_SLOTS = [
@@ -5540,7 +5594,7 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
 
 function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide, substitutions,
-  onAddFood, onRemoveFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
+  onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
   fullAccess, subsAccess, onUpgrade,
   userPlan, gender, waterMl, microAddon, digestValue, onDigestChange, supabase,
   pastDayMode, // true quando si sta correggendo un giorno passato (NutritionCalendarStrip):
@@ -5555,6 +5609,10 @@ function NutritionTabs({
   const [dropOpen, setDropOpen] = useState(false);
   const [manualAddOpen, setManualAddOpen] = useState(false);
   const [manualMacros, setManualMacros] = useState({ kcal: "", p: "", c: "", f: "" });
+  // Modifica grammi di un alimento già nel diario: niente più
+  // cancella-e-ricerca per correggere una quantità sbagliata o cambiata.
+  const [editingGramsKey, setEditingGramsKey] = useState(null); // `${slotId}-${index}`
+  const [editGramsValue, setEditGramsValue] = useState("");
 
   // Diario Libero resta sempre disponibile. "I Miei Target" non è più un tab
   // qui accanto: i target vivono ora in cima alla schermata Alimentazione
@@ -5719,20 +5777,54 @@ function NutritionTabs({
 
                   {items.length > 0 && (
                     <div className="space-y-1.5 mb-3">
-                      {items.map((i, k) => (
-                        <div key={`${i.name}-${k}`} className="inner flex items-center justify-between gap-3 px-4 py-2.5">
-                          <span className="text-sm truncate" style={{ color: "var(--ink)" }}>{i.name}</span>
-                          <span className="flex items-center gap-2 shrink-0">
-                            <span className="meta font-data text-xs">{i.grams} g · {i.kcal} kcal</span>
-                            {onRemoveFood && (
-                              <button onClick={() => { haptic("warning"); onRemoveFood(slot.id, k); }} aria-label={`Rimuovi ${i.name}`}
-                                      className="p-1 rounded-full" style={{ color: "var(--ink-2)" }}>
-                                <X size={13} />
-                              </button>
+                      {items.map((i, k) => {
+                        const editKey = `${slot.id}-${k}`;
+                        const isEditingGrams = editingGramsKey === editKey;
+                        return (
+                          <div key={`${i.name}-${k}`} className="inner flex items-center justify-between gap-3 px-4 py-2.5">
+                            <span className="text-sm truncate" style={{ color: "var(--ink)" }}>{i.name}</span>
+                            {isEditingGrams ? (
+                              <span className="flex items-center gap-1.5 shrink-0">
+                                <input type="number" min="1" inputMode="numeric" autoFocus value={editGramsValue}
+                                  onChange={(e) => setEditGramsValue(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                                  className="input px-2 py-1 text-xs font-data text-right" style={{ width: 56 }}
+                                  aria-label={`Grammi di ${i.name}`} />
+                                <span className="meta" style={{ fontSize: "0.65rem" }}>g</span>
+                                <button onClick={() => {
+                                    const g = Math.round(Number(editGramsValue));
+                                    if (g > 0 && onUpdateFood) { haptic("confirm"); onUpdateFood(slot.id, k, g); }
+                                    setEditingGramsKey(null);
+                                  }}
+                                  aria-label="Salva quantità" className="p-1 rounded-full" style={{ color: accent }}>
+                                  <CheckCircle2 size={16} />
+                                </button>
+                                <button onClick={() => setEditingGramsKey(null)} aria-label="Annulla" className="p-1 rounded-full" style={{ color: "var(--ink-2)" }}>
+                                  <X size={13} />
+                                </button>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-2 shrink-0">
+                                {onUpdateFood ? (
+                                  <button onClick={() => { setEditingGramsKey(editKey); setEditGramsValue(String(i.grams ?? "")); }}
+                                    className="meta font-data text-xs" style={{ textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}
+                                    aria-label={`Modifica quantità di ${i.name}`}>
+                                    {i.grams} g · {i.kcal} kcal
+                                  </button>
+                                ) : (
+                                  <span className="meta font-data text-xs">{i.grams} g · {i.kcal} kcal</span>
+                                )}
+                                {onRemoveFood && (
+                                  <button onClick={() => { haptic("warning"); onRemoveFood(slot.id, k); }} aria-label={`Rimuovi ${i.name}`}
+                                          className="p-1 rounded-full" style={{ color: "var(--ink-2)" }}>
+                                    <X size={13} />
+                                  </button>
+                                )}
+                              </span>
                             )}
-                          </span>
-                        </div>
-                      ))}
+                          </div>
+                        );
+                      })}
                       <div className="flex justify-end gap-3 pt-1">
                         <span className="font-data text-xs" style={{ color: MACRO_COLORS.p.base, fontWeight: 700 }}>P {tot.p}</span>
                         <span className="font-data text-xs" style={{ color: MACRO_COLORS.c.base, fontWeight: 700 }}>C {tot.c}</span>
@@ -8320,6 +8412,18 @@ export default function HomePreview({
                 removeNutritionLogItem(supabaseProp, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto", err));
               }
               return { ...m, [slot]: m[slot].filter((_, i) => i !== index) };
+            });
+          }}
+          onUpdateFood={(slot, index, newGrams) => {
+            setMeals((m) => {
+              const items = m[slot] || [];
+              const item = items[index];
+              if (!item) return m;
+              const patched = scaleFoodItem(item, newGrams);
+              if (supabaseProp && userId && item.id) {
+                updateNutritionLogItem(supabaseProp, item.id, patched).catch((err) => console.error("PERFORM: errore modifica pasto", err));
+              }
+              return { ...m, [slot]: items.map((it, i) => (i === index ? patched : it)) };
             });
           }}
           onOpenScanner={() => {}} onAddCustomFood={addCustomFood}
