@@ -478,9 +478,11 @@ export function SplashScreen({ dark }) {
    sotto usa la stessa classe `.perform-title` del wordmark "PERFORM", quindi
    lo stesso identico shimmer, non un'imitazione.
 
-   Il quinto pulsante "Coach Panel" NON è mai una delle quattro tab
-   standard: viene aggiunto in coda solo se `isCoach` è true. Per un
-   atleta Free o Paid, `tabs` ha sempre e solo 4 elementi.
+   Il pulsante "Coach Panel" NON è mai una delle quattro tab standard:
+   viene aggiunto in coda solo se `isCoach` è true. Il pulsante "Chat" si
+   inserisce invece a metà, subito dopo News, solo se `hasChat` è true
+   (piano a coaching reale). Per un atleta Free/Premium senza coach,
+   `tabs` ha sempre e solo i 4 elementi standard.
    ========================================================================== */
 
 export const TABS = [
@@ -492,11 +494,12 @@ export const TABS = [
 
 export const COACH_TAB = { id: "coach", icon: SlidersHorizontal, label: "Coach Panel" };
 
-/* Quinto pulsante, in fondo a destra come il Coach Panel per il coach:
-   sblocca la Chat diretta col coach solo per chi ha un piano a coaching
-   reale (Scheda Personalizzata, Coaching Allenamento, Full Coaching) — un
-   Free/Premium autogestito non ha nessuno con cui scrivere qui, stessa
-   condizione già usata per la sezione Chat/Video Tecnica nel Profilo. */
+/* Terzo pulsante, subito dopo News (prima di Classifica): sblocca la Chat
+   diretta col coach solo per chi ha un piano a coaching reale (Scheda
+   Personalizzata, Coaching Allenamento, Full Coaching) — un Free/Premium
+   autogestito non ha nessuno con cui scrivere qui. La Chat include anche
+   l'invio di foto/video/vocali/file (video-check tecnica compreso), non
+   più una sezione a sé nel Profilo. */
 export const CHAT_TAB = { id: "chat", icon: MessageCircle, label: "Chat" };
 
 /* Stessi stop-color del BrandMark: oro brillante su nero, oro profondo su
@@ -622,7 +625,10 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false, has
   const [burst, setBurst] = useState(null);
   const idle = dark ? "#71717A" : "#A1A1AA";
 
-  const tabs = [...TABS, ...(hasChat ? [CHAT_TAB] : []), ...(isCoach ? [COACH_TAB] : [])];
+  // Chat va subito dopo News (non in fondo): Home, News, [Chat], Classifica,
+  // Profilo, [Coach Panel] — l'ordine di TABS resta fisso, la si inserisce
+  // a indice 2 solo quando sbloccata.
+  const tabs = [...TABS.slice(0, 2), ...(hasChat ? [CHAT_TAB] : []), ...TABS.slice(2), ...(isCoach ? [COACH_TAB] : [])];
 
   const pick = (id) => {
     setBurst(id);
@@ -708,7 +714,7 @@ export function AppShell({
   dark = true,
   userLabel,
   userEmail = "",        // usata SOLO per determinare l'accesso al Coach Panel
-  hasChat = false,       // piano a coaching reale: sblocca il quinto pulsante Chat
+  hasChat = false,       // piano a coaching reale: sblocca il pulsante Chat (dopo News)
   tab,
   onTabChange,
   onOpenSettings,

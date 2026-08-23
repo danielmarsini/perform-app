@@ -2084,7 +2084,7 @@ export function HomeDashboard({
         <div className="gradient-border rounded-2xl px-5 py-5 mb-4" style={{ backgroundColor: "var(--surface)" }}>
           <div className="min-w-0" style={{ position: "relative", zIndex: 1 }}>
             <p className="greeting-text" style={{ color: "var(--ink)", fontSize: "1.55rem", fontWeight: 700, letterSpacing: "-0.01em", lineHeight: 1.15 }}>
-              <span className="greeting-emoji">{greeting.icon}</span> {greeting.text}, {firstName}
+              <span className="greeting-emoji">{greeting.icon}</span> {greeting.text} {firstName}
             </p>
 
             {/* riga micro-satinata: titolo di livello + streak in tempo reale */}
