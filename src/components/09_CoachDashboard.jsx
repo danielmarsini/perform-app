@@ -8,6 +8,7 @@ import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS } from "./05_HomeDashboard.jsx";
+import ChatThread from "./ChatThread.jsx";
 
 /* ============================================================================
    COACH DASHBOARD — PERFORM (Evidence-Based Method by D. Marsini)
@@ -174,7 +175,7 @@ import {
   fetchCheckins, saveCheckin, getCheckinPhotoUrl, fetchPrescribedSupplements,
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
-  fetchExerciseLibrary, learnExercise, computeVolume,
+  fetchExerciseLibrary, learnExercise, computeVolume, fetchUnreadChatCount,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3935,10 +3936,19 @@ function ClientPausesCard({ client }) {
 }
 
 function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses, setXpBonuses, teamPosts, setTeamPosts, initialTab = "anamnesi" }) {
-  const { supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
+  const { supabase, coachId, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const status = computeStatus(client);
   const meta = STATUS_META[status];
   const [tab, setTab] = useState(initialTab);
+  const isPaidCoaching = REAL_COACHING_PLANS.has(client.plan);
+
+  // Pallino "nuovo messaggio" sul tab Chat, visibile anche prima di aprirlo —
+  // si azzera aprendo il tab (ChatThread segna i messaggi come letti da sola).
+  const [unreadChat, setUnreadChat] = useState(0);
+  useEffect(() => {
+    if (!isRealMode || !isPaidCoaching || !coachId) { setUnreadChat(0); return; }
+    fetchUnreadChatCount(supabase, client.id, coachId).then(setUnreadChat).catch(() => {});
+  }, [isRealMode, isPaidCoaching, supabase, coachId, client.id, tab]);
   const titleClass = client.gender === "F" ? "gradient-title-f" : "gradient-title-m";
 
   // "Cambia abbonamento": a differenza di "Prendi in gestione" (solo per
@@ -3985,12 +3995,15 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-1.5 mb-5">
-        {[["anamnesi", "Anamnesi", ChevronDown], ["check", "Check Settimanali", CalendarDays], ["bioritmi", "Bioritmi & Grafici", AlertTriangle], ["editor", "Editor & AI", Dumbbell]].map(([id, lab, Ico]) => {
+      <div className="grid grid-cols-5 gap-1.5 mb-5">
+        {[["anamnesi", "Anamnesi", ChevronDown], ["check", "Check Settimanali", CalendarDays], ["bioritmi", "Bioritmi & Grafici", AlertTriangle], ["editor", "Editor & AI", Dumbbell], ["chat", "Chat", MessageCircle]].map(([id, lab, Ico]) => {
           const on = tab === id;
           return (
-            <button key={id} onClick={() => setTab(id)} className="rounded-2xl px-2 py-3.5 flex flex-col items-center gap-1.5"
+            <button key={id} onClick={() => setTab(id)} className="relative rounded-2xl px-2 py-3.5 flex flex-col items-center gap-1.5"
               style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+              {id === "chat" && unreadChat > 0 && (
+                <span className="absolute rounded-full" style={{ top: 6, right: 10, width: 8, height: 8, backgroundColor: "#DC2626" }} />
+              )}
               <Ico size={18} strokeWidth={on ? 2 : 1.6} style={{ color: on ? "#C5A059" : "var(--ink-soft)" }} />
               <span className="font-data text-xs uppercase text-center" style={{ fontWeight: on ? 600 : 400, lineHeight: 1.1 }}>{lab}</span>
             </button>
@@ -4009,6 +4022,25 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
       )}
 
       {tab === "bioritmi" && <BioritmiGrafici client={client} />}
+
+      {tab === "chat" && (
+        <div className="c-card">
+          {isRealMode && isPaidCoaching ? (
+            <ChatThread supabase={supabase} clientId={client.id} meId={coachId} accent="#D4AF37"
+              emptyText={`Nessun messaggio ancora con ${client.name} — scrivi il primo.`} />
+          ) : isRealMode ? (
+            <>
+              <p className="c-heading font-display font-bold mb-2">Chat privata</p>
+              <p className="c-muted text-sm leading-relaxed">
+                {client.name} ha il piano Free/Premium: la chat diretta è riservata a chi ha un piano a coaching
+                reale (Scheda Personalizzata, Coaching Allenamento, Full Coaching).
+              </p>
+            </>
+          ) : (
+            <p className="c-muted text-sm">Chat disponibile in modalità reale.</p>
+          )}
+        </div>
+      )}
 
       {tab === "editor" && (
         <div>

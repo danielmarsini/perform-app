@@ -1679,3 +1679,55 @@ export function recompositionReading(weightPoints, circPoints) {
 }
 
 export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, computeVolume, parseRepsTarget };
+
+/* ---------------------------------------------------------------------------
+   CHAT COACH <-> CLIENTE (SCHEMA_v48) — una sola conversazione per cliente,
+   client_id la identifica sempre, sender_id distingue chi ha scritto.
+   ------------------------------------------------------------------------- */
+
+export async function fetchChatMessages(supabase, clientId, limit = 300) {
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select("id, client_id, sender_id, body, created_at, read_at")
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function sendChatMessage(supabase, clientId, senderId, body) {
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .insert({ client_id: clientId, sender_id: senderId, body })
+    .select("id, client_id, sender_id, body, created_at, read_at")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Segna come letti solo i messaggi dell'ALTRA parte (mai i propri) — chiamata
+// quando il thread viene aperto, sia lato cliente sia lato coach.
+export async function markChatMessagesRead(supabase, clientId, readerId) {
+  const { error } = await supabase
+    .from("chat_messages")
+    .update({ read_at: new Date().toISOString() })
+    .eq("client_id", clientId)
+    .neq("sender_id", readerId)
+    .is("read_at", null);
+  if (error) throw error;
+}
+
+// Conteggio messaggi non letti di UNA conversazione, dal punto di vista di
+// chi legge (readerId) — per un pallino "nuovo messaggio" sul tab Chat prima
+// ancora di aprirlo, sia lato coach sia lato cliente.
+export async function fetchUnreadChatCount(supabase, clientId, readerId) {
+  const { count, error } = await supabase
+    .from("chat_messages")
+    .select("id", { count: "exact", head: true })
+    .eq("client_id", clientId)
+    .is("read_at", null)
+    .neq("sender_id", readerId);
+  if (error) throw error;
+  return count ?? 0;
+}
