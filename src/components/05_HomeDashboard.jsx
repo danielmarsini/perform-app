@@ -4788,6 +4788,21 @@ export const SUPP_MOMENTS = [
   { id: "sera",       label: "Sera",       icon: "🌙" },
 ];
 
+// BUG PRESO: il riconoscimento di un momento standard era case-sensitive
+// (m.id === moment): un coach che digitava "Mattina"/"MATTINA"/"sera " a
+// mano (rinominando una sezione invece di usare il pulsante standard, o
+// una sezione salvata prima che "Pomeriggio" esistesse come momento fisso)
+// non veniva MAI riconosciuto come uno dei 5 momenti canonici — id_ref
+// restava null, il testo tornava in coda o in ordine alfabetico invece che
+// mattina→pomeriggio→pre-wo→post-wo→sera. Confronto ora case-insensitive e
+// senza spazi ai bordi, su id E label, così qualunque variante di
+// maiuscole/minuscole scritta dal coach viene comunque riconosciuta.
+export function matchSuppMoment(raw) {
+  const norm = (s) => (s || "").trim().toLowerCase();
+  const r = norm(raw);
+  return SUPP_MOMENTS.find((m) => norm(m.id) === r || norm(m.label) === r) || null;
+}
+
 export const SUPP_WIKI = [
   {
     id: "creatina", name: "Creatina", icon: "⚡",
@@ -8979,7 +8994,8 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
     });
     const canonicalOrder = SUPP_MOMENTS.map((m) => m.id);
     const sortedMoments = [...byMoment.keys()].sort((a, b) => {
-      const ia = canonicalOrder.indexOf(a), ib = canonicalOrder.indexOf(b);
+      const ia = canonicalOrder.indexOf(matchSuppMoment(a)?.id ?? a);
+      const ib = canonicalOrder.indexOf(matchSuppMoment(b)?.id ?? b);
       if (ia === -1 && ib === -1) return 0;
       if (ia === -1) return 1;
       if (ib === -1) return -1;
@@ -8987,7 +9003,7 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
     });
     return sortedMoments.map((moment) => ({
       id: moment,
-      label: SUPP_MOMENTS.find((m) => m.id === moment)?.label || moment,
+      label: matchSuppMoment(moment)?.label || moment,
       items: byMoment.get(moment),
     }));
   }, [prescribed, isTrainingDay]);

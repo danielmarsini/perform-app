@@ -73,8 +73,6 @@ const AVATARS = {
   LeoneSelvaggio: 'https://i.pravatar.cc/150?img=20',
 };
 
-const USER_AVATAR_URL = 'https://i.pravatar.cc/150?img=68'; // placeholder — in produzione: userAvatarUrl da Supabase Storage
-
 function athlete(nickname, rank, xp, streakDays, level) {
   return { rank, nickname, avatarUrl: AVATARS[nickname], xp, streakDays, level };
 }
@@ -222,18 +220,6 @@ const APP_LAUNCH_LABEL = 'Settembre 2025';
 
 /* ---------- Utility ---------- */
 
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReduced(mq.matches);
-    const handler = (e) => setReduced(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-  return reduced;
-}
-
 function formatXP(n) {
   return n.toLocaleString('it-IT');
 }
@@ -364,10 +350,10 @@ function PodiumCard({ athlete: a, position, delay, onSelect, isMe }) {
   );
 }
 
-function LeaderboardRow({ athlete: a, maxXP, onSelect, isMe, rowRef }) {
+function LeaderboardRow({ athlete: a, maxXP, onSelect, isMe }) {
   const barWidth = Math.max(8, Math.round((a.xp / maxXP) * 100));
   return (
-    <div ref={isMe ? rowRef : undefined} className={`pc-row${isMe ? ' pc-row-me' : ''}`} style={{ cursor: onSelect ? 'pointer' : undefined }}
+    <div className={`pc-row${isMe ? ' pc-row-me' : ''}`} style={{ cursor: onSelect ? 'pointer' : undefined }}
          onClick={onSelect ? () => onSelect(a) : undefined} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined}>
       <div className="pc-row-rank">{a.rank}°</div>
       <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-row" />
@@ -425,55 +411,6 @@ function AthleteDetailModal({ athlete: a, onClose }) {
         </div>
       </div>
     </Portal>
-  );
-}
-
-function StickyUserBar({ isCurrent, rank, xp, gapToTop10, avatarUrl, level, streakDays, onLocateMe }) {
-  const inTop10 = rank <= 10;
-  return (
-    <div className="pc-sticky">
-      <div className={`pc-sticky-inner${onLocateMe ? ' pc-sticky-clickable' : ''}`}
-           onClick={onLocateMe} role={onLocateMe ? 'button' : undefined} tabIndex={onLocateMe ? 0 : undefined}
-           title={onLocateMe ? 'Vai alla mia posizione in classifica' : undefined}>
-        <div className="pc-sticky-rank">
-          <span className="pc-sticky-rank-num pc-shine-text">{rank}°</span>
-          <span className="pc-field-label pc-sticky-rank-label">Posizione</span>
-        </div>
-        <div className="pc-sticky-divider" />
-        <div className="pc-sticky-info">
-          {isCurrent ? (
-            <>
-              <div className="pc-sticky-title">
-                Tu sei al <strong>{rank}° Posto</strong> · <span className="pc-shine-text">{formatXP(xp)} XP</span>
-                {' · '}
-                <span className="pc-inline-flame pc-sticky-streak-inline">
-                  <FlameIcon size={12} />
-                  <span className="pc-shine-text">{streakDays} Giorni</span>
-                </span>
-              </div>
-              <div className="pc-sticky-sub">
-                <span className="pc-shine-text pc-sticky-level">{level}</span>
-                {' · '}
-                {inTop10
-                  ? 'Sei già in Top 10 — non spezzare la catena, difendi la posizione!'
-                  : `Ti mancano ${formatXP(gapToTop10)} XP per la Top 10 — non spezzare la catena o perdi il moltiplicatore XP!`}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="pc-sticky-title">
-                In questo mese hai chiuso al <strong>{rank}° Posto</strong> · <span className="pc-shine-text">{formatXP(xp)} XP</span>
-              </div>
-              <div className="pc-sticky-sub">
-                <span className="pc-shine-text pc-sticky-level">{level}</span>
-                {' · '}Risultato storico immutabile
-              </div>
-            </>
-          )}
-        </div>
-        <AvatarCircle avatarUrl={avatarUrl} className="pc-avatar-sticky" />
-      </div>
-    </div>
   );
 }
 
@@ -587,7 +524,6 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [expandedMonthId, setExpandedMonthId] = useState(null);
-  const reducedMotion = usePrefersReducedMotion();
 
   // Classifica globale reale: XP guadagnato NEL MESE (non più il totale
   // lifetime), da fetchMonthlyLeaderboard — diff fra due snapshot mensili
@@ -670,11 +606,6 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           .map((r) => ({ rank: r, nickname: '—', avatarUrl: null, xp: 0, streakDays: 0, level: 'RECRUIT' })),
       ];
   const maxXP = top10[0].xp;
-  // "10° posto" resta il 10° reale anche ora che l'elenco è intero (prima,
-  // con solo 10 righe, l'ultima riga E il 10° posto coincidevano sempre —
-  // non più, con l'elenco completo l'ultima riga può essere il 50° o il 200°).
-  const tenthPlaceXP = (top10[9] ?? top10[top10.length - 1]).xp;
-  const gapToTop10 = Math.max(0, tenthPlaceXP - currentMonth.userResult.xp + 1);
 
   const podiumOrder = useMemo(() => {
     const first = top10.find((a) => a.rank === 1);
@@ -690,18 +621,6 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
   const restOfList = top10.filter((a) => a.rank > 3);
 
   const handleToggleExpand = (id) => setExpandedMonthId((cur) => (cur === id ? null : id));
-
-  // "Vai alla mia posizione": se sei già sul podio (rank 1-3) sei evidenziato
-  // lì in cima, niente da scorrere — il pulsante scorre fino alla propria
-  // riga solo per chi è più giù nella lista completa.
-  const myRowRef = useRef(null);
-  const scrollToMe = () => {
-    if (currentMonth.userResult.rank && currentMonth.userResult.rank <= 3) {
-      window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
-      return;
-    }
-    myRowRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
-  };
 
   if (isLoadingRealBoard) {
     return (
@@ -731,8 +650,6 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           --pc-text-primary: #F4F4F5;
           --pc-text-secondary: rgba(244, 244, 245, 0.55);
           --pc-text-tertiary: rgba(244, 244, 245, 0.38);
-          --pc-sticky-fade: linear-gradient(180deg, rgba(9,9,11,0) 0%, rgba(9,9,11,0.82) 25%, rgba(9,9,11,0.96) 100%);
-          --pc-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
 
         .pc-mode-light {
@@ -743,13 +660,9 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           --pc-text-primary: #18181B;
           --pc-text-secondary: rgba(24, 24, 27, 0.55);
           --pc-text-tertiary: rgba(24, 24, 27, 0.4);
-          --pc-sticky-fade: linear-gradient(180deg, rgba(250,250,249,0) 0%, rgba(250,250,249,0.85) 25%, rgba(250,250,249,0.98) 100%);
-          --pc-shadow: 0 8px 32px rgba(24, 24, 27, 0.08);
           /* Correzione contrasti Light Mode — vedi sezione dedicata più sotto */
           --pc-num-strong: #18181B;    /* zinc-900 — numeri di posizione, scritte piccole */
           --pc-num-value: #3F3F46;     /* zinc-700 — valori XP e giorni di streak nella lista */
-          --pc-sticky-strong: #09090B; /* zinc-950 — testo principale sticky bar */
-          --pc-sticky-muted: #52525B;  /* zinc-600 — avviso/promemoria sticky bar */
         }
 
         .pc-theme-male { --pc-accent-1: #D4AF37; --pc-accent-2: #F4E5A1; --pc-accent-3: #B8860B; --pc-accent-glow: rgba(212, 175, 55, 0.24); }
@@ -769,16 +682,10 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           background: transparent;
           color: var(--pc-text-primary);
           min-height: 100vh;
-          padding: 18px 18px 152px;
+          padding: 18px 18px 40px;
           position: relative;
           overflow-x: hidden;
           transition: color 0.25s ease;
-          /* Flex-column: con poche righe in classifica il pulsante Archivio
-             Storico Report finiva a metà pagina, con un vuoto enorme sotto —
-             ora resta sempre ancorato in fondo (margin-top:auto su di lui),
-             quale che sia la lunghezza della lista sopra. */
-          display: flex;
-          flex-direction: column;
         }
 
         .pc-shine-text {
@@ -990,7 +897,6 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         .pc-archive-btn {
           display: block;
           margin: 36px auto 6px;
-          margin-top: auto;
           font-size: 12px;
           font-weight: 400;
           letter-spacing: -0.005em;
@@ -1124,40 +1030,11 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         }
         .pc-list-archive { gap: 10px; max-width: none; }
 
-        /* ---------- Sticky bar ---------- */
-
-        .pc-sticky { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 0px)); background: var(--pc-sticky-fade); }
-
-        .pc-sticky-inner {
-          max-width: 560px; margin: 0 auto; display: flex; align-items: center; gap: 16px;
-          background: var(--pc-glass-bg);
-          backdrop-filter: blur(var(--pc-blur));
-          -webkit-backdrop-filter: blur(var(--pc-blur));
-          border: 0.5px solid var(--pc-glass-border);
-          border-radius: 24px;
-          padding: 14px 20px;
-          box-shadow: var(--pc-shadow);
-        }
-
-        .pc-sticky-clickable { cursor: pointer; }
-
-        .pc-sticky-rank { display: flex; flex-direction: column; align-items: center; line-height: 1.15; flex-shrink: 0; }
-        .pc-sticky-rank-num { font-size: 22px; font-weight: 300; letter-spacing: -0.02em; }
-        .pc-sticky-rank-label { margin-top: 2px; }
-        .pc-sticky-divider { width: 0.5px; align-self: stretch; background: var(--pc-glass-border); }
-        .pc-sticky-info { min-width: 0; }
-        .pc-sticky-title { font-size: 13.5px; font-weight: 400; letter-spacing: -0.01em; color: var(--pc-text-primary); }
-        .pc-sticky-title strong { color: var(--pc-accent-1); font-weight: 600; }
-        .pc-sticky-streak-inline { font-weight: 300; font-size: 13px; letter-spacing: -0.01em; }
-        .pc-sticky-sub { font-size: 11.5px; font-weight: 300; letter-spacing: -0.005em; color: var(--pc-text-secondary); margin-top: 4px; }
-        .pc-sticky-level { font-weight: 500; }
-        .pc-avatar-sticky { width: 38px; height: 38px; }
-
         /* ==================== CORREZIONE CONTRASTI — SOLO LIGHT MODE ====================
            Onyx Mode non viene toccato. Qui si sistema la leggibilità in Light: i grigi
            chiari e i gradienti pallidi (oro chiaro su sfondo bianco) diventano solidi
-           e scuri, sia nella Lista (righe 4°-10°) sia nella Sticky Bar. Il podio e il
-           titolo restano invariati (non segnalati come illeggibili). */
+           e scuri nella Lista (righe 4°-10°). Il podio e il titolo restano invariati
+           (non segnalati come illeggibili). */
 
         .pc-mode-light .pc-row-rank { color: var(--pc-num-strong); }
 
@@ -1169,27 +1046,6 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           -webkit-text-fill-color: var(--pc-num-value);
           color: var(--pc-num-value);
         }
-
-        .pc-mode-light .pc-sticky-rank-num {
-          background: none;
-          animation: none;
-          -webkit-text-fill-color: var(--pc-sticky-strong);
-          color: var(--pc-sticky-strong);
-        }
-        .pc-mode-light .pc-sticky-rank-label { color: var(--pc-num-strong); }
-
-        .pc-mode-light .pc-sticky-title { color: var(--pc-sticky-strong); }
-        .pc-mode-light .pc-sticky-title strong { color: var(--pc-accent-1); }
-        .pc-mode-light .pc-sticky-title .pc-shine-text,
-        .pc-mode-light .pc-sticky-streak-inline .pc-shine-text {
-          background: none;
-          animation: none;
-          -webkit-text-fill-color: var(--pc-sticky-strong);
-          color: var(--pc-sticky-strong);
-        }
-        .pc-mode-light .pc-sticky-streak-inline { color: var(--pc-sticky-strong); }
-
-        .pc-mode-light .pc-sticky-sub { color: var(--pc-sticky-muted); }
 
         @media (prefers-reduced-motion: reduce) {
           .pc-row-fill, .pc-shine-text, .pc-nick-metal { animation: none !important; background-position: 0% 50% !important; }
@@ -1218,7 +1074,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
       <div className="pc-list">
         {restOfList.map((a) => (
-          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} rowRef={myRowRef} />
+          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
         ))}
       </div>
 
@@ -1226,17 +1082,6 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
               onClick={() => { setDrawerOpen(true); if (isRealMode) loadRealArchive(); }}>
         🏛️ Archivio Storico Report
       </button>
-
-      <StickyUserBar
-        isCurrent={currentMonth.isCurrent}
-        rank={currentMonth.userResult.rank}
-        xp={currentMonth.userResult.xp}
-        gapToTop10={gapToTop10}
-        avatarUrl={isRealMode ? null : USER_AVATAR_URL}
-        level={currentMonth.userResult.level}
-        streakDays={currentMonth.userResult.streakDays}
-        onLocateMe={isRealMode && currentMonth.isCurrent ? scrollToMe : undefined}
-      />
 
       <ArchiveDrawer
         open={drawerOpen}
