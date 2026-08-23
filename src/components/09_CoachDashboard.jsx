@@ -169,10 +169,10 @@ import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, fetchBothNutritionTargets, saveWeekSupplements, computeTrainingCompliance,
-  computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
-  awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange, fetchClientPauses,
+  computeRecoveryCompliance, computeNutritionCompliance,
+  notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
-  fetchCheckins, saveCheckin, getCheckinPhotoUrl, fetchPrescribedSupplements,
+  fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements,
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
   fetchExerciseLibrary, learnExercise, computeVolume, fetchUnreadChatCount,
@@ -1284,15 +1284,18 @@ function ClientRow({ client, onOpen }) {
 }
 
 /* ------------------------------- CRUSCOTTO ALLARMI -------------------------- */
-function ComplianceRing({ label, value }) {
+function ComplianceRing({ label, value, onClick, active }) {
   // value === null → niente da misurare (es. nessun esercizio assegnato
   // questa settimana): stato neutro esplicito, non uno 0% rosso allarmante.
   const isNeutral = value == null;
   const pct = isNeutral ? null : Math.round(value * 100);
   const color = isNeutral ? "#ADB5BD" : value >= 0.75 ? "#10B981" : value >= 0.5 ? "#F0A020" : "#DC2626";
   const R = 22, C = 2 * Math.PI * R;
+  const Wrapper = onClick ? "button" : "div";
   return (
-    <div className="flex flex-col items-center gap-1.5">
+    <Wrapper type={onClick ? "button" : undefined} onClick={onClick}
+      className="flex flex-col items-center gap-1.5 rounded-xl py-1"
+      style={onClick ? { backgroundColor: active ? "var(--surface-2)" : "transparent", cursor: "pointer" } : undefined}>
       <svg width="56" height="56" style={{ transform: "rotate(-90deg)" }}>
         <circle cx="28" cy="28" r={R} fill="none" stroke="#E9ECEF" strokeWidth="5" />
         {isNeutral
@@ -1301,7 +1304,7 @@ function ComplianceRing({ label, value }) {
       </svg>
       <span className="font-data text-xs font-bold" style={{ color, marginTop: -40 }}>{isNeutral ? "n/d" : `${pct}%`}</span>
       <span className="c-label mt-6">{label}</span>
-    </div>
+    </Wrapper>
   );
 }
 /* --------------------------------- WHITELIST -------------------------------- */
@@ -2921,153 +2924,6 @@ function AnamnesisPanel({ client }) {
 }
 
 /* ------------------------------- SCHEDA CLIENTE ----------------------------- */
-/* ==========================================================================
-   🏆 GAMIFICATION LATO COACH — "Segnala Obiettivo Raggiunto"
-   Due azioni reali eseguite insieme al click, in isRealMode:
-   1) +500 XP: riga in xp_bonuses (awardXpBonus, coachingData.js) — MAI una
-      scrittura diretta su profiles.xp_total, che è solo una cache
-      ricalcolata da computeRealXpAndStreak (stessa fonte unica dell'Home
-      cliente e della classifica). Dopo l'insert richiamiamo subito
-      computeRealXpAndStreak per il cliente così la cache si aggiorna senza
-      dover aspettare che sia lui ad aprire l'Home, poi reloadRoster() per
-      rinfrescare la card nel pannello coach.
-   2) Post in bacheca Avvisi Team: coach_news_tips, channel "team" (le
-      colonne reali sono channel/eyebrow/title/body/published_at — niente
-      category/visual_kind/author, che non esistono su questa tabella).
-   In demo (!isRealMode) resta lo stato locale xpBonuses/teamPosts di prima,
-   invariato: la preview isolata non cambia comportamento.
-   ========================================================================== */
-// Carica una foto prima/dopo sul bucket pubblico team-photos (sola scrittura
-// coach, vedi SCHEMA_v29) e torna l'URL pubblico da salvare sul post.
-async function uploadTeamPhoto(supabase, file, clientId, label) {
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const path = `${clientId}/${Date.now()}-${label}.${ext}`;
-  const { error } = await supabase.storage.from("team-photos").upload(path, file, { upsert: false });
-  if (error) throw error;
-  return supabase.storage.from("team-photos").getPublicUrl(path).data.publicUrl;
-}
-
-function GoalAchievedPanel({ client, xpBonuses, setXpBonuses, teamPosts, setTeamPosts }) {
-  const { supabase, isRealMode, coachId, reloadRoster } = useContext(CoachDataContext);
-  const [goalText, setGoalText] = useState("");
-  const [weightAchieved, setWeightAchieved] = useState("");
-  const [photoBefore, setPhotoBefore] = useState(null);
-  const [photoAfter, setPhotoAfter] = useState(null);
-  const [justPosted, setJustPosted] = useState(false);
-  const [posting, setPosting] = useState(false);
-  const [postError, setPostError] = useState("");
-  const bonus = xpBonuses?.[client.id] || 0;
-  const totalXp = client.xp + bonus;
-  const myPosts = (teamPosts || []).filter((p) => p.clientId === client.id);
-
-  const segnalaObiettivo = async () => {
-    const text = goalText.trim() || "Obiettivo di mesociclo raggiunto";
-    if (isRealMode) {
-      setPosting(true);
-      setPostError("");
-      try {
-        const [photoBeforeUrl, photoAfterUrl] = await Promise.all([
-          photoBefore ? uploadTeamPhoto(supabase, photoBefore, client.id, "before") : null,
-          photoAfter ? uploadTeamPhoto(supabase, photoAfter, client.id, "after") : null,
-        ]);
-        await awardXpBonus(supabase, { userId: client.id, coachId, amount: 500, reason: text });
-        await computeRealXpAndStreak(supabase, client.id);
-        await supabase.from("coach_news_tips").insert({
-          channel: "team",
-          eyebrow: "Traguardo atleta",
-          title: `${client.name} ha raggiunto l'obiettivo! 🏆`,
-          body: text,
-          published_at: new Date().toISOString(),
-          photo_before_url: photoBeforeUrl,
-          photo_after_url: photoAfterUrl,
-          weight_achieved: weightAchieved ? Number(weightAchieved) : null,
-        });
-        reloadRoster?.();
-        setGoalText(""); setWeightAchieved(""); setPhotoBefore(null); setPhotoAfter(null);
-        setJustPosted(true);
-        setTimeout(() => setJustPosted(false), 2600);
-      } catch (err) {
-        console.error("PERFORM: errore invio obiettivo raggiunto", err);
-        setPostError(err.message || "Non sono riuscito a registrare l'obiettivo.");
-      } finally {
-        setPosting(false);
-      }
-      return;
-    }
-    setXpBonuses((prev) => ({ ...prev, [client.id]: (prev[client.id] || 0) + 500 }));
-    setTeamPosts((prev) => [
-      { id: uid(), clientId: client.id, title: `${client.name} ha raggiunto l'obiettivo! 🏆`, body: text, createdAt: new Date().toISOString() },
-      ...(prev || []),
-    ]);
-    setGoalText("");
-    setJustPosted(true);
-    setTimeout(() => setJustPosted(false), 2600);
-  };
-
-  return (
-    <div className="c-card" style={{ border: "1.5px solid #C5A059" }}>
-      <div className="flex items-center justify-between mb-1">
-        <p className="c-heading font-display font-bold">🏆 Gamification</p>
-        <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{totalXp.toLocaleString("it-IT")} XP</p>
-      </div>
-      <p className="c-muted text-xs mb-4">
-        {isRealMode
-          ? "L'XP di base cresce da sola con allenamenti/pasti/sonno registrati — questo bonus si aggiunge per un traguardo che il coach vuole premiare a mano."
-          : (bonus > 0 ? `Base ${client.xp.toLocaleString("it-IT")} + ${bonus.toLocaleString("it-IT")} da obiettivi segnalati in questa sessione.` : "Nessun bonus obiettivo ancora segnalato in questa sessione.")}
-      </p>
-      <label className="block mb-3">
-        <span className="c-label block mb-1.5">Descrizione obiettivo (facoltativa, va nel post)</span>
-        <input value={goalText} onChange={(e) => setGoalText(e.target.value)} placeholder="es. Primo squat a corpo libero da 100 kg"
-          className="t-input w-full text-sm rounded-lg px-3 py-2.5" />
-      </label>
-      {isRealMode && (
-        <>
-          <label className="block mb-3">
-            <span className="c-label block mb-1.5">Peso raggiunto, kg (facoltativo)</span>
-            <input type="number" step="0.1" value={weightAchieved} onChange={(e) => setWeightAchieved(e.target.value)}
-              placeholder="es. 78.5" className="t-input w-full text-sm rounded-lg px-3 py-2.5 font-data" />
-          </label>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            {[["before", "Foto prima", photoBefore, setPhotoBefore], ["after", "Foto dopo", photoAfter, setPhotoAfter]].map(([key, lab, file, setFile]) => (
-              <label key={key} className="rounded-lg flex flex-col items-center justify-center gap-1 py-4 cursor-pointer"
-                style={file ? { backgroundColor: "#C5A059", color: "#FFFFFF" } : { border: "1px dashed var(--line)", color: "var(--ink-2)" }}>
-                <span style={{ fontSize: "0.72rem", fontWeight: 600 }}>{file ? `✓ ${lab}` : lab}</span>
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-              </label>
-            ))}
-          </div>
-        </>
-      )}
-      <button onClick={segnalaObiettivo} disabled={posting} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium disabled:opacity-60">
-        {posting ? "Invio in corso…" : "🏆 Segnala Obiettivo Raggiunto"}
-      </button>
-      {postError && <p className="text-xs mt-2" style={{ color: "#B91C1C" }}>{postError}</p>}
-      {justPosted && (
-        <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block mt-3" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
-          ✅ +500 XP accreditati · post pubblicato in Avvisi Team
-        </p>
-      )}
-
-      {myPosts.length > 0 && (
-        <div className="mt-4">
-          <p className="c-label mb-2">Post pubblicati in Avvisi Team (questa sessione)</p>
-          <div className="space-y-1.5">
-            {myPosts.map((p) => (
-              <div key={p.id} className="rounded-xl px-3 py-2.5 flex items-start gap-2.5" style={{ backgroundColor: "rgba(63,122,94,0.08)", border: "1px solid rgba(63,122,94,0.28)" }}>
-                <span style={{ fontSize: "1.1rem" }}>🏆</span>
-                <div className="min-w-0">
-                  <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{p.title}</p>
-                  <p className="c-muted text-xs mt-0.5">{p.body}</p>
-                  <p className="font-data text-[10px] mt-1" style={{ color: "#3F7A5E" }}>📢 Avvisi Team</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* Vacanze e riposi forzati richiesti dal cliente (pause_periods), col
    motivo per i riposi forzati — il coach le vede qui per capire il perché
@@ -3110,7 +2966,7 @@ function ClientPausesCard({ client }) {
   );
 }
 
-function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses, setXpBonuses, teamPosts, setTeamPosts, initialTab = "chat" }) {
+function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTab = "chat" }) {
   const { supabase, coachId, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const status = computeStatus(client);
   const meta = STATUS_META[status];
@@ -3201,10 +3057,8 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
       {tab === "dati" && (
         <div className="space-y-4">
           <BioritmiGrafici client={client} />
-          <ClientDayLog client={client} />
-          <GoalAchievedPanel client={client} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} />
           <ClientPausesCard client={client} />
-          <CheckDetail client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} onSwitchToEditor={() => setTab("editor")} />
+          <CheckDetail client={client} />
         </div>
       )}
 
@@ -3281,28 +3135,6 @@ function average(arr) { return arr.reduce((a, b) => a + b, 0) / arr.length; }
    dimostrativo — nella vera app la sceglie l'atleta ogni lunedì). */
 const CYCLE_PHASES = ["Mestruale", "Follicolare", "Ovulazione", "Luteale"];
 
-/* Bioritmi (sonno, passi, HRV): storico simulato a 8 punti settimanali,
-   ancorato ai dati reali che il cliente aveva già (ore di sonno, livello di
-   attività per il baseline passi, anello di recupero per il baseline HRV),
-   con un'oscillazione deterministica (seno) invece di numeri casuali — così
-   il grafico è stabile tra un render e l'altro. */
-function buildBioHistory(client) {
-  const weeks = 8;
-  const todayMonday = mondayOf(new Date());
-  const baseSteps = { sedentario: 4000, leggero: 6000, moderato: 8000, attivo: 10000, "molto attivo": 12000 }[client.activity] || 7000;
-  const baseHRV = Math.round(40 + client.rings.recupero * 50);
-  return Array.from({ length: weeks }, (_, i) => {
-    const offset = i - (weeks - 1);
-    const wave = Math.sin(i * 0.9);
-    return {
-      date: addWeeksToDate(todayMonday, offset).toISOString().slice(0, 10),
-      sonno: Math.max(3, Math.round((client.lastCheck.sleep + wave * 0.6) * 10) / 10),
-      passi: Math.max(1000, Math.round(baseSteps + wave * 800)),
-      hrv: Math.max(20, Math.round(baseHRV + wave * 4)),
-    };
-  });
-}
-
 /* ===================== 🧪 ANALISI MICRONUTRIENTI (simulata) ==================
    Nessun diario alimentare reale collegato a questo file isolato (vive in
    05_HomeDashboard.jsx): la media settimanale qui è una stima plausibile
@@ -3314,7 +3146,7 @@ function buildMicronutrientProfile(client) {
   const onProfile = makeMacroProfile(client.calories, 0.28, 0.47, 0.25);
   const weekMeals = makeMealSplit(onProfile, client);
   const totals = dayMicros(weekMeals);
-  // Piccola oscillazione settimanale deterministica, stesso principio di buildBioHistory
+  // Piccola oscillazione settimanale deterministica (seno, stabile tra un render e l'altro)
   const wave = Math.sin(client.id * 1.3);
   return {
     sodiumMg: Math.round(totals.na * (1 + wave * 0.08)),
@@ -3436,42 +3268,11 @@ function RecoveryDashboard({ client }) {
 
 function BioritmiGrafici({ client }) {
   const { supabase, isRealMode } = useContext(CoachDataContext);
-  const demoBio = useMemo(() => buildBioHistory(client), [client]);
-  const fmtWeek = (p) => { const d = new Date(p.date); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
-
-  // Sonno/passi reali (daily_metrics), mediati per settimana sulle ultime 8
-  // settimane — stessa cadenza a 8 punti che il grafico si aspetta già,
-  // solo con numeri veri invece di buildBioHistory (storico simulato). HRV
-  // resta 0/bloccato qui come lato cliente: nessuna fonte reale ancora.
-  const [realBio, setRealBio] = useState(null);
-  useEffect(() => {
-    if (!isRealMode) return;
-    let cancelled = false;
-    const todayMonday = mondayOf(new Date());
-    const rangeStart = addWeeksToDate(todayMonday, -7);
-    fetchDailyMetricsRange(supabase, client.id, toLocalISODate(rangeStart), toLocalISODate(new Date()))
-      .then((rows) => {
-        if (cancelled) return;
-        const points = Array.from({ length: 8 }, (_, i) => {
-          const weekStart = addWeeksToDate(todayMonday, i - 7);
-          const weekStartISO = toLocalISODate(weekStart);
-          const weekEndISO = toLocalISODate(addWeeksToDate(weekStart, 1)); // esclusivo
-          const weekRows = rows.filter((r) => r.date >= weekStartISO && r.date < weekEndISO);
-          const sleepVals = weekRows.map((r) => Number(r.sleep_hours) || 0).filter((v) => v > 0);
-          const stepsVals = weekRows.map((r) => Number(r.steps) || 0).filter((v) => v > 0);
-          return {
-            date: weekStart,
-            sonno: sleepVals.length ? Math.round((sleepVals.reduce((a, b) => a + b, 0) / sleepVals.length) * 10) / 10 : 0,
-            passi: stepsVals.length ? Math.round(stepsVals.reduce((a, b) => a + b, 0) / stepsVals.length) : 0,
-            hrv: 0,
-          };
-        });
-        setRealBio(points);
-      })
-      .catch((err) => console.error("PERFORM: errore lettura daily_metrics", err));
-    return () => { cancelled = true; };
-  }, [isRealMode, supabase, client.id]);
-  const bio = isRealMode ? (realBio ?? []) : demoBio;
+  // Quale cerchio è "aperto" (nessuno, o uno solo alla volta): al click si
+  // espande sotto il dettaglio corrispondente invece di tenere grafici e
+  // liste sempre visibili — molto più compatto per uso quotidiano.
+  const [openRing, setOpenRing] = useState(null); // null | "allenamento" | "alimentazione" | "recupero"
+  const toggleRing = (key) => setOpenRing((cur) => (cur === key ? null : key));
 
   // Cerchio Allenamento reale: STESSA formula di Home cliente (05_HomeDashboard.jsx),
   // mai calcolata due volte — vedi computeTrainingCompliance in coachingData.js.
@@ -3543,26 +3344,42 @@ function BioritmiGrafici({ client }) {
       )}
 
       <div className="c-card">
-        <p className="c-label mb-3">Compliance diari</p>
+        <p className="c-label mb-3">Compliance diari · tocca un cerchio per il dettaglio</p>
         <div className="grid grid-cols-3 gap-3">
-          <ComplianceRing label="Allenamento" value={trainRingValue} />
-          <ComplianceRing label="Alimentazione" value={nutritionRingValue} />
-          <ComplianceRing label="Recupero" value={recoveryRingValue} />
+          <ComplianceRing label="Allenamento" value={trainRingValue} onClick={() => toggleRing("allenamento")} active={openRing === "allenamento"} />
+          <ComplianceRing label="Alimentazione" value={nutritionRingValue} onClick={() => toggleRing("alimentazione")} active={openRing === "alimentazione"} />
+          <ComplianceRing label="Recupero" value={recoveryRingValue} onClick={() => toggleRing("recupero")} active={openRing === "recupero"} />
         </div>
       </div>
 
-      <div className="c-card">
-        <p className="c-label mb-3">Sonno (ore/notte)</p>
-        <LineChart points={bio} xLabel={fmtWeek} series={[{ key: "sonno", label: "Ore di sonno", color: "#2563EB" }]} />
-      </div>
-      <div className="c-card">
-        <p className="c-label mb-3">Passi giornalieri (media settimanale)</p>
-        <LineChart points={bio} xLabel={fmtWeek} series={[{ key: "passi", label: "Passi", color: "#10B981" }]} />
-      </div>
-      <div className="c-card">
-        <p className="c-label mb-3">HRV (ms, variabilità cardiaca)</p>
-        <LineChart points={bio} xLabel={fmtWeek} series={[{ key: "hrv", label: "HRV", color: client.gender === "F" ? "#E5C1CD" : "#C5A059" }]} />
-      </div>
+      {openRing === "allenamento" && (
+        isRealMode ? <ClientDayLog client={client} mode="training" /> : <div className="c-card"><p className="c-muted text-sm">Elenco allenamenti disponibile in modalità reale.</p></div>
+      )}
+
+      {openRing === "alimentazione" && (
+        isRealMode ? <ClientDayLog client={client} mode="nutrition" /> : <div className="c-card"><p className="c-muted text-sm">Elenco alimentazione disponibile in modalità reale.</p></div>
+      )}
+
+      {openRing === "recupero" && (
+        <div className="c-card">
+          <p className="c-heading font-display font-bold mb-1">Recupero — ultimi 7 giorni</p>
+          <p className="c-muted text-xs mb-3">Sonno e passi medi registrati dall'atleta, stessa finestra usata per il cerchio.</p>
+          {!isRealMode || recoveryCompliance?.trackedDays === 0 || recoveryCompliance?.sleepAvg == null ? (
+            <p className="c-muted text-sm">{isRealMode ? "Nessun dato di sonno/passi registrato in questa settimana." : "Disponibile in modalità reale."}</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="t-inner px-3 py-3 text-center">
+                <p className="c-label mb-1">Sonno medio</p>
+                <p className="font-data text-xl font-bold" style={{ color: "var(--ink)" }}>{recoveryCompliance.sleepAvg}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}> h/notte</span></p>
+              </div>
+              <div className="t-inner px-3 py-3 text-center">
+                <p className="c-label mb-1">Passi medi</p>
+                <p className="font-data text-xl font-bold" style={{ color: "var(--ink)" }}>{recoveryCompliance.stepsAvg.toLocaleString("it-IT")}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}> /giorno</span></p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -3729,53 +3546,6 @@ function PhotoCompareBoard({ history }) {
   );
 }
 
-/* Aggiornamento istantaneo di dieta ON/OFF direttamente da qui: regola le
-   kcal della settimana CORRENTE (offset 0) a scatti di 150 (la stessa
-   soglia del badge di stallo). Scrive nello stesso store condiviso
-   `quickTargets` che legge/scrive anche la Timeline dell'atleta (vedi
-   ClientTimeline) — è lo stesso identico numero in entrambe le viste,
-   non due copie che possono disallinearsi. */
-function QuickDietEditPanel({ client, quickTargets, setQuickTargets, onOpenTimeline }) {
-  const stored = quickTargets?.[client.id];
-  const onDefault = makeMacroProfile(client.calories, 0.28, 0.47, 0.25);
-  const offDefault = makeMacroProfile(Math.round(client.calories * 0.9), 0.3, 0.35, 0.35);
-  const current = { ON: stored?.ON || onDefault, OFF: stored?.OFF || offDefault };
-
-  const adjustKcal = (profile, deltaKcal) => {
-    const target = current[profile];
-    const kcal = kcalFromMacros(target.p, target.c, target.f);
-    const ratios = kcal > 0 ? { p: (target.p * 4) / kcal, c: (target.c * 4) / kcal, f: (target.f * 9) / kcal } : { p: 0.3, c: 0.45, f: 0.25 };
-    const newKcal = Math.max(0, kcal + deltaKcal);
-    const nextTarget = { p: Math.round((newKcal * ratios.p) / 4), c: Math.round((newKcal * ratios.c) / 4), f: Math.round((newKcal * ratios.f) / 9) };
-    setQuickTargets((qt) => ({ ...qt, [client.id]: { ...current, [profile]: nextTarget } }));
-  };
-
-  return (
-    <div className="c-card" style={{ border: "1.5px solid #C5A059" }}>
-      <div className="flex items-center justify-between mb-3">
-        <p className="c-heading font-display font-bold">🔧 Aggiorna al volo — settimana corrente</p>
-        <button onClick={onOpenTimeline} className="c-ghost px-3 py-1.5 rounded-lg text-xs font-medium">Apri Timeline completa</button>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        {["ON", "OFF"].map((profile) => {
-          const kcal = kcalFromMacros(current[profile].p, current[profile].c, current[profile].f);
-          return (
-            <div key={profile} className="t-inner px-3 py-3 text-center">
-              <p className="c-label mb-1">{profile === "ON" ? "🏋️ Giorno ON" : "🧘 Giorno OFF"}</p>
-              <p className="font-data text-lg font-bold mb-2" style={{ color: "var(--ink)" }}>{kcal} kcal</p>
-              <div className="flex items-center justify-center gap-1.5">
-                <button onClick={() => adjustKcal(profile, -150)} className="c-ghost w-8 h-8 rounded-full text-sm font-bold">−150</button>
-                <button onClick={() => adjustKcal(profile, 150)} className="c-ghost w-8 h-8 rounded-full text-sm font-bold">+150</button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <p className="c-muted text-[10px] mt-3">Modifica qui o nella Timeline: è lo stesso target, si aggiorna in entrambi i posti.</p>
-    </div>
-  );
-}
-
 /* Elenco giorni (allenamento + alimentazione) del cliente, dato reale da
    Supabase — mai simulato. Riusa le stesse funzioni/punteggi già validati
    altrove nel progetto invece di duplicare la logica:
@@ -3794,7 +3564,7 @@ function QuickDietEditPanel({ client, quickTargets, setQuickTargets, onOpenTimel
    nell'elenco giorno per giorno (mai un dato inventato): si mostra solo il
    protocollo attuale come riferimento. */
 const CLIENT_DAY_LOG_DAYS = 14;
-function ClientDayLog({ client }) {
+function ClientDayLog({ client, mode }) {
   const { supabase, isRealMode } = useContext(CoachDataContext);
   const [days, setDays] = useState(null); // null = caricamento
   const [supplements, setSupplements] = useState([]);
@@ -3885,13 +3655,20 @@ function ClientDayLog({ client }) {
     return d.toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" });
   };
 
+  const showWorkout = mode !== "nutrition";
+  const showNutrition = mode !== "training";
+
   return (
     <div className="c-card">
-      <p className="c-heading font-display font-bold mb-1">Elenco giorni — ultimi {CLIENT_DAY_LOG_DAYS}</p>
-      <p className="c-muted text-xs mb-3">
-        Allenamento (esercizi svolti e progressione sul carico) e alimentazione (kcal/macro rispetto al target assegnato), dato reale registrato dal cliente.
+      <p className="c-heading font-display font-bold mb-1">
+        {mode === "training" ? "Allenamento" : mode === "nutrition" ? "Alimentazione" : "Elenco giorni"} — ultimi {CLIENT_DAY_LOG_DAYS}
       </p>
-      {supplements.length > 0 && (
+      <p className="c-muted text-xs mb-3">
+        {mode === "training" && "Esercizi svolti e progressione sul carico rispetto alla sessione precedente, dato reale registrato dal cliente."}
+        {mode === "nutrition" && "Calorie e macro registrati rispetto al target assegnato per quel giorno, dato reale registrato dal cliente."}
+        {!mode && "Allenamento (esercizi svolti e progressione sul carico) e alimentazione (kcal/macro rispetto al target assegnato), dato reale registrato dal cliente."}
+      </p>
+      {showNutrition && supplements.length > 0 && (
         <p className="font-data text-[11px] mb-3 px-2.5 py-1.5 rounded-md inline-block" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-tertiary)" }}>
           Integratori assegnati: {supplements.map((s) => s.name).join(", ")} — nessuno storico di assunzione giornaliera disponibile
         </p>
@@ -3907,7 +3684,7 @@ function ClientDayLog({ client }) {
             <div key={day.date} className="t-inner px-3 py-2.5">
               <p className="font-data text-xs font-bold mb-1.5" style={{ color: "var(--ink)" }}>{fmtDate(day.date)}</p>
               <div className="flex flex-col gap-1">
-                {day.workout ? (
+                {showWorkout && (day.workout ? (
                   <div className="flex items-start gap-1.5 text-xs">
                     <Dumbbell size={13} className="shrink-0 mt-0.5" style={{ color: "var(--ink-soft)" }} />
                     <span style={{ color: "var(--ink)" }}>
@@ -3924,17 +3701,18 @@ function ClientDayLog({ client }) {
                   <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--ink-tertiary)" }}>
                     <Dumbbell size={13} className="shrink-0" /> Nessun allenamento assegnato
                   </div>
-                )}
-                {day.nutrition ? (
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <Salad size={13} className="shrink-0" style={{ color: "var(--ink-soft)" }} />
+                ))}
+                {showNutrition && (day.nutrition ? (
+                  <div className="flex items-start gap-1.5 text-xs">
+                    <Salad size={13} className="shrink-0 mt-0.5" style={{ color: "var(--ink-soft)" }} />
                     {day.nutrition.logged ? (
                       <span style={{ color: "var(--ink)" }}>
-                        {Math.round(day.nutrition.totals.kcal)} kcal registrate
+                        {Math.round(day.nutrition.totals.kcal)} kcal
                         {day.nutrition.target && ` / ${day.nutrition.target.kcal} target`}
                         {day.nutrition.score != null && (
                           <span style={{ color: day.nutrition.score >= 80 ? "#10B981" : day.nutrition.score >= 50 ? "#F0A020" : "#DC2626", fontWeight: 600 }}> · {day.nutrition.score}% rispettato</span>
                         )}
+                        <span className="c-muted"> · P {Math.round(day.nutrition.totals.p)}g · C {Math.round(day.nutrition.totals.c)}g · F {Math.round(day.nutrition.totals.f)}g</span>
                       </span>
                     ) : (
                       <span style={{ color: "#DC2626" }}>Nessuna registrazione alimentare</span>
@@ -3944,7 +3722,7 @@ function ClientDayLog({ client }) {
                   <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--ink-tertiary)" }}>
                     <Salad size={13} className="shrink-0" /> Nessun target assegnato
                   </div>
-                )}
+                ))}
               </div>
             </div>
           ))}
@@ -3954,7 +3732,7 @@ function ClientDayLog({ client }) {
   );
 }
 
-function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }) {
+function CheckDetail({ client }) {
   const { supabase, isRealMode } = useContext(CoachDataContext);
   // BUG PRESO: in modalità reale client.evening/client.waistCm non esistono
   // (fetchClientRoster non li produce, sono campi solo del roster demo) —
@@ -3966,12 +3744,7 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
   // reale finisce nel Registro Check del coach.
   const isPaidCoaching = REAL_COACHING_PLANS.has(client.plan);
   const [realHistory, setRealHistory] = useState(null); // null = non ancora caricato
-  const [demoHistory, setDemoHistory] = useState(() => (isRealMode ? [] : buildCheckHistory(client)));
-  const [form, setForm] = useState({
-    weight: "", waistCm: "", dolori: 0, stress: 0, digestione: 0, sonno: 0,
-    cyclePhase: client.gender === "F" ? CYCLE_PHASES[0] : null,
-  });
-  const [savingCheck, setSavingCheck] = useState(false);
+  const [demoHistory] = useState(() => (isRealMode ? [] : buildCheckHistory(client)));
 
   const loadReal = useCallback(() => {
     if (!isRealMode || !isPaidCoaching) return;
@@ -4013,33 +3786,6 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
   const delta = (previous && latest.weight != null && previous.weight != null) ? latest.weight - previous.weight : null;
   const badge = latest ? predictiveBadge(client, history) : null;
 
-  const registerCheck = async () => {
-    const w = Number(form.weight), waist = Number(form.waistCm);
-    if (!w || w <= 0) return;
-    if (isRealMode) {
-      setSavingCheck(true);
-      try {
-        await saveCheckin(supabase, client.id, {
-          weight: w, waist: waist || null,
-          pain: form.dolori || null, stress: form.stress || null, digestion: form.digestione || null,
-          sleepQuality: form.sonno || null, cyclePhase: client.gender === "F" ? form.cyclePhase : null,
-        });
-        loadReal();
-      } catch (err) {
-        console.error("PERFORM: errore salvataggio check (coach)", err);
-      } finally {
-        setSavingCheck(false);
-      }
-      return;
-    }
-    const nextMonday = addWeeksToDate(mondayOf(new Date()), 1);
-    setDemoHistory((h) => [...h, {
-      id: uid(), date: nextMonday.toISOString().slice(0, 10), weight: w, waistCm: waist || client.waistCm, hasPhotos: true,
-      dolori: Number(form.dolori) || 0, stress: Number(form.stress) || 0, digestione: Number(form.digestione) || 0, sonno: Number(form.sonno) || 0,
-      cyclePhase: client.gender === "F" ? form.cyclePhase : null,
-    }]);
-  };
-
   if (isRealMode && !isPaidCoaching) {
     return (
       <div className="c-card">
@@ -4059,11 +3805,8 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
 
   if (isRealMode && history.length === 0) {
     return (
-      <div className="space-y-4">
-        <div className="c-card">
-          <p className="c-muted text-sm">{client.name} non ha ancora registrato nessun check.</p>
-        </div>
-        <RegisterCheckForm form={form} setForm={setForm} client={client} onSubmit={registerCheck} busy={savingCheck} />
+      <div className="c-card">
+        <p className="c-muted text-sm">{client.name} non ha ancora registrato nessun check.</p>
       </div>
     );
   }
@@ -4108,42 +3851,10 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
             { key: "thighCm", label: "Coscia (cm)", color: "#F0A020" },
             { key: "armCm", label: "Braccio (cm)", color: "#10B981" },
           ]} />
-        <p className="c-muted text-[10px] mt-2">
+        <p className="c-muted text-[10px] mt-2 mb-4">
           Peso stabile + circonferenze in calo = probabile ricomposizione. Tutto in calo = dimagrimento. Peso e
           circonferenze in salita insieme = bulk — usa questo confronto per tarare le prossime decisioni sul piano.
         </p>
-      </div>
-
-      <PhotoCompareBoard history={history} />
-
-      <div className="c-card">
-        <p className="c-heading font-display font-bold mb-1">Quello che i dati da soli non dicono</p>
-        <p className="c-muted text-xs mb-4">
-          Aderenza a macros e allenamento non si chiede più qui: è già deducibile dal diario alimentare e dagli allenamenti registrati durante la settimana. Questo è solo ciò che nessun log automatico può misurare.
-        </p>
-        <div className={`grid ${client.gender === "F" ? "grid-cols-5" : "grid-cols-4"} gap-2.5`}>
-          {[["Dolori / fastidi", latest.dolori], ["Stress percepito", latest.stress], ["Digestione", latest.digestione], ["Qualità del sonno", latest.sonno]].map(([lab, v]) => (
-            <div key={lab} className="t-inner px-2.5 py-2.5 text-center">
-              <p className="c-label mb-1">{lab}</p>
-              <p className="font-data text-lg font-bold" style={{ color: v == null ? "var(--ink-soft)" : v >= 7 ? "#DC2626" : v >= 4 ? "#F0A020" : "#10B981" }}>
-                {v == null ? "—" : <>{v}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}>/10</span></>}
-              </p>
-            </div>
-          ))}
-          {client.gender === "F" && (
-            <div className="t-inner px-2.5 py-2.5 text-center">
-              <p className="c-label mb-1">Fase del ciclo</p>
-              <p className="font-data text-sm font-bold" style={{ color: "#E5C1CD" }}>{latest.cyclePhase || "—"}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <QuickDietEditPanel client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} onOpenTimeline={onSwitchToEditor} />
-
-      <RegisterCheckForm form={form} setForm={setForm} client={client} onSubmit={registerCheck} busy={savingCheck} />
-
-      <div className="c-card">
         <p className="c-label mb-3">Storico completo ({history.length} check)</p>
         <div className="space-y-1.5">
           {sorted.map((h, i) => {
@@ -4161,44 +3872,25 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
           })}
         </div>
       </div>
-    </div>
-  );
-}
 
-function RegisterCheckForm({ form, setForm, client, onSubmit, busy }) {
-  return (
-    <div className="c-card">
-      <p className="c-label mb-3">Registra un nuovo check (per conto dell'atleta)</p>
-      <div className="flex gap-2.5 flex-wrap mb-3">
-        <label className="flex-1 min-w-[120px]">
-          <span className="c-label block mb-1">Peso (kg)</span>
-          <input type="number" step="0.1" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
-        </label>
-        <label className="flex-1 min-w-[120px]">
-          <span className="c-label block mb-1">Vita (cm)</span>
-          <input type="number" step="0.5" value={form.waistCm} onChange={(e) => setForm({ ...form, waistCm: e.target.value })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
-        </label>
+      <PhotoCompareBoard history={history} />
+
+      <div className="c-card">
+        <p className="c-heading font-display font-bold mb-1">Quello che i dati da soli non dicono</p>
+        <p className="c-muted text-xs mb-4">
+          Aderenza a macros e allenamento non si chiede più qui: è già deducibile dal diario alimentare e dagli allenamenti registrati durante la settimana. Questo è solo ciò che nessun log automatico può misurare.
+        </p>
+        <LineChart points={history} xLabel={(p) => { const d = new Date(p.date); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; }}
+          series={[
+            { key: "dolori", label: "Dolori/fastidi", color: "#DC2626" },
+            { key: "stress", label: "Stress", color: "#F0A020" },
+            { key: "digestione", label: "Digestione", color: "#10B981" },
+            { key: "sonno", label: "Qualità sonno", color: "#2563EB" },
+          ]} />
+        {client.gender === "F" && (
+          <p className="c-muted text-xs mt-3">Fase del ciclo all'ultimo check: <span style={{ color: "#E5C1CD", fontWeight: 600 }}>{latest.cyclePhase || "—"}</span></p>
+        )}
       </div>
-      <p className="c-label mb-2">Quello che i dati da soli non dicono (facoltativo)</p>
-      <div className="grid grid-cols-2 gap-2.5 mb-3">
-        {[["dolori", "Dolori / fastidi (1-10)"], ["stress", "Stress percepito (1-10)"], ["digestione", "Digestione (1-10)"], ["sonno", "Qualità del sonno (1-10)"]].map(([k, lab]) => (
-          <label key={k}>
-            <span className="c-label block mb-1">{lab}</span>
-            <input type="number" min={0} max={10} value={form[k]} onChange={(e) => setForm({ ...form, [k]: Math.max(0, Math.min(10, Number(e.target.value) || 0)) })} className="t-input w-full text-sm rounded-md px-2 py-2 font-data text-center" />
-          </label>
-        ))}
-      </div>
-      {client.gender === "F" && (
-        <label className="block mb-3">
-          <span className="c-label block mb-1">Fase del ciclo (facoltativo)</span>
-          <select value={form.cyclePhase} onChange={(e) => setForm({ ...form, cyclePhase: e.target.value })} className="t-input w-full text-sm rounded-md px-3 py-2">
-            {CYCLE_PHASES.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </label>
-      )}
-      <button onClick={onSubmit} disabled={busy} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium disabled:opacity-50">
-        {busy ? "Registrazione…" : "Registra per conto dell'atleta"}
-      </button>
     </div>
   );
 }
@@ -4492,10 +4184,6 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
   // Store condiviso tra Registro Check, Co-Pilota AI e Timeline dell'atleta
   // per il target ON/OFF della settimana corrente — vedi nota in ClientTimeline.
   const [quickTargets, setQuickTargets] = useState({});
-  // Gamification lato coach: bonus XP e post Avvisi Team di questa sessione
-  // (vedi nota completa in GoalAchievedPanel sul collegamento Supabase reale).
-  const [xpBonuses, setXpBonuses] = useState({});
-  const [teamPosts, setTeamPosts] = useState([]);
   // Il tema Onyx/Light non è più un toggle locale scollegato: segue lo
   // stesso stato globale del resto dell'app (dark, passato da App.jsx) —
   // prima restava sempre "Light" di default anche quando l'app era in
@@ -4513,7 +4201,7 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
             spesso da desktop e beneficia dello spazio extra per le tabelle. */}
         <main className="max-w-2xl md:max-w-6xl mx-auto px-4 py-8 pb-24" style={{ overflowX: "hidden" }}>
           {selectedId != null ? (
-            <ClientDetail client={client} onBack={() => setSelectedId(null)} quickTargets={quickTargets} setQuickTargets={setQuickTargets} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} />
+            <ClientDetail client={client} onBack={() => setSelectedId(null)} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
           ) : (
             <>
               <div className="flex gap-1.5 mb-6">

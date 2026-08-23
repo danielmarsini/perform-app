@@ -23,7 +23,7 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
 import { playSound } from "../lib/sounds.js";
@@ -1059,6 +1059,60 @@ function CompliancePopup({ ring, onClose }) {
   );
 }
 
+/* Mappa di tutti i gradi (tier da 5 sotto-livelli ciascuno, LEVEL_TIERS in
+   coachingData.js): mostra la soglia XP di ingresso di ognuno, in ordine,
+   col grado attuale evidenziato — motiva a vedere quanto manca al prossimo
+   invece di scoprirlo un livello alla volta. */
+function LevelRoadmapModal({ currentXp, onClose }) {
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
+  const currentInfo = xpToLevelInfo(currentXp);
+  const currentTierIdx = Math.min(Math.floor(currentInfo.level / LEVELS_PER_TIER), LEVEL_TIERS.length - 1);
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{
+             backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)", overflowY: "auto" }} onClick={onClose}>
+        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 overflow-y-auto"
+             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "88vh" }}
+             onClick={(e) => e.stopPropagation()}>
+          <div ref={headerRef}>
+            <SwipeHandle />
+            <div className="flex items-center justify-between mb-1">
+              <p className="h1">Tutti i gradi</p>
+              <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+            </div>
+            <p className="meta mb-4">{currentInfo.xp.toLocaleString("it-IT")} XP totali</p>
+          </div>
+          <div className="space-y-2">
+            {LEVEL_TIERS.map((tier, i) => {
+              const startXp = levelMinXp(i * LEVELS_PER_TIER);
+              const isCurrent = i === currentTierIdx;
+              const isPast = i < currentTierIdx;
+              return (
+                <div key={tier.title} className="inner flex items-center justify-between gap-3 px-4 py-3"
+                     style={isCurrent ? { border: `1.5px solid var(--ink)` } : undefined}>
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <span style={{ fontSize: "1.15rem" }} aria-hidden="true">{tier.icon}</span>
+                    <span className="text-sm truncate" style={{ color: isPast || isCurrent ? "var(--ink)" : "var(--ink-2)", fontWeight: isCurrent ? 700 : 500 }}>
+                      {tier.title}{isCurrent ? ` ${currentInfo.level - i * LEVELS_PER_TIER + 1}` : ""}
+                    </span>
+                  </span>
+                  <span className="font-data text-xs shrink-0" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+                    {isCurrent ? "Ora" : `${startXp.toLocaleString("it-IT")} XP`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="meta mt-4 leading-relaxed" style={{ fontSize: "0.72rem" }}>
+            Ogni grado ha 5 livelli: superato l'ultimo si passa automaticamente al grado successivo, senza un tetto massimo.
+          </p>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 /* Animazione breve "hai guadagnato XP": sostituisce l'elenco permanente
    "obiettivi di oggi" che prima restava aperto a spiegare le regole — qui
    appare solo nell'istante in cui un'azione sblocca davvero i punti, si
@@ -1631,7 +1685,7 @@ export function HomeDashboard({
   day,                // { weekday, weekNumber, isTraining, sessionLabel, dayNumber }
   target, consumed,   // { kcal, p, c, f }
   streak, level, xp, xpInLevel, xpNeeded,
-  mealsBySlot, foods, mealGuide, substitutions,
+  mealsBySlot, foods, mealGuide,
   exercises,          // [{ id, name, sets, reps, rirTarget, technique, rests, history }]
   setsFor,            // (exercise) => [{ kg, reps, rir }]
   onSetField,         // (exercise, rowIdx, field, value) => void
@@ -1715,6 +1769,7 @@ export function HomeDashboard({
   const [nutriOverride, setNutriOverride] = useState(null);
   const [recoveryOverride, setRecoveryOverride] = useState(null);
   const [activeRingPopup, setActiveRingPopup] = useState(null);
+  const [levelRoadmapOpen, setLevelRoadmapOpen] = useState(false);
   const [selectedCalendarIso, setSelectedCalendarIso] = useState(null); // null = oggi
 
   // Giorni realmente "saltati" nelle due strisce calendario (Allenamento e
@@ -2118,8 +2173,12 @@ export function HomeDashboard({
 
           {/* barra XP: pulita, niente più elenco "obiettivi di oggi" da
               espandere — il feedback su cosa fa guadagnare punti arriva
-              come animazione (XpToastBanner) nel momento in cui succede. */}
-          <div className="w-full mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
+              come animazione (XpToastBanner) nel momento in cui succede.
+              Cliccabile: apre la mappa di tutti i livelli, per capire
+              subito quanto manca al prossimo grado e restare motivati. */}
+          <button onClick={() => setLevelRoadmapOpen(true)} className="w-full text-left mt-4 pt-4"
+                  style={{ borderTop: "1px solid var(--line)", background: "none" }}
+                  aria-label="Vedi tutti i livelli">
             <div className="flex items-center justify-between mb-2">
               <span style={{ color: "var(--ink)", fontSize: "0.9rem", fontWeight: 500 }}>
                 Livello {level}
@@ -2134,7 +2193,7 @@ export function HomeDashboard({
                        background: "linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0))" }} />
               </div>
             </div>
-          </div>
+          </button>
           </div>
         </div>
 
@@ -2190,6 +2249,9 @@ export function HomeDashboard({
         )}
 
         <CompliancePopup ring={complianceRings.find((r) => r.id === activeRingPopup)} onClose={() => setActiveRingPopup(null)} />
+        {levelRoadmapOpen && (
+          <LevelRoadmapModal currentXp={isRealMode ? (realXpStreak?.xpTotal ?? 0) : xp} onClose={() => setLevelRoadmapOpen(false)} />
+        )}
 
         {/* auto-split del giorno saltato */}
         {reschedule && access.pro && (
@@ -2416,64 +2478,50 @@ export function HomeDashboard({
           </div>
         ) : (
           <>
-            {/* I tuoi target + Idratazione: in cima, compatti e affiancati — non
-                più un box grande "Rimanenti oggi" seguito da un tab separato "I
-                Miei Target" più sotto. "Modifica"/"Dettagli" espande il pannello
-                completo (calcolo con le formule, o sola lettura se Full Coaching)
-                qui sotto, senza lasciare la pagina. */}
-            <div className="grid grid-cols-2 gap-3 mb-5">
-              <div className="card">
-                <p className="label mb-1.5">I tuoi target · oggi</p>
-                {/* consumato/target per ciascun valore, non più solo "rimanenti":
-                    il numero a sinistra (consumato) sale con calcolo preciso ad
-                    ogni alimento aggiunto — stessa fonte (consumed) del diario. */}
-                <p className="font-data mb-1.5" style={{ fontSize: "1.15rem", fontWeight: 800, color: accent }}>
-                  {consumed.kcal}<span style={{ fontSize: "0.85rem", fontWeight: 600, opacity: 0.75 }}>/{target.kcal}</span>
-                  <span className="meta" style={{ fontSize: "0.62rem", fontWeight: 600, marginLeft: 4 }}>kcal consumate</span>
-                </p>
-                {/* un macro per riga: affiancati andavano a capo male su schermi
-                    stretti (spaginava), qui ogni riga sta sempre su una colonna. */}
-                <div className="space-y-0.5 font-data mb-2.5" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
-                  <p style={{ color: MACRO_COLORS.p.base }}>Proteine {consumed.p}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.p}g</span></p>
-                  <p style={{ color: MACRO_COLORS.c.base }}>Carboidrati {consumed.c}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.c}g</span></p>
-                  <p style={{ color: MACRO_COLORS.f.base }}>Grassi {consumed.f}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.f}g</span></p>
-                </div>
-                <button onClick={() => setTargetsOpen((v) => !v)}
-                  className="w-full rounded-full px-3 py-2 text-xs transition-transform active:scale-[0.98]"
-                  style={{ backgroundColor: targetsOpen ? "var(--ink)" : "var(--surface-2)",
-                           color: targetsOpen ? "var(--page)" : "var(--ink-2)",
-                           border: targetsOpen ? "none" : "1px solid var(--line)", fontWeight: 600 }}>
-                  {targetsOpen ? "Chiudi" : targetIsCoachSet ? "Dettagli" : "Modifica"}
-                </button>
+            {/* I tuoi target + Idratazione: un unico riquadro, non più due
+                card separate affiancate — stessi dati, meno dettagli visivi
+                superflui, più pulito. "Modifica"/"Dettagli" espande il
+                pannello completo (calcolo con le formule, o sola lettura se
+                Full Coaching) qui sotto, senza lasciare la pagina. */}
+            <div className="card mb-5">
+              <p className="label mb-1.5">I tuoi target · oggi</p>
+              {/* consumato/target per ciascun valore, non più solo "rimanenti":
+                  il numero a sinistra (consumato) sale con calcolo preciso ad
+                  ogni alimento aggiunto — stessa fonte (consumed) del diario.
+                  Oro Lucido Vivo (title-shine), stesso trattamento usato per
+                  ogni altro numero di risalto nell'app — non più un colore
+                  piatto qui, era l'unico punto fuori standard. */}
+              <p className="font-data mb-1.5" style={{ fontSize: "1.15rem", fontWeight: 800 }}>
+                <span className="title-shine">{consumed.kcal}</span><span style={{ fontSize: "0.85rem", fontWeight: 600, opacity: 0.75, color: "var(--ink)" }}>/{target.kcal}</span>
+                <span className="meta" style={{ fontSize: "0.62rem", fontWeight: 600, marginLeft: 4 }}>kcal consumate</span>
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 font-data mb-3" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
+                <span style={{ color: MACRO_COLORS.p.base }}>Proteine {consumed.p}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.p}g</span></span>
+                <span style={{ color: MACRO_COLORS.c.base }}>Carboidrati {consumed.c}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.c}g</span></span>
+                <span style={{ color: MACRO_COLORS.f.base }}>Grassi {consumed.f}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.f}g</span></span>
               </div>
 
-              <div className="card">
-                <p className="label mb-1.5">Idratazione</p>
-                <div className="flex items-center gap-2.5">
+              <div className="flex items-center justify-between gap-3 pt-3 mb-3" style={{ borderTop: "1px solid var(--line)" }}>
+                <div className="flex items-center gap-2 min-w-0">
                   <button onClick={() => { haptic("tap"); onAddWater(); }} aria-label="Aggiungi 250 ml"
-                          className="relative rounded-xl overflow-hidden shrink-0 transition-transform active:scale-95"
-                          style={{ width: 40, height: 62,
-                                   background: "linear-gradient(145deg, var(--surface-2) 0%, var(--surface) 100%)",
-                                   border: "2px solid var(--line)",
-                                   boxShadow: "inset 0 2px 4px rgba(255,255,255,0.5), 0 6px 16px rgba(0,0,0,0.12)" }}>
-                    <span className="water-wave absolute left-0 right-0 bottom-0"
-                          style={{ height: `${Math.min(100, (water / waterTarget) * 100)}%`,
-                                   background: water >= waterTarget
-                                     ? `linear-gradient(180deg, ${accentSoft} 0%, ${accent} 100%)`
-                                     : "linear-gradient(180deg, #BFD9E8 0%, #7FB3D0 100%)",
-                                   transition: "height 0.5s cubic-bezier(0.22,1,0.36,1)" }} />
-                    <span className="absolute inset-0 flex items-center justify-center">
-                      <Droplets size={15} style={{ color: water >= waterTarget ? "#111111" : "#4A6B7C" }} />
-                    </span>
+                          className="rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-90"
+                          style={{ width: 32, height: 32, backgroundColor: water >= waterTarget ? accent : "var(--surface-2)", border: "1px solid var(--line)" }}>
+                    <Droplets size={15} style={{ color: water >= waterTarget ? "#111111" : "#4A6B7C" }} />
                   </button>
-                  <div className="min-w-0">
-                    <p className="font-data" style={{ color: "var(--ink)", fontSize: "1.05rem", fontWeight: 700 }}>
-                      {(water / 1000).toFixed(2)} L
-                    </p>
-                    <p className="meta" style={{ fontSize: "0.65rem" }}>/ {(waterTarget / 1000).toFixed(1)} L</p>
-                  </div>
+                  <p className="font-data" style={{ color: "var(--ink)", fontSize: "0.85rem", fontWeight: 700 }}>
+                    {(water / 1000).toFixed(2)}<span className="meta" style={{ fontWeight: 500 }}>/{(waterTarget / 1000).toFixed(1)} L</span>
+                  </p>
                 </div>
+                <span className="label">Idratazione</span>
               </div>
+
+              <button onClick={() => setTargetsOpen((v) => !v)}
+                className="w-full rounded-full px-3 py-2 text-xs transition-transform active:scale-[0.98]"
+                style={{ backgroundColor: targetsOpen ? "var(--ink)" : "var(--surface-2)",
+                         color: targetsOpen ? "var(--page)" : "var(--ink-2)",
+                         border: targetsOpen ? "none" : "1px solid var(--line)", fontWeight: 600 }}>
+                {targetsOpen ? "Chiudi" : targetIsCoachSet ? "Dettagli" : "Modifica"}
+              </button>
             </div>
 
             {targetsOpen && (
@@ -2497,13 +2545,13 @@ export function HomeDashboard({
           <NutritionTabs
             accent={accent} accentSoft={accentSoft} accentText={accentText}
             target={target} mealsBySlot={selectedNutritionIso ? (pastMeals || {}) : mealsBySlot} foods={foods}
-            mealGuide={mealGuide} substitutions={substitutions}
+            mealGuide={mealGuide}
             onAddFood={selectedNutritionIso ? addFoodForPastDay : onAddFood}
             onRemoveFood={selectedNutritionIso ? removeFoodForPastDay : onRemoveFood}
             onUpdateFood={selectedNutritionIso ? updateFoodForPastDay : onUpdateFood}
             onOpenScanner={onOpenScanner} onAddCustomFood={onAddCustomFood}
             onCopyYesterday={selectedNutritionIso ? null : onCopyYesterday} supabase={supabase}
-            fullAccess={targetIsCoachSet}
+            fullAccess={targetIsCoachSet} isRealMode={isRealMode}
             subsAccess={userPlan === "performance_pack" || userPlan === "full_coaching"}
             onUpgrade={onUpgrade}
             userPlan={userPlan} gender={profile.gender} waterMl={water} microAddon={microAddon}
@@ -4727,11 +4775,17 @@ export const MEAL_SLOTS = [
    Integrazione e Timing: momenti della giornata, wiki scientifica, piano PRO.
    ------------------------------------------------------------------------- */
 
+// "Pomeriggio" aggiunto come 5° momento fisso (BUG PRESO: prima non
+// esisteva nell'elenco canonico, quindi un coach che ne aveva bisogno era
+// costretto a scrivere un momento libero — mai riconosciuto nell'ordine
+// cronologico corretto lato cliente, finiva sempre in coda invece che a
+// metà giornata). Posizionato tra Mattina e Pre-Workout.
 export const SUPP_MOMENTS = [
-  { id: "mattina", label: "Mattina", icon: "🌅" },
-  { id: "preWo",   label: "Pre-Wo",  icon: "🔥" },
-  { id: "postWo",  label: "Post-Wo", icon: "💪" },
-  { id: "sera",    label: "Sera",    icon: "🌙" },
+  { id: "mattina",    label: "Mattina",    icon: "🌅" },
+  { id: "pomeriggio", label: "Pomeriggio", icon: "☀️" },
+  { id: "preWo",      label: "Pre-Wo",     icon: "🔥" },
+  { id: "postWo",     label: "Post-Wo",    icon: "💪" },
+  { id: "sera",       label: "Sera",       icon: "🌙" },
 ];
 
 export const SUPP_WIKI = [
@@ -5657,13 +5711,14 @@ export const SUPP_WIKI = [
 
 /* Piano scritto dal coach: bloccato in lettura per l'utente a pagamento. */
 export const SUPP_PLAN_PRO = {
-  mattina: [{ name: "Multivitaminico", dose: "1 cpr", note: "a colazione, con cibo" },
-            { name: "Omega 3", dose: "2 g", note: "a colazione" }],
-  preWo:   [{ name: "Caffeina", dose: "200 mg", note: "40 min prima" },
-            { name: "Citrullina Malato", dose: "8 g", note: "40 min prima" }],
-  postWo:  [{ name: "Whey Protein", dose: "30 g", note: "entro 1h dalla seduta" },
-            { name: "Creatina", dose: "5 g", note: "con lo shaker post-workout" }],
-  sera:    [{ name: "Magnesio", dose: "300 mg", note: "30 min prima di dormire" }],
+  mattina:    [{ name: "Multivitaminico", dose: "1 cpr", note: "a colazione, con cibo" },
+               { name: "Omega 3", dose: "2 g", note: "a colazione" }],
+  pomeriggio: [{ name: "Vitamina D3+K2", dose: "2.000 UI", note: "a pranzo, con grassi" }],
+  preWo:      [{ name: "Caffeina", dose: "200 mg", note: "40 min prima" },
+               { name: "Citrullina Malato", dose: "8 g", note: "40 min prima" }],
+  postWo:     [{ name: "Whey Protein", dose: "30 g", note: "entro 1h dalla seduta" },
+               { name: "Creatina", dose: "5 g", note: "con lo shaker post-workout" }],
+  sera:       [{ name: "Magnesio", dose: "300 mg", note: "30 min prima di dormire" }],
 };
 
 /* Lettura codice a barre REALE: Open Food Facts è il database di prodotti
@@ -6084,9 +6139,9 @@ function ShoppingListModal({ items, accent, onClose }) {
 }
 
 function NutritionTabs({
-  accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide, substitutions,
+  accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide,
   onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday,
-  fullAccess, subsAccess, onUpgrade,
+  fullAccess, subsAccess, onUpgrade, isRealMode,
   userPlan, gender, waterMl, microAddon, digestValue, onDigestChange, supabase,
   pastDayMode, // true quando si sta correggendo un giorno passato (NutritionCalendarStrip):
                // solo il Diario Libero ha senso qui, Sostituzioni/Dieta Tipo/Wiki non sono
@@ -6112,12 +6167,17 @@ function NutritionTabs({
   // screen === "nutrition"), così non serve cercarli in un tab separato.
   // Sostituzioni solo Performance Pack/Full Coaching (subsAccess, più
   // stretto di "qualunque piano a pagamento"); Dieta Tipo, scritta dal
-  // coach, solo Full Coaching (fullAccess) — visibili solo i tab a cui il
-  // piano dà davvero accesso, non mostrati-ma-bloccati.
+  // coach, solo Full Coaching (fullAccess).
+  // BUG PRESO: il coach panel non ha (ancora) nessun modo di scrivere una
+  // dieta tipo pasto-per-pasto — solo macro/calorie (nutrition_targets) — ma
+  // questo tab mostrava comunque SEMPRE lo stesso mealGuide segnaposto fisso
+  // a ogni cliente Full Coaching, spacciandolo per "scritto dal coach": mai
+  // un dato inventato. Nascosto in modalità reale finché non esiste davvero
+  // una dieta tipo assegnata; resta visibile solo nell'anteprima demo.
   const visibleTabs = pastDayMode ? [["diary", "Diario Libero"]] : [
     ["diary", "Diario Libero"],
     ...(subsAccess ? [["subs", "Sostituzioni"]] : []),
-    ...(fullAccess ? [["plan", "Dieta Tipo"]] : []),
+    ...(fullAccess && !isRealMode ? [["plan", "Dieta Tipo"]] : []),
     // Wiki Alimentazione: bottone sempre visibile qui in alto (come Wiki
     // Allenamento tra i 3 di Allenamento Pesi/Cardio/Wiki) invece di stare
     // in fondo alla pagina sotto tutto il resto — il contenuto resta
@@ -6572,7 +6632,7 @@ function NutritionTabs({
 
       {/* ---------------- DIETA TIPO (solo Full Coaching, il tab
           stesso è nascosto agli altri piani — vedi visibleTabs sopra) ---------------- */}
-      {tab === "plan" && fullAccess && (
+      {tab === "plan" && fullAccess && !isRealMode && (
         <div className="spring-in">
           <div className="card">
             <p className="label mb-1">Dieta scritta dal coach</p>
@@ -6616,7 +6676,7 @@ function NutritionTabs({
           superiori, tab nascosto sotto — vedi visibleTabs sopra) ---------------- */}
       {tab === "subs" && subsAccess && (
         <div className="spring-in">
-          <SubsPanel substitutions={substitutions} foods={foods} accent={accent} accentSoft={accentSoft}
+          <SubsPanel foods={foods} accent={accent} accentSoft={accentSoft}
                      accentText={accentText} />
         </div>
       )}
@@ -6715,7 +6775,7 @@ function findSubstitutes(sourceFood, grams, foods, count = 4) {
     .slice(0, count);
 }
 
-function SubsPanel({ substitutions, foods, accent, accentSoft, accentText }) {
+function SubsPanel({ foods, accent, accentSoft, accentText }) {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState(null);
   const [grams, setGrams] = useState("100");
@@ -6828,25 +6888,6 @@ function SubsPanel({ substitutions, foods, accent, accentSoft, accentText }) {
             </p>
           </div>
         )}
-      </div>
-
-      <div className="card">
-        <p className="label mb-1">Metodo del coach</p>
-        <p className="h1 mb-4">Tabella sostituzioni</p>
-        <div className="space-y-3">
-          {substitutions.map((row) => (
-            <div key={row.group} className="inner px-4 py-3.5">
-              <p className="label mb-1.5" style={{ color: accentText }}>{row.group}</p>
-              <p className="text-sm mb-2" style={{ color: "var(--ink)", fontWeight: 500 }}>{row.base} =</p>
-              <div className="flex flex-wrap gap-1.5">
-                {row.eq.map((e) => (
-                  <span key={e} className="font-data text-xs px-2.5 py-1.5 rounded-full"
-                        style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>{e}</span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -8873,8 +8914,26 @@ function SupplementWikiBrowser({ accent }) {
 }
 
 function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, onCoachSync, onXpEarned, supabase, userId }) {
-  const [checked, setChecked] = useState({});
+  const [checked, setChecked] = useState({}); // solo demo: la Pro reale usa takenIds (dato reale, sotto)
   const isRealMode = Boolean(supabase && userId);
+
+  // BUG PRESO: spuntare un integratore come "preso oggi" era SOLO stato
+  // React locale (checked, sopra) — spariva sempre riaprendo l'app, nessuna
+  // scrittura su Supabase. Ora, in modalità reale, "preso" è un dato vero
+  // (supplement_intake, SCHEMA_v54): caricato una volta all'apertura,
+  // aggiornato in ottimistico al tap con rollback se la scrittura fallisce.
+  const [takenIds, setTakenIds] = useState(null); // null = non ancora caricato (solo isRealMode)
+  useEffect(() => {
+    if (!isRealMode) return;
+    let cancelled = false;
+    fetchSupplementIntakeToday(supabase, userId)
+      .then((ids) => { if (!cancelled) setTakenIds(ids); })
+      .catch((err) => {
+        console.error("PERFORM: errore lettura supplement_intake", err);
+        if (!cancelled) setTakenIds(new Set());
+      });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
 
   // Protocollo reale (prescribed_supplements), raggruppato per `moment` come
   // l'ha scritto il coach — testo libero, non i 4 SUPP_MOMENTS fissi della
@@ -8938,13 +8997,23 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
     : SUPP_MOMENTS.map((m) => ({ id: m.id, label: m.label, icon: m.icon, items: SUPP_PLAN_PRO[m.id].map((it, i) => ({ id: `${m.id}-${i}`, ...it })) }));
 
   const toggle = (momentId, itemId) => {
-    const key = `${momentId}-${itemId}`;
     haptic("tap");
-    setChecked((c) => ({ ...c, [key]: !c[key] }));
+    if (isRealMode) {
+      const wasTaken = takenIds?.has(itemId);
+      setTakenIds((s) => { const n = new Set(s); wasTaken ? n.delete(itemId) : n.add(itemId); return n; });
+      setSupplementTaken(supabase, userId, itemId, !wasTaken).catch((err) => {
+        console.error("PERFORM: errore salvataggio supplement_intake", err);
+        setTakenIds((s) => { const n = new Set(s); wasTaken ? n.add(itemId) : n.delete(itemId); return n; }); // rollback
+      });
+    } else {
+      const key = `${momentId}-${itemId}`;
+      setChecked((c) => ({ ...c, [key]: !c[key] }));
+    }
     onCoachSync && onCoachSync({ type: "supplement", momentId, id: itemId });
   };
+  const isDone = (g, it) => (isRealMode ? !!takenIds?.has(it.id) : !!checked[`${g.id}-${it.id}`]);
   const totalItems = groups.reduce((n, g) => n + g.items.length, 0);
-  const doneItems = groups.reduce((n, g) => n + g.items.filter((it) => checked[`${g.id}-${it.id}`]).length, 0);
+  const doneItems = groups.reduce((n, g) => n + g.items.filter((it) => isDone(g, it)).length, 0);
   const allDone = totalItems > 0 && doneItems === totalItems;
   const wasAllDoneRef = useRef(false);
   useEffect(() => {
@@ -8952,7 +9021,7 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
     wasAllDoneRef.current = allDone;
   }, [allDone, onXpEarned]);
 
-  if (isRealMode && prescribed === null) {
+  if (isRealMode && (prescribed === null || takenIds === null)) {
     return <p className="body px-1">Caricamento protocollo…</p>;
   }
 
@@ -8989,7 +9058,7 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
               </p>
               <div className="space-y-1.5">
                 {g.items.map((it) => {
-                  const done = !!checked[`${g.id}-${it.id}`];
+                  const done = isDone(g, it);
                   return (
                     <button key={it.id} onClick={() => toggle(g.id, it.id)}
                       className="inner w-full flex items-center gap-3 px-4 py-3 text-left transition-transform active:scale-[0.99]">
@@ -9077,12 +9146,6 @@ const GUIDE = MEAL_SLOTS.map((_, i) => ({
   items: [{ name: F[i % F.length].name, grams: 80 + i * 10, kcal: 200 + i * 20 }],
   tot: { kcal: 300 + i * 30, p: 20 + i, c: 30 + i * 2, f: 8 },
 }));
-
-const SUBS = [
-  { group: "Fonti di carboidrati", base: "70 g riso basmati", eq: ["70 g pasta", "280 g patate", "90 g pane integrale"] },
-  { group: "Fonti proteiche magre", base: "150 g petto di pollo", eq: ["150 g tacchino", "3 uova intere", "180 g merluzzo"] },
-  { group: "Fonti di grassi", base: "10 g olio EVO", eq: ["15 g mandorle", "15 g burro d'arachidi", "30 g avocado"] },
-];
 
 /* Wrapper di compatibilità per proposeReschedule: distretti diretti +
    sinergici dalla libreria esercizi condivisa (coachingData.js), appiattiti
@@ -9677,7 +9740,7 @@ export default function HomePreview({
           onSetTargetOff={(patch) => setTargetOff((t) => ({ ...t, ...patch }))}
           isTrainingDay={isTrainingDay} onToggleTrainingDay={isRealMode ? null : () => setManualTrainingDay((v) => !v)}
           streak={computeStreak("2026-07-19", 12, lastActivityDate)} level={4} xp={1840} xpInLevel={340} xpNeeded={590}
-          mealsBySlot={meals} foods={allFoods} mealGuide={GUIDE} substitutions={SUBS}
+          mealsBySlot={meals} foods={allFoods} mealGuide={GUIDE}
           exercises={exercises} setsFor={setsFor} onSetField={onSetField}
           sleep={sleep} steps={steps} water={water} waterTarget={waterTarget} autoSteps={autoSteps}
           onSetWaterTarget={setWaterTarget}

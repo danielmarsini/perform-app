@@ -308,7 +308,7 @@ export default function App() {
         dark={dark}
         userLabel={session.user.user_metadata?.full_name || session.user.email}
         userEmail={session.user.email || ""}
-        hasChat={!isCoach && hasCoachChat}
+        hasChat={hasCoachChat}
         tab={tab}
         onTabChange={setTab}
         onOpenSettings={() => setSettingsOpen(true)}
