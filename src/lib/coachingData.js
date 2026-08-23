@@ -1718,7 +1718,7 @@ export async function fetchNutritionLoggedDates(supabase, userId, fromISO, toISO
 export async function fetchChatMessages(supabase, clientId, limit = 300) {
   const { data, error } = await supabase
     .from("chat_messages")
-    .select("id, client_id, sender_id, body, created_at, read_at")
+    .select("id, client_id, sender_id, body, attachment_path, attachment_type, attachment_name, created_at, read_at")
     .eq("client_id", clientId)
     .order("created_at", { ascending: true })
     .limit(limit);
@@ -1726,11 +1726,17 @@ export async function fetchChatMessages(supabase, clientId, limit = 300) {
   return data ?? [];
 }
 
-export async function sendChatMessage(supabase, clientId, senderId, body) {
+// `attachment` opzionale: { path, type, name } da uploadChatAttachment. Un
+// messaggio può avere solo testo, solo allegato, o entrambi (es. foto con
+// didascalia) — mai i due null insieme (vincolo anche lato DB, SCHEMA_v50).
+export async function sendChatMessage(supabase, clientId, senderId, body, attachment = null) {
   const { data, error } = await supabase
     .from("chat_messages")
-    .insert({ client_id: clientId, sender_id: senderId, body })
-    .select("id, client_id, sender_id, body, created_at, read_at")
+    .insert({
+      client_id: clientId, sender_id: senderId, body: body || null,
+      attachment_path: attachment?.path || null, attachment_type: attachment?.type || null, attachment_name: attachment?.name || null,
+    })
+    .select("id, client_id, sender_id, body, attachment_path, attachment_type, attachment_name, created_at, read_at")
     .single();
   if (error) throw error;
   return data;
@@ -1746,6 +1752,26 @@ export async function markChatMessagesRead(supabase, clientId, readerId) {
     .neq("sender_id", readerId)
     .is("read_at", null);
   if (error) throw error;
+}
+
+// Allegati chat (SCHEMA_v50): bucket privato "chat-attachments", stesso
+// pattern path "{clientId}/..." di technique-videos — qui però scrivono
+// entrambi i lati della conversazione (client E coach), non solo il
+// cliente, quindi il path resta sempre quello del CLIENTE della
+// conversazione (clientId), non di chi sta scrivendo (senderId).
+export async function uploadChatAttachment(supabase, clientId, file, kind) {
+  const ext = (file.name?.split(".").pop() || (kind === "audio" ? "webm" : "bin")).toLowerCase();
+  const path = `${clientId}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("chat-attachments").upload(path, file, { upsert: false });
+  if (error) throw error;
+  return path;
+}
+
+export async function getChatAttachmentUrl(supabase, path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("chat-attachments").createSignedUrl(path, 3600);
+  if (error) { console.error("PERFORM: errore signed url allegato chat", error); return null; }
+  return data?.signedUrl ?? null;
 }
 
 /* ---------------------------------------------------------------------------

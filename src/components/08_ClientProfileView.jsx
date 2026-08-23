@@ -36,12 +36,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings,
-  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, MessageCircle, Video,
+  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchUnreadChatCount } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
-import ChatThread from "./ChatThread.jsx";
 import TechniqueVideoPanel from "./TechniqueVideoPanel.jsx";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
@@ -1050,14 +1049,7 @@ export function ClientProfileView({
   const [reportOpen, setReportOpen] = useState(false);
   const fileRef = useRef(null);
 
-  // Pallino "nuovo messaggio" sull'icona Messaggi, visibile anche a sezione
-  // chiusa — si azzera aprendola (ChatThread segna come letto da solo).
-  const [unreadChat, setUnreadChat] = useState(0);
   const hasCoachChat = isRealMode && ["scheda", "training", "full"].includes(plan);
-  useEffect(() => {
-    if (!hasCoachChat) { setUnreadChat(0); return; }
-    fetchUnreadChatCount(supabase, userId, userId).then(setUnreadChat).catch(() => {});
-  }, [hasCoachChat, supabase, userId, openSection]);
 
   const save = () => {
     const n = nick.trim();
@@ -1222,20 +1214,10 @@ export function ClientProfileView({
         </div>
       )}
 
-      {/* Chat col coach: stessa esclusiva dei check settimanali e della
-          pausa — solo chi ha davvero un coach dietro (Free/Premium restano
-          autogestiti, non hanno nessuno con cui parlare qui). */}
-      {hasCoachChat && (
-        <Section id="chat" icon={MessageCircle}
-                 title={<GradientText gender={gender}>Messaggi</GradientText>}
-                 sub="Scrivi direttamente al tuo coach"
-                 openId={openSection} setOpenId={setOpenSection}
-                 badge={unreadChat > 0 && (
-                   <span className="absolute rounded-full" style={{ top: -1, right: -1, width: 9, height: 9, backgroundColor: "#DC2626", border: "1.5px solid var(--surface)" }} />
-                 )}>
-          <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} />
-        </Section>
-      )}
+      {/* Chat col coach: ora un pulsante di navigazione dedicato (quinto tab
+          in basso, solo per chi ha davvero un coach dietro) invece che una
+          sezione qui — niente più due strade diverse per la stessa
+          conversazione, vedi CHAT_TAB in 04_AppShell.jsx/App.jsx. */}
 
       {hasCoachChat && (
         <Section id="video-tecnica" icon={Video}

@@ -41,7 +41,7 @@
    ========================================================================== */
 
 import React, { useState, useEffect, useId } from "react";
-import { BarChart3, Newspaper, Trophy, User, Settings, Activity, SlidersHorizontal, ShieldCheck } from "lucide-react";
+import { BarChart3, Newspaper, Trophy, User, Settings, Activity, SlidersHorizontal, ShieldCheck, MessageCircle } from "lucide-react";
 
 export const BRAND = {
   gold: "#C5A059",
@@ -492,6 +492,13 @@ export const TABS = [
 
 export const COACH_TAB = { id: "coach", icon: SlidersHorizontal, label: "Coach Panel" };
 
+/* Quinto pulsante, in fondo a destra come il Coach Panel per il coach:
+   sblocca la Chat diretta col coach solo per chi ha un piano a coaching
+   reale (Scheda Personalizzata, Coaching Allenamento, Full Coaching) — un
+   Free/Premium autogestito non ha nessuno con cui scrivere qui, stessa
+   condizione già usata per la sezione Chat/Video Tecnica nel Profilo. */
+export const CHAT_TAB = { id: "chat", icon: MessageCircle, label: "Chat" };
+
 /* Stessi stop-color del BrandMark: oro brillante su nero, oro profondo su
    bianco. Fattorizzati qui perché ora servono in due punti (logo + tab). */
 function goldStopsFor(boxIsBlack) {
@@ -611,11 +618,11 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
   );
 }
 
-export function BottomBar({ active, onSelect, accent, dark, isCoach = false }) {
+export function BottomBar({ active, onSelect, accent, dark, isCoach = false, hasChat = false }) {
   const [burst, setBurst] = useState(null);
   const idle = dark ? "#71717A" : "#A1A1AA";
 
-  const tabs = isCoach ? [...TABS, COACH_TAB] : TABS;
+  const tabs = [...TABS, ...(hasChat ? [CHAT_TAB] : []), ...(isCoach ? [COACH_TAB] : [])];
 
   const pick = (id) => {
     setBurst(id);
@@ -701,32 +708,36 @@ export function AppShell({
   dark = true,
   userLabel,
   userEmail = "",        // usata SOLO per determinare l'accesso al Coach Panel
+  hasChat = false,       // piano a coaching reale: sblocca il quinto pulsante Chat
   tab,
   onTabChange,
   onOpenSettings,
-  screens = {},          // { home, news, ranking, profile, coach }
+  screens = {},          // { home, news, ranking, profile, chat, coach }
 }) {
   const accent = accentFor(gender, dark);
 
   /* Confronto case-insensitive e senza spazi accidentali: unico varco. */
   const isCoach = userEmail.trim().toLowerCase() === COACH_EMAIL;
 
-  /* Se un utente non-coach si ritrova su tab "coach" (link diretto, stato
-     residuo, manomissione client-side...) lo si riporta su Home invece di
-     mostrargli il pannello: la protezione non è solo visiva. */
+  /* Se un utente si ritrova su una tab a cui non ha accesso (link diretto,
+     stato residuo, downgrade di piano, manomissione client-side...) lo si
+     riporta su Home invece di mostrargli il pannello: la protezione non è
+     solo visiva. */
   useEffect(() => {
     if (tab === "coach" && !isCoach && onTabChange) onTabChange("home");
-  }, [tab, isCoach, onTabChange]);
+    if (tab === "chat" && !hasChat && onTabChange) onTabChange("home");
+  }, [tab, isCoach, hasChat, onTabChange]);
 
   const fallback = {
     home:    <Placeholder tab="home" />,
     news:    <NewsScreen />,
     ranking: <RankingScreen />,
     profile: <Placeholder tab="profile" />,
+    chat:    <Placeholder tab="chat" />,
     coach:   <CoachPanelPlaceholder />,
   };
 
-  const activeTab = tab === "coach" && !isCoach ? "home" : tab;
+  const activeTab = (tab === "coach" && !isCoach) || (tab === "chat" && !hasChat) ? "home" : tab;
 
   // BUG PRESO: <div key={activeTab}> qui sotto forzava React a SMONTARE e
   // rimontare da zero l'intera schermata a OGNI cambio tab (Home/News/
@@ -780,7 +791,7 @@ export function AppShell({
           ))}
         </main>
 
-        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} />
+        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} hasChat={hasChat} />
       </div>
     </div>
   );
