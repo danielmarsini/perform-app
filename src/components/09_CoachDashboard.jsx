@@ -2,13 +2,14 @@ import React, { useState, useMemo, useEffect, useCallback, useRef, createContext
 import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
   AlertTriangle, Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
-  Trash2, ArrowLeft, CalendarDays, Wallet, Server, X, ShieldCheck, Check,
+  Trash2, ArrowLeft, CalendarDays, Wallet, Server, X, ShieldCheck, Check, Video,
 } from "lucide-react";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS } from "./05_HomeDashboard.jsx";
 import ChatThread from "./ChatThread.jsx";
+import TechniqueVideoPanel from "./TechniqueVideoPanel.jsx";
 
 /* ============================================================================
    COACH DASHBOARD — PERFORM (Evidence-Based Method by D. Marsini)
@@ -175,7 +176,7 @@ import {
   fetchCheckins, saveCheckin, getCheckinPhotoUrl, fetchPrescribedSupplements,
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
-  fetchExerciseLibrary, learnExercise, computeVolume, fetchUnreadChatCount,
+  fetchExerciseLibrary, learnExercise, computeVolume, fetchUnreadChatCount, fetchPendingTechniqueVideoCount,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3949,6 +3950,13 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
     if (!isRealMode || !isPaidCoaching || !coachId) { setUnreadChat(0); return; }
     fetchUnreadChatCount(supabase, client.id, coachId).then(setUnreadChat).catch(() => {});
   }, [isRealMode, isPaidCoaching, supabase, coachId, client.id, tab]);
+
+  // Stesso principio per i video-check ancora senza un commento del coach.
+  const [pendingVideos, setPendingVideos] = useState(0);
+  useEffect(() => {
+    if (!isRealMode || !isPaidCoaching) { setPendingVideos(0); return; }
+    fetchPendingTechniqueVideoCount(supabase, client.id).then(setPendingVideos).catch(() => {});
+  }, [isRealMode, isPaidCoaching, supabase, client.id, tab]);
   const titleClass = client.gender === "F" ? "gradient-title-f" : "gradient-title-m";
 
   // "Cambia abbonamento": a differenza di "Prendi in gestione" (solo per
@@ -3995,13 +4003,13 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
         )}
       </div>
 
-      <div className="grid grid-cols-5 gap-1.5 mb-5">
-        {[["anamnesi", "Anamnesi", ChevronDown], ["check", "Check Settimanali", CalendarDays], ["bioritmi", "Bioritmi & Grafici", AlertTriangle], ["editor", "Editor & AI", Dumbbell], ["chat", "Chat", MessageCircle]].map(([id, lab, Ico]) => {
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5 mb-5">
+        {[["anamnesi", "Anamnesi", ChevronDown], ["check", "Check Settimanali", CalendarDays], ["bioritmi", "Bioritmi & Grafici", AlertTriangle], ["editor", "Editor & AI", Dumbbell], ["chat", "Chat", MessageCircle], ["video", "Video Tecnica", Video]].map(([id, lab, Ico]) => {
           const on = tab === id;
           return (
             <button key={id} onClick={() => setTab(id)} className="relative rounded-2xl px-2 py-3.5 flex flex-col items-center gap-1.5"
               style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
-              {id === "chat" && unreadChat > 0 && (
+              {((id === "chat" && unreadChat > 0) || (id === "video" && pendingVideos > 0)) && (
                 <span className="absolute rounded-full" style={{ top: 6, right: 10, width: 8, height: 8, backgroundColor: "#DC2626" }} />
               )}
               <Ico size={18} strokeWidth={on ? 2 : 1.6} style={{ color: on ? "#C5A059" : "var(--ink-soft)" }} />
@@ -4038,6 +4046,24 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
             </>
           ) : (
             <p className="c-muted text-sm">Chat disponibile in modalità reale.</p>
+          )}
+        </div>
+      )}
+
+      {tab === "video" && (
+        <div className="c-card">
+          {isRealMode && isPaidCoaching ? (
+            <TechniqueVideoPanel supabase={supabase} clientId={client.id} role="coach" accent="#D4AF37" />
+          ) : isRealMode ? (
+            <>
+              <p className="c-heading font-display font-bold mb-2">Video privati</p>
+              <p className="c-muted text-sm leading-relaxed">
+                {client.name} ha il piano Free/Premium: il video-check tecnica è riservato a chi ha un piano a
+                coaching reale (Scheda Personalizzata, Coaching Allenamento, Full Coaching).
+              </p>
+            </>
+          ) : (
+            <p className="c-muted text-sm">Video-check disponibile in modalità reale.</p>
           )}
         </div>
       )}

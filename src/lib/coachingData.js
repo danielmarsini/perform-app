@@ -1718,6 +1718,81 @@ export async function markChatMessagesRead(supabase, clientId, readerId) {
   if (error) throw error;
 }
 
+/* ---------------------------------------------------------------------------
+   VIDEO-CHECK TECNICA ESECUZIONE (SCHEMA_v49) — il cliente carica un video
+   breve di un esercizio, il coach lo guarda e lascia un commento. Bucket
+   privato "technique-videos", stesso pattern di checkin-photos (SCHEMA_v36):
+   path "{userId}/...", mai un URL pubblico permanente, sempre firmato al
+   momento della lettura.
+   ------------------------------------------------------------------------- */
+
+export async function uploadTechniqueVideo(supabase, userId, file) {
+  const ext = (file.name?.split(".").pop() || "mp4").toLowerCase();
+  const path = `${userId}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("technique-videos").upload(path, file, { upsert: false });
+  if (error) throw error;
+  return path;
+}
+
+export async function getTechniqueVideoUrl(supabase, path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("technique-videos").createSignedUrl(path, 3600);
+  if (error) { console.error("PERFORM: errore signed url video tecnica", error); return null; }
+  return data?.signedUrl ?? null;
+}
+
+export async function saveTechniqueVideo(supabase, clientId, exerciseName, videoPath, note) {
+  const { data, error } = await supabase
+    .from("technique_videos")
+    .insert({ client_id: clientId, exercise_name: exerciseName, video_path: videoPath, note: note || null })
+    .select("id, client_id, exercise_name, video_path, note, coach_comment, coach_comment_at, created_at")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchTechniqueVideos(supabase, clientId) {
+  const { data, error } = await supabase
+    .from("technique_videos")
+    .select("id, client_id, exercise_name, video_path, note, coach_comment, coach_comment_at, created_at")
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function saveTechniqueVideoComment(supabase, videoId, comment) {
+  const { error } = await supabase
+    .from("technique_videos")
+    .update({ coach_comment: comment, coach_comment_at: new Date().toISOString() })
+    .eq("id", videoId);
+  if (error) throw error;
+}
+
+// Cancella sia la riga sia il file nello storage — in quest'ordine il file
+// resta orfano solo se la delete della riga fallisce (mai il contrario, che
+// lascerebbe un riferimento a un file già sparito).
+export async function deleteTechniqueVideo(supabase, videoId, videoPath) {
+  const { error } = await supabase.from("technique_videos").delete().eq("id", videoId);
+  if (error) throw error;
+  await supabase.storage.from("technique-videos").remove([videoPath]).catch((err) => {
+    console.error("PERFORM: errore rimozione file video tecnica dallo storage", err);
+  });
+}
+
+// Quanti video di UN cliente aspettano ancora un commento del coach — per il
+// pallino "da rivedere" prima ancora di aprire il tab, stesso principio di
+// fetchUnreadChatCount.
+export async function fetchPendingTechniqueVideoCount(supabase, clientId) {
+  const { count, error } = await supabase
+    .from("technique_videos")
+    .select("id", { count: "exact", head: true })
+    .eq("client_id", clientId)
+    .is("coach_comment", null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 // Conteggio messaggi non letti di UNA conversazione, dal punto di vista di
 // chi legge (readerId) — per un pallino "nuovo messaggio" sul tab Chat prima
 // ancora di aprirlo, sia lato coach sia lato cliente.

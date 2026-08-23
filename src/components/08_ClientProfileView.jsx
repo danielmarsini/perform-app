@@ -36,12 +36,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
-  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, MessageCircle,
+  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, MessageCircle, Video,
 } from "lucide-react";
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchUnreadChatCount } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
 import ChatThread from "./ChatThread.jsx";
+import TechniqueVideoPanel from "./TechniqueVideoPanel.jsx";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -1233,6 +1234,15 @@ export function ClientProfileView({
                    <span className="absolute rounded-full" style={{ top: -1, right: -1, width: 9, height: 9, backgroundColor: "#DC2626", border: "1.5px solid var(--surface)" }} />
                  )}>
           <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} />
+        </Section>
+      )}
+
+      {hasCoachChat && (
+        <Section id="video-tecnica" icon={Video}
+                 title={<GradientText gender={gender}>Video Tecnica</GradientText>}
+                 sub="Carica un video di un esercizio per farti correggere"
+                 openId={openSection} setOpenId={setOpenSection}>
+          <TechniqueVideoPanel supabase={supabase} clientId={userId} role="client" accent={accent} />
         </Section>
       )}
 
