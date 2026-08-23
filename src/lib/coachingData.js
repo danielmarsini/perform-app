@@ -289,6 +289,17 @@ export async function removeNutritionLogItem(supabase, logId) {
   if (error) throw error;
 }
 
+// Corregge la quantità (grammi + macro già riscalate dal chiamante, vedi
+// scaleFoodItem in 05_HomeDashboard.jsx) di UN alimento già nel diario —
+// prima l'unico modo per cambiare una quantità sbagliata o rivista era
+// cancellare la riga e ricercare/reinserire tutto da capo.
+export async function updateNutritionLogItem(supabase, logId, patch) {
+  const { error } = await supabase.from("nutrition_logs").update({
+    grams: patch.grams, kcal: patch.kcal, protein: patch.p, carbs: patch.c, fat: patch.f,
+  }).eq("id", logId);
+  if (error) throw error;
+}
+
 // Cerchio Alimentazione reale — STESSO principio di computeTrainingCompliance
 // e computeRecoveryCompliance: un'unica funzione, chiamata identica da Home
 // cliente e ClientDetail coach, legge solo dati già salvati (nutrition_logs

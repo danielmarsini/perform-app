@@ -129,35 +129,37 @@ export function DesignSystem() {
          scuro/chiaro, stile "photo backdrop" da studio (secondo riferimento
          del coach: due bagliori sfumati eleganti, non nastri/scintille del
          primo tentativo). Ogni macchia è un radial-gradient enorme e molto
-         sfocato che deriva lentamente di posizione — mai ferma, ma un
-         movimento impercettibile, non una luce che lampeggia o scorre. */
+         sfocato che deriva di posizione E di tonalità — un movimento chiaro,
+         non impercettibile: il coach lo segnalava ancora "statico" con
+         l'ampiezza/durata precedenti (troppo lente per notarsi a colpo
+         d'occhio), qui il tragitto è più ampio e il ciclo più breve. */
       .live-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
       .live-bg-blob {
         position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%;
         filter: blur(32px); will-change: transform;
       }
       /* Due animazioni per macchia, su proprietà diverse (non in conflitto):
-         "drift" muove/scala la posizione, "hue" fa scivolare lentamente la
-         tonalità del colore (oro↔rosa/ambra) — così lo sfondo non è solo
-         una macchia che si sposta ma una luce che cambia davvero nel tempo,
-         restando dentro alla stessa famiglia di colore (mai verde/blu). */
-      .live-bg-blob-1 { top: -10%; right: -20%; animation: liveBgDrift1 26s ease-in-out infinite, liveBgHue1 19s ease-in-out infinite; }
-      .live-bg-blob-2 { bottom: -25%; left: -20%; animation: liveBgDrift2 32s ease-in-out infinite, liveBgHue2 23s ease-in-out infinite; }
+         "drift" muove/scala la posizione, "hue" fa scivolare la tonalità del
+         colore (oro↔rosa/ambra) — così lo sfondo non è solo una macchia che
+         si sposta ma una luce che cambia davvero nel tempo, restando dentro
+         alla stessa famiglia di colore (mai verde/blu). */
+      .live-bg-blob-1 { top: -10%; right: -20%; animation: liveBgDrift1 15s ease-in-out infinite, liveBgHue1 11s ease-in-out infinite; }
+      .live-bg-blob-2 { bottom: -25%; left: -20%; animation: liveBgDrift2 18s ease-in-out infinite, liveBgHue2 13s ease-in-out infinite; }
       @keyframes liveBgDrift1 {
         0%, 100% { transform: translate(0, 0) scale(1); }
-        50% { transform: translate(-6%, 6%) scale(1.08); }
+        50% { transform: translate(-16%, 16%) scale(1.22); }
       }
       @keyframes liveBgDrift2 {
         0%, 100% { transform: translate(0, 0) scale(1); }
-        50% { transform: translate(6%, -6%) scale(1.1); }
+        50% { transform: translate(18%, -16%) scale(1.25); }
       }
       @keyframes liveBgHue1 {
         0%, 100% { filter: blur(32px) hue-rotate(0deg) saturate(1); }
-        50% { filter: blur(32px) hue-rotate(-22deg) saturate(1.25); }
+        50% { filter: blur(32px) hue-rotate(-30deg) saturate(1.35); }
       }
       @keyframes liveBgHue2 {
         0%, 100% { filter: blur(32px) hue-rotate(0deg) saturate(1); }
-        50% { filter: blur(32px) hue-rotate(22deg) saturate(1.25); }
+        50% { filter: blur(32px) hue-rotate(30deg) saturate(1.35); }
       }
       @media (prefers-reduced-motion: reduce) {
         .live-bg-blob-1, .live-bg-blob-2 { animation: none; }
