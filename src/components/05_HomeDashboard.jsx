@@ -1161,6 +1161,43 @@ function PRCelebrationToast({ toast }) {
   );
 }
 
+/* Spiegazione dello streak, aperta toccando il numero in Home (prima stava
+   scritto per esteso accanto al fuoco — "X Giorni di Streak" — ripulito per
+   una Home più professionale: qui il numero grande basta, il significato si
+   scopre solo se serve). Contiene anche "Congela streak di oggi", spostato
+   qui dentro invece di stare sempre visibile sotto il fuoco. */
+function StreakInfoModal({ streak, supabase, userId, accent, onClose }) {
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+           style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)" }} onClick={onClose}>
+        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6"
+             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}
+             onClick={(e) => e.stopPropagation()}>
+          <div ref={headerRef}>
+            <SwipeHandle />
+            <div className="flex items-center justify-between mb-1">
+              <p className="h1">Streak</p>
+              <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+            </div>
+          </div>
+          <p className="flex items-center gap-2 my-4" style={{ fontSize: "2rem", fontWeight: 800, color: "var(--ink)" }}>
+            <Flame size={26} style={{ color: accent }} fill={accent} strokeWidth={1.4} />
+            {streak}
+          </p>
+          <p className="body mb-4" style={{ lineHeight: 1.5 }}>
+            Giorni consecutivi in cui hai registrato qualcosa — un allenamento, un pasto, sonno e passi. Basta un
+            giorno intero senza nessuna registrazione per azzerarlo.
+          </p>
+          {supabase && userId && <StreakFreezeButton supabase={supabase} userId={userId} accent={accent} />}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 /* "Streak freeze" (SCHEMA_v58): congela lo streak di oggi senza bisogno di
    un coach — a differenza della Pausa/Vacanza (PauseSection, riservata a chi
    ha un coaching reale e richiede una richiesta), disponibile a TUTTI i
@@ -1981,6 +2018,7 @@ export function HomeDashboard({
   const [recoveryOverride, setRecoveryOverride] = useState(null);
   const [activeRingPopup, setActiveRingPopup] = useState(null);
   const [levelRoadmapOpen, setLevelRoadmapOpen] = useState(false);
+  const [streakInfoOpen, setStreakInfoOpen] = useState(false);
   const [selectedCalendarIso, setSelectedCalendarIso] = useState(null); // null = oggi
 
   // Giorni realmente "saltati" nelle due strisce calendario (Allenamento e
@@ -2372,29 +2410,29 @@ export function HomeDashboard({
             <p className="greeting-text" style={{ color: "var(--ink)", fontSize: "1.55rem", fontWeight: 700, letterSpacing: "-0.01em", lineHeight: 1.15 }}>
               <span className="greeting-emoji">{greeting.icon}</span> {greeting.text} {firstName}
             </p>
+            <p className="meta mt-1" style={{ fontSize: "0.72rem" }}>
+              {day.dayNumber != null
+                ? `Giorno ${day.dayNumber} del percorso · ${WEEK_DAYS[day.weekday]}`
+                : new Date().toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "long" })}
+            </p>
 
-            {/* riga micro-satinata: titolo di livello + streak in tempo reale */}
-            <div className="flex items-center justify-between gap-3 rounded-full px-4 py-2 mt-3"
-                 style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-              <span className="title-shine" style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.02em" }}>
-                {isRealMode ? `${realLevelInfo.icon} ${realLevelInfo.title}` : levelTitle(level)}
-              </span>
-              <span className="flex items-center gap-1.5" style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--ink)" }}>
-                <Flame size={15} className={streak >= 15 ? "flame-3" : streak >= 8 ? "flame-2" : streak >= 4 ? "flame-1" : ""}
-                       style={{ color: accent }} fill={accent} strokeWidth={1.4} />
-                {streak} Giorni di Streak
-              </span>
-            </div>
-            {isRealMode && <StreakFreezeButton supabase={supabase} userId={userId} accent={accent} />}
+            {/* Streak: solo fuoco + numero, grande — il significato (e
+                "Congela streak di oggi") si scopre toccandolo, non è più
+                scritto per esteso qui accanto: Home più pulita. */}
+            <button onClick={() => setStreakInfoOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 mt-3"
+                    style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}
+                    aria-label="Streak: tocca per i dettagli">
+              <Flame size={20} className={streak >= 15 ? "flame-3" : streak >= 8 ? "flame-2" : streak >= 4 ? "flame-1" : ""}
+                     style={{ color: accent }} fill={accent} strokeWidth={1.4} />
+              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--ink)" }}>{streak}</span>
+            </button>
 
             {day.mesociclo != null && (
               <div className="mt-3">
                 <MesocicloBadge mesociclo={day.mesociclo} week={day.weekNumber} weeks={day.mesocicloWeeks ?? 4} />
               </div>
             )}
-            <p className="meta mt-2">
-              {day.dayNumber != null ? `Giorno ${day.dayNumber} del percorso · ` : ""}{WEEK_DAYS[day.weekday]}
-            </p>
           </div>
 
           <div style={{ position: "relative", zIndex: 1 }}>
@@ -2411,11 +2449,16 @@ export function HomeDashboard({
           <button onClick={() => setLevelRoadmapOpen(true)} className="w-full text-left mt-4 pt-4"
                   style={{ borderTop: "1px solid var(--line)", background: "none" }}
                   aria-label="Vedi tutti i livelli">
-            <div className="flex items-center justify-between mb-2">
-              <span style={{ color: "var(--ink)", fontSize: "0.9rem", fontWeight: 500 }}>
-                Livello {level}
-              </span>
-              <span className="meta font-data">{xpBarDisplay} / {xpNeeded} XP</span>
+            <div className="mb-2">
+              <p className="title-shine" style={{ fontSize: "0.95rem", fontWeight: 700 }}>
+                {isRealMode ? `${realLevelInfo.icon} ${realLevelInfo.title}` : levelTitle(level)}
+              </p>
+              <div className="flex items-center justify-between mt-0.5">
+                <span style={{ color: "var(--ink-2)", fontSize: "0.78rem", fontWeight: 500 }}>
+                  Livello {level}
+                </span>
+                <span className="meta font-data">{xpBarDisplay} / {xpNeeded} XP</span>
+              </div>
             </div>
             <div className="rounded-full overflow-hidden" style={{ height: 10, backgroundColor: "var(--surface-2)" }}>
               <div className="xp-bar xp-bar-shine relative h-full rounded-full overflow-hidden"
@@ -2484,6 +2527,10 @@ export function HomeDashboard({
         <CompliancePopup ring={complianceRings.find((r) => r.id === activeRingPopup)} onClose={() => setActiveRingPopup(null)} />
         {levelRoadmapOpen && (
           <LevelRoadmapModal currentXp={isRealMode ? (realXpStreak?.xpTotal ?? 0) : xp} onClose={() => setLevelRoadmapOpen(false)} />
+        )}
+        {streakInfoOpen && (
+          <StreakInfoModal streak={streak} supabase={supabase} userId={userId} accent={accent}
+                            onClose={() => setStreakInfoOpen(false)} />
         )}
 
         {/* auto-split del giorno saltato */}
