@@ -9,7 +9,6 @@ import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS, matchSuppMoment } from "./05_HomeDashboard.jsx";
-import ChatThread from "./ChatThread.jsx";
 
 /* ============================================================================
    COACH DASHBOARD — PERFORM (Evidence-Based Method by D. Marsini)
@@ -176,7 +175,7 @@ import {
   fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutTemplateToClients,
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
-  fetchExerciseLibrary, learnExercise, computeVolume, fetchUnreadChatCount,
+  fetchExerciseLibrary, learnExercise, computeVolume,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
 } from "../lib/coachingData.js";
 
@@ -3281,7 +3280,7 @@ function ClientPausesCard({ client }) {
   );
 }
 
-function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTab = "chat" }) {
+function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTab = "dati" }) {
   const { supabase, coachId, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const status = computeStatus(client);
   const meta = STATUS_META[status];
@@ -3289,17 +3288,12 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
   const isPaidCoaching = REAL_COACHING_PLANS.has(client.plan);
   // Anamnesi non è più un tab tra gli altri: si legge la prima volta che si
   // conosce il cliente e poi solo saltuariamente per ristrutturare i
-  // programmi futuri, non ogni giorno come chat/dati/editor — resta quindi
+  // programmi futuri, non ogni giorno come dati/editor — resta quindi
   // un pulsante che apre il pannello a schermo intero solo quando serve.
+  // Chat non vive più qui: il coach ha una sola inbox con tutte le
+  // conversazioni (tab Chat del proprio account, App.jsx), non una copia
+  // per ogni scheda cliente in Hub Atleti.
   const [showAnamnesis, setShowAnamnesis] = useState(false);
-
-  // Pallino "nuovo messaggio" sul tab Chat, visibile anche prima di aprirlo —
-  // si azzera aprendo il tab (ChatThread segna i messaggi come letti da sola).
-  const [unreadChat, setUnreadChat] = useState(0);
-  useEffect(() => {
-    if (!isRealMode || !isPaidCoaching || !coachId) { setUnreadChat(0); return; }
-    fetchUnreadChatCount(supabase, client.id, coachId).then(setUnreadChat).catch(() => {});
-  }, [isRealMode, isPaidCoaching, supabase, coachId, client.id, tab]);
   const titleClass = client.gender === "F" ? "gradient-title-f" : "gradient-title-m";
 
   // "Cambia abbonamento": a differenza di "Prendi in gestione" (solo per
@@ -3353,15 +3347,12 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5 mb-5">
-        {[["chat", "Chat", MessageCircle], ["dati", "Dati", BarChart3], ["editor", "Editor", Dumbbell]].map(([id, lab, Ico]) => {
+      <div className="grid grid-cols-2 gap-1.5 mb-5">
+        {[["dati", "Dati", BarChart3], ["editor", "Editor", Dumbbell]].map(([id, lab, Ico]) => {
           const on = tab === id;
           return (
             <button key={id} onClick={() => setTab(id)} className="relative rounded-2xl px-2 py-3.5 flex flex-col items-center gap-1.5"
               style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
-              {id === "chat" && unreadChat > 0 && (
-                <span className="absolute rounded-full" style={{ top: 6, right: 10, width: 8, height: 8, backgroundColor: "#DC2626" }} />
-              )}
               <Ico size={18} strokeWidth={on ? 2 : 1.6} style={{ color: on ? "#C5A059" : "var(--ink-soft)" }} />
               <span className="font-data text-xs uppercase text-center" style={{ fontWeight: on ? 600 : 400, lineHeight: 1.1 }}>{lab}</span>
             </button>
@@ -3374,26 +3365,6 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
           <BioritmiGrafici client={client} />
           <ClientPausesCard client={client} />
           <CheckDetail client={client} />
-        </div>
-      )}
-
-      {tab === "chat" && (
-        <div className="c-card">
-          {isRealMode && isPaidCoaching ? (
-            <ChatThread supabase={supabase} clientId={client.id} meId={coachId} accent="#D4AF37"
-              emptyText={`Nessun messaggio ancora con ${client.name} — scrivi il primo.`} />
-          ) : isRealMode ? (
-            <>
-              <p className="c-heading font-display font-bold mb-2">Chat privata</p>
-              <p className="c-muted text-sm leading-relaxed">
-                {client.name} ha il piano Free/Premium: la chat diretta (messaggi, dubbi, feedback e video degli
-                esercizi da correggere) è riservata a chi ha un piano a coaching reale (Scheda Personalizzata,
-                Coaching Allenamento, Full Coaching).
-              </p>
-            </>
-          ) : (
-            <p className="c-muted text-sm">Chat disponibile in modalità reale.</p>
-          )}
         </div>
       )}
 

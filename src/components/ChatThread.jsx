@@ -26,7 +26,7 @@ function kindForFile(file) {
   return "file";
 }
 
-export default function ChatThread({ supabase, clientId, meId, accent, emptyText }) {
+export default function ChatThread({ supabase, clientId, meId, accent, emptyText, gender = "M" }) {
   const [messages, setMessages] = useState(null); // null = non ancora caricato
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -170,53 +170,84 @@ export default function ChatThread({ supabase, clientId, meId, accent, emptyText
     return <p className="meta">Carico la conversazione…</p>;
   }
 
+  // Foto/video/vocali/file: mai una cornice colorata dietro, in nessuna
+  // modalità (mine o dell'altra parte) — il messaggio è l'allegato stesso,
+  // a pieno bordo, non un riquadro pieno con l'allegato dentro.
   const renderAttachment = (m) => {
     if (!m.attachment_path) return null;
     const url = urls[m.id];
     if (!url) {
       return (
-        <div className="rounded-xl flex items-center justify-center mb-1.5" style={{ height: 90, width: 160, backgroundColor: "rgba(0,0,0,0.12)" }}>
+        <div className="rounded-2xl flex items-center justify-center" style={{ height: 90, width: 160, backgroundColor: "rgba(127,127,127,0.15)" }}>
           <Loader2 size={16} className="animate-spin" style={{ color: "inherit", opacity: 0.7 }} />
         </div>
       );
     }
     if (m.attachment_type === "image") {
-      return <img src={url} alt="" className="rounded-xl mb-1.5" style={{ maxWidth: "100%", maxHeight: 260, display: "block" }} />;
+      return <img src={url} alt="" className="rounded-2xl" style={{ maxWidth: "100%", maxHeight: 280, display: "block" }} />;
     }
     if (m.attachment_type === "video") {
-      return <video controls src={url} className="rounded-xl mb-1.5" style={{ maxWidth: "100%", maxHeight: 260, backgroundColor: "#000" }} />;
+      return <video controls src={url} className="rounded-2xl" style={{ maxWidth: "100%", maxHeight: 280, backgroundColor: "#000", display: "block" }} />;
     }
     if (m.attachment_type === "audio") {
-      return <audio controls src={url} className="mb-1.5" style={{ maxWidth: "100%", height: 36 }} />;
+      return <audio controls src={url} style={{ maxWidth: "100%", height: 36 }} />;
     }
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg px-2.5 py-2 mb-1.5"
-         style={{ backgroundColor: "rgba(0,0,0,0.12)" }}>
+      <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-lg px-2.5 py-2"
+         style={{ backgroundColor: "rgba(127,127,127,0.15)" }}>
         <FileText size={15} className="shrink-0" />
         <span className="text-xs truncate" style={{ textDecoration: "underline" }}>{m.attachment_name || "File allegato"}</span>
       </a>
     );
   };
 
+  // BUG PRESO: i messaggi inviati avevano uno sfondo pieno color accent con
+  // testo bianco dentro — un effetto "pacchiano" su richiesta esplicita.
+  // Ora il testo dei propri messaggi usa lo stesso gradiente lucido animato
+  // dei titoli di livello (oro/rosa cangiante) MA definito qui in modo
+  // autosufficiente (nessuna variabile CSS ereditata da un antenato): la
+  // stessa fragilità aveva già causato in passato il banner XP illeggibile.
+  const shineClass = gender === "F" ? "chat-shine-pink" : "chat-shine-gold";
+
   return (
-    <div className="flex flex-col" style={{ height: "58vh" }}>
-      {loadError && <p className="meta mb-2" style={{ color: "#B91C1C" }}>{loadError}</p>}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-2 px-1 pb-3">
+    <div className="flex flex-col" style={{ height: "100%" }}>
+      <style>{`
+        .chat-shine{background-size:220% auto;-webkit-background-clip:text;background-clip:text;
+          color:transparent;-webkit-text-fill-color:transparent;animation:chatShineGlow 5s ease-in-out infinite;
+          display:inline;font-weight:600}
+        .chat-shine-gold{background-image:linear-gradient(100deg,#D4AF37,#F3E5AB,#AA7C11,#F3E5AB,#D4AF37)}
+        .chat-shine-pink{background-image:linear-gradient(100deg,#E5C1CD,#F4E0E6,#C896A6,#F4E0E6,#E5C1CD)}
+        @keyframes chatShineGlow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+        @media (prefers-reduced-motion: reduce){.chat-shine{animation:none}}
+      `}</style>
+      {loadError && <p className="meta mb-2 px-1" style={{ color: "#B91C1C" }}>{loadError}</p>}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 px-1 pb-3">
         {messages.length === 0 && (
           <p className="meta text-center mt-8">{emptyText || "Nessun messaggio ancora — scrivi il primo."}</p>
         )}
         {messages.map((m) => {
           const mine = m.sender_id === meId;
+          const hasAttachment = !!m.attachment_path;
+          const bodyEl = m.body && (
+            <p className="text-sm" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", color: mine ? undefined : "var(--ink)" }}>
+              {mine ? <span className={`chat-shine ${shineClass}`}>{m.body}</span> : m.body}
+            </p>
+          );
           return (
             <div key={m.id} className="flex" style={{ justifyContent: mine ? "flex-end" : "flex-start" }}>
-              <div className="rounded-2xl px-3.5 py-2.5" style={{
-                    maxWidth: "78%",
-                    backgroundColor: mine ? accent : "var(--surface-2)",
-                    color: mine ? "#FFFFFF" : "var(--ink)",
-                    border: mine ? "none" : "1px solid var(--line)" }}>
-                {renderAttachment(m)}
-                {m.body && <p className="text-sm" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.body}</p>}
-                <p className="mt-1" style={{ fontSize: "0.6rem", opacity: 0.7 }}>
+              <div className="flex flex-col" style={{ maxWidth: "78%", alignItems: mine ? "flex-end" : "flex-start", gap: 6 }}>
+                {hasAttachment ? (
+                  <>
+                    {renderAttachment(m)}
+                    {bodyEl && <div className="px-1">{bodyEl}</div>}
+                  </>
+                ) : (
+                  <div className="rounded-2xl px-3.5 py-2.5"
+                       style={mine ? { backgroundColor: "rgba(127,127,127,0.08)" } : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+                    {bodyEl}
+                  </div>
+                )}
+                <p className="px-1" style={{ fontSize: "0.62rem", color: "var(--ink-2)" }}>
                   {new Date(m.created_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
@@ -225,7 +256,7 @@ export default function ChatThread({ supabase, clientId, meId, accent, emptyText
         })}
       </div>
 
-      {attachError && <p className="text-xs mb-1.5" style={{ color: "#DC2626" }}>{attachError}</p>}
+      {attachError && <p className="text-xs mb-1.5 px-1" style={{ color: "#DC2626" }}>{attachError}</p>}
 
       {pendingFile && (
         <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-2" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>

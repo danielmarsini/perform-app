@@ -381,6 +381,7 @@ export function BrandMark({ dark = false, size = 36 }) {
 export function AppHeader({ dark, accent, userLabel, onOpenSettings }) {
   return (
     <header
+      id="app-header"
       className="sticky top-0 z-30"
       style={{
         backgroundColor: dark ? "rgba(9,9,11,0.88)" : "rgba(255,255,255,0.88)",
@@ -639,6 +640,7 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false, has
 
   return (
     <nav
+      id="app-bottomnav"
       className="fixed bottom-0 left-0 right-0 z-40"
       style={{
         backgroundColor: dark ? "rgba(9,9,11,0.88)" : "rgba(255,255,255,0.88)",
@@ -767,6 +769,25 @@ export function AppShell({
   // quella precedente.
   useEffect(() => { window.scrollTo(0, 0); }, [activeTab]);
 
+  // Altezza reale di header e barra di navigazione, misurata a runtime (non
+  // un numero fisso indovinato): serve SOLO alla tab Chat qui sotto, per
+  // occupare esattamente lo spazio tra le due senza né sovrapporle né
+  // lasciare un vuoto — se il loro contenuto cambia altezza in futuro
+  // (nuova voce di menu, testo più lungo...) resta comunque corretto.
+  const [headerH, setHeaderH] = useState(64);
+  const [bottomNavH, setBottomNavH] = useState(84);
+  useEffect(() => {
+    const measure = () => {
+      const h = document.getElementById("app-header")?.offsetHeight;
+      const b = document.getElementById("app-bottomnav")?.offsetHeight;
+      if (h) setHeaderH(h);
+      if (b) setBottomNavH(b);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
   return (
     <div
       className="app-root min-h-screen"
@@ -789,12 +810,28 @@ export function AppShell({
         />
 
         <main className="max-w-2xl mx-auto px-4 py-6" style={{ paddingBottom: 108 }}>
-          {[...visitedTabs].map((key) => (
-            <div key={key} className={key === activeTab ? "spring-in" : undefined}
-                 style={{ display: key === activeTab ? "block" : "none", minHeight: "calc(100vh - 230px)" }}>
-              {screens[key] ?? fallback[key]}
-            </div>
-          ))}
+          {[...visitedTabs].map((key) => {
+            const isChat = key === "chat";
+            // La Chat non è una card dentro la pagina scrollabile come le
+            // altre tab: è una schermata fissa e rigida, incastrata esatta
+            // tra header e barra di navigazione — solo i messaggi al suo
+            // interno scorrono, mai la pagina intera (era il pop-up centrato
+            // "poco professionale" segnalato). Sfondo leggermente trasparente
+            // nero: si intravedono le forme colorate animate sotto.
+            return (
+              <div key={key} className={key === activeTab ? "spring-in" : undefined}
+                   style={isChat
+                     ? { display: key === activeTab ? "block" : "none", position: "fixed",
+                         top: headerH, bottom: bottomNavH, left: 0, right: 0, zIndex: 20 }
+                     : { display: key === activeTab ? "block" : "none", minHeight: "calc(100vh - 230px)" }}>
+                {isChat ? (
+                  <div className="max-w-2xl mx-auto h-full" style={{ backgroundColor: "rgba(9,9,11,0.55)" }}>
+                    {screens[key] ?? fallback[key]}
+                  </div>
+                ) : (screens[key] ?? fallback[key])}
+              </div>
+            );
+          })}
         </main>
 
         <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} hasChat={hasChat} />
