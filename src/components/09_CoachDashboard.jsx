@@ -171,7 +171,6 @@ import {
   assignNutritionTarget, fetchBothNutritionTargets, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange,
   awardXpBonus, computeRealXpAndStreak, notifyClientPlanChange, fetchClientPauses,
-  fetchMesocycleWeeksRange, saveMesocycleWeek,
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, saveCheckin, getCheckinPhotoUrl, fetchPrescribedSupplements,
   xpToLevelInfo, whitelistClient, clearWhitelist,
@@ -809,27 +808,12 @@ function weekRangeLabel(offset) {
 }
 const MAX_FORWARD_WEEKS = 12;
 
-// Etichetta di fase del mesociclo che il coach assegna a una settimana —
-// puramente descrittiva, non guida alcun calcolo (kcal/volume restano quelli
-// che coach imposta a mano in dieta/allenamento). Serve solo a rendere
-// leggibile a colpo d'occhio la programmazione nel calendario.
-const PHASE_META = {
-  bulk: { label: "Bulk", color: "#2563EB" },
-  cut: { label: "Cut", color: "#DC2626" },
-  maintenance: { label: "Mantenimento", color: "#6B7280" },
-  deload: { label: "Scarico", color: "#F59E0B" },
-};
-
 /* Reparto colore del pallino settimana:
-   giallo  = settimana passata (storico, sempre navigabile)
-   verde   = settimana presente/futura con tutte le sezioni richieste dal
-             piano confermate (Full Coaching: allenamento+dieta+integratori;
-             Solo Allenamento/Scheda: solo allenamento)
-   rosso   = settimana presente/futura ancora da completare per l'atleta   */
-function weekDeptColor(offset, week, planTier) {
-  if (offset < 0) return "yellow";
-  const required = planTier === "full" ? ["workout", "diet", "supplements"] : ["workout"];
-  return required.every((k) => week.confirmed[k]) ? "green" : "red";
+   giallo = settimana passata (storico, sempre navigabile)
+   verde  = settimana presente/futura (il coach la edita direttamente, niente
+            più passaggio di "conferma" separato da spuntare a mano) */
+function weekDeptColor(offset) {
+  return offset < 0 ? "yellow" : "green";
 }
 
 /* ==========================================================================
@@ -1215,159 +1199,6 @@ async function callPerformAI(kind, payload) {
   throw new Error("callPerformAI non è collegato in questa anteprima isolata — il motore deterministico locale genera già il piano rispettando le stesse regole del Master Prompt.");
 }
 
-const ACTIVITY_MULT = { sedentario: 1.2, leggero: 1.375, moderato: 1.55, attivo: 1.725, "molto attivo": 1.9 };
-
-/* Le 4 direzioni pianificate: ognuna imposta % di surplus/deficit sul TDEE
-   e un target proteico in g/kg evidence-based (range ISSN/ACSM). */
-const PREDICTIVE_GOALS = [
-  { id: "massa_pulita", label: "Massa Pulita", kcalPct: 0.10, proteinPerKg: 1.9, fatPct: 0.25 },
-  { id: "definizione_estrema", label: "Definizione Estrema", kcalPct: -0.25, proteinPerKg: 2.4, fatPct: 0.25 },
-  { id: "ricomposizione", label: "Ricomposizione Corporea", kcalPct: -0.05, proteinPerKg: 2.2, fatPct: 0.27 },
-  { id: "recomp_gara", label: "Recomp Gara", kcalPct: -0.20, proteinPerKg: 2.4, fatPct: 0.22 },
-];
-
-/* TDEE con Mifflin-St Jeor (formula reale, non inventata) + moltiplicatore
-   di attività NEAT/lifestyle dichiarato in anamnesi. */
-function computeTDEE(client) {
-  const w = client.lastCheck.weight, h = client.heightCm, age = client.age;
-  const bmr = client.gender === "F" ? 10 * w + 6.25 * h - 5 * age - 161 : 10 * w + 6.25 * h - 5 * age + 5;
-  const mult = ACTIVITY_MULT[client.activity] || 1.375;
-  return Math.round(bmr * mult);
-}
-
-/* Deriva un target OFF plausibile da un target ON appena calcolato via TDEE:
-   stessa % di riduzione kcal e stesso ribilanciamento macro già usati nel
-   default della timeline (makeDefaultWeek), per coerenza tra i due motori. */
-function deriveOffTarget(onKcal) {
-  return makeMacroProfile(Math.round(onKcal * 0.9), 0.3, 0.35, 0.35);
-}
-
-/* ⚡ GENERA DIETA TIPO CON PERFORM AI — generatore unico, condizionato dal
-   NUTRITION_MASTER_PROMPT qui sopra. Sostituisce i due generatori separati
-   che avevo prima (Generazione Predittiva + Genera Pasti su Misura): stessa
-   AI, due modalità di calcolo del target, così non hai due pulsanti che
-   fanno quasi la stessa cosa.
-   Modalità "TDEE": calcola un target nuovo dall'obiettivo (Mifflin-St Jeor).
-   Modalità "Target attuale": rispetta i grammi già impostati per questa
-   settimana, senza toccarli. In entrambe: alimenti filtrati per pasto e per
-   gusti/intolleranze (pickCombo + pickMacroFoodsForClient), grammi esatti
-   (solveMealGrams, mai sopra il target), e verifica soglia leucina per
-   pasto — il Master Prompt lo richiede esplicitamente al punto 4. */
-function PerformAIDietGenerator({ client, targetON, targetOFF, onApply }) {
-  const [mode, setMode] = useState("tdee");
-  const [goalId, setGoalId] = useState(PREDICTIVE_GOALS[0].id);
-  const [preview, setPreview] = useState(null);
-  const { excluded } = pickMacroFoodsForClient(client);
-  const micro = useMemo(() => buildMicronutrientProfile(client), [client]);
-  const targets = microTargets(client);
-  const deficientMicros = useMemo(() => {
-    const map = { k: micro.potassiumMg, fe: micro.ironMg, ca: micro.calciumMg, mg: micro.magnesiumMg };
-    return Object.keys(map).filter((key) => map[key] / targets[key].limit < 0.9);
-  }, [micro, targets]);
-
-  const generate = () => {
-    let newTargetON, newTargetOFF, tdeeInfo = null;
-    if (mode === "tdee") {
-      const goal = PREDICTIVE_GOALS.find((g) => g.id === goalId) || PREDICTIVE_GOALS[0];
-      const tdee = computeTDEE(client);
-      const kcalTarget = Math.round(tdee * (1 + goal.kcalPct));
-      const p = Math.round(client.lastCheck.weight * goal.proteinPerKg);
-      const f = Math.round((kcalTarget * goal.fatPct) / 9);
-      const c = Math.max(0, Math.round((kcalTarget - (p * 4 + f * 9)) / 4));
-      newTargetON = { p, c, f };
-      newTargetOFF = deriveOffTarget(kcalTarget);
-      tdeeInfo = { tdee, kcalTarget, goalLabel: goal.label };
-    } else {
-      newTargetON = targetON;
-      newTargetOFF = targetOFF;
-    }
-    const mealsON = makeMealSplit(newTargetON, client, deficientMicros);
-    const mealsOFF = makeMealSplit(newTargetOFF, client, deficientMicros);
-    setPreview({ targetON: newTargetON, targetOFF: newTargetOFF, mealsON, mealsOFF, tdeeInfo });
-  };
-  const approve = () => { onApply(preview.targetON, preview.mealsON, preview.targetOFF, preview.mealsOFF); setPreview(null); };
-
-  return (
-    <div className="c-card mb-5" style={{ border: "1.5px solid #C5A059" }}>
-      <h3 className="c-heading font-display font-bold flex items-center gap-2 mb-1">⚡ GENERA DIETA TIPO CON PERFORM AI</h3>
-      <p className="c-muted text-xs mb-2">
-        Condizionata dal Master Prompt nutrizionale: legge anamnesi ({client.heightCm} cm · {client.lastCheck.weight} kg · {client.bodyFatPct}% BF · {client.activity}),
-        seleziona solo alimenti tollerati{client.foodLikes?.length ? ` (preferiti: ${client.foodLikes.join(", ")})` : ""}, esclude sempre{" "}
-        {excluded.length ? excluded.join(", ") : "nessuna intolleranza dichiarata"}, e verifica la soglia di leucina per pasto.
-      </p>
-      {deficientMicros.length > 0 && (
-        <p className="font-data text-[11px] mb-3 px-2.5 py-1.5 rounded-md inline-block" style={{ backgroundColor: "#FFFBEB", color: "#92400E" }}>
-          Carenze rilevate dall'Analisi Micronutrienti: {deficientMicros.map((k) => targets[k].label).join(", ")} — il generatore privilegerà alimenti densi in questi fattori.
-        </p>
-      )}
-      <div className="grid grid-cols-2 gap-1.5 mb-3">
-        <button onClick={() => setMode("tdee")} className="rounded-lg px-3 py-2 text-xs font-data uppercase"
-          style={mode === "tdee" ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
-          🎯 Nuovo target da obiettivo (TDEE)
-        </button>
-        <button onClick={() => setMode("existing")} className="rounded-lg px-3 py-2 text-xs font-data uppercase"
-          style={mode === "existing" ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
-          ✅ Rispetta target già impostato
-        </button>
-      </div>
-      <div className="flex gap-2 flex-wrap mb-4">
-        {mode === "tdee" && (
-          <select value={goalId} onChange={(e) => setGoalId(e.target.value)} className="t-input flex-1 min-w-[220px] text-sm rounded-lg px-3 py-2.5">
-            {PREDICTIVE_GOALS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
-          </select>
-        )}
-        <button onClick={generate} className="c-btn px-5 py-2.5 rounded-lg text-sm font-medium flex-1 min-w-[160px]">Genera ON + OFF</button>
-      </div>
-
-      {preview && (
-        <div className="spring-in">
-          {preview.tdeeInfo && (
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              {[["TDEE", `${preview.tdeeInfo.tdee} kcal`], ["Target ON", `${kcalFromMacros(preview.targetON.p, preview.targetON.c, preview.targetON.f)} kcal`], ["Obiettivo", preview.tdeeInfo.goalLabel]].map(([k, v]) => (
-                <div key={k} className="t-inner px-2.5 py-2 text-center">
-                  <p className="c-label mb-0.5">{k}</p>
-                  <p className="font-data text-xs font-bold" style={{ color: "var(--ink)" }}>{v}</p>
-                </div>
-              ))}
-            </div>
-          )}
-          {["ON", "OFF"].map((prof) => {
-            const meals = prof === "ON" ? preview.mealsON : preview.mealsOFF;
-            const target = prof === "ON" ? preview.targetON : preview.targetOFF;
-            const totals = dayMacros(meals);
-            const targetKcal = kcalFromMacros(target.p, target.c, target.f);
-            return (
-              <div key={prof} className="t-inner px-3 py-3 mb-2">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium" style={{ color: "var(--ink)" }}>{prof === "ON" ? "🏋️ Giorno ON" : "🧘 Giorno OFF"}</p>
-                  <span className="font-data text-xs font-bold" style={{ color: Math.abs(totals.kcal - targetKcal) <= 30 ? "#10B981" : "#F0A020" }}>{Math.round(totals.kcal)} / {targetKcal} kcal</span>
-                </div>
-                <div className="space-y-1">
-                  {meals.map((m) => {
-                    const mm = mealMacros(m);
-                    const leucine = estimateMealLeucine(m);
-                    const belowThreshold = leucine < LEUCINE_THRESHOLD_G && mm.p > 5;
-                    return (
-                      <div key={m.id} className="flex items-center justify-between gap-2 text-xs flex-wrap">
-                        <span style={{ color: "var(--ink)" }}>{m.name} <span className="font-data" style={{ color: "var(--ink-soft)" }}>{m.time}</span></span>
-                        <span className="font-data" style={{ color: "var(--ink-tertiary)" }}>{m.items.map((it) => `${it.foodKey} ${it.grams}g`).join(" · ")} · {Math.round(mm.kcal)} kcal</span>
-                        <span className="font-data text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: belowThreshold ? "#FFFBEB" : "#ECFDF5", color: belowThreshold ? "#92400E" : "#047857" }}>
-                          {belowThreshold ? `⚠ Leucina ~${leucine.toFixed(1)}g (< soglia 2.5g)` : `✓ Leucina ~${leucine.toFixed(1)}g`}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-          <button onClick={approve} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium mt-2">✅ Approva e sostituisci pasti ON + OFF</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ------------------------------- PASSWORD VIEWER ---------------------------- */
 /* onRegenerate opzionale: quando presente mostra anche un tasto per
    rigenerare una nuova password provvisoria — è la stessa logica di "risolvi
@@ -1502,119 +1333,6 @@ function ComplianceRing({ label, value }) {
     </div>
   );
 }
-/* Cruscotto Allarmi: ora vive fisso in cima all'Hub Atleti (non più una tab
-   a sé), quindi ho tolto la sezione "tutti gli altri atleti" — il catalogo
-   subito sotto mostra già ogni cliente, ripeterlo qui sarebbe ridondante.
-   Cliccare un atleta segnalato apre direttamente il suo profilo sulla tab
-   Bioritmi & Grafici, dove il dolore è documentato per esteso. */
-// "Chi è in ritardo": efficienza per il coach — invece di aprire ogni
-// cliente uno a uno per vedere chi non fa il check da giorni, un unico
-// pannello li ordina dal più in ritardo. Solo clienti a coaching reale
-// (REAL_COACHING_PLANS) e solo in modalità reale: niente dati demo, il
-// segnale ha senso solo con date di check vere.
-const LATE_THRESHOLD_DAYS = 10;
-function daysSince(dateISO) {
-  if (!dateISO) return Infinity;
-  return Math.floor((Date.now() - new Date(`${dateISO}T00:00:00`).getTime()) / 86400000);
-}
-function LateCheckinsPanel({ onOpen }) {
-  const { clients: CLIENTS, isRealMode } = useContext(CoachDataContext);
-  if (!isRealMode) return null;
-  const managed = CLIENTS.filter((c) => c.clientStatus === "active" && REAL_COACHING_PLANS.has(c.plan));
-  const late = managed
-    .map((c) => ({ ...c, daysLate: daysSince(c.lastCheckDate) }))
-    .filter((c) => c.daysLate >= LATE_THRESHOLD_DAYS)
-    .sort((a, b) => b.daysLate - a.daysLate);
-  if (late.length === 0) return null;
-  return (
-    <div className="c-card mb-5">
-      <h3 className="c-heading font-display font-bold flex items-center gap-2 mb-1">
-        <CalendarDays size={17} style={{ color: "#C5A059" }} />
-        Chi è in ritardo
-      </h3>
-      <p className="c-muted font-data text-xs mb-4">
-        Nessun check registrato da almeno {LATE_THRESHOLD_DAYS} giorni — ordinati dal più in ritardo. Clicca per aprire il profilo.
-      </p>
-      <div className="space-y-2">
-        {late.map((c) => (
-          <button key={c.id} onClick={() => onOpen?.(c.id)}
-            className="w-full flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5"
-            style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
-            <span className="text-sm font-medium" style={{ color: "#27272A" }}>{c.name}</span>
-            <span className="font-data text-xs font-semibold" style={{ color: "#92400E" }}>
-              {c.daysLate === Infinity ? "mai registrato" : `${c.daysLate} giorni fa`}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AlarmsDashboard({ onOpen }) {
-  const { clients: CLIENTS } = useContext(CoachDataContext);
-  // Solo i clienti presi in gestione (clientStatus === "active") finiscono nel
-  // cruscotto — un iscritto che ha solo scelto un piano non è ancora seguito
-  // da nessuno. I DEMO_CLIENTS non hanno clientStatus impostato: per loro il
-  // filtro passa tutti, così l'anteprima isolata resta quella di sempre.
-  const managed = CLIENTS.filter((c) => c.clientStatus == null || c.clientStatus === "active");
-  const flagged = managed.filter((c) => c.evening.doloreGrado >= 3 || computeStatus(c) === "red").sort((a, b) => b.evening.doloreGrado - a.evening.doloreGrado);
-  if (flagged.length === 0) {
-    return (
-      <div className="c-card mb-5">
-        <h3 className="c-heading font-display font-bold flex items-center gap-2 mb-1">
-          <AlertTriangle size={17} style={{ color: "#C5A059" }} />
-          Cruscotto Allarmi &amp; Dolori
-        </h3>
-        <p className="c-muted text-sm">Nessun allarme attivo: tutti gli atleti sotto Grado 3.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="c-card mb-5">
-      <h3 className="c-heading font-display font-bold flex items-center gap-2 mb-1">
-        <AlertTriangle size={17} style={{ color: "#C5A059" }} />
-        Cruscotto Allarmi &amp; Dolori
-      </h3>
-      <p className="c-muted font-data text-xs mb-4">
-        Grado dolore 3-4-5 illumina la riga di Giallo/Rosso e attiva il gateway WhatsApp. Clicca un atleta per aprire il profilo.
-      </p>
-      <div className="space-y-3">
-        {flagged.map((c) => {
-          const critical = c.evening.doloreGrado >= 4;
-          return (
-            <div key={c.id} className={critical ? "alert-pulse" : ""} style={{ borderRadius: "0.85rem", border: `1.5px solid ${critical ? "#FECACA" : "#FDE68A"}`, backgroundColor: critical ? "#FEF2F2" : "#FFFBEB", padding: "1rem 1.25rem" }}>
-              <div className="flex items-center justify-between gap-3 mb-3">
-                <button onClick={() => onOpen?.(c.id)} className="text-left">
-                  <p style={{ color: "#27272A", fontWeight: 600 }}>{c.name}</p>
-                  <p className="font-data text-xs" style={{ color: critical ? "#B91C1C" : "#92400E" }}>Grado dolore {c.evening.doloreGrado}/5 · «{c.evening.doloreNota}»</p>
-                </button>
-                <a href={waLink(c, `Ciao ${c.name.split(" ")[0]}, ricalibro subito il piano dopo il dolore che mi hai segnalato. Dammi 5 minuti di aggiornamento.`)} target="_blank" rel="noreferrer"
-                  className="shrink-0 flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full" style={{ backgroundColor: "#25D366", color: "#FFFFFF" }}>
-                  <MessageCircle size={14} /> WhatsApp
-                </a>
-              </div>
-              <div className="flex gap-5 flex-wrap">
-                <ComplianceRing label="Allenamento" value={c.rings.allenamento} />
-                <ComplianceRing label="Alimentazione" value={c.rings.alimentazione} />
-                <ComplianceRing label="Recupero" value={c.rings.recupero} />
-                <div className="flex gap-3 items-center">
-                  {[["Energia", c.evening.energia], ["Digestione", c.evening.digestione], ["Sonno", c.evening.sonno]].map(([k, v]) => (
-                    <div key={k} className="t-inner px-3 py-2 text-center" style={{ minWidth: 64 }}>
-                      <p className="c-label mb-0.5">{k}</p>
-                      <p className="font-data text-sm font-bold" style={{ color: v >= 7 ? "#10B981" : v >= 5 ? "#F0A020" : "#DC2626" }}>{v}/10</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* --------------------------------- WHITELIST -------------------------------- */
 /* BUG PRESO: questo pannello era completamente finto — "Genera accesso
    diretto" scriveva solo in stato locale React (setCreated), mai su
@@ -2079,179 +1797,6 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
 }
 
 
-function ConfirmToggle({ label, checked, onToggle }) {
-  return (
-    <button onClick={onToggle} className="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-data uppercase mb-4"
-      style={checked ? { backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" } : { backgroundColor: "#F8F9FA", border: "1px solid #E9ECEF", color: "var(--ink-tertiary)" }}>
-      <span>{checked ? "✅" : "⬜"}</span> {label} {checked ? "confermata per l'atleta" : "da confermare"}
-    </button>
-  );
-}
-
-/* ==========================================================================
-   MESOCICLO AI CREATOR — "⚡ Genera Mesociclo con PERFORM AI"
-   Anche qui: motore deterministico (stessa logica di trasparenza della
-   Generazione Predittiva Totale in Dieta), NON una chiamata a Claude vera.
-   Legge: anamnesi (età, infortuni/dolore, livello), il volume della
-   settimana corrente (per individuare le carenze muscolari sotto le 10
-   serie) e il PR di forza registrato (squat/panca/stacco — qui simulato,
-   nella vera app arriva dai diari dell'atleta in Home). Se vuoi che sia
-   davvero un LLM a scrivere le note tecniche riga per riga, va proxato via
-   Supabase Edge Function come il resto dell'AI del progetto.             */
-const MESOCICLO_POOLS = {
-  push: ["Panca piana bilanciere", "Lento avanti manubri", "Croci ai cavi", "French press EZ", "Alzate laterali"],
-  pull: ["Lat machine", "Rematore bilanciere", "Face pull ai cavi", "Scrollate con bilanciere", "Curl bilanciere"],
-  legs: ["Squat bilanciere", "Stacco rumeno bilanciere", "Leg extension", "Adductor machine", "Leg curl sdraiato", "Hip thrust bilanciere", "Calf in piedi", "Plank"],
-};
-const MESOCICLO_SPLITS = {
-  3: [null, "full1", null, "full2", null, "full3", null],
-  4: ["upper1", "lower1", null, "upper2", "lower2", null, null],
-  5: ["push", "pull", "legs", null, "push", "pull", null],
-};
-
-/* Legge dolore/infortuni ed esclude gli esercizi a rischio per quella zona.
-   Incrocia DUE scale ora esistenti nel dashboard: il Grado infortunio 1-5
-   (evening.doloreGrado, quello che accende il Cruscotto Allarmi) e il nuovo
-   dolore soggettivo 1-10 del Check Settimanali (checkHistory più recente) —
-   le porto sulla stessa scala (Grado×2) e prendo la severità più alta delle
-   due, così un dolore segnalato nel check di lunedì ma non ancora "Grado"
-   non passa inosservato. Regola semplificata di buon senso clinico, da
-   rifinire caso per caso: non sostituisce una valutazione fisioterapica reale. */
-function excludedExercises(client, checkHistory) {
-  const latestCheck = checkHistory && checkHistory.length ? [...checkHistory].sort((a, b) => (a.date < b.date ? 1 : -1))[0] : null;
-  const severity = Math.max(client.evening.doloreGrado * 2, latestCheck?.dolori || 0);
-  const text = (severity >= 6 ? client.evening.doloreNota : "").toLowerCase();
-  const excl = new Set();
-  if (text.includes("spalla")) excl.add("Lento avanti manubri");
-  if (text.includes("lombare") || text.includes("schiena")) { excl.add("Stacco rumeno bilanciere"); excl.add("Squat bilanciere"); }
-  if (text.includes("ginocchio")) { excl.add("Squat bilanciere"); excl.add("Leg extension"); }
-  return excl;
-}
-/* Muscoli sotto le 10 serie/settimana nel piano attuale: priorità nel nuovo mesociclo. */
-function muscleDeficiencies(currentWorkout) {
-  // Il generatore mesocicli pesca solo da MESOCICLO_POOLS (una selezione
-  // curata, non tutta la libreria dinamica): DEFAULT_EXERCISE_LIB è sempre
-  // la fonte corretta qui, a prescindere da eventuali esercizi custom
-  // appresi altrove.
-  const vol = computeVolume(currentWorkout, DEFAULT_EXERCISE_LIB);
-  return MUSCLES.map((m) => ({ m, tot: vol[m].direct + vol[m].indirect })).filter((r) => r.tot < 10).sort((a, b) => a.tot - b.tot).map((r) => r.m);
-}
-function pickExercises(pool, excl, deficiencies, count) {
-  const available = pool.filter((n) => !excl.has(n));
-  const prioritized = [...available].sort((a, b) => {
-    const aScore = (DEFAULT_EXERCISE_LIB[a]?.direct || []).some((m) => deficiencies.includes(m)) ? -1 : 0;
-    const bScore = (DEFAULT_EXERCISE_LIB[b]?.direct || []).some((m) => deficiencies.includes(m)) ? -1 : 0;
-    return aScore - bScore;
-  });
-  return prioritized.slice(0, count);
-}
-function techniqueForSlot(livello, idx, total) {
-  if (livello === "principiante") return "Nessuna";
-  const isLast = idx === total - 1;
-  if (!isLast) return "Nessuna";
-  if (livello === "intermedio") return "Rest-Pause";
-  return idx % 2 === 0 ? "Drop-set" : "Stripping";
-}
-function buildMesocicloDay(kind, excl, deficiencies, livello) {
-  if (kind === "push" || kind === "upper1") {
-    const names = pickExercises(MESOCICLO_POOLS.push.concat(kind === "upper1" ? MESOCICLO_POOLS.pull.slice(0, 2) : []), excl, deficiencies, kind === "upper1" ? 5 : 4);
-    return { label: kind === "upper1" ? "Upper A · Petto/Dorsali/Spalle" : "Spinta · Petto/Spalle/Tricipiti", names };
-  }
-  if (kind === "pull" || kind === "upper2") {
-    const names = pickExercises(MESOCICLO_POOLS.pull.concat(kind === "upper2" ? MESOCICLO_POOLS.push.slice(0, 2) : []), excl, deficiencies, kind === "upper2" ? 5 : 4);
-    return { label: kind === "upper2" ? "Upper B · Dorsali/Petto/Braccia" : "Trazione · Dorsali/Trapezio/Bicipiti", names };
-  }
-  if (kind === "legs" || kind === "lower1" || kind === "lower2") {
-    const names = pickExercises(MESOCICLO_POOLS.legs, excl, deficiencies, 5);
-    return { label: "Gambe · Quad/Femorali/Adduttori/Glutei", names };
-  }
-  // full body: un esercizio a testa da ciascun pool
-  const names = [
-    ...pickExercises(MESOCICLO_POOLS.push, excl, deficiencies, 2),
-    ...pickExercises(MESOCICLO_POOLS.pull, excl, deficiencies, 2),
-    ...pickExercises(MESOCICLO_POOLS.legs, excl, deficiencies, 2),
-  ];
-  return { label: "Full Body · Corpo intero", names };
-}
-function generateMesociclo(client, splitDays, livello, currentWorkout, checkHistory) {
-  const excl = excludedExercises(client, checkHistory);
-  const deficiencies = muscleDeficiencies(currentWorkout);
-  const pattern = MESOCICLO_SPLITS[splitDays];
-  const workout = pattern.map((kind) => {
-    if (!kind) return null;
-    const { label, names } = buildMesocicloDay(kind, excl, deficiencies, livello);
-    return {
-      label,
-      exercises: names.map((name, i) => ({
-        id: uid(), name, custom: false, sets: livello === "principiante" ? 3 : 4, reps: "8-12", rest: 90,
-        technique: techniqueForSlot(livello, i, names.length),
-      })),
-    };
-  });
-  return { workout, excl: [...excl], deficiencies };
-}
-
-function MesocicloGenerator({ client, currentWorkout, onApprove }) {
-  const [splitDays, setSplitDays] = useState(client.plan === "training" ? 3 : 4);
-  const [livello, setLivello] = useState(simulateAnamnesis(client).livello);
-  const [result, setResult] = useState(null);
-  const checkHistory = useMemo(() => buildCheckHistory(client), [client]);
-  const badge = predictiveBadge(client, checkHistory);
-
-  const generate = () => setResult(generateMesociclo(client, splitDays, livello, currentWorkout, checkHistory));
-  const approve = () => { onApprove(result.workout); setResult(null); };
-
-  return (
-    <div className="c-card mb-5" style={{ border: "1.5px solid #C5A059" }}>
-      <h3 className="c-heading font-display font-bold mb-1">⚡ GENERA MESOCICLO CON PERFORM AI</h3>
-      <p className="c-muted text-xs mb-2">
-        Condizionata dal Master Prompt biomeccanico: legge cartella clinica ({client.age} anni · livello {livello} · {client.evening.doloreGrado >= 3 ? `dolore attivo: ${client.evening.doloreNota}` : "nessun dolore attivo"}),
-        i check del lunedì (peso {checkHistory[checkHistory.length - 1].weight} kg, addome {checkHistory[checkHistory.length - 1].waistCm} cm) e i PR registrati (Squat {client.prs.squat} kg · Panca {client.prs.panca} kg · Stacco {client.prs.stacco} kg) per calibrare volumi e tecniche sulle carenze muscolari della settimana corrente.
-      </p>
-      {badge && (
-        <p className="font-data text-[11px] mb-3 px-2.5 py-1.5 rounded-md inline-block" style={{ backgroundColor: badge.type === "recomp" ? "#ECFDF5" : "#FFF7ED", color: badge.type === "recomp" ? "#047857" : "#C2410C" }}>
-          {badge.label} — {badge.detail}
-        </p>
-      )}
-      <div className="flex gap-2 flex-wrap mb-4">
-        <select value={splitDays} onChange={(e) => setSplitDays(Number(e.target.value))} className="t-input text-sm rounded-lg px-3 py-2.5">
-          <option value={3}>3 giorni · Full Body</option>
-          <option value={4}>4 giorni · Upper/Lower</option>
-          <option value={5}>5 giorni · Push/Pull/Legs</option>
-        </select>
-        <select value={livello} onChange={(e) => setLivello(e.target.value)} className="t-input text-sm rounded-lg px-3 py-2.5">
-          {["principiante", "intermedio", "avanzato", "expert"].map((l) => <option key={l} value={l}>{l}</option>)}
-        </select>
-        <button onClick={generate} className="c-btn px-5 py-2.5 rounded-lg text-sm font-medium flex-1 min-w-[160px]">Genera</button>
-      </div>
-
-      {result && (
-        <div className="spring-in">
-          {result.deficiencies.length > 0 && (
-            <p className="font-data text-[11px] mb-2" style={{ color: "#92400E" }}>Carenze rilevate (sotto 10 serie/sett.): {result.deficiencies.join(", ")} — priorità nel piano</p>
-          )}
-          {result.excl.length > 0 && (
-            <p className="font-data text-[11px] mb-3" style={{ color: "#B91C1C" }}>Esclusi per il dolore segnalato: {result.excl.join(", ")}</p>
-          )}
-          <div className="space-y-1.5 mb-4">
-            {result.workout.map((day, i) => (
-              <div key={i} className="t-inner px-3 py-2">
-                <p className="text-sm mb-1" style={{ color: "var(--ink)", fontWeight: 500 }}>{WEEK_DAYS[i]} · {day ? day.label : "Riposo"}</p>
-                {day && (
-                  <p className="font-data text-[11px]" style={{ color: "var(--ink-tertiary)" }}>
-                    {day.exercises.map((e) => `${e.name} ${e.sets}×${e.reps}${e.technique !== "Nessuna" ? ` (${e.technique})` : ""}`).join(" · ")}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-          <button onClick={approve} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium">✅ Approva e sostituisci la settimana</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ------------------------------ TIMELINE EDITOR -----------------------------
    [A1] Allenamento Libero + Intensità: esercizio a testo libero se assente
    dal menu, Tempi di Recupero per esercizio, e le 4 Tecniche d'Intensità
@@ -2348,8 +1893,6 @@ function WeekWorkoutEditor({ week, onChange, client }) {
 
   return (
     <div>
-      <ConfirmToggle label="Allenamento" checked={week.confirmed.workout} onToggle={() => onChange({ ...week, confirmed: { ...week.confirmed, workout: !week.confirmed.workout } })} />
-      <MesocicloGenerator client={client} currentWorkout={week.workout} onApprove={(workout) => onChange({ ...week, workout, confirmed: { ...week.confirmed, workout: true } })} />
       <div className="flex gap-1.5 mb-4 flex-wrap">
         {WEEK_DAYS.map((label, i) => (
           <button key={i} onClick={() => setSelDay(i)} className="rounded-lg px-3 py-2 text-xs font-data uppercase"
@@ -2685,14 +2228,6 @@ function WeekDietEditor({ week, onChange, client }) {
   };
   const removeMeal = (i) => onChange({ ...week, diet: { ...week.diet, [profile]: { ...current, meals: current.meals.filter((_, j) => j !== i) } } });
   const addMeal = () => onChange({ ...week, diet: { ...week.diet, [profile]: { ...current, meals: [...current.meals, { id: uid(), name: "Nuovo pasto", time: "12:00", items: [] }] } } });
-  const applyAI = (targetON, mealsON, targetOFF, mealsOFF) => {
-    onChange({
-      ...week,
-      diet: { ON: { target: targetON, meals: mealsON }, OFF: { target: targetOFF, meals: mealsOFF } },
-      confirmed: { ...week.confirmed, diet: true },
-    });
-  };
-
   const targetKcal = kcalFromMacros(current.target.p, current.target.c, current.target.f);
   const totals = dayMacros(current.meals);
   const remaining = { p: current.target.p - totals.p, c: current.target.c - totals.c, f: current.target.f - totals.f, kcal: targetKcal - totals.kcal };
@@ -2713,10 +2248,6 @@ function WeekDietEditor({ week, onChange, client }) {
 
   return (
     <div>
-      <ConfirmToggle label="Dieta" checked={week.confirmed.diet} onToggle={() => onChange({ ...week, confirmed: { ...week.confirmed, diet: !week.confirmed.diet } })} />
-
-      <PerformAIDietGenerator client={client} targetON={week.diet.ON.target} targetOFF={week.diet.OFF.target} onApply={applyAI} />
-
       {/* Selettore satinato Giorno ON / Giorno OFF: qui si programma nel tempo
           — ogni settimana della timeline ha il suo target e i suoi pasti
           separati per giorno ON e giorno OFF. */}
@@ -2827,6 +2358,7 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
   const usedMomentIds = new Set(supplements.map((s) => s.id_ref).filter(Boolean));
   const availableMoments = SUPP_MOMENTS.filter((m) => !usedMomentIds.has(m.id));
   const removeSection = (si) => onChange(supplements.filter((_, j) => j !== si));
+  const renameSection = (si, title) => onChange(supplements.map((s, j) => (j !== si ? s : { ...s, title })));
   const addSection = (moment) => onChange([...supplements, moment
     ? { id: uid(), id_ref: moment.id, title: moment.label, items: [] }
     : { id: uid(), id_ref: null, title: "Altro momento", items: [] }]);
@@ -2873,7 +2405,9 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
       {supplements.map((sec, si) => (
         <div key={sec.id} className="c-card">
           <div className="flex items-center gap-2 mb-3">
-            <p className="text-sm font-medium flex-1" style={{ color: "var(--ink)" }}>{sec.title}</p>
+            <input value={sec.title} onChange={(e) => renameSection(si, e.target.value)}
+              placeholder="Nome momento" aria-label="Rinomina momento della giornata"
+              className="t-input text-sm font-medium flex-1 px-2 py-1.5 rounded-md" style={{ color: "var(--ink)" }} />
             <button onClick={() => removeSection(si)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi sezione"><Trash2 size={13} /></button>
           </div>
           <div className="space-y-2 mb-2.5">
@@ -2948,251 +2482,6 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
 /* Timeline ancorata a oggi: offset 0 = settimana corrente, +1..+12 in avanti
    (limite richiesto), storico all'indietro senza limite — si genera pigro
    ogni volta che il coach naviga in una settimana mai vista prima. */
-/* Co-Pilota AI: legge in un colpo solo anamnesi (dolori/livello), check
-   settimanali (trend peso/addome, badge predittivo) e bioritmi (sonno
-   medio), produce una considerazione clinica sintetica e propone UNA
-   correzione azionabile in un clic — non un testo statico, scrive davvero
-   nello stesso `quickTargets` condiviso con l'editor sottostante e col
-   Registro Check. Motore deterministico, stesso principio di trasparenza
-   degli altri "AI" del progetto: regole esplicite, non un LLM. */
-/* Strategia di sblocco per uno stallo: non è sempre "taglia ancora" — dipende
-   da quanto deficit ha già accumulato l'atleta rispetto al suo TDEE. Deficit
-   profondo → Diet Break a mantenimento (recupera ormoni/aderenza prima di
-   tagliare oltre). Deficit medio → Refeed di carboidrati mirato (rialza la
-   leptina, rompe lo stallo senza uscire dal percorso). Deficit leggero →
-   il classico taglio calorico ad hoc regge ancora. */
-function pickStallStrategy(client, quickTargets, bio) {
-  const tdee = computeTDEE(client);
-  const stored = quickTargets?.[client.id]?.ON;
-  const onTarget = stored || makeMacroProfile(client.calories, 0.28, 0.47, 0.25);
-  const onKcal = kcalFromMacros(onTarget.p, onTarget.c, onTarget.f);
-  const deficitPct = Math.max(0, (tdee - onKcal) / tdee);
-  const baseSteps = { sedentario: 4000, leggero: 6000, moderato: 8000, attivo: 10000, "molto attivo": 12000 }[client.activity] || 7000;
-  const avgSteps = bio ? average(bio.slice(-3).map((b) => b.passi)) : baseSteps;
-  const lowNeat = avgSteps < baseSteps * 0.85;
-  if (deficitPct > 0.25) {
-    return { type: "diet_break", label: "Diet Break a mantenimento", tdee, onKcal,
-      detail: `Deficit già profondo (~${Math.round(deficitPct * 100)}% sotto TDEE stimato di ${tdee} kcal) — un altro taglio ora rischia solo di peggiorare aderenza e ormoni. Porta 7-10 giorni a mantenimento prima di riprendere.` };
-  }
-  if (deficitPct > 0.12) {
-    return { type: "refeed", label: "Refeed di carboidrati (1-2 giorni)", tdee, onKcal,
-      detail: `Deficit moderato (~${Math.round(deficitPct * 100)}%) — prova un refeed di carboidrati per 1-2 giorni (rialzo leptina) prima di tagliare ancora: spesso sblocca lo stallo senza uscire dal percorso.` };
-  }
-  if (lowNeat) {
-    return { type: "neat", label: "Aumento NEAT (+2000 passi/die)", tdee, onKcal,
-      detail: `Deficit ancora leggero e passi medi (~${Math.round(avgSteps)}) sotto la baseline attesa per il suo livello di attività — prima di tagliare ancora le kcal, alza il NEAT: stesso deficit energetico, meno stress su fame e aderenza.` };
-  }
-  return { type: "cut", label: "Taglio calorico ad hoc (−150 Kcal)", tdee, onKcal,
-    detail: `Deficit ancora leggero (~${Math.round(deficitPct * 100)}%) rispetto al TDEE stimato di ${tdee} kcal, passi nella norma — un taglio classico da 150 kcal è la mossa più semplice ed efficace qui.` };
-}
-
-function AICoPilot({ client, quickTargets, setQuickTargets }) {
-  const checkHistory = useMemo(() => buildCheckHistory(client), [client]);
-  const bio = useMemo(() => buildBioHistory(client), [client]);
-  const badge = predictiveBadge(client, checkHistory);
-  const avgSleep = average(bio.map((b) => b.sonno));
-  const anam = useMemo(() => simulateAnamnesis(client), [client]);
-  const [applied, setApplied] = useState(null);
-
-  const lowSleep = avgSleep < 6;
-  const hasPain = client.evening.doloreGrado >= 3;
-
-  /* Deload CNS: crollo HRV (ultimo valore vs media delle settimane precedenti)
-     insieme a stress percepito alto — è la combinazione che la letteratura
-     associa a rischio di sovrallenamento, non l'una o l'altra da sola. */
-  const hrvValues = bio.map((b) => b.hrv);
-  const latestHrv = hrvValues[hrvValues.length - 1];
-  const avgHrvPrior = average(hrvValues.slice(0, -1));
-  const hrvDropPct = avgHrvPrior > 0 ? (avgHrvPrior - latestHrv) / avgHrvPrior : 0;
-  const needsDeload = hrvDropPct > 0.15 && client.lastCheck.stress >= 7;
-
-  const stallStrategy = badge?.type === "stall" ? pickStallStrategy(client, quickTargets, bio) : null;
-
-  const considerations = [];
-  if (needsDeload) considerations.push(`⚠ HRV in calo del ${Math.round(hrvDropPct * 100)}% rispetto alla media recente, stress ${client.lastCheck.stress}/10 — segnale di sovrallenamento del SNC in arrivo: valuta uno scarico di volume/intensità la settimana prossima, prima che il calo diventi un infortunio o un crollo di performance.`);
-  if (stallStrategy) considerations.push(`Stallo peso/addome da 14 giorni con aderenza ${client.adherence != null ? `${client.adherence}%` : "n/d"} — non è un problema di costanza. Strategia consigliata: ${stallStrategy.label}. ${stallStrategy.detail}`);
-  if (badge?.type === "recomp") considerations.push(`Recomp in corso: addome in calo, peso stabile — il piano attuale sta funzionando, non toccarlo.`);
-  if (lowSleep) considerations.push(`Sonno medio ${avgSleep.toFixed(1)}h nelle ultime 8 settimane — sotto le 7h il recupero è compromesso indipendentemente da dieta e allenamento.`);
-  if (hasPain) considerations.push(`Dolore Grado ${client.evening.doloreGrado}/5 attivo (${client.evening.doloreNota}) — il Mesociclo AI Creator lo esclude già dagli esercizi a rischio.`);
-  if (anam.livello === "principiante" && client.plan !== "training") considerations.push(`Livello anamnesi "principiante": verifica che il volume settimanale non sia tarato su un atleta intermedio.`);
-  if (considerations.length === 0) considerations.push("Nessuna criticità incrociata rilevata: dati coerenti tra anamnesi, check e bioritmi.");
-
-  const applyStrategy = () => {
-    if (!stallStrategy) return;
-    const adjust = (profile) => {
-      const stored = quickTargets?.[client.id]?.[profile];
-      const target = stored || (profile === "ON" ? makeMacroProfile(client.calories, 0.28, 0.47, 0.25) : makeMacroProfile(Math.round(client.calories * 0.9), 0.3, 0.35, 0.35));
-      const kcal = kcalFromMacros(target.p, target.c, target.f);
-      const ratios = kcal > 0 ? { p: (target.p * 4) / kcal, c: (target.c * 4) / kcal, f: (target.f * 9) / kcal } : { p: 0.3, c: 0.45, f: 0.25 };
-      let newP = target.p, newC = target.c, newF = target.f;
-      if (stallStrategy.type === "cut") {
-        const newKcal = Math.max(0, kcal - 150);
-        newP = Math.round((newKcal * ratios.p) / 4); newC = Math.round((newKcal * ratios.c) / 4); newF = Math.round((newKcal * ratios.f) / 9);
-      } else if (stallStrategy.type === "refeed" && profile === "ON") {
-        newC = Math.round(target.c * 1.35); // rialzo carbo mirato, non tutto il resto
-      } else if (stallStrategy.type === "diet_break") {
-        const maintenance = profile === "ON" ? stallStrategy.tdee : Math.round(stallStrategy.tdee * 0.92);
-        newP = Math.round((maintenance * ratios.p) / 4); newC = Math.round((maintenance * ratios.c) / 4); newF = Math.round((maintenance * ratios.f) / 9);
-      }
-      return { p: newP, c: newC, f: newF };
-    };
-    setQuickTargets((qt) => ({ ...qt, [client.id]: { ON: adjust("ON"), OFF: adjust("OFF") } }));
-    setApplied(stallStrategy.label);
-  };
-
-  return (
-    <div className="c-card mb-5" style={{ border: "1.5px solid #C5A059" }}>
-      <p className="c-heading font-display font-bold mb-1">🤖 Co-Pilota AI</p>
-      <p className="c-muted text-xs mb-3">Incrocia anamnesi, check settimanali e bioritmi prima di ogni modifica al piano.</p>
-      <ul className="space-y-1.5 mb-3">
-        {considerations.map((c, i) => (
-          <li key={i} className="text-sm px-3 py-2 rounded-lg" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)" }}>{c}</li>
-        ))}
-      </ul>
-      {stallStrategy && stallStrategy.type !== "neat" && !applied && (
-        <button onClick={applyStrategy} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium">
-          Applica: {stallStrategy.label} (settimana corrente)
-        </button>
-      )}
-      {applied && (
-        <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
-          ✅ {applied} applicato — visibile subito nell'editor sotto e nel Registro Check
-        </p>
-      )}
-    </div>
-  );
-}
-
-/* Editor AI vero (Claude via Edge Function generate-plan) — a differenza del
-   Co-Pilota sopra (regole deterministiche fisse) e di PerformAIDietGenerator
-   più sotto (motore matematico), questa è l'unica sezione che chiama
-   davvero un modello linguistico: il coach descrive in linguaggio libero
-   un feedback/imprevisto/stallo e riceve un consiglio informato dai dati
-   reali del cliente (anamnesi, check, storico peso) e dai Master Prompt del
-   metodo. Non scrive MAI da sola sul piano — il coach legge e applica a
-   mano con ClientTimeline qui sotto, esattamente come richiesto dal punto 6
-   del Master Prompt allenamento ("mai sovrascrivere senza approvazione
-   esplicita"). */
-/* Identità visiva propria di PERFORM AI — stesso simbolo pulse/battito del
-   logo dell'app (public/favicon.svg), oro su nero: stessa icona usata anche
-   in 06_NewsTipsView.jsx (chat clienti), duplicata qui per lo stesso motivo
-   di isolamento file di tutto il resto di questo componente. */
-function PerformAIAvatar({ size = 22 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 512 512" style={{ flexShrink: 0 }} aria-hidden="true">
-      <rect width="512" height="512" rx="112" fill="#111111" />
-      <polyline points="118 262 190 262 222 156 290 356 330 262 394 262"
-        fill="none" stroke="#C5A059" strokeWidth="30" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function AIAdvisorChat({ client }) {
-  const { supabase } = useContext(CoachDataContext);
-  const [kind, setKind] = useState("general");
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const threadRef = useRef(null);
-
-  useEffect(() => {
-    threadRef.current?.scrollTo?.({ top: threadRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, busy]);
-
-  const ask = async () => {
-    const question = input.trim();
-    if (!question || busy || !supabase) return;
-    setInput("");
-    setError("");
-    setMessages((m) => [...m, { role: "user", text: question }]);
-    setBusy(true);
-    try {
-      const clientContext = {
-        nome: client.name,
-        genere: client.gender,
-        piano: client.plan,
-        obiettivo: client.goal,
-        pesoAttuale: client.lastCheck?.weight ?? null,
-        storicoPeso: client.weightHistory ?? [],
-        anamnesi: client._anamnesisAnswers ?? {},
-      };
-      const { data, error: fnError } = await supabase.functions.invoke("generate-plan", {
-        body: { kind, clientContext, question, history: messages.map((m) => ({ role: m.role, text: m.text })) },
-      });
-      if (fnError) throw fnError;
-      setMessages((m) => [...m, { role: "assistant", text: (data?.text || "").trim() || "Non sono riuscito a elaborare una risposta. Riprova." }]);
-    } catch (err) {
-      console.error("PERFORM: errore editor AI coach", err);
-      // Come per la chat clienti: la Edge Function distingue casi reali
-      // (tetto di sicurezza, domanda troppo lunga) da un errore generico.
-      let friendly = "Non sono riuscito a contattare l'editor AI. Riprova.";
-      try {
-        const body = await err?.context?.json?.();
-        if (body?.error) friendly = body.error;
-      } catch { /* mantieni il messaggio generico */ }
-      setError(friendly);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="c-card mb-5" style={{ border: "1.5px solid #C5A059" }}>
-      <p className="c-heading font-display font-bold mb-1 flex items-center gap-2">
-        <PerformAIAvatar size={20} /> Editor AI — chiedi consiglio
-      </p>
-      <p className="c-muted text-xs mb-3">
-        Descrivi un feedback, uno stallo o un imprevisto: risponde con i dati reali di {client.name} e i Master Prompt del metodo.
-        Non applica nulla da sola — leggi e regola tu con l'editor qui sotto.
-      </p>
-
-      <div className="flex gap-1.5 mb-3">
-        {[["general", "Generale"], ["nutrition", "Alimentazione"], ["training", "Allenamento"]].map(([id, lab]) => {
-          const on = kind === id;
-          return (
-            <button key={id} onClick={() => setKind(id)} type="button"
-              className="px-3 py-1.5 rounded-full text-xs font-data font-semibold uppercase"
-              style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
-              {lab}
-            </button>
-          );
-        })}
-      </div>
-
-      {messages.length > 0 && (
-        <div ref={threadRef} className="space-y-2 mb-3" style={{ maxHeight: 320, overflowY: "auto" }}>
-          {messages.map((m, i) => (
-            <div key={i} className="text-sm px-3 py-2 rounded-lg flex items-start gap-2" style={m.role === "user"
-              ? { backgroundColor: "#111111", color: "#FFFFFF", marginLeft: "15%" }
-              : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)", marginRight: "5%", whiteSpace: "pre-wrap" }}>
-              {m.role === "assistant" && <PerformAIAvatar size={18} />}
-              <span>{m.text}</span>
-            </div>
-          ))}
-          {busy && (
-            <div className="text-sm px-3 py-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-soft)" }}>
-              <PerformAIAvatar size={18} /> Sto pensando…
-            </div>
-          )}
-        </div>
-      )}
-
-      {error && <p className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</p>}
-
-      <div className="flex gap-2">
-        <input value={input} onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
-          placeholder="Es. Il cliente è fermo da 3 settimane, aderenza alta, cosa faccio?"
-          className="t-input flex-1 px-3 py-2 rounded-lg text-sm" />
-        <button onClick={ask} disabled={busy || !input.trim()} className="c-btn px-4 py-2 rounded-lg text-sm font-medium">
-          Chiedi
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const { supabase, isRealMode, exerciseLib } = useContext(CoachDataContext);
   const myQuickTarget = quickTargets?.[client.id];
@@ -3419,48 +2708,6 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
 
   const pills = Array.from({ length: 7 }, (_, i) => windowStart + i);
 
-  // --- MESOCICLI (nome + fase bulk/cut/mantenimento/scarico) ------------
-  // Carico una sola volta un range ampio (un anno indietro, il massimo in
-  // avanti) così la striscia di pallini può mostrare l'indicatore di fase
-  // senza una fetch per pallino. mesoMap è indicizzata sul lunedì ISO.
-  const [mesoMap, setMesoMap] = useState({});
-  const [mesoName, setMesoName] = useState("");
-  const [mesoPhase, setMesoPhase] = useState(null);
-  const [mesoBusy, setMesoBusy] = useState(false);
-  const [mesoSaved, setMesoSaved] = useState(false);
-
-  useEffect(() => {
-    if (!isRealMode) return undefined;
-    let cancelled = false;
-    fetchMesocycleWeeksRange(supabase, client.id, weekKeyForOffset(-52), weekKeyForOffset(MAX_FORWARD_WEEKS))
-      .then((map) => { if (!cancelled) setMesoMap(map); })
-      .catch((err) => console.error("PERFORM: errore caricamento mesocicli", err));
-    return () => { cancelled = true; };
-  }, [isRealMode, supabase, client.id]);
-
-  useEffect(() => {
-    const entry = mesoMap[weekStartISO];
-    setMesoName(entry?.name || "");
-    setMesoPhase(entry?.phase || null);
-    setMesoSaved(false);
-  }, [weekStartISO, mesoMap]);
-
-  const saveMeso = async () => {
-    if (!isRealMode) return;
-    setMesoBusy(true);
-    try {
-      const trimmed = mesoName.trim();
-      await saveMesocycleWeek(supabase, client.id, weekStartISO, { name: trimmed, phase: mesoPhase });
-      setMesoMap((m) => ({ ...m, [weekStartISO]: { name: trimmed || null, phase: mesoPhase } }));
-      setMesoSaved(true);
-      setTimeout(() => setMesoSaved(false), 2200);
-    } catch (err) {
-      console.error("PERFORM: errore salvataggio mesociclo", err);
-    } finally {
-      setMesoBusy(false);
-    }
-  };
-
   // Riorganizzato: prima la scelta di COSA editare (allenamento/dieta/
   // integratori), poi — solo per allenamento e dieta, che si programmano
   // davvero nel lungo periodo — la gestione settimane (pillole date,
@@ -3490,19 +2737,13 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
           <button onClick={() => shiftWindow(-1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0" aria-label="Settimane precedenti">‹</button>
           <div className="flex gap-1.5 flex-wrap">
             {pills.map((offset) => {
-              const wk = weeksByOffset[offset] || makeDefaultWeek(client, offset);
-              const color = weekDeptColor(offset, wk, client.plan);
-              const dot = color === "yellow" ? "#F0A020" : color === "green" ? "#10B981" : "#DC2626";
+              const color = weekDeptColor(offset);
+              const dot = color === "yellow" ? "#F0A020" : "#10B981";
               const on = selOffset === offset;
-              const meso = mesoMap[weekKeyForOffset(offset)];
-              const phaseMeta = meso?.phase ? PHASE_META[meso.phase] : null;
-              const tooltip = [weekRangeLabel(offset), meso?.name, phaseMeta?.label].filter(Boolean).join(" · ");
+              const tooltip = weekRangeLabel(offset);
               return (
                 <button key={offset} onClick={() => goTo(offset)} className="relative w-11 h-11 rounded-full font-data text-[11px] font-bold flex flex-col items-center justify-center leading-none"
-                  style={{
-                    ...(on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }),
-                    ...(phaseMeta ? { boxShadow: `0 0 0 2px ${phaseMeta.color}` } : {}),
-                  }}
+                  style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}
                   title={tooltip}>
                   <span className="absolute top-1 right-1 rounded-full" style={{ width: 6, height: 6, backgroundColor: dot }} />
                   {offset === 0 ? "OGGI" : pillDateLabel(offset)}
@@ -3529,13 +2770,13 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         </div>
       </div>
       <p className="c-muted font-data text-[11px] mb-4">
-        {weekRangeLabel(selOffset)} · 🟢 completa per il piano {client.plan === "full" ? "Full Coaching" : "Solo Allenamento"} · 🔴 da fare · 🟡 storico
+        {weekRangeLabel(selOffset)} · 🟡 storico · 🟢 corrente/futura
       </p>
 
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <p className="c-label">Settimana selezionata: {selOffset === 0 ? "corrente" : selOffset > 0 ? `+${selOffset} da oggi` : `${Math.abs(selOffset)} fa (storico)`}</p>
         <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS || workoutBusy} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
-          <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : `S+${selOffset + 1}`}
+          <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : pillDateLabel(selOffset + 1)}
         </button>
       </div>
       {cloned && (
@@ -3543,30 +2784,6 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
           Settimana clonata · rifinisci solo le variazioni
         </p>
       )}
-
-      <div className="c-card rounded-xl p-3.5 mb-5">
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <p className="c-label">Mesociclo di questa settimana</p>
-          {mesoSaved && <span className="font-data text-[11px] font-semibold" style={{ color: "#10B981" }}>Salvato ✓</span>}
-        </div>
-        <input value={mesoName} onChange={(e) => setMesoName(e.target.value)} placeholder="Es. Bulk Estate 2026" maxLength={60}
-          className="t-input w-full px-3 py-2 rounded-lg text-sm mb-2.5" />
-        <div className="flex items-center gap-1.5 flex-wrap mb-3">
-          {Object.entries(PHASE_META).map(([key, meta]) => {
-            const on = mesoPhase === key;
-            return (
-              <button key={key} onClick={() => setMesoPhase(on ? null : key)} type="button"
-                className="px-3 py-1.5 rounded-full text-xs font-data font-semibold uppercase"
-                style={on ? { backgroundColor: meta.color, color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
-                {meta.label}
-              </button>
-            );
-          })}
-        </div>
-        <button onClick={saveMeso} disabled={mesoBusy || !isRealMode} className="c-btn px-4 py-2 rounded-lg text-xs font-medium">
-          {mesoBusy ? "Salvo…" : "Salva mesociclo"}
-        </button>
-      </div>
       </>
       )}
 
@@ -4070,13 +3287,7 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
 
       {tab === "editor" && (
         <div>
-          {/* Riorganizzato: prima la scelta di cosa editare (allenamento/
-              alimentazione/integratori) e la gestione settimane dentro
-              ClientTimeline, poi in fondo Editor AI e Co-Pilota — prima
-              erano in cima, sopra a tutto il resto dell'editor. */}
           <ClientTimeline client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
-          <AIAdvisorChat client={client} />
-          <AICoPilot client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
         </div>
       )}
     </div>
@@ -5142,9 +4353,6 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
   // Store condiviso tra Registro Check, Co-Pilota AI e Timeline dell'atleta
   // per il target ON/OFF della settimana corrente — vedi nota in ClientTimeline.
   const [quickTargets, setQuickTargets] = useState({});
-  // Cliccare un atleta segnalato nel Cruscotto Allarmi apre il suo profilo
-  // direttamente sulla tab Bioritmi & Grafici, dove il dolore è documentato.
-  const openClientAlert = (id) => { setClientInitialTab("bioritmi"); setSelectedId(id); };
   // Gamification lato coach: bonus XP e post Avvisi Team di questa sessione
   // (vedi nota completa in GoalAchievedPanel sul collegamento Supabase reale).
   const [xpBonuses, setXpBonuses] = useState({});
@@ -5193,8 +4401,6 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
 
               {tab === "atleti" && (
                 <div>
-                  <AlarmsDashboard onOpen={openClientAlert} />
-                  <LateCheckinsPanel onOpen={setSelectedId} />
                   <RosterView onOpen={setSelectedId} />
                 </div>
               )}
