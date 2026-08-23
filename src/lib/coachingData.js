@@ -1053,6 +1053,50 @@ export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, tar
   await saveWeekWorkout(supabase, userId, targetWeekStartISO, workoutArray);
 }
 
+// Template di allenamento riutilizzabili (SCHEMA_v59): a differenza di
+// cloneWeekWorkout qui sopra (clona solo tra settimane dello STESSO
+// cliente), un template si salva una volta e si applica a QUALUNQUE cliente
+// e QUALUNQUE settimana, anche a più clienti insieme (azioni bulk).
+export async function fetchWorkoutTemplates(supabase) {
+  const { data, error } = await supabase
+    .from("workout_templates")
+    .select("id, name, days, created_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function saveWorkoutTemplate(supabase, coachId, name, days) {
+  const { error } = await supabase.from("workout_templates").insert({ coach_id: coachId, name, days });
+  if (error) throw error;
+}
+
+export async function deleteWorkoutTemplate(supabase, templateId) {
+  const { error } = await supabase.from("workout_templates").delete().eq("id", templateId);
+  if (error) throw error;
+}
+
+// Applica un template a più clienti insieme (azioni bulk): stesso identico
+// percorso di scrittura di saveWeekWorkout per ciascun cliente, uno alla
+// volta — nessuna logica di scrittura duplicata. Ritorna { ok, failed } così
+// il chiamante può mostrare quanti sono andati a buon fine anche se qualcuno
+// fallisce (es. un permesso mancante su un singolo cliente non deve bloccare
+// gli altri).
+export async function applyWorkoutTemplateToClients(supabase, days, clientIds, targetWeekStartISO) {
+  const ok = [];
+  const failed = [];
+  for (const clientId of clientIds) {
+    try {
+      await saveWeekWorkout(supabase, clientId, targetWeekStartISO, days);
+      ok.push(clientId);
+    } catch (err) {
+      console.error(`PERFORM: errore applicazione template al cliente ${clientId}`, err);
+      failed.push(clientId);
+    }
+  }
+  return { ok, failed };
+}
+
 // Elenco clienti per il selettore nel pannello coach.
 export async function fetchClientList(supabase) {
   const { data, error } = await supabase
@@ -1286,6 +1330,43 @@ export async function useStreakFreezeToday(supabase, userId) {
   const { error } = await supabase.from("streak_freezes")
     .upsert({ user_id: userId, date: toLocalISODate() }, { onConflict: "user_id,date" });
   if (error) throw error;
+}
+
+// "Wrapped" mensile stile Spotify: riepilogo di un periodo (di norma gli
+// ultimi 30 giorni) su tabelle già esistenti, nessuna nuova tabella — stessa
+// logica delle serie/pasti/sonno già usata da computeRealXpAndStreak, solo
+// filtrata sul periodo invece che su tutta la storia dell'account.
+export async function fetchMonthlyWrapped(supabase, userId, fromISO, toISO) {
+  const [{ data: setsRows, error: setsError }, { data: nutriRows, error: nutriError },
+    { data: metricsRows, error: metricsError }] = await Promise.all([
+    supabase.from("workout_sets").select("load_kg, reps_completed, completed_at")
+      .eq("user_id", userId).not("reps_completed", "is", null)
+      .gte("completed_at", `${fromISO}T00:00:00`).lte("completed_at", `${toISO}T23:59:59`),
+    supabase.from("nutrition_logs").select("date").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
+    supabase.from("daily_metrics").select("date, sleep_hours, digestion, motivation, fatigue").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
+  ]);
+  if (setsError) throw setsError;
+  if (nutriError) throw nutriError;
+  if (metricsError) throw metricsError;
+
+  const workoutDays = new Set((setsRows ?? []).map((r) => toLocalISODate(new Date(r.completed_at))));
+  const totalVolumeKg = (setsRows ?? []).reduce(
+    (sum, r) => sum + (Number(r.load_kg) || 0) * (Number(r.reps_completed) || 0), 0);
+  const avg = (key) => {
+    const vals = (metricsRows ?? []).map((r) => Number(r[key])).filter((v) => v > 0);
+    return vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : null;
+  };
+
+  return {
+    workoutDays: workoutDays.size,
+    totalSets: setsRows?.length ?? 0,
+    totalVolumeKg: Math.round(totalVolumeKg),
+    nutritionDays: new Set((nutriRows ?? []).map((r) => r.date)).size,
+    avgSleep: avg("sleep_hours"),
+    avgDigestion: avg("digestion"),
+    avgMotivation: avg("motivation"),
+    avgFatigue: avg("fatigue"),
+  };
 }
 
 // BUG PRESO: "Modifica profilo" (Impostazioni) non scriveva MAI su Supabase

@@ -38,7 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
@@ -894,6 +894,80 @@ function BiometricPhotoGallery({ checkPhotos, t }) {
 }
 
 /* ---------------------------------------------------------------------------
+   "Wrapped" mensile stile Spotify: riepilogo giocoso degli ultimi 30 giorni,
+   tutto da dati reali già esistenti (fetchMonthlyWrapped, coachingData.js —
+   nessuna nuova tabella). A differenza del Report Mensile qui sotto (pensato
+   per la stampa/PDF), questo è pensato per essere guardato sullo schermo:
+   numeri grandi, tono festoso, disponibile a QUALUNQUE piano.
+   ------------------------------------------------------------------------- */
+function WrappedModal({ stats, profile, accent, onClose }) {
+  const tiles = [
+    { emoji: "🏋️", value: stats.workoutDays, label: stats.workoutDays === 1 ? "giorno di allenamento" : "giorni di allenamento" },
+    { emoji: "🔢", value: stats.totalSets.toLocaleString("it-IT"), label: "serie totali svolte" },
+    { emoji: "🏔️", value: `${stats.totalVolumeKg.toLocaleString("it-IT")} kg`, label: "volume totale sollevato" },
+    { emoji: "🍽️", value: stats.nutritionDays, label: "giorni con diario alimentare compilato" },
+  ];
+  const wellnessTiles = [
+    stats.avgSleep != null && { emoji: "😴", value: `${stats.avgSleep}h`, label: "sonno medio" },
+    stats.avgMotivation != null && { emoji: "🔥", value: `${stats.avgMotivation}/10`, label: "motivazione media" },
+    stats.avgDigestion != null && { emoji: "🌿", value: `${stats.avgDigestion}/10`, label: "digestione media" },
+    stats.avgFatigue != null && { emoji: "🔋", value: `${stats.avgFatigue}/10`, label: "fatica percepita media (1=ottima)" },
+  ].filter(Boolean);
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
+           onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-3xl p-6 spring-in"
+             style={{ backgroundImage: `linear-gradient(150deg, ${accent} 0%, #111111 65%)`, color: "#FFFFFF", maxHeight: "88vh", overflowY: "auto" }}>
+          <div className="flex items-center justify-between mb-1">
+            <p style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.85 }}>
+              Il tuo Wrapped · ultimi 30 giorni
+            </p>
+            <button onClick={onClose} aria-label="Chiudi" className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: "rgba(255,255,255,0.15)" }}>
+              <span style={{ fontSize: "0.8rem" }}>✕</span>
+            </button>
+          </div>
+          <p style={{ fontSize: "1.3rem", fontWeight: 800, marginBottom: "1.1rem" }}>
+            {profile?.nickname ? `${profile.nickname}, ecco il tuo mese 🎉` : "Ecco il tuo mese 🎉"}
+          </p>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {tiles.map((tl, i) => (
+              <div key={i} className="rounded-2xl p-3.5" style={{ backgroundColor: "rgba(255,255,255,0.12)" }}>
+                <p style={{ fontSize: "1.6rem" }}>{tl.emoji}</p>
+                <p style={{ fontSize: "1.35rem", fontWeight: 800, lineHeight: 1.1 }}>{tl.value}</p>
+                <p style={{ fontSize: "0.68rem", opacity: 0.85, marginTop: 2 }}>{tl.label}</p>
+              </div>
+            ))}
+          </div>
+          {wellnessTiles.length > 0 && (
+            <>
+              <p style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", opacity: 0.75, marginBottom: 8 }}>
+                Come ti sei sentito
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {wellnessTiles.map((tl, i) => (
+                  <div key={i} className="rounded-2xl p-3.5" style={{ backgroundColor: "rgba(255,255,255,0.12)" }}>
+                    <p style={{ fontSize: "1.3rem" }}>{tl.emoji}</p>
+                    <p style={{ fontSize: "1.1rem", fontWeight: 800, lineHeight: 1.1 }}>{tl.value}</p>
+                    <p style={{ fontSize: "0.65rem", opacity: 0.85, marginTop: 2 }}>{tl.label}</p>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {stats.workoutDays === 0 && stats.nutritionDays === 0 && (
+            <p style={{ fontSize: "0.78rem", opacity: 0.85, marginTop: 10 }}>
+              Ancora nessun dato registrato negli ultimi 30 giorni — torna qui dopo qualche allenamento e pasto registrato.
+            </p>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* ---------------------------------------------------------------------------
    Report Mensile stampabile: una pagina bianca pensata per la stampa/"Salva
    come PDF" del browser (nessuna libreria PDF aggiunta — window.print() con
    CSS @media print già fa il lavoro, senza pesare il bundle). Riusa gli
@@ -1033,7 +1107,25 @@ export function ClientProfileView({
   // insieme, così la pagina resta sempre corta).
   const [openSection, setOpenSection] = useState(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [wrapped, setWrapped] = useState(null); // null = non richiesto/non ancora caricato
+  const [wrappedLoading, setWrappedLoading] = useState(false);
   const fileRef = useRef(null);
+
+  // "Wrapped" mensile: caricato solo quando l'utente lo apre (non ad ogni
+  // visita del Profilo) — disponibile a TUTTI i piani.
+  const openWrapped = () => {
+    if (!isRealMode) return;
+    setWrappedLoading(true);
+    const today = new Date();
+    const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - 29);
+    const fromISO = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}`;
+    fetchMonthlyWrapped(supabase, userId, fromISO, todayISO)
+      .then(setWrapped)
+      .catch((err) => console.error("PERFORM: errore caricamento Wrapped mensile", err))
+      .finally(() => setWrappedLoading(false));
+  };
 
   // Digestione/motivazione/fatica percepita (daily_metrics, SCHEMA_v57):
   // disponibile a TUTTI i piani, non solo a chi ha un coach — qui l'atleta
@@ -1219,6 +1311,13 @@ export function ClientProfileView({
         <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
           <p className="label mb-0">{t.archive.weightTrend}</p>
           <span className="flex items-center gap-2">
+            {isRealMode && (
+              <button onClick={openWrapped} disabled={wrappedLoading}
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs"
+                style={{ border: `1px solid ${accentText}`, color: accentText, fontWeight: 600 }}>
+                {wrappedLoading ? "Carico…" : "🎁 Il tuo Wrapped"}
+              </button>
+            )}
             {weightPoints?.length > 0 && (
               <button onClick={() => setReportOpen(true)}
                 className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs"
@@ -1281,6 +1380,10 @@ export function ClientProfileView({
         <MonthlyReportView profile={profile} accent={accent} level={level} xp={xp} streak={streak}
           weightPoints={weightPoints} circPoints={circPoints} checkPhotos={checkPhotos} t={t}
           onClose={() => setReportOpen(false)} />
+      )}
+
+      {wrapped && (
+        <WrappedModal stats={wrapped} profile={profile} accent={accent} onClose={() => setWrapped(null)} />
       )}
     </div>
   );
