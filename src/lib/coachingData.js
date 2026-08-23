@@ -175,7 +175,7 @@ export async function fetchBothNutritionTargets(supabase, userId) {
 export async function fetchDailyMetricsRange(supabase, userId, fromDateISO, toDateISO) {
   const { data, error } = await supabase
     .from("daily_metrics")
-    .select("date, sleep_start, sleep_end, sleep_hours, steps, hrv_ms, rhr_bpm")
+    .select("date, sleep_start, sleep_end, sleep_hours, steps, hrv_ms, rhr_bpm, digestion, motivation, fatigue")
     .eq("user_id", userId)
     .gte("date", fromDateISO)
     .lte("date", toDateISO)
@@ -197,6 +197,22 @@ export async function upsertDailyMetrics(supabase, userId, dateISO, patch) {
     .from("daily_metrics")
     .upsert({ user_id: userId, date: dateISO, updated_at: new Date().toISOString(), ...patch }, { onConflict: "user_id,date" });
   if (error) throw error;
+}
+
+// Le 3 valutazioni soggettive 1-10 di "oggi" (digestione, motivazione, fatica
+// percepita — SCHEMA_v57, stessa riga daily_metrics di sonno/passi): lettura
+// leggera di UN solo giorno, per idratare i tre riquadri (Alimentazione a
+// fine Diario Libero, Allenamento a fine sessione) senza dover caricare
+// l'intero storico. null = non ancora valutato oggi, mai un valore inventato.
+export async function fetchTodayWellness(supabase, userId, dateISO) {
+  const { data, error } = await supabase
+    .from("daily_metrics")
+    .select("digestion, motivation, fatigue")
+    .eq("user_id", userId)
+    .eq("date", dateISO)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? { digestion: null, motivation: null, fatigue: null };
 }
 
 // Cerchio Recupero reale — STESSA funzione chiamata sia da Home cliente sia
@@ -1170,13 +1186,15 @@ export async function computeRealXpAndStreak(supabase, userId) {
 
   const [{ data: setsRows, error: setsError }, { data: nutriRows, error: nutriError },
     { data: metricsRows, error: metricsError }, { data: workoutRows, error: workoutError },
-    { data: bonusRows, error: bonusError }, { data: pauseRows, error: pauseError }] = await Promise.all([
+    { data: bonusRows, error: bonusError }, { data: pauseRows, error: pauseError },
+    { data: freezeRows, error: freezeError }] = await Promise.all([
     supabase.from("workout_sets").select("id").eq("user_id", userId).not("reps_completed", "is", null).gte("completed_at", sinceDate),
     supabase.from("nutrition_logs").select("date").eq("user_id", userId).gte("date", sinceDate),
     supabase.from("daily_metrics").select("date, sleep_hours, steps").eq("user_id", userId).gte("date", sinceDate),
     supabase.from("workout_logs").select("date, status").eq("user_id", userId).gte("date", sinceDate),
     supabase.from("xp_bonuses").select("amount").eq("user_id", userId),
     supabase.from("pause_periods").select("start_date, end_date").eq("user_id", userId),
+    supabase.from("streak_freezes").select("date").eq("user_id", userId).gte("date", sinceDate),
   ]);
   if (setsError) throw setsError;
   if (nutriError) throw nutriError;
@@ -1184,11 +1202,17 @@ export async function computeRealXpAndStreak(supabase, userId) {
   if (workoutError) throw workoutError;
   if (bonusError) throw bonusError;
   if (pauseError) throw pauseError;
+  if (freezeError) throw freezeError;
 
   const nutritionDays = new Set((nutriRows ?? []).map((r) => r.date));
   const metricsDays = new Set((metricsRows ?? []).filter((r) => r.sleep_hours != null && r.steps != null).map((r) => r.date));
   const workoutStatusByDate = new Map((workoutRows ?? []).map((r) => [r.date, r.status]));
+  // Streak freeze (SCHEMA_v58): un giorno che l'atleta congela da solo, senza
+  // bisogno di un coach — stesso identico effetto di un giorno di pausa
+  // concordata (isDayComplete lo tratta come "completo"), ma disponibile a
+  // TUTTI i piani, non solo a chi ha un coaching reale.
   const pauseDates = expandPauseDates(pauseRows);
+  (freezeRows ?? []).forEach((r) => pauseDates.add(r.date));
   const ctx = { nutritionDays, metricsDays, workoutStatusByDate, pauseDates };
 
   // Streak: giorni consecutivi completi risalendo da oggi. Se oggi non è
@@ -1227,6 +1251,41 @@ export async function computeRealXpAndStreak(supabase, userId) {
   }
 
   return { xpTotal, streak };
+}
+
+const STREAK_FREEZE_CAP = 2;       // massimo congelamenti...
+const STREAK_FREEZE_WINDOW_DAYS = 30; // ...ogni N giorni
+
+// Quanti "streak freeze" restano disponibili in questo momento (finestra
+// mobile di 30 giorni) e se oggi è già congelato — disponibile a TUTTI i
+// piani (SCHEMA_v58), non solo a chi ha un coach: a differenza di
+// pause_periods (vacanza concordata col coach), qui non serve alcuna
+// approvazione, solo un tetto per non svuotare di significato lo streak.
+export async function fetchStreakFreezeStatus(supabase, userId) {
+  const today = toLocalISODate();
+  const fromDate = new Date(`${today}T00:00:00`);
+  fromDate.setDate(fromDate.getDate() - (STREAK_FREEZE_WINDOW_DAYS - 1));
+  const { data, error } = await supabase
+    .from("streak_freezes")
+    .select("date")
+    .eq("user_id", userId)
+    .gte("date", toLocalISODate(fromDate));
+  if (error) throw error;
+  const dates = (data ?? []).map((r) => r.date);
+  return {
+    remaining: Math.max(0, STREAK_FREEZE_CAP - dates.length),
+    usedToday: dates.includes(today),
+  };
+}
+
+// Congela oggi: un insert, idempotente grazie al vincolo unique(user_id,date)
+// — ricliccare non crea una seconda riga. Il chiamante deve aver già
+// verificato `remaining > 0` (fetchStreakFreezeStatus) prima di offrire il
+// pulsante: la RLS non applica da sola il tetto dei 2/30 giorni.
+export async function useStreakFreezeToday(supabase, userId) {
+  const { error } = await supabase.from("streak_freezes")
+    .upsert({ user_id: userId, date: toLocalISODate() }, { onConflict: "user_id,date" });
+  if (error) throw error;
 }
 
 // BUG PRESO: "Modifica profilo" (Impostazioni) non scriveva MAI su Supabase

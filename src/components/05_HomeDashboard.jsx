@@ -21,9 +21,9 @@ import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
-  Loader2, AlertTriangle,
+  Loader2, AlertTriangle, Mic, MicOff,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -1134,6 +1134,109 @@ function XpToastBanner({ toast }) {
   );
 }
 
+/* Celebrazione automatica di un nuovo PR (record personale): stesso identico
+   meccanismo/CSS di XpToastBanner qui sopra (Portal, stessa animazione
+   xpToastPop), niente libreria di confetti — appare da sola non appena una
+   serie appena spuntata batte il carico massimo storico di quell'esercizio. */
+function PRCelebrationToast({ toast }) {
+  if (!toast) return null;
+  return (
+    <Portal>
+      <div key={toast.key} className="xp-toast-wrap" aria-live="polite">
+        <div className="xp-toast" style={{ background: "rgba(140,110,20,0.94)" }}>
+          <span aria-hidden="true">🎉</span>
+          <span className="title-shine">Nuovo record</span>
+          <span className="xp-toast-label" style={{ color: "#FFFFFF" }}>
+            {toast.exerciseName}: {toast.prevBest} → {toast.kg} kg
+          </span>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* "Streak freeze" (SCHEMA_v58): congela lo streak di oggi senza bisogno di
+   un coach — a differenza della Pausa/Vacanza (PauseSection, riservata a chi
+   ha un coaching reale e richiede una richiesta), disponibile a TUTTI i
+   piani, con un tetto di 2 congelamenti ogni 30 giorni per non svuotare di
+   significato lo streak. */
+function StreakFreezeButton({ supabase, userId, accent }) {
+  const [status, setStatus] = useState(null); // { remaining, usedToday }
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(() => {
+    fetchStreakFreezeStatus(supabase, userId)
+      .then(setStatus)
+      .catch((err2) => console.error("PERFORM: errore lettura streak freeze", err2));
+  }, [supabase, userId]);
+  useEffect(() => { load(); }, [load]);
+
+  if (!status) return null;
+
+  const handleFreeze = () => {
+    setBusy(true);
+    setErr("");
+    useStreakFreezeToday(supabase, userId)
+      .then(() => load())
+      .catch((err2) => { console.error("PERFORM: errore congelamento streak", err2); setErr("Non sono riuscito a congelare lo streak di oggi."); })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="mt-2">
+      <button onClick={handleFreeze} disabled={busy || status.usedToday || status.remaining === 0}
+        className="w-full flex items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-xs"
+        style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)",
+                 opacity: (status.usedToday || status.remaining === 0) ? 0.6 : 1, fontWeight: 600 }}>
+        <span style={{ color: "var(--ink)" }}>🧊 {status.usedToday ? "Streak congelato oggi" : "Congela streak di oggi"}</span>
+        <span style={{ color: "var(--ink-2)" }}>{status.remaining}/2 rimasti (30 giorni)</span>
+      </button>
+      {err && <p className="text-xs mt-1" style={{ color: "#DC2626" }}>{err}</p>}
+    </div>
+  );
+}
+
+/* Input vocale per il diario alimentare (Web Speech API, nessun servizio
+   terzo/chiave a pagamento): detta il nome dell'alimento invece di digitarlo,
+   il testo riconosciuto sostituisce la query di ricerca — da lì in poi è la
+   stessa identica ricerca testuale già esistente (catalogo locale + Open Food
+   Facts). Non supportato da tutti i browser (in particolare Safari iOS):
+   nessun pulsante mostrato quando l'API non esiste, mai un finto controllo
+   che non farebbe nulla. */
+function VoiceSearchButton({ onTranscript, lang = "it-IT" }) {
+  const [listening, setListening] = useState(false);
+  const [unsupported] = useState(() => typeof window === "undefined" || !(window.SpeechRecognition || window.webkitSpeechRecognition));
+  const recRef = useRef(null);
+
+  useEffect(() => () => { try { recRef.current?.stop(); } catch (err) { /* già fermo */ } }, []);
+
+  if (unsupported) return null;
+
+  const toggle = () => {
+    if (listening) { recRef.current?.stop(); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+    rec.lang = lang;
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => onTranscript(e.results[0][0].transcript);
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recRef.current = rec;
+    try { rec.start(); setListening(true); } catch (err) { setListening(false); }
+  };
+
+  return (
+    <button type="button" onClick={toggle} aria-label={listening ? "Ferma dettatura" : "Detta il nome dell'alimento"}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full transition-colors">
+      {listening
+        ? <MicOff size={16} style={{ color: "#DC2626" }} className="animate-pulse" />
+        : <Mic size={16} style={{ color: "var(--ink-2)" }} />}
+    </button>
+  );
+}
+
 /* ============================================================================
    5 · HOME DASHBOARD
    ========================================================================== */
@@ -1205,42 +1308,50 @@ function computeStreak(referenceDateStr = "2026-07-19", baseStreak = 12, lastAct
   return gapDays > 1 ? 0 : grown; // più di 24h senza registrare nulla → streak azzerato
 }
 
-/* Bio-sintomo Digestione/Gonfiore: valutazione rapida da 1 a 5 con emoji,
-   sempre facoltativa, nell'ultima parte dell'Alimentazione. Energia/DOMS/
-   Dolori vivevano nel check-in di fine giornata, rimosso su richiesta
-   (poco utile, verrà reintrodotto altrove se serve). */
-const DIGEST_EMOJIS = ["🤢", "😖", "😐", "🙂", "✨"];
-
-function EmojiRating({ label, icon, emojis, value, onChange }) {
-  return (
-    <div>
-      <p className="text-sm mb-2 flex items-center gap-2 flex-wrap" style={{ color: "var(--ink)", fontWeight: 600 }}>
-        <span aria-hidden="true">{icon}</span> {label}
-        <span className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 400 }}>(facoltativo)</span>
-      </p>
-      <div className="flex items-center gap-2">
-        {emojis.map((e, i) => {
-          const n = i + 1;
-          const active = value === n;
-          return (
-            <button key={n} onClick={() => onChange(active ? 0 : n)}
-                    aria-label={`${label}: livello ${n} su 5`} aria-pressed={active}
-                    className="flex-1 rounded-2xl py-2.5 text-xl transition-all duration-200 active:scale-90"
-                    style={{ backgroundColor: active ? "var(--ink)" : "var(--surface-2)",
-                             border: active ? "none" : "1px solid var(--line)",
-                             filter: active ? "none" : "grayscale(0.5) opacity(0.65)" }}>
-              {e}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* Scala 1-10 generica per aderenza e stress/digestione: qui il valore va da
    1 (peggio) a 10 (meglio), coerente con le altre scale a 10 punti dell'app. */
 const CHECK_SCALE_10 = Array.from({ length: 10 }, (_, i) => i + 1);
+
+/* Scala 1-10 riutilizzabile (digestione/motivazione/fatica percepita — vedi
+   daily_metrics, SCHEMA_v57): stesso <select> del check settimanale sopra,
+   con una didascalia opzionale per chiarire il verso della scala quando non
+   è "10 = meglio" di default (fatica percepita è invertita: 1 = ottima). */
+function Scale10Rating({ label, value, onChange, hint }) {
+  return (
+    <label className="block">
+      <span className="label block mb-1.5">{label}</span>
+      <select value={value || ""} onChange={(e) => onChange(Number(e.target.value) || 0)}
+              className="input w-full px-4 py-3 text-sm">
+        <option value="">— valuta —</option>
+        {CHECK_SCALE_10.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      {hint && <span className="text-xs block mt-1" style={{ color: "var(--ink-2)" }}>{hint}</span>}
+    </label>
+  );
+}
+
+/* Card di feedback a fine allenamento (motivazione + fatica percepita —
+   daily_metrics, SCHEMA_v57): disponibile a TUTTI i piani (non solo chi ha un
+   coach), un giorno = una riga, così il coach può incrociarla con sonno/
+   stress/digestione nei grafici trend invece di decidere refeed/deload a
+   caso. Facoltativa: l'atleta può chiudere l'app senza compilarla. */
+function WorkoutFeedbackCard({ motivation, fatigue, onMotivationChange, onFatigueChange, accentText }) {
+  const saved = motivation > 0 && fatigue > 0;
+  return (
+    <div className="card mt-4 p-5">
+      <p className="h2 mb-1">Come è andata oggi?</p>
+      <p className="meta mb-3" style={{ lineHeight: 1.5 }}>
+        Facoltativo, ma aiuta il tuo coach a leggere quando serve un giorno di scarico o un refeed — non solo dai
+        carichi sollevati.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <Scale10Rating label="Motivazione (1-10)" value={motivation} onChange={onMotivationChange} hint="10 = ottima" />
+        <Scale10Rating label="Fatica percepita (1-10)" value={fatigue} onChange={onFatigueChange} hint="1 = ottima, 10 = pessima" />
+      </div>
+      {saved && <p className="text-xs mt-3" style={{ color: accentText, fontWeight: 600 }}>✓ Salvato</p>}
+    </div>
+  );
+}
 
 /* Pop-up del Check settimanale (lunedì): bloccante, idro-satinato, con i 5 campi
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
@@ -1716,7 +1827,45 @@ export function HomeDashboard({
   // stessa sotto-schermata invece che sempre dalla Home.
   const [screen, setScreen] = useState(() => localStorage.getItem("perform_last_screen") || "dash");   // dash | workout | nutrition | recovery
   useEffect(() => { localStorage.setItem("perform_last_screen", screen); }, [screen]);
+  // Digestione (Alimentazione, ex check-in a emoji locale) + motivazione/
+  // fatica percepita (fine allenamento) — daily_metrics, SCHEMA_v57. 0 =
+  // non ancora valutato oggi. Disponibili a TUTTI i piani (non solo chi ha
+  // un coach): l'atleta le vede/compila da solo nel suo Profilo, il coach le
+  // legge in sola lettura per incrociarle con sonno/stress nei grafici trend.
   const [digestValue, setDigestValue] = useState(0);
+  const [motivation, setMotivation] = useState(0);
+  const [fatigue, setFatigue] = useState(0);
+  const [wellnessLoaded, setWellnessLoaded] = useState(false);
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let cancelled = false;
+    fetchTodayWellness(supabase, userId, toLocalISODate())
+      .then((row) => {
+        if (cancelled) return;
+        setDigestValue(row.digestion || 0);
+        setMotivation(row.motivation || 0);
+        setFatigue(row.fatigue || 0);
+        setWellnessLoaded(true);
+      })
+      .catch((err) => { console.error("PERFORM: errore lettura valutazioni giornaliere", err); if (!cancelled) setWellnessLoaded(true); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, userId]);
+  // Salvataggio reale, debounced (stesso principio di sonno/passi): solo dopo
+  // il primo caricamento, altrimenti il seed di "oggi" qui sopra si
+  // ri-salverebbe da solo (con gli altri due ancora a 0) un istante dopo
+  // averlo letto, azzerando un valore già presente sulle altre due colonne.
+  useEffect(() => {
+    if (!supabase || !userId || !wellnessLoaded) return;
+    const t = setTimeout(() => {
+      upsertDailyMetrics(supabase, userId, toLocalISODate(), {
+        digestion: digestValue || null,
+        motivation: motivation || null,
+        fatigue: fatigue || null,
+      }).catch((err) => console.error("PERFORM: errore salvataggio valutazioni giornaliere", err));
+    }, 600);
+    return () => clearTimeout(t);
+  }, [digestValue, motivation, fatigue, wellnessLoaded, supabase, userId]);
   // Alimentazione: "I tuoi target" ora è un pannello compatto in cima alla
   // pagina, non più un tab tra Diario Libero e Sostituzioni — chiuso di
   // default, si espande solo quando il cliente vuole davvero modificarli.
@@ -2156,6 +2305,7 @@ export function HomeDashboard({
                 {streak} Giorni di Streak
               </span>
             </div>
+            {isRealMode && <StreakFreezeButton supabase={supabase} userId={userId} accent={accent} />}
 
             {day.mesociclo != null && (
               <div className="mt-3">
@@ -2397,6 +2547,12 @@ export function HomeDashboard({
               <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
                                    day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
                                    supabase={supabase} userId={userId} />
+            )}
+            {/* Disponibile a TUTTI i piani (PRO e FREE), non solo a fine giorno
+                di oggi (mai su un giorno passato aperto dal calendario). */}
+            {day.isTraining && !selectedCalendarIso && (
+              <WorkoutFeedbackCard motivation={motivation} fatigue={fatigue}
+                onMotivationChange={setMotivation} onFatigueChange={setFatigue} accentText={accentText} />
             )}
           </div>
         )}
@@ -3910,6 +4066,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   // apparirebbero non completate anche se i dati sono già salvati davvero.
   const [doneRows, setDoneRows] = useState(() => rows.map((r) => r.kg !== "" && r.reps !== "" && r.rir !== ""));
   const [timer, setTimer] = useState(null); // { total, remaining } in secondi
+  const [prToast, setPrToast] = useState(null);
 
   const isMaxEffort = index < 2;
   const peak = Math.max(0, ...rows.map((r) => Number(r.kg) || 0));
@@ -3967,6 +4124,14 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
         const dur = ex.rests?.[i] ?? 120;
         setTimer({ total: dur, remaining: dur });
         syncToCoach({ kind: "set-completed", rowIndex: i, row: rows[i] });
+        // Celebrazione automatica: questa serie appena spuntata batte il
+        // carico massimo storico di questo esercizio (mai il primo giorno
+        // registrato, best === 0 non è un vero confronto).
+        const kg = Number(rows[i].kg) || 0;
+        if (best > 0 && kg > best) {
+          setPrToast({ key: Date.now(), exerciseName: ex.name, prevBest: best, kg });
+          setTimeout(() => setPrToast(null), 4500);
+        }
       }
       return next;
     });
@@ -4176,6 +4341,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
           </div>
         )}
       </div>
+      <PRCelebrationToast toast={prToast} />
     </div>
   );
 }
@@ -6444,11 +6610,13 @@ function NutritionTabs({
                           placeholder="Cerca alimento…"
                           className="input search-strong w-full pl-10 pr-9 py-3"
                           aria-label={`Cerca alimento per ${slot.label}`} />
-                        {selected && (
+                        {selected ? (
                           <button onClick={reset} className="absolute right-3 top-1/2 -translate-y-1/2 p-1"
                                   style={{ color: "var(--ink-2)" }} aria-label="Svuota">
                             <X size={14} />
                           </button>
+                        ) : (
+                          <VoiceSearchButton onTranscript={(t) => { setQuery(t); setSelected(null); setDropOpen(true); }} />
                         )}
                         {dropOpen && !selected && !manualAddOpen && (
                           <div className="absolute z-30 left-0 right-0 mt-1.5 rounded-xl overflow-hidden"
@@ -6633,11 +6801,12 @@ function NutritionTabs({
                 text="Registrare cosa mangi è il primo passo. Il secondo è sapere se sta davvero funzionando: fatti aiutare da un professionista del settore che legge il tuo diario e aggiusta il piano per te." />
             )}
 
-            {/* ultima cosa del Diario Libero: check-in digestivo, facoltativo */}
+            {/* ultima cosa del Diario Libero: digestione di oggi, 1-10, facoltativa —
+                salvata su daily_metrics (SCHEMA_v57), visibile anche al coach nei
+                grafici trend per decidere refeed/deload non a caso. */}
             <div className="card mt-4">
               <p className="label mb-1">Ultima cosa</p>
-              <EmojiRating label="Digestione / Gonfiore" icon="🤢" emojis={DIGEST_EMOJIS}
-                value={digestValue} onChange={onDigestChange} />
+              <Scale10Rating label="Digestione (1-10)" value={digestValue} onChange={onDigestChange} hint="10 = ottima" />
             </div>
           </>
         )}

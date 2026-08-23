@@ -38,7 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
@@ -634,6 +634,61 @@ export function CircumferenceChart({ points, accent }) {
   );
 }
 
+const WELLNESS_SERIES = [
+  { key: "digestione", label: "Digestione", color: "#10B981" },
+  { key: "motivazione", label: "Motivazione", color: "#2563EB" },
+  { key: "fatica", label: "Fatica percepita", color: "#DC2626" },
+];
+
+/* Digestione (Alimentazione), motivazione e fatica percepita (fine
+   allenamento) — daily_metrics, SCHEMA_v57. Disponibile a TUTTI i piani (non
+   solo chi ha un coach): qui l'atleta rivede da solo il proprio andamento,
+   nella sua sezione Profilo privata. Stesso identico stile SVG di
+   CircumferenceChart qui sopra — nessuna nuova libreria di grafici. */
+export function WellnessChart({ points }) {
+  const withAny = (points || []).filter((p) => p.digestione != null || p.motivazione != null || p.fatica != null);
+  if (withAny.length < 2) {
+    return <p className="meta text-sm">Valuta digestione, motivazione e fatica per qualche giorno per vedere l'andamento.</p>;
+  }
+
+  const W = 320, H = 130, pad = 24;
+  const min = 1, max = 10;
+  const x = (i) => pad + (i * (W - pad * 2)) / (withAny.length - 1 || 1);
+  const y = (v) => H - pad - ((v - min) / (max - min)) * (H - pad * 1.8);
+
+  return (
+    <>
+      <div className="flex items-center gap-3 mb-1.5 flex-wrap">
+        {WELLNESS_SERIES.map((s) => (
+          <span key={s.key} className="flex items-center gap-1 font-data" style={{ fontSize: "0.6rem", color: s.color }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: s.color, display: "inline-block" }} /> {s.label}
+          </span>
+        ))}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Andamento digestione, motivazione e fatica">
+        <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="var(--line)" />
+        {WELLNESS_SERIES.map((s) => {
+          const seriesPoints = withAny.map((p, i) => ({ i, v: p[s.key] })).filter((p) => p.v != null);
+          if (seriesPoints.length < 2) return null;
+          const path = seriesPoints.map((p, j) => `${j === 0 ? "M" : "L"}${x(p.i)},${y(p.v)}`).join(" ");
+          return (
+            <g key={s.key}>
+              <path d={path} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              {seriesPoints.map((p) => <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r="2.8" fill="var(--surface)" stroke={s.color} strokeWidth="1.8" />)}
+            </g>
+          );
+        })}
+        {withAny.map((p, i) => (i === 0 || i === withAny.length - 1 || i % Math.ceil(withAny.length / 5) === 0) && (
+          <text key={i} x={x(i)} y={H - pad + 13} textAnchor="middle" fontSize="7.5" fill="var(--ink-2)" fontFamily="system-ui, -apple-system, sans-serif">{p.label}</text>
+        ))}
+      </svg>
+      <p className="meta mt-1.5" style={{ fontSize: "0.65rem" }}>
+        Fatica percepita è invertita: 1 = ottima, 10 = pessima (le altre due: 10 = ottima).
+      </p>
+    </>
+  );
+}
+
 const RECOMP_TONE_COLOR = { good: "#10B981", warn: "#B45309", neutral: "var(--ink-2)" };
 
 /* Punteggio di ricomposizione: un'etichetta onesta (mai un numero
@@ -980,6 +1035,34 @@ export function ClientProfileView({
   const [reportOpen, setReportOpen] = useState(false);
   const fileRef = useRef(null);
 
+  // Digestione/motivazione/fatica percepita (daily_metrics, SCHEMA_v57):
+  // disponibile a TUTTI i piani, non solo a chi ha un coach — qui l'atleta
+  // rivede da solo il proprio andamento (WellnessChart qui sopra), nella sua
+  // sezione Profilo privata, ultimi 30 giorni.
+  const [wellnessPoints, setWellnessPoints] = useState(null); // null = non ancora caricato
+  useEffect(() => {
+    if (!isRealMode) return undefined;
+    let cancelled = false;
+    const today = new Date();
+    const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const fromDate = new Date(today);
+    fromDate.setDate(fromDate.getDate() - 29);
+    const fromISO = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}`;
+    fetchDailyMetricsRange(supabase, userId, fromISO, todayISO)
+      .then((rows) => {
+        if (cancelled) return;
+        setWellnessPoints(rows.map((r) => {
+          const d = new Date(`${r.date}T00:00:00`);
+          return {
+            digestione: r.digestion, motivazione: r.motivation, fatica: r.fatigue,
+            label: `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
+          };
+        }));
+      })
+      .catch((err) => { console.error("PERFORM: errore lettura valutazioni giornaliere", err); if (!cancelled) setWellnessPoints([]); });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId]);
+
   const hasCoachChat = isRealMode && ["scheda", "training", "full"].includes(plan);
 
   const save = () => {
@@ -1157,6 +1240,13 @@ export function ClientProfileView({
         <p className="label mt-6 mb-2">Confronto circonferenze</p>
         <CircumferenceChart points={circPoints} accent={accent} />
         <RecompositionBadge weightPoints={weightPoints} circPoints={circPoints} />
+
+        {wellnessPoints && (
+          <>
+            <p className="label mt-6 mb-2">Digestione, motivazione e fatica percepita</p>
+            <WellnessChart points={wellnessPoints} />
+          </>
+        )}
 
         <p className="label mt-6 mb-2">{t.archive.photoGallery}</p>
         <p className="h2 mb-2" style={{ fontSize: "0.95rem" }}>{t.archive.compareTitle}</p>
