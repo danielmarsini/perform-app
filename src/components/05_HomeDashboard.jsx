@@ -4751,6 +4751,15 @@ export const SUPP_WIKI = [
       "cellulare (cell swelling) e sembra agire anche come segnale anabolico. Livello di evidenza: molto alto " +
       "(centinaia di RCT, meta-analisi convergenti); tra gli integratori sportivi più studiati in assoluto, con " +
       "profilo di sicurezza consolidato anche su cicli pluriennali in soggetti sani.",
+    pros: [
+      "Il rapporto costo/beneficio più alto tra tutti gli integratori sportivi: economica, sicura ed efficace per la quasi totalità delle persone.",
+      "Nessuna fase di carico necessaria e nessun ciclo di scarico richiesto: può essere assunta stabilmente per anni.",
+    ],
+    cons: [
+      "Il richiamo di acqua intracellulare può tradursi in 1-2 kg di peso in più nelle prime settimane, un dato da non confondere con grasso.",
+      "Un sottogruppo di soggetti ('non responder') mostra un beneficio minimo, probabilmente per riserve muscolari già vicine alla saturazione naturale.",
+    ],
+    conclusion: "La creatina monoidrato a 3-5 g/die è l'integratore con il rapporto evidenza/sicurezza più solido in assoluto: va considerata la base di qualunque protocollo di integrazione orientato a forza e massa muscolare.",
   },
   {
     id: "caffeina", name: "Caffeina", icon: "☕",
@@ -4768,6 +4777,15 @@ export const SUPP_WIKI = [
       "metabolizzatori rapidi e lenti) spiega perché la stessa dose serale può compromettere il sonno di alcuni e " +
       "non di altri. Evidenza: alta, con effetto ergogenico riproducibile su forza, potenza e resistenza; la " +
       "tolleranza si sviluppa con l'uso cronico, motivo per cui molti protocolli prevedono cicli di scarico.",
+    pros: [
+      "Effetto ergogenico rapido e riproducibile già dalla prima assunzione, senza bisogno di settimane di accumulo.",
+      "Economica e ampiamente disponibile, con un effetto misurabile su forza, potenza e resistenza in un'unica sostanza.",
+    ],
+    cons: [
+      "Lo sviluppo di tolleranza con l'uso cronico riduce l'effetto nel tempo se non si prevedono periodi di scarico.",
+      "Assunta troppo tardi nel pomeriggio/sera può compromettere significativamente la qualità del sonno, specie nei metabolizzatori lenti.",
+    ],
+    conclusion: "La caffeina è un ergogenico affidabile a 3-6 mg/kg 30-60 minuti prima dell'allenamento, ma va gestita con cicli di scarico periodici e mai a ridosso del sonno, per non pagare in recupero quello che si guadagna in performance.",
   },
   {
     id: "whey", name: "Whey Protein", icon: "🥛",
@@ -4786,6 +4804,15 @@ export const SUPP_WIKI = [
       "d'assorbimento crescenti. Evidenza: molto alta sul ruolo della proteina totale/die nella sintesi proteica " +
       "netta; l'evidenza sul timing preciso rispetto alla sessione di allenamento è più debole di quanto il " +
       "marketing storico abbia suggerito.",
+    pros: [
+      "Pratica e rapida per raggiungere la quota proteica giornaliera quando il cibo solido non è disponibile o sufficiente.",
+      "Profilo aminoacidico completo con alta leucina, paragonabile alle migliori fonti proteiche animali.",
+    ],
+    cons: [
+      "Non è superiore al cibo intero a parità di proteine totali: è uno strumento di comodità, non un ingrediente magico.",
+      "Le forme concentrate (WPC) contengono più lattosio, un problema per chi ha intolleranza.",
+    ],
+    conclusion: "La whey è lo strumento più pratico per colmare il gap proteico giornaliero quando il cibo solido non basta, ma resta intercambiabile con qualunque fonte proteica completa a parità di grammi assunti.",
   },
   {
     id: "omega3", name: "Omega 3 (EPA/DHA)", icon: "🐟",
@@ -4803,6 +4830,15 @@ export const SUPP_WIKI = [
       "occidentale è spesso squilibrato (10:1 o peggio) a favore dei pro-infiammatori, da cui il razionale " +
       "dell'integrazione quando il pesce grasso è scarso in dieta. Evidenza: alta su cardiovascolare e " +
       "infiammazione sistemica, moderata sul recupero sportivo specifico.",
+    pros: [
+      "Beneficio documentato e ampio su salute cardiovascolare e infiammazione sistemica, non solo su un ipotetico effetto sportivo.",
+      "Utile correzione quando il pesce grasso è scarso nella dieta abituale, un caso molto comune.",
+    ],
+    cons: [
+      "Nessun effetto acuto sulla performance: il beneficio è cumulativo e richiede costanza per settimane/mesi.",
+      "Dosaggi molto alti senza controllo medico possono interferire con la coagulazione in soggetti predisposti.",
+    ],
+    conclusion: "Gli omega-3 sono un integratore da assumere per costanza quotidiana e beneficio a lungo termine su salute generale, non per un effetto acuto sulla singola sessione di allenamento.",
   },
   {
     id: "citrullina", name: "Citrullina Malato", icon: "💧",
@@ -4821,6 +4857,15 @@ export const SUPP_WIKI = [
       "aumento del numero di ripetizioni eseguibili prima del cedimento in protocolli ad alto volume, coerente " +
       "con una migliore perfusione muscolare. Evidenza: moderata, dose-dipendente, con maggiore consistenza sopra " +
       "i 6-8 g.",
+    pros: [
+      "Beneficio più marcato proprio nei protocolli ad alto volume/alte ripetizioni, un caso d'uso frequente nell'ipertrofia.",
+      "Profilo di sicurezza molto buono, senza interazioni note rilevanti alle dosi comuni.",
+    ],
+    cons: [
+      "Effetto poco rilevante su serie pesanti a basse ripetizioni, dove il meccanismo (vasodilatazione, resistenza alla fatica locale) conta meno.",
+      "Richiede la dose piena (6-8 g) per essere efficace: dosi più basse, comuni in molti pre-workout, spesso sono sotto-dosate.",
+    ],
+    conclusion: "La citrullina malato è utile soprattutto in protocolli ad alto volume/alte ripetizioni, con un effetto dose-dipendente che richiede almeno 6-8 g per essere realmente presente.",
   },
   {
     id: "bcaa", name: "BCAA", icon: "🧬",
@@ -4839,6 +4884,15 @@ export const SUPP_WIKI = [
       "una fonte proteica completa. Evidenza: bassa/moderata come integrazione isolata in soggetti con apporto " +
       "proteico già adeguato; più solida come substrato energetico anti-catabolico in allenamento prolungato a " +
       "digiuno.",
+    pros: [
+      "Disponibilità energetica rapida durante allenamenti lunghi a digiuno, quando le riserve aminoacidiche circolanti sono più basse.",
+      "Utili come opzione a basso costo calorico in fase di dieta molto ipocalorica con proteine ai limiti minimi.",
+    ],
+    cons: [
+      "Con un apporto proteico giornaliero già adeguato, il beneficio aggiuntivo rispetto alla sola dieta è marginale o nullo.",
+      "La leucina isolata senza gli altri aminoacidi essenziali attiva la sintesi proteica senza fornire tutti i 'mattoni' per completarla.",
+    ],
+    conclusion: "I BCAA hanno senso soprattutto per chi si allena a digiuno o in deficit calorico marcato con proteine ai limiti minimi: con un apporto proteico giornaliero già adeguato, una fonte proteica completa resta la scelta più efficiente.",
   },
   {
     id: "beta_alanina", name: "Beta-Alanina", icon: "🔋",
@@ -4856,6 +4910,15 @@ export const SUPP_WIKI = [
       "mani) è mediata dai recettori MrgprD delle fibre nervose cutanee, dose-dipendente e transitoria: " +
       "frazionare la dose (es. 800 mg-1,6 g più volte al giorno) la riduce senza intaccare l'efficacia. Evidenza: " +
       "alta per sforzi ripetuti di media durata, scarsa per sforzi brevissimi (<60s) o molto prolungati (>4 min).",
+    pros: [
+      "Effetto solido e riproducibile proprio nella zona di sforzo tipica dell'ipertrofia (serie da 8-15 ripetizioni).",
+      "Non serve timing pre-workout: conta l'accumulo cronico, quindi si integra facilmente in qualunque routine.",
+    ],
+    cons: [
+      "Il beneficio emerge solo dopo 4-10 settimane di uso costante: nessun effetto acuto alla prima assunzione.",
+      "La parestesia (formicolio) alla dose singola alta può risultare fastidiosa per alcuni, anche se innocua.",
+    ],
+    conclusion: "La beta-alanina è efficace per sforzi ripetuti di media durata (8-15 reps), ma richiede settimane di uso costante per accumulare carnosina muscolare: non è uno strumento acuto pre-workout come la caffeina.",
   },
   {
     id: "glutammina", name: "Glutammina", icon: "🌿",
@@ -4872,6 +4935,15 @@ export const SUPP_WIKI = [
       "che spiega perché l'integrazione aggiunga poco quando dieta e recupero sono già adeguati. Evidenza: solida " +
       "su immunità e integrità intestinale in carichi di allenamento molto elevati o in condizioni cataboliche " +
       "(es. post-chirurgia); debole su ipertrofia o performance nell'atleta sano ben nutrito.",
+    pros: [
+      "Supporto solido e documentato su barriera intestinale e sistema immunitario nei periodi di carico di allenamento molto elevato.",
+      "Profilo di sicurezza molto favorevole, senza controindicazioni note alle dosi comuni.",
+    ],
+    cons: [
+      "Nell'atleta sano con dieta e recupero già adeguati, l'evidenza su un effetto diretto su crescita muscolare o performance è debole.",
+      "Il corpo la sintetizza autonomamente in quantità sufficiente nella maggior parte delle condizioni, riducendo il beneficio marginale dell'integrazione.",
+    ],
+    conclusion: "La glutammina ha un razionale solido soprattutto per salute intestinale e immunitaria in periodi di carico molto elevato, non come strumento diretto per crescita muscolare o performance nell'atleta ben nutrito.",
   },
   {
     id: "zma", name: "ZMA (Zinco-Magnesio-B6)", icon: "💤",
@@ -4889,6 +4961,15 @@ export const SUPP_WIKI = [
       "specifico l'effetto su sonno e recupero è plausibile. Va assunto lontano da calcio e fibre, che ne " +
       "riducono l'assorbimento. Evidenza: solida solo come correzione di carenza, non come booster ormonale " +
       "indipendente dallo status di partenza.",
+    pros: [
+      "Corregge efficacemente una carenza subclinica di zinco/magnesio, comune in diete ipocaloriche o povere di carne rossa e semi.",
+      "Il magnesio incluso può migliorare la qualità del sonno percepita, un beneficio reale a prescindere dall'effetto ormonale.",
+    ],
+    cons: [
+      "In soggetti con status minerale già normale, l'effetto su testosterone o forza non è mai stato replicato in modo convincente.",
+      "Va assunto lontano da calcio e fibre, che ne riducono l'assorbimento — un vincolo pratico spesso ignorato.",
+    ],
+    conclusion: "Lo ZMA ha senso come correzione di una carenza subclinica di zinco/magnesio, non come 'booster ormonale naturale': l'effetto reale dipende interamente dallo status di partenza, non da un meccanismo indipendente.",
   },
   {
     id: "multivitaminico", name: "Multivitaminico", icon: "🧪",
@@ -4907,6 +4988,15 @@ export const SUPP_WIKI = [
       "a differenza delle idrosolubili in eccesso (eliminate con le urine), si accumulano nel tessuto adiposo ed " +
       "epatico. Evidenza: alta come rete di sicurezza in deficit calorico o dieta poco varia, nulla come " +
       "\"potenziatore\" oltre la correzione di una carenza.",
+    pros: [
+      "Rete di sicurezza economica ed efficace contro micro-carenze, soprattutto in deficit calorico prolungato o dieta poco varia.",
+      "Facile da integrare stabilmente nella routine, senza timing critico o interazioni rilevanti alle dosi da etichetta.",
+    ],
+    cons: [
+      "Non sostituisce una dieta varia ricca di verdura e frutta, che resta la fonte primaria di micronutrienti e fitocomposti.",
+      "Le formulazioni ad alto dosaggio di vitamine liposolubili vanno gestite con attenzione perché si accumulano nel tessuto adiposo/epatico.",
+    ],
+    conclusion: "Il multivitaminico è una rete di sicurezza utile, non un potenziatore: il suo valore reale è massimo in deficit calorico o con un'alimentazione poco varia, marginale con una dieta già ricca e diversificata.",
   },
   {
     id: "collagene", name: "Collagene Idrolizzato", icon: "🦴",
@@ -4924,6 +5014,15 @@ export const SUPP_WIKI = [
       "l'assunzione 30-60 minuti prima di un carico meccanico specifico sul tessuto target (es. prima di un " +
       "allenamento di salto per i tendini rotulei), non un consumo generico distribuito nella giornata. Evidenza: " +
       "preliminare ma in crescita, più solida su tendinopatie da sovraccarico che su cartilagine articolare.",
+    pros: [
+      "Profilo di sicurezza molto buono, adatto anche a un uso preventivo di lungo periodo su tendini sotto carico ripetuto.",
+      "Il protocollo (30-60 min prima del carico specifico + vitamina C) è semplice da integrare nella routine pre-allenamento.",
+    ],
+    cons: [
+      "L'evidenza è ancora meno solida rispetto a creatina o proteine: i benefici riportati sono promettenti ma non definitivi.",
+      "Il beneficio richiede il timing specifico prima del carico meccanico target, non un'assunzione generica distribuita nella giornata.",
+    ],
+    conclusion: "Il collagene idrolizzato è un'opzione ragionevole e sicura per la salute tendinea, specialmente in chi ha un carico articolare/tendineo elevato, ma va assunto con il protocollo specifico (+ vitamina C, prima del carico) per avere le migliori probabilità di beneficio.",
   },
   {
     id: "ashwagandha", name: "Ashwagandha", icon: "🌱",
@@ -4941,6 +5040,15 @@ export const SUPP_WIKI = [
       "non standardizzati hanno concentrazioni molto variabili e risultati meno prevedibili. Evidenza: moderata e " +
       "in crescita su cortisolo, ansia e sonno; più preliminare sull'effetto diretto su forza e testosterone, " +
       "riportato solo in un sottogruppo di studi.",
+    pros: [
+      "Effetto documentato e in crescita sulla riduzione del cortisolo e dell'ansia percepita dopo 6-8 settimane d'uso.",
+      "Profilo di sicurezza favorevole, utile complemento (non sostituto) alla gestione di sonno e stress.",
+    ],
+    cons: [
+      "L'effetto diretto su forza e testosterone è riportato solo in un sottogruppo di studi, non ancora un dato consolidato.",
+      "Estratti non standardizzati sulla percentuale di withanolidi hanno risultati molto meno prevedibili di quelli usati negli studi.",
+    ],
+    conclusion: "L'ashwagandha ha un razionale solido soprattutto per la gestione dello stress e del cortisolo, con un potenziale effetto su forza ancora preliminare: va scelta con estratto standardizzato e non sostituisce la gestione di base di sonno e stress.",
   },
   {
     id: "melatonina", name: "Melatonina", icon: "🌙",
@@ -4958,6 +5066,15 @@ export const SUPP_WIKI = [
       "con minore rischio di sonnolenza residua al risveglio (hangover da melatonina) legato a un'emivita più " +
       "lunga alle dosi alte. Evidenza: molto alta per la risincronizzazione circadiana (jet lag, turnisti), " +
       "moderata come generico aiuto al sonno in chi non ha un disallineamento circadiano di base.",
+    pros: [
+      "Evidenza molto solida per la risincronizzazione del ritmo circadiano (jet lag, turni di lavoro, orari irregolari).",
+      "Dosi basse (0.3-1 mg) sono spesso efficaci quanto dosi alte, con meno intontimento residuo al risveglio.",
+    ],
+    cons: [
+      "Non è un sedativo classico: in chi non ha un disallineamento circadiano di base, l'effetto come 'aiuto al sonno' generico è più modesto.",
+      "L'igiene del sonno (luce, orari regolari) resta l'intervento con il maggiore impatto: la melatonina funziona come complemento, non sostituto.",
+    ],
+    conclusion: "La melatonina è lo strumento giusto per risincronizzare il ritmo circadiano (jet lag, turni), non un sonnifero generico: dosi basse funzionano bene quanto quelle alte, con meno effetti residui al risveglio.",
   },
   {
     id: "elettroliti", name: "Elettroliti / Sali Minerali", icon: "🧂",
@@ -4976,6 +5093,15 @@ export const SUPP_WIKI = [
       "cui non esiste una dose universale: il colore/sapore del sudore secco sulla pelle (chi suda molto sale " +
       "spesso nota residui bianchi) è un indicatore grezzo ma utile. Evidenza: alta per sforzi lunghi (>90 min) o " +
       "in ambiente caldo-umido, marginale per sedute brevi in ambiente fresco.",
+    pros: [
+      "Previene efficacemente crampi e cali di performance nelle sedute lunghe o in ambiente caldo-umido.",
+      "Riduce il rischio di iponatriemia da diluizione in eventi di endurance di più ore, dove la sola acqua non basta.",
+    ],
+    cons: [
+      "Per sedute brevi in ambiente fresco l'acqua da sola è quasi sempre sufficiente: l'integrazione elettrolitica extra è superflua.",
+      "Non esiste una dose universale: il fabbisogno varia molto su base individuale e climatica, richiedendo un aggiustamento personale.",
+    ],
+    conclusion: "Gli elettroliti diventano rilevanti soprattutto per sedute lunghe (oltre 90 minuti) o in ambiente caldo-umido: per allenamenti brevi in condizioni fresche, l'acqua semplice resta la scelta più semplice ed efficace.",
   },
   {
     id: "vitamina_d", name: "Vitamina D3", icon: "🌤️",
@@ -4995,6 +5121,15 @@ export const SUPP_WIKI = [
       "del sangue (25-OH-D) distingue una reale carenza da un livello già adeguato, evitando sia il sotto- che il " +
       "sovra-dosaggio. Evidenza: molto alta su osso e immunità, in crescita ma meno definitiva su performance " +
       "muscolare diretta.",
+    pros: [
+      "Evidenza molto alta e consolidata sul ruolo osseo e immunitario, con carenza diffusa nella popolazione generale.",
+      "Facile ed economico da correggere una volta individuata la carenza tramite esame del sangue.",
+    ],
+    cons: [
+      "Essendo liposolubile, si accumula nel tessuto adiposo/epatico: un sovradosaggio prolungato senza controllo non è privo di rischi.",
+      "L'effetto diretto sulla performance muscolare è ancora meno definitivo rispetto al ruolo osseo/immunitario.",
+    ],
+    conclusion: "Un esame del sangue (25-OH-D) prima di integrare è il modo corretto di procedere: la vitamina D3 è tra i pochi casi dove l'integrazione a occhio, senza dato di partenza, rischia di essere inefficace o eccessiva.",
   },
   {
     id: "magnesio", name: "Magnesio", icon: "🌾",
@@ -5013,6 +5148,15 @@ export const SUPP_WIKI = [
       "organici (citrato, malato) sono assorbite tramite trasportatori intestinali diversi e più efficienti. " +
       "Evidenza: alta sul ruolo enzimatico generale e sulla correzione di carenza (molto comune con diete povere " +
       "di legumi/frutta secca/verdure a foglia verde), moderata sull'effetto specifico su qualità del sonno.",
+    pros: [
+      "Correzione efficace di una carenza molto comune (diete povere di legumi/frutta secca/verdure a foglia verde).",
+      "Le forme chelate (bisglicinato, citrato) sono ben tollerate e assorbite meglio delle forme economiche (ossido, solfato).",
+    ],
+    cons: [
+      "Le forme economiche (ossido, solfato) sono scarsamente assorbite e più lassative: la scelta della forma chimica conta quanto la dose.",
+      "L'evidenza sull'effetto specifico su qualità del sonno è più moderata rispetto a quella sul ruolo enzimatico generale.",
+    ],
+    conclusion: "Il magnesio in forma ben assorbita (bisglicinato o citrato) corregge efficacemente una carenza molto comune: la scelta della forma chimica è tanto importante quanto la dose per evitare sia il malassorbimento sia l'effetto lassativo.",
   },
   {
     id: "hmb", name: "HMB", icon: "🧱",
@@ -5030,6 +5174,15 @@ export const SUPP_WIKI = [
       "avanzato in surplus o mantenimento con proteine già adeguate, dove il catabolismo di base è già contenuto. " +
       "Evidenza: moderata e più consistente nei soggetti non allenati o in condizioni cataboliche marcate, debole " +
       "negli atleti allenati con dieta proteica già ottimizzata.",
+    pros: [
+      "Razionale solido nelle condizioni cataboliche marcate: deficit calorico severo, principianti, soggetti anziani sarcopenici.",
+      "Profilo di sicurezza molto buono, senza controindicazioni note rilevanti alle dosi comuni.",
+    ],
+    cons: [
+      "Nell'atleta avanzato con proteine già ottimizzate, il beneficio aggiuntivo rispetto alla sola dieta è modesto o assente.",
+      "Va assunto distribuito durante la giornata (non in un'unica dose) per mantenere l'effetto anti-catabolico costante.",
+    ],
+    conclusion: "L'HMB ha senso soprattutto in condizioni cataboliche marcate (deficit severo, principianti, anziani sarcopenici): nell'atleta avanzato con dieta proteica già ottimizzata, il beneficio aggiuntivo è modesto.",
   },
   {
     id: "taurina", name: "Taurina", icon: "🐂",
@@ -5047,6 +5200,15 @@ export const SUPP_WIKI = [
       "quantità solitamente sufficiente nei soggetti sani, motivo per cui il beneficio aggiuntivo " +
       "dell'integrazione resta meno prevedibile rispetto ad altri ergogenici. Evidenza: moderata su resistenza e " +
       "riduzione del danno ossidativo da esercizio, debole/inconsistente su forza massimale.",
+    pros: [
+      "Effetto antiossidante diretto documentato sul danno ossidativo indotto dall'esercizio intenso.",
+      "Sintetizzata endogenamente in quantità di solito sufficiente, il che ne rende sicura anche l'assunzione regolare.",
+    ],
+    cons: [
+      "L'evidenza sull'effetto ergogenico diretto (forza massimale) è debole/inconsistente rispetto a creatina o caffeina.",
+      "L'interazione con la caffeina nelle formulazioni pre-workout non è del tutto chiarita sul piano dell'effetto netto.",
+    ],
+    conclusion: "La taurina è un integratore sicuro con un effetto più solido su resistenza e riduzione del danno ossidativo che su forza massimale: da considerare un complemento, non un pilastro come creatina o caffeina.",
   },
   {
     id: "curcuma", name: "Curcuma (Curcumina)", icon: "🟠",
@@ -5065,6 +5227,15 @@ export const SUPP_WIKI = [
       "2.000%, il che spiega perché quasi tutti gli integratori efficaci la includano (o usino formulazioni " +
       "alternative come nanoparticelle o fosfolipidi complessati). Evidenza: da moderata ad alta su marcatori " +
       "infiammatori e dolore muscolare percepito post-esercizio (DOMS), se assunta in forma bioottimizzata.",
+    pros: [
+      "Effetto documentato su marcatori infiammatori e DOMS, con un profilo di effetti collaterali molto più favorevole dei FANS.",
+      "Ampiamente studiata e sicura per un uso regolare in periodi di alto carico di allenamento.",
+    ],
+    cons: [
+      "Da sola (senza piperina o formulazioni bioottimizzate) ha una biodisponibilità orale quasi nulla: gran parte dei prodotti in commercio è sotto-dosata in pratica.",
+      "Un uso massiccio e indiscriminato di antiossidanti attorno alla sessione può in teoria smorzare parte degli adattamenti utili all'allenamento.",
+    ],
+    conclusion: "La curcumina è utile per il recupero articolare e la gestione dell'infiammazione da sovraccarico, ma solo in formulazione bioottimizzata (con piperina o equivalente): senza, la biodisponibilità è troppo bassa per avere un effetto reale.",
   },
   {
     id: "proteine_vegetali", name: "Proteine Vegetali (pisello/riso)", icon: "🌱",
@@ -5083,6 +5254,15 @@ export const SUPP_WIKI = [
       "proteine animali per la presenza di fattori antinutrizionali residui (es. inibitori della tripsina), " +
       "ridotti dai processi di lavorazione industriale. Evidenza: alta sull'equivalenza pratica con whey/caseina " +
       "quando le fonti sono combinate correttamente e la dose per pasto è adeguata (25-30 g+).",
+    pros: [
+      "Equivalenza pratica documentata con whey/caseina quando le fonti (pisello + riso) sono combinate correttamente.",
+      "Unica opzione per chi segue un regime vegano o ha intolleranza al lattosio, senza compromessi sulla qualità proteica.",
+    ],
+    cons: [
+      "Le fonti isolate singolarmente (solo riso o solo pisello) hanno un aminoacido limitante e non sono equivalenti da sole.",
+      "Leucina leggermente inferiore a parità di grammi rispetto alla whey, che richiede porzioni per pasto leggermente più alte.",
+    ],
+    conclusion: "Le proteine vegetali combinate (pisello + riso) sono un'alternativa equivalente alla whey per chi segue un regime vegetale, a patto di usare dosi per pasto adeguate (25-30 g+) per compensare la leucina leggermente inferiore.",
   },
   {
     id: "probiotici", name: "Probiotici", icon: "🦠",
@@ -5102,6 +5282,15 @@ export const SUPP_WIKI = [
       "sul colon dalle proteine non digerite che raggiungono l'intestino crasso. Evidenza: alta ma " +
       "ceppo-dipendente; leggere sempre quale ceppo specifico (non solo il genere) è stato usato negli studi di " +
       "riferimento del prodotto.",
+    pros: [
+      "Supporto documentato alla salute intestinale, particolarmente utile dopo cicli di antibiotici o con diete molto iperproteiche.",
+      "Rischio molto basso alle dosi comuni, adatti a un uso regolare e prolungato.",
+    ],
+    cons: [
+      "L'effetto è marcatamente ceppo-specifico: i risultati di uno studio su un ceppo non si estrapolano automaticamente ad altri prodotti.",
+      "Molti prodotti in commercio non specificano il ceppo esatto usato negli studi di riferimento, rendendo difficile valutare l'efficacia reale.",
+    ],
+    conclusion: "I probiotici sono utili soprattutto in contesti specifici (post-antibiotico, dieta molto iperproteica, stress digestivo), ma l'efficacia dipende interamente dal ceppo specifico: va sempre verificato quale ceppo è usato, non solo il genere batterico in etichetta.",
   },
   {
     id: "tongkat_ali", name: "Tongkat Ali", icon: "🌳",
@@ -5121,6 +5310,15 @@ export const SUPP_WIKI = [
       "stesso asse regolato da terapie ormonali o farmaci che modulano SHBG/aromatasi. Evidenza: moderata su " +
       "libido e umore, preliminare ma promettente su testosterone libero in soggetti con livelli sub-ottimali; " +
       "gli studi di alta qualità sono ancora relativamente pochi.",
+    pros: [
+      "Effetto più marcato proprio in soggetti con testosterone basso o sotto stress cronico, un caso d'uso reale e frequente.",
+      "Non altera direttamente il testosterone totale come un anabolizzante, agendo piuttosto su SHBG e aromatasi.",
+    ],
+    cons: [
+      "Essendo ormonalmente attivo, interagisce con lo stesso asse regolato da terapie ormonali o farmaci che modulano SHBG/aromatasi: attenzione se già in terapia.",
+      "Gli studi di alta qualità sull'uomo sono ancora relativamente pochi rispetto a integratori più consolidati.",
+    ],
+    conclusion: "Il Tongkat Ali va usato con consapevolezza, idealmente verificando i propri valori ormonali prima e dopo un ciclo d'uso: il beneficio è più probabile in chi parte da livelli di testosterone bassi o sotto stress cronico, meno prevedibile in soggetti già eutrofici.",
   },
   {
     id: "fadogia", name: "Fadogia Agrestis", icon: "🌿",
@@ -5140,6 +5338,15 @@ export const SUPP_WIKI = [
       "più ampio tra popolarità sui social media e reale solidità scientifica alle spalle. Evidenza: molto bassa " +
       "sull'uomo (pochissimi trial clinici piccoli), motivo per cui va trattato come sperimentale e non come " +
       "protocollo consolidato.",
+    pros: [
+      "Meccanismo d'azione plausibile (stimolazione diretta delle cellule di Leydig) osservato negli studi animali disponibili.",
+    ],
+    cons: [
+      "Evidenza sull'uomo quasi inesistente: la maggior parte dei dati viene da studi su roditori, non trasferibili automaticamente.",
+      "Segnali di potenziale tossicità testicolare a lungo termine osservati negli animali a dosaggi più alti, un dato che impone prudenza.",
+      "Qualità e standardizzazione degli estratti in commercio molto variabile da un produttore all'altro.",
+    ],
+    conclusion: "La Fadogia Agrestis va trattata come sperimentale, non come protocollo consolidato: il divario tra popolarità online e reale solidità scientifica è tra i più ampi di tutta la Wiki Integratori, e l'assenza di trial umani solidi impone cautela e controlli periodici a chi decide comunque di usarla.",
   },
   {
     id: "ecdisterone", name: "Ecdisterone (Beta-Ecdisterone)", icon: "🦗",
@@ -5159,6 +5366,15 @@ export const SUPP_WIKI = [
       "alcuni piccoli trial, incrementi di forza e massa magra superiori al placebo. Il numero di studi controllati " +
       "sull'uomo resta comunque limitato e alcuni con metodologia discussa. Evidenza: preliminare/moderata, in " +
       "crescita ma non ancora al livello di consenso scientifico di creatina o proteine.",
+    pros: [
+      "Non altera i marcatori ormonali tipici degli anabolizzanti (LH, testosterone, SHBG) negli studi disponibili.",
+      "Alcuni piccoli trial mostrano incrementi di forza e massa magra superiori al placebo con un meccanismo cellulare plausibile.",
+    ],
+    cons: [
+      "Il numero di studi controllati sull'uomo resta limitato, e alcuni hanno metodologia discussa.",
+      "Non ancora al livello di consenso scientifico di creatina o proteine: resta un composto di nicchia da trattare come promettente ma non consolidato.",
+    ],
+    conclusion: "L'ecdisterone mostra un meccanismo interessante e non ormonale, con risultati preliminari incoraggianti su forza e massa magra: va trattato come opzione sperimentale in crescita, non ancora come pilastro consolidato al pari di creatina o proteine.",
   },
   {
     id: "rodiola", name: "Rhodiola Rosea", icon: "🌸",
@@ -5177,6 +5393,15 @@ export const SUPP_WIKI = [
       "dallo standardize su rosavine e salidroside piuttosto che dal peso grezzo dell'estratto, motivo per cui " +
       "prodotti non standardizzati hanno risultati inconsistenti. Evidenza: moderata su fatica mentale acuta e " +
       "resistenza percepita, più preliminare sull'effetto cronico su performance fisica pura.",
+    pros: [
+      "Effetto acuto misurabile già dopo una singola dose su fatica cognitiva/fisica, un profilo temporale insolito tra gli adattogeni.",
+      "Utile complemento specifico per chi gestisce carichi di lavoro e allenamento elevati insieme.",
+    ],
+    cons: [
+      "L'effetto cronico su performance fisica pura è più preliminare rispetto a quello su fatica mentale acuta.",
+      "Il dosaggio efficace dipende dallo standardize su rosavine/salidroside: prodotti non standardizzati danno risultati inconsistenti.",
+    ],
+    conclusion: "La Rhodiola Rosea è particolarmente interessante per chi gestisce carichi di lavoro e allenamento elevati insieme, con un effetto acuto sulla fatica percepita più consistente di quello cronico sulla performance fisica pura.",
   },
   {
     id: "lions_mane", name: "Lion's Mane (Hericium Erinaceus)", icon: "🦁",
@@ -5196,6 +5421,15 @@ export const SUPP_WIKI = [
       "tessuto nervoso. Gli studi controllati sull'uomo sono ancora numericamente pochi e per lo più su soggetti " +
       "anziani con lieve declino cognitivo, non su popolazione sportiva sana. Evidenza: preliminare ma coerente " +
       "sul meccanismo, insufficiente per conclusioni definitive sulla popolazione generale.",
+    pros: [
+      "Meccanismo biologico ben caratterizzato (stimolazione dell'NGF) rispetto a molti composti 'di moda' senza base fisiologica chiara.",
+      "Profilo di sicurezza favorevole, adatto a un uso di lungo periodo orientato alla salute cognitiva.",
+    ],
+    cons: [
+      "Gli studi controllati sull'uomo sono ancora pochi e per lo più su soggetti anziani con declino cognitivo, non su popolazione sportiva sana.",
+      "Nessun effetto acuto: lavora su tempi lunghi, non è utile per chi cerca una spinta immediata su lucidità mentale.",
+    ],
+    conclusion: "Il Lion's Mane è un integratore di nicchia orientato alla salute cognitiva a lungo termine più che alla performance sportiva immediata: il meccanismo è promettente ma gli studi sulla popolazione sportiva sana restano insufficienti per conclusioni definitive.",
   },
   {
     id: "urolitina_a", name: "Urolitina A", icon: "🍇",
@@ -5217,6 +5451,15 @@ export const SUPP_WIKI = [
       "recupero muscolare in atleti master oltre che nella ricerca sulla longevità in senso stretto. Evidenza: " +
       "preliminare ma con un meccanismo cellulare ben caratterizzato (a differenza di molti composti \"di moda\"), " +
       "supportata da alcuni trial clinici su forza e biomarcatori mitocondriali negli adulti.",
+    pros: [
+      "Meccanismo cellulare ben caratterizzato (mitofagia via PINK1/Parkin), supportato da alcuni trial clinici su forza e biomarcatori mitocondriali.",
+      "L'integrazione diretta bypassa il limite dei 'non produttori' (circa il 60% della popolazione) che non converte abbastanza urolitina A dal solo consumo di melograno.",
+    ],
+    cons: [
+      "L'evidenza resta preliminare: i trial clinici disponibili sono ancora relativamente pochi e su outcome specifici.",
+      "Il beneficio più consistente è documentato negli adulti/atleti master, meno negli sportivi giovani sani.",
+    ],
+    conclusion: "L'Urolitina A ha un meccanismo cellulare tra i più solidi tra i composti emergenti per longevità e recupero muscolare, particolarmente rilevante per chi non produce naturalmente abbastanza urolitina dal solo melograno — l'integrazione diretta risolve questo limite biologico individuale.",
   },
   {
     id: "nmn", name: "NMN (Nicotinamide Mononucleotide)", icon: "🧬",
@@ -5237,6 +5480,15 @@ export const SUPP_WIKI = [
       "energetico e funzione mitocondriale. Evidenza: solida sui meccanismi cellulari e sugli studi animali, " +
       "ancora limitata (pochi trial umani, per lo più piccoli e a breve termine) su outcome clinici concreti " +
       "come performance o longevità reale.",
+    pros: [
+      "Meccanismo cellulare solido e ben studiato (via di salvataggio del NAD+), coerente con il declino documentato dei livelli di NAD+ con l'età.",
+      "Profilo di sicurezza favorevole nei trial umani disponibili finora.",
+    ],
+    cons: [
+      "I trial umani sono ancora pochi, per lo più piccoli e a breve termine: mancano dati solidi su outcome concreti come performance o longevità reale.",
+      "L'entusiasmo mediatico supera nettamente la solidità dell'evidenza clinica attuale sull'uomo.",
+    ],
+    conclusion: "L'NMN ha un razionale biologico solido e uno dei meccanismi cellulari meglio caratterizzati tra i composti emergenti, ma resta da considerare sperimentale finché non arriveranno trial umani più ampi e a lungo termine su outcome clinici concreti.",
   },
   {
     id: "glicina", name: "Glicina", icon: "💤",
@@ -5256,6 +5508,15 @@ export const SUPP_WIKI = [
       "uso di melatonina in caso di disallineamento circadiano concomitante. Evidenza: da moderata ad alta sugli " +
       "outcome soggettivi di qualità del sonno (tempo per addormentarsi, sonnolenza diurna residua), meno studiata " +
       "con misure oggettive come la polisonnografia.",
+    pros: [
+      "Economica, semplice e con un meccanismo fisiologico chiaro (termoregolazione), complementare (non alternativo) alla melatonina.",
+      "Evidenza da moderata ad alta sugli outcome soggettivi di qualità del sonno, spesso trascurata rispetto a integratori più 'di moda'.",
+    ],
+    cons: [
+      "Meno studiata con misure oggettive (polisonnografia) rispetto agli outcome soggettivi riportati.",
+      "Non agisce sul ritmo circadiano: inutile da sola per jet lag o turni di lavoro, dove la melatonina resta lo strumento specifico.",
+    ],
+    conclusion: "La glicina è un'opzione economica e sottovalutata per la qualità del sonno, complementare alla melatonina quando serve anche una risincronizzazione circadiana: agisce su un meccanismo fisiologico diverso (temperatura corporea) e non sostitutivo.",
   },
   {
     id: "berberina", name: "Berberina", icon: "🌼",
@@ -5277,6 +5538,15 @@ export const SUPP_WIKI = [
       "alcuni enzimi del citocromo P450 (CYP3A4, CYP2D6) coinvolti nel metabolismo di molti farmaci comuni. " +
       "Evidenza: alta su glicemia post-prandiale e sensibilità insulinica, con diversi trial che la paragonano " +
       "favorevolmente alla metformina in studi di dimensioni moderate.",
+    pros: [
+      "Evidenza alta e diversi trial che la paragonano favorevolmente alla metformina su glicemia post-prandiale e sensibilità insulinica.",
+      "Meccanismo condiviso con l'esercizio fisico (attivazione dell'AMPK), un razionale coerente per chi gestisce composizione corporea e salute metabolica insieme.",
+    ],
+    cons: [
+      "Interagisce con enzimi del citocromo P450 coinvolti nel metabolismo di molti farmaci comuni: rischio di interazioni non banale.",
+      "L'uso concomitante con antidiabetici richiede supervisione medica per il rischio di ipoglicemia additiva.",
+    ],
+    conclusion: "La berberina ha un'evidenza solida su glicemia e sensibilità insulinica, ma proprio per la sua attività farmacologica reale va usata con attenzione e supervisione medica se già in terapia con altri farmaci, non trattata come un semplice 'estratto vegetale' innocuo.",
   },
   {
     id: "astaxantina", name: "Astaxantina", icon: "🦐",
@@ -5298,6 +5568,90 @@ export const SUPP_WIKI = [
       "(da cui la cautela verso un uso massiccio e indiscriminato di antiossidanti attorno alla sessione). " +
       "Evidenza: moderata su marcatori di stress ossidativo e affaticamento visivo, preliminare ma coerente su " +
       "recupero muscolare in sport di endurance.",
+    pros: [
+      "Capacità antiossidante molecola per molecola superiore a vitamina C, E o beta-carotene nei test in vitro, con un meccanismo di membrana unico.",
+      "Beneficio aggiuntivo documentato su affaticamento visivo, non solo su recupero muscolare.",
+    ],
+    cons: [
+      "Un uso massiccio e indiscriminato di antiossidanti attorno alla sessione può in teoria smorzare parte delle ROS utili come segnale di adattamento all'allenamento.",
+      "L'evidenza sul recupero muscolare specifico resta preliminare, seppur coerente con il meccanismo proposto.",
+    ],
+    conclusion: "L'astaxantina è un integratore di nicchia interessante per chi si allena molto e pensa anche al recupero a lungo termine, con un profilo antiossidante superiore ad altri composti più noti — non va però usata in dosi massicce attorno alla sessione, per non smorzare gli adattamenti utili all'allenamento.",
+  },
+  {
+    id: "timing-integrazione", name: "Timing dell'integrazione: cosa conta davvero", icon: "🕐",
+    dose: "Dipende dal singolo integratore", timing: "Costanza quotidiana > timing perfetto, per la maggior parte dei prodotti",
+    body: "Per la maggior parte degli integratori (creatina, omega-3, vitamina D, magnesio) il momento esatto della " +
+      "giornata conta molto meno della costanza d'uso quotidiana. Solo un piccolo sottogruppo (caffeina, citrullina, " +
+      "beta-alanina frazionata, elettroliti durante lo sforzo) ha un timing realmente critico legato al meccanismo " +
+      "d'azione.",
+    deepDive: "La distinzione pratica è tra integratori 'a effetto acuto' (agiscono nella finestra di poche ore " +
+      "dall'assunzione, quindi il timing rispetto all'allenamento conta: caffeina, citrullina) e integratori 'ad " +
+      "accumulo cronico' (agiscono saturando un deposito o correggendo una carenza nel tempo, quindi conta la " +
+      "costanza giornaliera più del momento preciso: creatina, beta-alanina, omega-3, vitamina D, magnesio). " +
+      "Confondere le due categorie porta a errori pratici comuni: prendere la creatina 'solo nei giorni di " +
+      "allenamento' (inutile, dato che agisce per saturazione del deposito muscolare, non per effetto acuto) o " +
+      "aspettarsi un effetto immediato dalla beta-alanina alla prima assunzione (richiede settimane di accumulo).",
+    pros: [
+      "Semplifica enormemente l'aderenza: per la maggior parte degli integratori basta la costanza, non serve pianificare il timing esatto ogni giorno.",
+      "Aiuta a evitare errori pratici comuni, come sospendere la creatina nei giorni di riposo pensando serva solo pre-allenamento.",
+    ],
+    cons: [
+      "Per il piccolo sottogruppo a effetto acuto (caffeina, citrullina, elettroliti), ignorare il timing riduce concretamente il beneficio ottenibile.",
+      "Richiede conoscere la categoria del singolo integratore, non una regola universale valida per tutti.",
+    ],
+    conclusion: "La domanda giusta non è 'quando lo prendo' ma 'è un integratore ad effetto acuto o ad accumulo cronico': per la maggior parte dei prodotti la costanza quotidiana conta più di qualunque timing preciso, con poche eccezioni ben definite (caffeina, citrullina, elettroliti).",
+  },
+  {
+    id: "leggere-evidenza", name: "Come leggere il livello di evidenza di un integratore", icon: "🔍",
+    dose: "—", timing: "—",
+    body: "Non tutti gli integratori hanno lo stesso livello di prova scientifica alle spalle: creatina e caffeina " +
+      "hanno centinaia di studi convergenti, altri (Fadogia Agrestis, NMN) hanno pochi trial umani piccoli. Sapere " +
+      "leggere questa differenza evita sia lo scetticismo ingiustificato sia l'entusiasmo cieco verso ogni novità.",
+    deepDive: "Una gerarchia pratica, dal livello di evidenza più alto al più basso: meta-analisi di più RCT " +
+      "(randomized controlled trial) convergenti sull'uomo, un singolo RCT ben condotto sull'uomo, studi osservazionali " +
+      "sull'uomo, studi preliminari/pilota su piccoli campioni, e infine studi solo su animali o meccanismi cellulari " +
+      "in vitro. Un integratore può avere un meccanismo d'azione molto plausibile e ben caratterizzato (es. Fadogia " +
+      "Agrestis, NMN) senza per questo avere prove solide sull'uomo: il meccanismo spiega 'perché potrebbe " +
+      "funzionare', non 'conferma che funzioni' negli esseri umani a quelle dosi. Anche il conflitto d'interesse " +
+      "conta: studi finanziati direttamente dal produttore di un integratore vanno letti con più cautela di studi " +
+      "indipendenti, non per squalificarli automaticamente ma per pesarli correttamente nel quadro complessivo.",
+    pros: [
+      "Permette di distinguere integratori con base solida (creatina, caffeina) da quelli ancora sperimentali (Fadogia, NMN) senza scartarli a priori.",
+      "Protegge sia dallo scetticismo ingiustificato verso composti nuovi ma promettenti, sia dall'entusiasmo cieco verso ogni novità di tendenza.",
+    ],
+    cons: [
+      "Richiede tempo e un minimo di alfabetizzazione scientifica per essere applicato correttamente a ogni singolo prodotto.",
+      "Il marketing degli integratori spesso presenta risultati preliminari come se fossero consolidati, rendendo necessaria una lettura critica attiva.",
+    ],
+    conclusion: "Prima di integrare qualcosa, vale la pena chiedersi su che tipo di prova si basa: centinaia di RCT sull'uomo, pochi studi piccoli, o solo meccanismi cellulari plausibili — la risposta cambia completamente quanta fiducia riporre in un dato prodotto e a quale dose.",
+  },
+  {
+    id: "stacking-ciclizzazione", name: "Stacking e ciclizzazione: quando hanno senso", icon: "🧩",
+    dose: "—", timing: "—",
+    body: "Combinare più integratori (stacking) o alternare periodi di uso e pausa (ciclizzazione) ha senso solo per " +
+      "un sottogruppo specifico di prodotti (caffeina, alcuni adattogeni) dove si sviluppa tolleranza — per la " +
+      "maggior parte degli integratori (creatina, vitamina D, omega-3) cicli e pause non hanno un razionale " +
+      "fisiologico e riducono solo la costanza d'uso.",
+    deepDive: "La tolleranza (calo dell'effetto con l'uso cronico) si sviluppa per meccanismi recettoriali specifici: " +
+      "la caffeina, ad esempio, con l'uso quotidiano prolungato porta a un aumento del numero di recettori " +
+      "dell'adenosina (up-regulation), riducendo l'effetto della stessa dose — un ciclo di scarico di 1-2 settimane " +
+      "resetta parzialmente questa sensibilità. Creatina, vitamina D o magnesio, al contrario, agiscono saturando un " +
+      "deposito fisiologico o correggendo una carenza: non c'è un meccanismo recettoriale che sviluppa tolleranza, " +
+      "quindi cicli e pause non hanno un vantaggio fisiologico documentato e comportano solo la perdita temporanea " +
+      "del beneficio (es. il deposito di fosfocreatina torna a scendere se si smette la creatina). Lo stacking " +
+      "(combinare più prodotti) ha senso quando i meccanismi d'azione sono complementari e non ridondanti (es. " +
+      "creatina + beta-alanina, che agiscono su sistemi energetici diversi), meno quando si sommano prodotti con lo " +
+      "stesso meccanismo aspettandosi un effetto additivo che raramente si verifica in proporzione.",
+    pros: [
+      "La ciclizzazione mirata (es. caffeina) recupera davvero sensibilità e beneficio perso con l'uso cronico continuo.",
+      "Lo stacking di integratori con meccanismi complementari (es. creatina + beta-alanina) copre più vie fisiologiche senza ridondanza.",
+    ],
+    cons: [
+      "Applicare cicli/pause a integratori che agiscono per saturazione (creatina, vitamina D) è controproducente: si perde solo temporaneamente il beneficio, senza alcun vantaggio in cambio.",
+      "Lo stacking di prodotti con lo stesso meccanismo d'azione raramente produce un effetto realmente additivo proporzionale al numero di prodotti assunti.",
+    ],
+    conclusion: "Cicli e stacking vanno applicati con criterio in base al meccanismo specifico di ogni integratore, non come regola generale 'meglio variare sempre': per la creatina e simili la costanza continua è la scelta corretta, per la caffeina e gli adattogeni un ciclo periodico ha un razionale fisiologico reale.",
   },
 ];
 
@@ -7201,9 +7555,41 @@ function SupplementDetailModal({ supplement, accent, onClose }) {
           </div>
           <p className="body mb-4">{w.body}</p>
           {w.deepDive && (
-            <div className="inner p-4">
+            <div className="inner p-4 mb-3">
               <p className="label mb-2" style={{ letterSpacing: "0.08em" }}>Approfondimento chimico-fisiologico</p>
               <p className="body" style={{ fontSize: "0.86rem", lineHeight: 1.6 }}>{w.deepDive}</p>
+            </div>
+          )}
+          {w.chart && (
+            <div className="inner p-4 mb-3">
+              <p className="label mb-2" style={{ letterSpacing: "0.08em" }}>{w.chart.title || "In grafico"}</p>
+              <WikiBarChart {...w.chart} accent={accent} />
+            </div>
+          )}
+          {(w.pros?.length > 0 || w.cons?.length > 0) && (
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {w.pros?.length > 0 && (
+                <div className="rounded-xl p-3" style={{ backgroundColor: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)" }}>
+                  <p className="label mb-1.5" style={{ color: "#10B981", fontSize: "0.6rem" }}>Pro</p>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {w.pros.map((p, i) => <li key={i} className="meta" style={{ fontSize: "0.74rem", lineHeight: 1.5, marginBottom: 3 }}>{p}</li>)}
+                  </ul>
+                </div>
+              )}
+              {w.cons?.length > 0 && (
+                <div className="rounded-xl p-3" style={{ backgroundColor: "rgba(240,160,32,0.08)", border: "1px solid rgba(240,160,32,0.28)" }}>
+                  <p className="label mb-1.5" style={{ color: "#B45309", fontSize: "0.6rem" }}>Contro</p>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {w.cons.map((c, i) => <li key={i} className="meta" style={{ fontSize: "0.74rem", lineHeight: 1.5, marginBottom: 3 }}>{c}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {w.conclusion && (
+            <div className="rounded-xl p-3.5" style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}35` }}>
+              <p className="label mb-1" style={{ color: accent, fontSize: "0.6rem" }}>Conclusione</p>
+              <p className="body" style={{ fontSize: "0.82rem", lineHeight: 1.55 }}>{w.conclusion}</p>
             </div>
           )}
         </div>
@@ -7237,6 +7623,16 @@ export const NUTRITION_WIKI = [
       "animali (carne, pesce, uova, latticini) hanno un profilo amminoacidico completo; fonti vegetali (legumi, soia, " +
       "seitan) richiedono spesso combinazioni per coprire tutti gli essenziali, ma a parità di grammi totali giornalieri " +
       "funzionano ugualmente bene per chi segue un regime vegetariano/vegano ben pianificato.",
+    pros: [
+      "È il macronutriente con più margine di errore verso l'alto: sforare leggermente il target proteico non ha conseguenze negative significative.",
+      "Ha il più alto effetto termico (costo digestivo) tra i macronutrienti e il maggior impatto sulla sazietà a parità di calorie.",
+      "Un apporto adeguato protegge la massa muscolare anche in deficit calorico prolungato.",
+    ],
+    cons: [
+      "Oltre 2.2-2.5 g/kg non porta benefici aggiuntivi misurabili, solo un costo economico e di sazietà da gestire nel piano alimentare.",
+      "Concentrare tutte le proteine in 1-2 pasti riduce il numero di finestre di sintesi proteica attivate nella giornata rispetto a una distribuzione più regolare.",
+    ],
+    conclusion: "1.6-2.2 g/kg/die distribuiti su 3-4 pasti coprono il fabbisogno nella quasi totalità dei casi: aumentare oltre questo range non produce benefici proporzionali, mentre scendere sotto 1.6 g/kg mette a rischio la massa muscolare, specie in deficit calorico.",
   },
   {
     id: "carboidrati", name: "Carboidrati", icon: "🍚",
@@ -7251,6 +7647,15 @@ export const NUTRITION_WIKI = [
       "qualità delle sessioni successive nei giorni ad alto volume. L'indice glicemico conta meno del contesto: un " +
       "carboidrato ad alto IG post-allenamento (quando la sensibilità insulinica muscolare è più alta) è utile proprio " +
       "per la velocità di ripristino del glicogeno.",
+    pros: [
+      "Sostengono direttamente la qualità delle sessioni ad alta intensità e il recupero tra una seduta e l'altra nei periodi di volume alto.",
+      "Sono la leva più facile da modulare al rialzo o al ribasso a parità di proteine e grassi per aggiustare il totale calorico.",
+    ],
+    cons: [
+      "Tagliarli drasticamente per 'accelerare' il dimagrimento non produce risultati migliori a parità di deficit calorico, solo più fatica e allenamenti peggiori.",
+      "Un eccesso cronico oltre il fabbisogno calorico totale si converte comunque in accumulo di grasso, indipendentemente dall'indice glicemico della fonte.",
+    ],
+    conclusion: "I carboidrati vanno dosati in funzione del volume di allenamento e dell'obiettivo calorico, non demonizzati né sopravvalutati: sono lo strumento più pratico per sostenere le prestazioni quando il totale calorico lo permette.",
   },
   {
     id: "grassi", name: "Grassi", icon: "🥑",
@@ -7264,6 +7669,15 @@ export const NUTRITION_WIKI = [
       "processati) — aumentare il pesce grasso 2-3 volte a settimana riequilibra il rapporto senza integratori. I " +
       "grassi saturi non sono da demonizzare in toto entro range moderati (circa un terzo dei grassi totali), ma un " +
       "eccesso cronico è associato a peggior profilo lipidico in soggetti predisposti.",
+    pros: [
+      "Indispensabili per la sintesi ormonale e l'assorbimento delle vitamine liposolubili: non sono comprimibili a piacere come i carboidrati.",
+      "Ad alta densità calorica, sono utili per raggiungere un surplus calorico senza volumi di cibo eccessivi.",
+    ],
+    cons: [
+      "Scendere sotto 0.5-0.8 g/kg per allungare altri macro può peggiorare il quadro ormonale, soprattutto in deficit prolungato.",
+      "Per la loro alta densità calorica, un eccesso non controllato è la via più facile per sforare il totale calorico senza accorgersene.",
+    ],
+    conclusion: "I grassi vanno mantenuti in un range minimo di sicurezza (0.5-0.8 g/kg) indipendentemente dall'obiettivo, con il resto della quota calorica ripartito tra proteine e carboidrati in base a preferenze e prestazione.",
   },
   {
     id: "deficit", name: "Deficit calorico", icon: "📉",
@@ -7277,6 +7691,23 @@ export const NUTRITION_WIKI = [
       "sola perdita di peso, per calo di NEAT e efficienza metabolica) è reale ma limitato: gestibile con refeed " +
       "periodici di carboidrati o diet break a mantenimento ogni 6-10 settimane di deficit continuo, non con tagli " +
       "calorici sempre più drastici.",
+    chart: {
+      title: "Velocità di perdita peso e rischio di perdere massa magra",
+      labels: ["<0.5%", "0.5-1%", "1-1.5%", ">1.5%"],
+      values: [2, 3, 6, 9],
+      unit: "",
+      highlight: 1,
+      caption: "Rischio relativo di perdita di massa magra per fascia di velocità di dimagrimento settimanale (% del peso corporeo); indicativo, non un dato individuale.",
+    },
+    pros: [
+      "È l'unica leva che determina davvero la perdita di grasso: nessun trucco di timing o combinazione di alimenti la sostituisce.",
+      "Un deficit moderato (15-25%) è sostenibile per mesi, permettendo di preservare meglio la performance in palestra rispetto a tagli drastici.",
+    ],
+    cons: [
+      "Un deficit troppo aggressivo accelera la perdita di peso ma aumenta il rischio di perdere massa muscolare oltre che grasso.",
+      "Il deficit prolungato senza pause porta ad adattamento metabolico e cala l'aderenza psicologica al piano nel tempo.",
+    ],
+    conclusion: "Un deficit del 15-25% con una velocità di perdita dello 0.5-1% del peso a settimana, corretto periodicamente sul trend di peso reale e intervallato da diet break, è il compromesso più sostenibile tra risultato e conservazione della massa magra.",
   },
   {
     id: "surplus", name: "Surplus calorico", icon: "📈",
@@ -7290,6 +7721,15 @@ export const NUTRITION_WIKI = [
       "tessuto adiposo. Il termine 'bulk pulito' non riguarda la qualità morale del cibo ma la dimensione del " +
       "surplus: stesso principio del deficit, verificato e corretto ogni 2-3 settimane sul trend di peso reale, non " +
       "su una stima teorica del TDEE che varia da persona a persona.",
+    pros: [
+      "Un surplus moderato massimizza il rapporto tra massa muscolare guadagnata e grasso accumulato, riducendo il lavoro di definizione successivo.",
+      "Più margine calorico rispetto al mantenimento, utile per sostenere volumi di allenamento più alti senza fatica cronica da scarsità energetica.",
+    ],
+    cons: [
+      "Un surplus troppo alto non accelera la crescita muscolare oltre il tetto biologico naturale, solo l'accumulo di grasso.",
+      "Richiede un monitoraggio regolare del peso: senza correzioni periodiche, il surplus reale tende a derivare oltre quanto pianificato.",
+    ],
+    conclusion: "Un surplus del 5-15% sopra il mantenimento, verificato e corretto ogni 2-3 settimane sul trend di peso reale, massimizza la crescita muscolare per unità di grasso accumulato — surplus più alti non velocizzano la crescita, solo l'aumento di grasso.",
   },
   {
     id: "sodio-potassio", name: "Sodio e Potassio", icon: "🧂",
@@ -7303,6 +7743,15 @@ export const NUTRITION_WIKI = [
       "ridurre i cibi confezionati/bustine di condimento (fonte dominante di sodio in eccesso) e aumentare alimenti " +
       "densi in potassio come patate, patate dolci, banana e spinaci, piuttosto che inseguire numeri precisi su " +
       "un'etichetta.",
+    pros: [
+      "Un adeguato sodio pre-allenamento in giorni caldi/ad alta sudorazione previene crampi ed è utile per la performance, non solo un rischio da limitare.",
+      "Aumentare il potassio da cibo vero (patate, banana, spinaci) è economico e privo di rischi di eccesso rispetto all'integrazione diretta.",
+    ],
+    cons: [
+      "L'eccesso cronico di sodio da cibi processati è associato a pressione arteriosa più alta nei soggetti sale-sensibili.",
+      "Un eccesso di potassio da integrazione (non da cibo) può essere pericoloso in presenza di problemi renali non diagnosticati.",
+    ],
+    conclusion: "La strategia più semplice ed efficace è ridurre i cibi confezionati (fonte dominante di sodio in eccesso) e aumentare gli alimenti naturalmente ricchi di potassio, senza bisogno di inseguire numeri precisi su un'etichetta per la maggior parte delle persone sane.",
   },
   {
     id: "ferro", name: "Ferro", icon: "🩸",
@@ -7316,6 +7765,15 @@ export const NUTRITION_WIKI = [
       "l'assorbimento del ferro non-eme, mentre tè, caffè e calcio nello stesso pasto lo riducono se assunti in " +
       "grandi quantità. Un'atleta donna con affaticamento cronico e performance in calo merita sempre un controllo " +
       "della ferritina, non solo dell'emoglobina.",
+    pros: [
+      "Facile da correggere con la dieta (carne rossa, molluschi, legumi + vitamina C) nella maggior parte dei casi non clinicamente gravi.",
+      "Il controllo della ferritina è un esame economico e diffuso, utile per intercettare una carenza prima che diventi anemia conclamata.",
+    ],
+    cons: [
+      "Il ferro non-eme da fonti vegetali ha un assorbimento molto inferiore: chi è vegetariano/vegano deve dedicare più attenzione agli abbinamenti alimentari.",
+      "L'integrazione di ferro senza carenza accertata va evitata: un eccesso cronico non necessario può essere dannoso.",
+    ],
+    conclusion: "Un apporto adeguato di ferro va garantito soprattutto nelle donne in età fertile e nei regimi vegetariani/vegani, con verifica della ferritina in caso di affaticamento cronico inspiegato — l'integrazione va riservata a una carenza accertata, non presa 'per sicurezza'.",
   },
   {
     id: "calcio-vitd", name: "Calcio e Vitamina D", icon: "🦴",
@@ -7328,6 +7786,15 @@ export const NUTRITION_WIKI = [
       "pelle non protetta, difficile da ottenere in modo affidabile in gran parte dell'anno alle nostre latitudini — " +
       "è uno dei pochi casi in cui l'integrazione (spesso 1000-2000 UI/die) è raccomandata anche a chi ha " +
       "un'alimentazione già equilibrata, previa verifica dei livelli ematici (25-OH vitamina D) col proprio medico.",
+    pros: [
+      "La vitamina D è uno dei pochi micronutrienti dove l'integrazione è ragionevole anche senza carenza diagnosticata, dato quanto è diffusa l'insufficienza.",
+      "Un buon apporto di calcio e vitamina D sostiene la densità ossea, un fattore diretto di prevenzione infortuni per chi carica pesante.",
+    ],
+    cons: [
+      "Senza verifica dei livelli ematici, l'integrazione di vitamina D è una stima alla cieca: il dosaggio ottimale varia molto da persona a persona.",
+      "Un eccesso cronico di calcio da integrazione (non da cibo) non è privo di rischi e va evitato senza reale necessità.",
+    ],
+    conclusion: "Verificare i livelli ematici di vitamina D col proprio medico è il primo passo prima di integrare stabilmente; il calcio va invece prioritariamente coperto da cibo (latticini, verdure a foglia, acqua ricca di calcio), con l'integrazione riservata a carenze accertate.",
   },
   {
     id: "magnesio", name: "Magnesio", icon: "💊",
@@ -7340,6 +7807,15 @@ export const NUTRITION_WIKI = [
       "o tensione muscolare persistente. Ha anche un ruolo nella regolazione del GABA, il principale neurotrasmettitore " +
       "inibitorio del sistema nervoso centrale, il che spiega perché molti riportano un sonno più profondo " +
       "aumentando l'apporto (mandorle, semi di zucca, spinaci) o integrando la sera, prima di dormire.",
+    pros: [
+      "Una carenza lieve è facilmente correggibile con cibo (frutta secca, semi, verdure a foglia) senza bisogno di integrazione nella maggior parte dei casi.",
+      "Il suo ruolo nel rilassamento muscolare e nervoso lo rende utile in particolare per chi si allena molto o dorme male.",
+    ],
+    cons: [
+      "Un eccesso da integrazione (non da cibo) può causare disturbi gastrointestinali, in particolare con le forme meno biodisponibili.",
+      "L'effetto sul sonno, per quanto riportato spesso in modo soggettivo, non è garantito allo stesso modo per tutti.",
+    ],
+    conclusion: "Coprire il fabbisogno di magnesio prevalentemente da cibo è sufficiente per la maggior parte dei praticanti; l'integrazione serale ha senso soprattutto in presenza di crampi, tensione muscolare o sonno disturbato senza altra causa evidente.",
   },
   {
     id: "fibra", name: "Fibra alimentare", icon: "🌾",
@@ -7353,6 +7829,15 @@ export const NUTRITION_WIKI = [
       "a catena corta (butirrato in primis), che nutrono le cellule del colon e hanno un ruolo nella regolazione " +
       "dell'infiammazione sistemica — un motivo in più per non ridurre verdura e legumi nemmeno nelle diete più " +
       "ipocaloriche.",
+    pros: [
+      "Aumenta la sazietà a parità di calorie, rendendo un deficit calorico più gestibile senza fame eccessiva.",
+      "Nutre il microbiota intestinale, con effetti positivi documentati sulla regolazione dell'infiammazione sistemica.",
+    ],
+    cons: [
+      "Un aumento troppo brusco della fibra può causare gonfiore e disagio intestinale: va introdotta gradualmente.",
+      "Un eccesso può interferire con l'assorbimento di alcuni micronutrienti se assunta insieme in grandi quantità.",
+    ],
+    conclusion: "25-35 g/die di fibra, da fonti varie (verdura, legumi, cereali integrali) e introdotte gradualmente, sostengono sazietà e salute intestinale senza il disagio di un aumento troppo rapido — particolarmente utile da non sacrificare proprio nelle diete più ipocaloriche.",
   },
   {
     id: "digiuno", name: "Digiuno intermittente", icon: "⏱️",
@@ -7366,6 +7851,15 @@ export const NUTRITION_WIKI = [
       "si allena ad alta intensità con i pesi, allenarsi a digiuno prolungato può peggiorare la performance nella " +
       "sessione — se la finestra di digiuno copre l'orario di allenamento, vale la pena verificare l'effetto sulla " +
       "propria prestazione prima di adottarlo stabilmente.",
+    pros: [
+      "Semplifica la gestione dei pasti per chi trova più facile aderire a un piano con meno decisioni alimentari nella giornata.",
+      "Non richiede alimenti specifici o esclusioni: è compatibile con qualunque composizione di macronutrienti.",
+    ],
+    cons: [
+      "Nessun vantaggio metabolico dimostrato sul dimagrimento rispetto allo stesso totale calorico distribuito diversamente.",
+      "Se la finestra di digiuno copre l'orario di allenamento, la performance nella sessione può peggiorare, specie su volumi/intensità alti.",
+    ],
+    conclusion: "Il digiuno intermittente è uno strumento di aderenza comportamentale, non una strategia metabolicamente superiore: ha senso per chi lo trova più semplice da seguire, non va adottato aspettandosi un vantaggio sul dimagrimento che la ricerca non conferma.",
   },
   {
     id: "chetogenica", name: "Dieta chetogenica", icon: "🥓",
@@ -7380,6 +7874,15 @@ export const NUTRITION_WIKI = [
       "carboidrati adeguati. Ha applicazioni cliniche specifiche (epilessia farmacoresistente, alcuni contesti " +
       "metabolici) dove l'evidenza è solida; come scelta per la sola composizione corporea in un atleta di forza è " +
       "raramente la strategia più efficiente.",
+    pros: [
+      "Ha applicazioni cliniche specifiche solide (es. epilessia farmacoresistente) dove l'evidenza è forte, non solo un uso estetico.",
+      "L'alto senso di sazietà di grassi/proteine può aiutare l'aderenza al deficit calorico per alcune persone.",
+    ],
+    cons: [
+      "Penalizza tipicamente il volume e l'intensità di allenamento sostenibili per uno sport di forza/ipertrofia rispetto a una dieta con carboidrati adeguati.",
+      "Il periodo di adattamento iniziale ('keto flu') comporta spesso stanchezza e cali di performance nelle prime 1-3 settimane.",
+    ],
+    conclusion: "Per un atleta di forza o ipertrofia, la chetogenica è raramente la strategia più efficiente per la composizione corporea: funziona come qualunque dieta ipocalorica sostenibile, ma il costo in termini di performance in palestra è quasi sempre più alto di un piano con carboidrati adeguati.",
   },
   {
     id: "mediterranea", name: "Dieta mediterranea", icon: "🫒",
@@ -7393,6 +7896,15 @@ export const NUTRITION_WIKI = [
       "grassi. Per un atleta è un'ottima base di partenza qualitativa (fonti di grassi e proteine, densità " +
       "nutrizionale) su cui poi calibrare le quantità (kcal, proteine, timing dei carboidrati) in base all'obiettivo " +
       "specifico — non è in conflitto con un piano da bodybuilding/powerlifting, ne è la base.",
+    pros: [
+      "È il pattern alimentare con più evidenza a lungo termine su popolazioni reali, non solo su studi metabolici di breve durata.",
+      "Compatibile con qualunque obiettivo di composizione corporea: fornisce la qualità delle fonti, non entra in conflitto con le quantità calcolate per l'obiettivo.",
+    ],
+    cons: [
+      "Da sola non specifica le quantità (kcal, proteine) necessarie per un obiettivo di performance o composizione corporea: va integrata con un calcolo specifico.",
+      "Alcuni alimenti cardine (olio EVO in quantità) sono molto calorici: senza attenzione alle porzioni può facilitare un surplus non voluto.",
+    ],
+    conclusion: "La dieta mediterranea è la base qualitativa ideale su cui costruire qualunque piano orientato alla performance: definisce da dove vengono i nutrienti, mentre le quantità (calorie, proteine, timing) vanno calibrate separatamente in base all'obiettivo specifico.",
   },
   {
     id: "idratazione", name: "Idratazione", icon: "💧",
@@ -7405,6 +7917,154 @@ export const NUTRITION_WIKI = [
       "sudore in un'ora, con elettroliti (sodio soprattutto) al seguito — per sessioni sotto l'ora, acqua semplice " +
       "basta; oltre l'ora, o con sudorazione abbondante, reintegrare anche il sodio (non solo acqua) previene i " +
       "crampi da deplezione elettrolitica meglio della sola idratazione.",
+    pros: [
+      "Anche una lieve correzione della disidratazione abituale (2-3 bicchieri d'acqua in più al giorno) migliora misurabilmente concentrazione e prestazione per molte persone.",
+      "È la variabile nutrizionale più economica e priva di controindicazioni da correggere.",
+    ],
+    cons: [
+      "Un'iperidratazione estrema in tempi brevi (litri d'acqua in poche ore) può causare iponatriemia, un rischio reale seppur raro negli sport di endurance estremi.",
+      "Il fabbisogno varia molto con clima, sudorazione individuale e intensità: un numero fisso uguale per tutti è solo un punto di partenza.",
+    ],
+    conclusion: "30-35 ml/kg di base più il sudore perso in allenamento è una stima di partenza solida per la maggior parte delle persone; nei giorni caldi o ad alta sudorazione va integrato anche il sodio, non solo l'acqua, per prevenire i crampi da deplezione elettrolitica.",
+  },
+  {
+    id: "bilancio-energetico", name: "Bilancio energetico e TDEE reale", icon: "⚖️",
+    badge1: "Il TDEE stimato è un punto di partenza", badge2: "Il trend di peso è il dato vero",
+    body: "Il TDEE (dispendio energetico totale giornaliero) calcolato con formule (Mifflin-St Jeor e simili) è solo " +
+      "una stima di partenza, con un margine di errore reale anche del 10-20% da persona a persona — il dato che conta " +
+      "davvero è come il peso si muove nel tempo alle calorie che si stanno effettivamente mangiando.",
+    deepDive: "Le formule predittive del TDEE si basano su peso, altezza, età e livello di attività dichiarato, ma non " +
+      "catturano variabili individuali come il NEAT (dispendio da attività non strutturata: camminare, muoversi, " +
+      "gesticolare, che può variare di centinaia di calorie al giorno tra persone apparentemente simili), l'efficienza " +
+      "metabolica individuale o la storia dietetica recente (chi esce da un lungo deficit ha spesso un TDEE reale più " +
+      "basso di quanto la formula predica). L'approccio corretto è usare la formula come punto di partenza, poi " +
+      "correggerla ogni 2-3 settimane osservando il trend di peso reale (media mobile, non il singolo giorno, per " +
+      "eliminare il rumore dato dalla ritenzione idrica) rispetto alle calorie effettivamente consumate.",
+    pros: [
+      "Evita di affidarsi ciecamente a un numero teorico che può essere sbagliato del 10-20% per la singola persona.",
+      "Il metodo di correzione empirica (calorie fisse, osservazione del trend) funziona indipendentemente da quanto la formula di partenza sia accurata.",
+    ],
+    cons: [
+      "Richiede pazienza: servono almeno 2-3 settimane di dati coerenti (pesata regolare, aderenza calorica) prima che il trend sia affidabile.",
+      "La ritenzione idrica (stress, sonno, ciclo mestruale, sodio, carboidrati) può mascherare temporaneamente il trend reale se si guarda solo il peso del singolo giorno.",
+    ],
+    conclusion: "Il TDEE calcolato è solo un punto di partenza da correggere sempre con i dati reali: pesata regolare, media mobile settimanale e aggiustamento delle calorie ogni 2-3 settimane battono qualunque formula, per quanto sofisticata.",
+  },
+  {
+    id: "nutrient-timing", name: "Nutrient timing: la finestra anabolica", icon: "⏰",
+    badge1: "Molto più ampia di 30-60 minuti", badge2: "Il totale giornaliero conta di più",
+    body: "La 'finestra anabolica' post-allenamento è molto più ampia di quanto si credeva un tempo (non 30-60 minuti, " +
+      "ma diverse ore) — a parità di calorie e proteine totali giornaliere, il timing preciso del pasto post-workout " +
+      "ha un impatto marginale sul risultato finale.",
+    deepDive: "La sensibilità muscolare alla sintesi proteica indotta dall'allenamento resta elevata per 24-48 ore " +
+      "dopo la sessione, non solo nella prima ora: uno studio spesso citato ha mostrato risultati comparabili tra " +
+      "chi assumeva proteine subito prima/dopo l'allenamento e chi le assumeva più tardi nella giornata, a parità di " +
+      "proteine totali. Il timing resta comunque rilevante in casi specifici: chi si allena a digiuno da molte ore, " +
+      "chi fa doppie sedute nello stesso giorno (dove il ripristino rapido del glicogeno conta), o semplicemente chi " +
+      "trova più comodo strutturare i pasti intorno all'allenamento per pura organizzazione pratica.",
+    pros: [
+      "Libera dall'ansia del 'devo mangiare entro 30 minuti': il totale giornaliero di proteine e calorie conta molto di più del timing preciso.",
+      "Semplifica la programmazione dei pasti, che può seguire gli orari di vita reali invece di un vincolo rigido post-allenamento.",
+    ],
+    cons: [
+      "In contesti specifici (doppie sedute, allenamento a digiuno molto prolungato) un timing più attento resta utile per la performance della sessione successiva.",
+      "Il messaggio 'il timing non conta' viene talvolta frainteso come 'non serve strutturare i pasti', quando in realtà una distribuzione regolare resta utile per altri motivi (sazietà, sintesi proteica distribuita).",
+    ],
+    conclusion: "Il totale di calorie e proteine nell'arco della giornata determina il risultato molto più del timing preciso del pasto post-allenamento: la finestra anabolica ristretta a 30-60 minuti è un mito superato dalla ricerca più recente.",
+  },
+  {
+    id: "iifym-vs-pulito", name: "IIFYM (dieta flessibile) vs. dieta 'pulita'", icon: "🍱",
+    badge1: "Entrambe funzionano se aderenza è alta", badge2: "80/20 come compromesso pratico",
+    body: "IIFYM ('if it fits your macros': qualunque alimento va bene purché rientri nei macro target) e la dieta " +
+      "'pulita' (solo alimenti considerati integri/non processati) producono risultati simili in termini di " +
+      "composizione corporea quando calorie e proteine sono equalizzate — la differenza reale è nell'aderenza e nella " +
+      "sazietà a lungo termine, che variano da persona a persona.",
+    deepDive: "Il corpo non distingue una caloria 'pulita' da una 'flessibile' ai fini del bilancio energetico: la " +
+      "composizione corporea risponde principalmente a calorie totali, proteine e (in seconda battuta) al mantenimento " +
+      "della massa muscolare tramite allenamento. La differenza pratica è che alimenti a bassa densità calorica e alto " +
+      "contenuto di fibra (dieta 'pulita') tendono a dare più sazietà per caloria, un vantaggio in deficit; alimenti " +
+      "più processati inseriti con criterio (dieta flessibile) possono migliorare l'aderenza psicologica sul lungo " +
+      "periodo per chi si sente 'privato' con un regime troppo rigido. Un compromesso pratico diffuso è la regola " +
+      "80/20: circa l'80% dei pasti da fonti dense di nutrienti, il restante 20% libero per gestire la sostenibilità " +
+      "sociale e psicologica del piano.",
+    pros: [
+      "IIFYM aumenta la sostenibilità sociale e psicologica del piano per chi si sente privato con un regime troppo rigido.",
+      "La dieta 'pulita' dà più sazietà per caloria grazie alla densità di fibra e volume, un vantaggio concreto in deficit.",
+    ],
+    cons: [
+      "L'IIFYM applicato senza criterio (solo cibo processato, macro a posto) rischia carenze di micronutrienti e fibra nel lungo periodo.",
+      "Un regime 'pulito' troppo rigido, senza margine di flessibilità, spesso peggiora l'aderenza a lungo termine e aumenta il rischio di abbuffate compensatorie.",
+    ],
+    conclusion: "Non esiste un vincitore assoluto tra i due approcci: la regola 80/20 (fonti dense di nutrienti come base, margine flessibile per la sostenibilità) copre sia la qualità nutrizionale sia l'aderenza psicologica nel lungo periodo, il vero fattore che decide il risultato finale.",
+  },
+  {
+    id: "refeed-diet-break", name: "Refeed e diet break", icon: "🔁",
+    badge1: "Refeed: 1-2 giorni a mantenimento", badge2: "Diet break: 1-2 settimane a mantenimento",
+    body: "Il refeed (1-2 giorni a calorie di mantenimento, spesso con più carboidrati) e il diet break (1-2 settimane " +
+      "intere a mantenimento) sono strumenti programmati per alleggerire la fatica psicologica e metabolica di un " +
+      "deficit prolungato, non un 'premio' occasionale scollegato dal piano.",
+    deepDive: "In deficit calorico prolungato calano gradualmente leptina, ormoni tiroidei e NEAT (movimento non " +
+      "strutturato), un adattamento che riduce il dispendio energetico oltre quanto spiegato dalla sola perdita di " +
+      "peso. Un refeed breve non inverte questo adattamento in modo permanente, ma un diet break di 1-2 settimane a " +
+      "mantenimento (non un surplus) permette un parziale recupero ormonale e una pausa psicologica dalla restrizione, " +
+      "utile soprattutto in deficit molto lunghi (oltre le 10-12 settimane continuative). Vanno programmati in " +
+      "anticipo dentro il piano, non decisi d'impulso in un momento di scarsa aderenza — altrimenti rischiano di " +
+      "diventare una scusa per uscire dal deficit senza un reale beneficio strutturato.",
+    pros: [
+      "Un diet break programmato migliora l'aderenza psicologica nei deficit molto lunghi, riducendo il rischio di abbandono del piano.",
+      "Aiuta a recuperare parzialmente gli adattamenti ormonali/metabolici che si accumulano in deficit prolungato.",
+    ],
+    cons: [
+      "Se non programmato in anticipo, rischia di trasformarsi in una scusa per uscire dal deficit senza un reale beneficio strutturato.",
+      "Un refeed/diet break troppo frequente (ogni settimana) vanifica il deficit medio necessario per progredire.",
+    ],
+    conclusion: "Refeed e diet break sono strumenti, non premi: programmati in anticipo (ogni 6-10 settimane di deficit continuo) danno un reale beneficio ormonale e psicologico; usati d'impulso diventano solo un modo per rallentare il progresso senza vantaggi strutturati.",
+  },
+  {
+    id: "reverse-diet", name: "Reverse diet: uscire dal deficit", icon: "🔼",
+    badge1: "Salita graduale delle calorie", badge2: "50-100 kcal/settimana",
+    body: "Uscire da un deficit prolungato tornando di colpo a mantenimento spesso produce un rapido aumento di peso " +
+      "percepito (soprattutto ritenzione idrica). Una reverse diet (salita graduale delle calorie, 50-100 kcal a " +
+      "settimana) permette al metabolismo e alla percezione psicologica di riadattarsi in modo più controllato.",
+    deepDive: "Dopo un deficit prolungato, il corpo ha ridotto parzialmente NEAT e dispendio energetico come " +
+      "adattamento: tornare di colpo a un apporto calorico molto più alto porta a un aumento di peso rapido, in gran " +
+      "parte glicogeno e acqua (il glicogeno lega circa 3 g di acqua per grammo), che viene spesso interpretato " +
+      "erroneamente come grasso riacquistato in pochi giorni, causando ansia e abbandono del piano. Salire " +
+      "gradualmente (50-100 kcal a settimana) permette di osservare il trend di peso reale mentre il metabolismo si " +
+      "riadatta, e di fermarsi al livello di mantenimento corretto individuale invece di continuare a salire alla " +
+      "cieca.",
+    pros: [
+      "Riduce l'ansia da rapido aumento di peso percepito (in realtà quasi sempre acqua/glicogeno, non grasso) che spesso segue la fine di un deficit.",
+      "Permette di individuare con più precisione il vero livello di mantenimento calorico individuale, spesso diverso dalla stima teorica iniziale.",
+    ],
+    cons: [
+      "Richiede diverse settimane di salita graduale e monitoraggio costante, più lento di un semplice ritorno diretto a mantenimento.",
+      "Se non comunicata bene psicologicamente, la fase di salita calorica può comunque generare ansia in chi è abituato a vedere il peso scendere.",
+    ],
+    conclusion: "La reverse diet è lo strumento giusto dopo un deficit prolungato per uscire in modo controllato, evitando sia l'ansia da rapido aumento di peso apparente sia un ritorno troppo brusco che rende difficile individuare il vero mantenimento calorico.",
+  },
+  {
+    id: "peso-vs-composizione", name: "Peso sulla bilancia vs. composizione corporea", icon: "🧍",
+    badge1: "Il peso include acqua, glicogeno, cibo", badge2: "Non solo grasso o muscolo",
+    body: "Il numero sulla bilancia oscilla per molte ragioni diverse dal grasso corporeo: ritenzione idrica, " +
+      "glicogeno, contenuto intestinale, ciclo mestruale, sodio del giorno prima. Interpretare ogni oscillazione " +
+      "giornaliera come guadagno o perdita di grasso porta a decisioni sbagliate sul piano.",
+    deepDive: "Il glicogeno muscolare ed epatico lega acqua (~3 g per grammo di glicogeno): un solo pasto ricco di " +
+      "carboidrati dopo un periodo di restrizione può aggiungere anche 1-2 kg di peso in acqua nel giro di 24-48 ore, " +
+      "senza alcun grasso reale guadagnato. Stress, sonno scarso e la fase del ciclo mestruale (nelle donne) alterano " +
+      "significativamente la ritenzione idrica giorno per giorno. Per questo il trend su media mobile settimanale " +
+      "(non il singolo dato) è l'unico modo affidabile di leggere il peso sulla bilancia; misure di circonferenza " +
+      "(vita, fianchi) e foto periodiche a parità di condizioni (luce, orario, angolazione) danno un quadro più " +
+      "completo della composizione corporea reale rispetto al solo numero sulla bilancia.",
+    pros: [
+      "Capire cosa muove davvero la bilancia riduce l'ansia da oscillazioni giornaliere che non riflettono un reale cambiamento di grasso.",
+      "Affiancare circonferenze e foto periodiche al peso dà un quadro molto più completo della composizione corporea reale.",
+    ],
+    cons: [
+      "Richiede più dati e più disciplina di tracking (pesata regolare, condizioni costanti per foto/misure) rispetto a guardare solo il peso.",
+      "Interpretare male un'oscillazione da acqua come perdita/guadagno di grasso porta a decisioni sbagliate sul piano se non si guarda il trend.",
+    ],
+    conclusion: "Il peso sulla bilancia va letto solo come trend su media mobile settimanale, mai come singolo dato giornaliero: affiancato a circonferenze e foto periodiche, dà un quadro molto più affidabile di come sta cambiando davvero la composizione corporea.",
   },
 ];
 
