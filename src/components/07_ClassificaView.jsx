@@ -16,12 +16,15 @@ function shiftMonthKey(monthKey, delta) {
 }
 // Board di un mese (reale) nella stessa forma { top10, userResult } che il
 // resto del componente già consuma per la board demo — mappa xpThisMonth su
-// "xp" (il nome che podio/lista/sticky bar si aspettano).
+// "xp" (il nome che podio/lista/sticky bar si aspettano). Il campo si
+// chiama ancora "top10" per non toccare ogni punto che lo legge, ma dalla
+// richiesta "classifica di TUTTI gli utenti registrati, non solo i primi
+// 10" contiene la classifica intera — nessun taglio a 10 righe.
 function toBoardShape(rows, meId) {
   const withXp = rows.map((r) => ({ ...r, xp: r.xpThisMonth }));
   const me = withXp.find((r) => r.id === meId);
   return {
-    top10: withXp.slice(0, 10),
+    top10: withXp,
     userResult: me
       ? { rank: me.rank, xp: me.xp, level: me.level, streakDays: me.streakDays }
       : { rank: null, xp: 0, level: xpToLevelInfo(0).title, streakDays: 0 },
@@ -360,16 +363,16 @@ function PodiumCard({ athlete: a, position, delay, onSelect }) {
   );
 }
 
-function LeaderboardRow({ athlete: a, maxXP, onSelect }) {
+function LeaderboardRow({ athlete: a, maxXP, onSelect, isMe }) {
   const barWidth = Math.max(8, Math.round((a.xp / maxXP) * 100));
   return (
-    <div className="pc-row" style={{ cursor: onSelect ? 'pointer' : undefined }}
+    <div className={`pc-row${isMe ? ' pc-row-me' : ''}`} style={{ cursor: onSelect ? 'pointer' : undefined }}
          onClick={onSelect ? () => onSelect(a) : undefined} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined}>
       <div className="pc-row-rank">{a.rank}°</div>
       <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-row" />
       <div className="pc-row-main">
         <div className="pc-row-top">
-          <span className="pc-row-nick">{a.nickname}</span>
+          <span className="pc-row-nick">{a.nickname}{isMe ? ' · Tu' : ''}</span>
           <span className="pc-level-badge pc-level-badge-sm pc-shine-text">{a.level}</span>
         </div>
         <div className="pc-row-track">
@@ -473,7 +476,7 @@ function StickyUserBar({ isCurrent, rank, xp, gapToTop10, avatarUrl, level, stre
 
 // Mini-podio compatto per una riga dell'Archivio (Livello 1), espandibile in
 // Deep-Dive Top10 (Livello 2) con micro-tasto di chiusura filiforme.
-function ArchiveMonthRow({ month, expanded, onToggle, onSelectAthlete }) {
+function ArchiveMonthRow({ month, expanded, onToggle, onSelectAthlete, meId }) {
   const top3 = month.top10.filter((a) => a.rank <= 3).sort((a, b) => a.rank - b.rank);
   const maxXP = month.top10[0].xp;
   return (
@@ -505,7 +508,7 @@ function ArchiveMonthRow({ month, expanded, onToggle, onSelectAthlete }) {
           </button>
           <div className="pc-list pc-list-archive">
             {month.top10.map((a) => (
-              <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={onSelectAthlete} />
+              <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={onSelectAthlete} isMe={a.id === meId} />
             ))}
           </div>
         </div>
@@ -514,7 +517,7 @@ function ArchiveMonthRow({ month, expanded, onToggle, onSelectAthlete }) {
   );
 }
 
-function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand, loading, empty, showLaunchLabel = true, onSelectAthlete }) {
+function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand, loading, empty, showLaunchLabel = true, onSelectAthlete, meId }) {
   const [visibleCount, setVisibleCount] = useState(4);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -557,7 +560,7 @@ function ArchiveDrawer({ open, onClose, months, expandedId, onToggleExpand, load
           {loading && <div className="pc-drawer-loading">Caricamento archivio…</div>}
           {empty && <div className="pc-drawer-end">Ancora nessun mese chiuso da consultare — torna qui dal mese prossimo.</div>}
           {visibleMonths.map((m) => (
-            <ArchiveMonthRow key={m.id} month={m} expanded={expandedId === m.id} onToggle={onToggleExpand} onSelectAthlete={onSelectAthlete} />
+            <ArchiveMonthRow key={m.id} month={m} expanded={expandedId === m.id} onToggle={onToggleExpand} onSelectAthlete={onSelectAthlete} meId={meId} />
           ))}
           {loadingMore && <div className="pc-drawer-loading">Caricamento mesi precedenti…</div>}
           {!loading && !hasMore && visibleMonths.length > 0 && showLaunchLabel && (
@@ -664,7 +667,10 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           .map((r) => ({ rank: r, nickname: '—', avatarUrl: null, xp: 0, streakDays: 0, level: 'RECRUIT' })),
       ];
   const maxXP = top10[0].xp;
-  const tenthPlaceXP = top10[top10.length - 1].xp;
+  // "10° posto" resta il 10° reale anche ora che l'elenco è intero (prima,
+  // con solo 10 righe, l'ultima riga E il 10° posto coincidevano sempre —
+  // non più, con l'elenco completo l'ultima riga può essere il 50° o il 200°).
+  const tenthPlaceXP = (top10[9] ?? top10[top10.length - 1]).xp;
   const gapToTop10 = Math.max(0, tenthPlaceXP - currentMonth.userResult.xp + 1);
 
   const podiumOrder = useMemo(() => {
@@ -928,6 +934,14 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           padding: 16px 18px;
         }
 
+        /* Riga del proprio account: evidenziata per ritrovarsi subito
+           scorrendo l'elenco completo, non solo i primi 10. */
+        .pc-row-me {
+          border: 1.5px solid var(--pc-accent-1);
+          background: linear-gradient(135deg, color-mix(in srgb, var(--pc-accent-1) 14%, var(--pc-glass-bg)), var(--pc-glass-bg));
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--pc-accent-1) 30%, transparent);
+        }
+
         .pc-row-rank { font-size: 13px; font-weight: 300; letter-spacing: -0.01em; color: var(--pc-text-tertiary); width: 24px; text-align: center; flex-shrink: 0; }
         .pc-avatar-row { width: 36px; height: 36px; }
         .pc-row-main { flex: 1; min-width: 0; }
@@ -1169,7 +1183,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
       <div className="pc-list">
         {restOfList.map((a) => (
-          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} />
+          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
         ))}
       </div>
 
@@ -1198,6 +1212,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         empty={isRealMode && !archiveLoading && pastMonths.length === 0}
         showLaunchLabel={!isRealMode}
         onSelectAthlete={setSelectedAthlete}
+        meId={isRealMode ? meId : null}
       />
 
       <AthleteDetailModal athlete={selectedAthlete} onClose={() => setSelectedAthlete(null)} />
