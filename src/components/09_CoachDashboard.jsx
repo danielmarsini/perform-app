@@ -173,6 +173,7 @@ import {
   notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
+  fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutTemplateToClients,
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
   fetchExerciseLibrary, learnExercise, computeVolume, fetchUnreadChatCount,
@@ -752,6 +753,69 @@ function deepCloneWeek(week) {
     supplements: week.supplements.map((sec) => ({ ...sec, id: uid(), items: sec.items.map((it) => ({ ...it, id: uid() })) })),
     confirmed: { workout: false, diet: false, supplements: false }, // la settimana clonata va sempre rivista prima di confermarla
   };
+}
+
+/* ---------------------------------------------------------------------------
+   GENERAZIONE AUTOMATICA PRIMO PIANO — da 3 risposte anamnesi (sessioni
+   settimanali, livello, obiettivo principale) a una prima scheda allenamento
+   completa, usando SOLO esercizi già presenti in DEFAULT_EXERCISE_LIB (così
+   il gruppo muscolare si risolve sempre, nessun esercizio "libero" da
+   configurare a mano). È un PUNTO DI PARTENZA da rifinire, mai salvato da
+   solo: carica la settimana nell'editor (setRealWorkout), il coach la
+   rivede/modifica e la salva lui con il pulsante "Salva" già esistente —
+   mai un dato scritto su Supabase senza un'azione esplicita del coach.
+   ------------------------------------------------------------------------- */
+const STARTER_EXERCISE_POOLS = {
+  "Full Body": ["Squat bilanciere", "Panca piana bilanciere", "Rematore bilanciere", "Hip thrust bilanciere", "Alzate laterali", "Plank"],
+  "Upper": ["Panca piana bilanciere", "Rematore bilanciere", "Lento avanti manubri", "Lat machine", "Curl bilanciere", "French press EZ"],
+  "Lower": ["Squat bilanciere", "Stacco rumeno bilanciere", "Leg extension", "Leg curl sdraiato", "Calf in piedi"],
+  "Push": ["Panca piana bilanciere", "Lento avanti manubri", "Croci ai cavi", "Alzate laterali", "French press EZ"],
+  "Pull": ["Lat machine", "Rematore bilanciere", "Face pull ai cavi", "Scrollate con bilanciere", "Curl bilanciere"],
+  "Legs": ["Squat bilanciere", "Stacco rumeno bilanciere", "Leg extension", "Leg curl sdraiato", "Hip thrust bilanciere", "Calf in piedi"],
+};
+// Etichette dei giorni di allenamento per frequenza settimanale (1-6 sessioni;
+// oltre 6 resta comunque un massimo pratico di 6, la 7ª giornata è sempre
+// riposo — un atleta neo-arrivato non ha bisogno di zero giorni di recupero).
+const STARTER_SPLIT_BY_FREQUENCY = {
+  1: ["Full Body"],
+  2: ["Full Body", "Full Body"],
+  3: ["Full Body", "Full Body", "Full Body"],
+  4: ["Upper", "Lower", "Upper", "Lower"],
+  5: ["Push", "Pull", "Legs", "Upper", "Lower"],
+  6: ["Push", "Pull", "Legs", "Push", "Pull", "Legs"],
+};
+// Indici Lun(0)→Dom(6) in cui piazzare le sessioni, distanziate per lasciare
+// recupero tra una e l'altra invece di ammassarle a inizio settimana.
+const STARTER_WEEKDAY_SLOTS = {
+  1: [0], 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5],
+};
+function starterSetsRepsFor(level, goal) {
+  if (goal === "forza") return { sets: 5, reps: "4-6", rir: "2", rest: 180 };
+  if (level === "principiante") return { sets: 3, reps: "10-12", rir: "3", rest: 90 };
+  if (level === "avanzato" || level === "expert") return { sets: 4, reps: "6-10", rir: "1", rest: 150 };
+  return { sets: 4, reps: "8-12", rir: "2", rest: 120 }; // intermedio, o livello non specificato
+}
+function generateStarterWeek({ sessions, level, goal, exerciseLib }) {
+  const freq = Math.min(6, Math.max(1, Number(sessions) || 3));
+  const labels = STARTER_SPLIT_BY_FREQUENCY[freq] || STARTER_SPLIT_BY_FREQUENCY[3];
+  const slots = STARTER_WEEKDAY_SLOTS[freq] || STARTER_WEEKDAY_SLOTS[3];
+  const { sets, reps, rir, rest } = starterSetsRepsFor(level, goal);
+  const week = Array(7).fill(null);
+  const labelCounts = {};
+  labels.forEach((label, i) => {
+    const totalOfLabel = labels.filter((l) => l === label).length;
+    labelCounts[label] = (labelCounts[label] || 0) + 1;
+    const dayLabel = totalOfLabel > 1 ? `${label} ${String.fromCharCode(64 + labelCounts[label])}` : label;
+    const pool = STARTER_EXERCISE_POOLS[label] || STARTER_EXERCISE_POOLS["Full Body"];
+    week[slots[i]] = {
+      label: dayLabel,
+      exercises: pool.map((name) => ({
+        name, muscleTarget: resolveMuscleTarget(name, exerciseLib), synergists: [],
+        sets, reps, rest, rirTarget: rir, technique: "Nessuna",
+      })),
+    };
+  });
+  return week;
 }
 
 /* ------------------------- CALENDARIO SETTIMANE (nuovo) --------------------
@@ -2443,13 +2507,37 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
    (limite richiesto), storico all'indietro senza limite — si genera pigro
    ogni volta che il coach naviga in una settimana mai vista prima. */
 function ClientTimeline({ client, quickTargets, setQuickTargets }) {
-  const { supabase, isRealMode, exerciseLib } = useContext(CoachDataContext);
+  const { supabase, isRealMode, exerciseLib, coachId, clients: CLIENTS } = useContext(CoachDataContext);
   const myQuickTarget = quickTargets?.[client.id];
   const [weeksByOffset, setWeeksByOffset] = useState(() => ({ 0: makeDefaultWeek(client, 0, myQuickTarget) }));
   const [selOffset, setSelOffset] = useState(0);
   const [windowStart, setWindowStart] = useState(-2); // la striscia visibile mostra 7 pallini a partire da qui
   const [section, setSection] = useState("allenamento");
   const [cloned, setCloned] = useState(false);
+
+  // Template di allenamento riutilizzabili (SCHEMA_v59): salvare la settimana
+  // corrente con un nome, e applicarla in un click a uno o più altri
+  // clienti (azioni bulk) — a differenza di "Clona Settimana", che resta
+  // solo tra settimane dello stesso cliente.
+  const [templates, setTemplates] = useState([]);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [applyTemplateOpen, setApplyTemplateOpen] = useState(false);
+  const loadTemplates = useCallback(() => {
+    if (!isRealMode) return;
+    fetchWorkoutTemplates(supabase).then(setTemplates).catch((err) => console.error("PERFORM: errore caricamento template", err));
+  }, [isRealMode, supabase]);
+  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+
+  // Generazione automatica primo piano (SCHEMA n/a, solo lato client): letta
+  // una volta sola l'anamnesi del cliente, per proporre un punto di partenza
+  // quando non ha ancora nessuna scheda assegnata — mai per sovrascrivere
+  // una scheda già esistente.
+  const [anamnesis, setAnamnesis] = useState(null);
+  const [genPlanOpen, setGenPlanOpen] = useState(false);
+  useEffect(() => {
+    if (!isRealMode) return;
+    fetchAnamnesis(supabase, client.id).then(setAnamnesis).catch((err) => console.error("PERFORM: errore lettura anamnesi per generazione piano", err));
+  }, [isRealMode, supabase, client.id]);
 
   const ensureWeek = (offset) => setWeeksByOffset((m) => (m[offset] ? m : { ...m, [offset]: makeDefaultWeek(client, offset, offset === 0 ? myQuickTarget : null) }));
   const goTo = (offset) => { ensureWeek(offset); setSelOffset(offset); };
@@ -2748,9 +2836,28 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
 
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <p className="c-label">Settimana selezionata: {selOffset === 0 ? "corrente" : selOffset > 0 ? `+${selOffset} da oggi` : `${Math.abs(selOffset)} fa (storico)`}</p>
-        <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS || workoutBusy} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
-          <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : pillDateLabel(selOffset + 1)}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS || workoutBusy} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
+            <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : pillDateLabel(selOffset + 1)}
+          </button>
+          {section === "allenamento" && isRealMode && (
+            <>
+              <button onClick={() => setSaveTemplateOpen(true)} disabled={!realWorkout || realWorkout.every((d) => !d)}
+                className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
+                💾 Salva come template
+              </button>
+              <button onClick={() => setApplyTemplateOpen(true)} disabled={templates.length === 0}
+                className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
+                📋 Applica template
+              </button>
+              {realWorkout && realWorkout.every((d) => !d) && anamnesis?.sessioni && (
+                <button onClick={() => setGenPlanOpen(true)} className="c-btn px-3.5 py-2.5 rounded-lg text-sm font-medium">
+                  🪄 Genera prima scheda da anamnesi
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
       {cloned && (
         <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block mb-3" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
@@ -2758,6 +2865,21 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         </p>
       )}
       </>
+      )}
+
+      {saveTemplateOpen && (
+        <SaveTemplateModal days={realWorkout} coachId={coachId} supabase={supabase}
+          onClose={() => setSaveTemplateOpen(false)} onSaved={() => { setSaveTemplateOpen(false); loadTemplates(); }} />
+      )}
+      {applyTemplateOpen && (
+        <ApplyTemplateModal templates={templates} clients={CLIENTS} currentClientId={client.id}
+          weekLabel={weekRangeLabel(selOffset)} targetWeekStartISO={weekStartISO} supabase={supabase}
+          onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates} />
+      )}
+      {genPlanOpen && (
+        <GenerateStarterPlanModal anamnesis={anamnesis} exerciseLib={exerciseLib}
+          onClose={() => setGenPlanOpen(false)}
+          onConfirm={(generated) => { setRealWorkout(generated); setWorkoutSaved(false); setGenPlanOpen(false); }} />
       )}
 
       {section === "allenamento" && (
@@ -2806,6 +2928,186 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         )
       )}
     </div>
+  );
+}
+
+/* Salva la settimana di allenamento correntemente aperta come template
+   riutilizzabile (SCHEMA_v59) — `days` è già la stessa forma risolta
+   (muscleTarget/synergists inclusi) che saveWeekWorkout scrive su Supabase. */
+function SaveTemplateModal({ days, coachId, supabase, onClose, onSaved }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const save = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setErr("Dai un nome al template."); return; }
+    setBusy(true);
+    setErr("");
+    try {
+      await saveWorkoutTemplate(supabase, coachId, trimmed, days);
+      onSaved();
+    } catch (e) {
+      console.error("PERFORM: errore salvataggio template", e);
+      setErr("Non sono riuscito a salvare il template.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-sm">
+          <p className="c-heading font-display font-bold mb-3">Salva come template</p>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} autoFocus
+            placeholder='Es. "Push Pull Legs - Base"' className="c-ghost w-full px-3 py-2.5 rounded-lg text-sm mb-3" />
+          {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Annulla</button>
+            <button onClick={save} disabled={busy} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+              {busy ? "Salvo…" : "Salva"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* Applica un template a uno o più clienti insieme (azioni bulk) — stessa
+   settimana selezionata nell'editor da cui è stato aperto. */
+function ApplyTemplateModal({ templates, clients, currentClientId, weekLabel, targetWeekStartISO, supabase, onClose, onDeleted }) {
+  const [templateId, setTemplateId] = useState(templates[0]?.id || "");
+  const [selectedIds, setSelectedIds] = useState(() => new Set([currentClientId]));
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // { ok, failed }
+  const [err, setErr] = useState("");
+
+  const toggleClient = (id) => setSelectedIds((s) => {
+    const next = new Set(s);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const apply = async () => {
+    const template = templates.find((t) => t.id === templateId);
+    if (!template || selectedIds.size === 0) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const outcome = await applyWorkoutTemplateToClients(supabase, template.days, [...selectedIds], targetWeekStartISO);
+      setResult(outcome);
+    } catch (e) {
+      console.error("PERFORM: errore applicazione template", e);
+      setErr("Non sono riuscito ad applicare il template.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeTemplate = async (id) => {
+    if (!window.confirm("Eliminare questo template? L'azione non si può annullare.")) return;
+    try {
+      await deleteWorkoutTemplate(supabase, id);
+      onDeleted();
+      if (templateId === id) setTemplateId("");
+    } catch (e) {
+      console.error("PERFORM: errore eliminazione template", e);
+    }
+  };
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+          <p className="c-heading font-display font-bold mb-1">Applica template</p>
+          <p className="c-muted text-xs mb-4">Settimana di destinazione: {weekLabel}</p>
+
+          <p className="c-label mb-2">Template</p>
+          <div className="space-y-1.5 mb-4">
+            {templates.map((t) => (
+              <div key={t.id} className="flex items-center gap-2">
+                <button onClick={() => setTemplateId(t.id)}
+                  className="flex-1 text-left px-3 py-2.5 rounded-lg text-sm"
+                  style={templateId === t.id ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)" }}>
+                  {t.name}
+                </button>
+                <button onClick={() => removeTemplate(t.id)} aria-label={`Elimina template ${t.name}`}
+                  className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ border: "1px solid var(--line-strong)" }}>
+                  <Trash2 size={14} style={{ color: "#DC2626" }} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <p className="c-label mb-2">Clienti ({selectedIds.size} selezionati)</p>
+          <div className="space-y-1 mb-4" style={{ maxHeight: 220, overflowY: "auto" }}>
+            {clients.map((c) => (
+              <label key={c.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer" style={{ backgroundColor: selectedIds.has(c.id) ? "var(--pill-off-bg)" : "transparent" }}>
+                <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleClient(c.id)} />
+                <span className="text-sm">{c.name}</span>
+              </label>
+            ))}
+          </div>
+
+          {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
+          {result && (
+            <p className="text-xs mb-3 font-semibold" style={{ color: result.failed.length ? "#F0A020" : "#047857" }}>
+              Applicato a {result.ok.length} client{result.ok.length === 1 ? "e" : "i"}{result.failed.length ? `, fallito per ${result.failed.length}` : ""}.
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={onClose} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Chiudi</button>
+            <button onClick={apply} disabled={busy || !templateId || selectedIds.size === 0}
+              className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+              {busy ? "Applico…" : `Applica a ${selectedIds.size}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* Anteprima + conferma della scheda generata da anamnesi — carica solo
+   nell'editor (setRealWorkout nel chiamante), il coach deve comunque
+   premere "Salva" per scriverla su Supabase: mai un piano assegnato senza
+   revisione. */
+function GenerateStarterPlanModal({ anamnesis, exerciseLib, onClose, onConfirm }) {
+  const sessions = Number(anamnesis?.sessioni) || 3;
+  const level = anamnesis?.livello || null;
+  const goal = anamnesis?.obiettivoPrinc || null;
+  const week = useMemo(() => generateStarterWeek({ sessions, level, goal, exerciseLib }), [sessions, level, goal, exerciseLib]);
+  const trainingDays = week.filter(Boolean);
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+          <p className="c-heading font-display font-bold mb-1">Genera prima scheda</p>
+          <p className="c-muted text-xs mb-4">
+            Da anamnesi: {sessions} sessioni/settimana{level ? ` · livello ${level}` : ""}{goal ? ` · obiettivo ${goal}` : ""}.
+            Punto di partenza da rifinire — non viene salvato finché non premi "Salva" nell'editor.
+          </p>
+          <div className="space-y-2 mb-4">
+            {trainingDays.map((day, i) => (
+              <div key={i} className="t-inner px-3 py-2.5">
+                <p className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>{day.label}</p>
+                <p className="c-muted text-xs">{day.exercises.map((e) => e.name).join(" · ")}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Annulla</button>
+            <button onClick={() => onConfirm(week)} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+              Carica nell'editor
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
   );
 }
 

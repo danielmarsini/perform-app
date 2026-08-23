@@ -1053,6 +1053,50 @@ export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, tar
   await saveWeekWorkout(supabase, userId, targetWeekStartISO, workoutArray);
 }
 
+// Template di allenamento riutilizzabili (SCHEMA_v59): a differenza di
+// cloneWeekWorkout qui sopra (clona solo tra settimane dello STESSO
+// cliente), un template si salva una volta e si applica a QUALUNQUE cliente
+// e QUALUNQUE settimana, anche a più clienti insieme (azioni bulk).
+export async function fetchWorkoutTemplates(supabase) {
+  const { data, error } = await supabase
+    .from("workout_templates")
+    .select("id, name, days, created_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function saveWorkoutTemplate(supabase, coachId, name, days) {
+  const { error } = await supabase.from("workout_templates").insert({ coach_id: coachId, name, days });
+  if (error) throw error;
+}
+
+export async function deleteWorkoutTemplate(supabase, templateId) {
+  const { error } = await supabase.from("workout_templates").delete().eq("id", templateId);
+  if (error) throw error;
+}
+
+// Applica un template a più clienti insieme (azioni bulk): stesso identico
+// percorso di scrittura di saveWeekWorkout per ciascun cliente, uno alla
+// volta — nessuna logica di scrittura duplicata. Ritorna { ok, failed } così
+// il chiamante può mostrare quanti sono andati a buon fine anche se qualcuno
+// fallisce (es. un permesso mancante su un singolo cliente non deve bloccare
+// gli altri).
+export async function applyWorkoutTemplateToClients(supabase, days, clientIds, targetWeekStartISO) {
+  const ok = [];
+  const failed = [];
+  for (const clientId of clientIds) {
+    try {
+      await saveWeekWorkout(supabase, clientId, targetWeekStartISO, days);
+      ok.push(clientId);
+    } catch (err) {
+      console.error(`PERFORM: errore applicazione template al cliente ${clientId}`, err);
+      failed.push(clientId);
+    }
+  }
+  return { ok, failed };
+}
+
 // Elenco clienti per il selettore nel pannello coach.
 export async function fetchClientList(supabase) {
   const { data, error } = await supabase
