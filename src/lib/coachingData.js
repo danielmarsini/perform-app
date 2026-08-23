@@ -1389,6 +1389,16 @@ export async function saveAnamnesis(supabase, userId, answers) {
   if (error) throw error;
 }
 
+// Hub Utenti (ex Hub Rete & Accessi): scrive l'istante corrente sulla propria
+// riga, una volta per sessione app (App.jsx, subito dopo che la sessione è
+// pronta) — è l'unico modo per avere un "ultimo accesso" reale, dato che il
+// client non può leggere auth.users.last_sign_in_at direttamente. Fallisce
+// in silenzio lato chiamante (non è mai bloccante per l'uso dell'app).
+export async function touchLastActivity(supabase, userId) {
+  const { error } = await supabase.from("profiles").update({ last_activity: new Date().toISOString() }).eq("id", userId);
+  if (error) throw error;
+}
+
 // Roster reale per l'Hub Atleti del pannello coach: combina profiles + ultimo
 // checkin + anamnesi in una forma compatibile con l'interfaccia già costruita.
 // Campi non ancora tracciabili da nessuna tabella reale (adherence, rings,
