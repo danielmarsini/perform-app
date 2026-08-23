@@ -14,7 +14,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Send, Paperclip, Camera, Mic, Square, X, FileText, Loader2 } from "lucide-react";
-import { fetchChatMessages, sendChatMessage, markChatMessagesRead, uploadChatAttachment, getChatAttachmentUrl } from "../lib/coachingData.js";
+import { fetchChatMessages, sendChatMessage, markChatMessagesRead, uploadChatAttachment, getChatAttachmentUrl, freshRealtimeChannel } from "../lib/coachingData.js";
 import { haptic } from "../lib/haptics.js";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024; // 50 MB — messaggi rapidi, non i video tecnica (150 MB a sé)
@@ -66,8 +66,7 @@ export default function ChatThread({ supabase, clientId, meId, accent, emptyText
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    const ch = supabase
-      .channel(`perform-chat-${clientId}`)
+    const ch = freshRealtimeChannel(supabase, `perform-chat-${clientId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `client_id=eq.${clientId}` },
         ({ new: m }) => setMessages((all) => ((all ?? []).some((x) => x.id === m.id) ? all : [...(all ?? []), m])))
       .subscribe();

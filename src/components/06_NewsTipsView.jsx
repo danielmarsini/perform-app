@@ -52,7 +52,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Heart, Bookmark, Lock, Newspaper, ArrowLeft } from "lucide-react";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
-import { fetchSavedTips, saveTip, unsaveTip } from "../lib/coachingData.js";
+import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel } from "../lib/coachingData.js";
 
 /* ============================================================================
    1 · UTILITÀ
@@ -247,9 +247,8 @@ function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3 }) {
      un job schedulato; il client si limita ad ascoltare l'INSERT e a far
      comparire il nuovo elemento in cima, da cui scatta il badge "Nuovo Report". */
   useEffect(() => {
-    if (!real) return;
-    const ch = supabase
-      .channel(`perform-feed-${channel}`)
+    if (!real) return undefined;
+    const ch = freshRealtimeChannel(supabase, `perform-feed-${channel}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "coach_news_tips", filter: `channel=eq.${channel}` },
         ({ new: t }) => setItems((all) => [t, ...all]))
       .subscribe();

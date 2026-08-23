@@ -2003,6 +2003,24 @@ export async function fetchNutritionLoggedDates(supabase, userId, fromISO, toISO
   return new Set((data ?? []).map((r) => r.date));
 }
 
+// BUG PRESO: aprire una chat/feed realtime, chiuderla e riaprirla subito
+// (o due componenti che montano lo stesso topic quasi in contemporanea)
+// poteva far crashare l'INTERA app con una schermata nera. Causa: se un
+// canale con lo stesso nome esisteva già lato client (la rimozione del
+// montaggio precedente non aveva ancora completato), supabase-js riusa
+// quell'oggetto invece di crearne uno nuovo — chiamare di nuovo .on() su un
+// canale già sottoscritto lancia un errore NON catturabile (non una
+// Promise rifiutata, un throw sincrono dentro la libreria) che risale fino
+// a far cadere tutto l'albero React. Usata da ChatThread.jsx e
+// 06_NewsTipsView.jsx: rimuove esplicitamente qualunque canale residuo con
+// lo stesso nome prima di crearne uno nuovo, eliminando la collisione.
+export function freshRealtimeChannel(supabase, topicName) {
+  const fullTopic = `realtime:${topicName}`;
+  const existing = supabase.getChannels().find((c) => c.topic === fullTopic);
+  if (existing) supabase.removeChannel(existing);
+  return supabase.channel(topicName);
+}
+
 /* ---------------------------------------------------------------------------
    CHAT COACH <-> CLIENTE (SCHEMA_v48) — una sola conversazione per cliente,
    client_id la identifica sempre, sender_id distingue chi ha scritto.
