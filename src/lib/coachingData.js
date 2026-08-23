@@ -1680,6 +1680,36 @@ export function recompositionReading(weightPoints, circPoints) {
 
 export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, computeVolume, parseRepsTarget };
 
+// Giorni con un allenamento REALMENTE completato (status 'done' in
+// workout_logs) in un range — per il pallino "saltato" nel calendario
+// Allenamento della Home: prima era un pattern finto (~1 giorno su 5), ora
+// legge lo storico vero, mai un dato inventato.
+export async function fetchWorkoutDoneDates(supabase, userId, fromISO, toISO) {
+  const { data, error } = await supabase
+    .from("workout_logs")
+    .select("date, status")
+    .eq("user_id", userId)
+    .gte("date", fromISO)
+    .lte("date", toISO);
+  if (error) throw error;
+  const doneDates = new Set();
+  (data ?? []).forEach((r) => { if (r.status === "done") doneDates.add(r.date); });
+  return doneDates;
+}
+
+// Giorni con ALMENO un pasto registrato in un range — per il pallino
+// "non registrato" nel calendario Alimentazione della Home.
+export async function fetchNutritionLoggedDates(supabase, userId, fromISO, toISO) {
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .select("date")
+    .eq("user_id", userId)
+    .gte("date", fromISO)
+    .lte("date", toISO);
+  if (error) throw error;
+  return new Set((data ?? []).map((r) => r.date));
+}
+
 /* ---------------------------------------------------------------------------
    CHAT COACH <-> CLIENTE (SCHEMA_v48) — una sola conversazione per cliente,
    client_id la identifica sempre, sender_id distingue chi ha scritto.
