@@ -23,7 +23,9 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
+  fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
 import { playSound } from "../lib/sounds.js";
@@ -7314,7 +7316,7 @@ function SupplementsPanel({ accent, accentSoft, accentText, isPro, isPaid, isTra
       {suppTab === "diario" ? (
         isPro
           ? <SupplementsPlanLocked accent={accent} accentSoft={accentSoft} accentText={accentText} isTrainingDay={isTrainingDay} onCoachSync={onCoachSync} onXpEarned={onXpEarned} supabase={supabase} userId={userId} />
-          : <SupplementsFreeDiary accent={accent} accentSoft={accentSoft} accentText={accentText} isPaid={isPaid} isTrainingDay={isTrainingDay} onUpgrade={onUpgrade} onCoachSync={onCoachSync} onXpEarned={onXpEarned} />
+          : <SupplementsFreeDiary accent={accent} accentSoft={accentSoft} accentText={accentText} isPaid={isPaid} isTrainingDay={isTrainingDay} onUpgrade={onUpgrade} onCoachSync={onCoachSync} onXpEarned={onXpEarned} supabase={supabase} userId={userId} />
       ) : (
         <div className="spring-in">
           {isPaid ? (
@@ -7329,9 +7331,51 @@ function SupplementsPanel({ accent, accentSoft, accentText, isPro, isPaid, isTra
   );
 }
 
-function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTrainingDay, onUpgrade, onCoachSync, onXpEarned }) {
-  const [customMoments, setCustomMoments] = useState([]);
+function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTrainingDay, onUpgrade, onCoachSync, onXpEarned, supabase, userId }) {
+  const isRealMode = Boolean(supabase && userId);
+
+  // BUG PRESO: l'intero diario autogestito (momenti personalizzati, ogni
+  // integratore, orario/promemoria, spunta "preso") era SOLO stato React
+  // locale — spariva sempre riaprendo l'app. Reale ora tramite
+  // self_supplements/self_supplement_intake (SCHEMA_v56), stesso pattern
+  // già validato per il protocollo Pro (prescribed_supplements/
+  // supplement_intake). In demo (!isRealMode) resta lo stato locale di
+  // sempre, invariato.
+  const [realRows, setRealRows] = useState(null); // null = non ancora caricato
+  const [realTaken, setRealTaken] = useState(null);
+  const loadReal = useCallback(() => {
+    if (!isRealMode) return;
+    Promise.all([fetchSelfSupplements(supabase, userId), fetchSelfSupplementIntakeToday(supabase, userId)])
+      .then(([rows, taken]) => { setRealRows(rows); setRealTaken(taken); })
+      .catch((err) => {
+        console.error("PERFORM: errore lettura diario integratori autogestito", err);
+        setRealRows([]); setRealTaken(new Set());
+      });
+  }, [isRealMode, supabase, userId]);
+  useEffect(() => { loadReal(); }, [loadReal]);
+
+  // Momenti personalizzati creati in questa sessione ma ancora senza nessun
+  // integratore: un momento vuoto non ha nessuna riga da salvare (niente da
+  // ricordare), quindi resta solo locale finché non ci si aggiunge davvero
+  // il primo integratore — da lì in poi lo ricostruisce realRows a ogni
+  // apertura, come qualunque altro momento reale.
+  const [pendingCustomMoments, setPendingCustomMoments] = useState([]);
+  const [demoCustomMoments, setDemoCustomMoments] = useState([]);
   const [newMomentName, setNewMomentName] = useState("");
+
+  const realCustomMoments = useMemo(() => {
+    const seen = new Map();
+    (realRows ?? []).forEach((r) => {
+      if (r.moment_id.startsWith("custom-") && !seen.has(r.moment_id)) {
+        seen.set(r.moment_id, { id: r.moment_id, label: r.moment_label || r.moment_id, icon: "✨" });
+      }
+    });
+    return [...seen.values()];
+  }, [realRows]);
+  const customMoments = isRealMode
+    ? [...realCustomMoments, ...pendingCustomMoments.filter((m) => !realCustomMoments.some((rm) => rm.id === m.id))]
+    : demoCustomMoments;
+
   const allMoments = useMemo(() => [...SUPP_MOMENTS, ...customMoments], [customMoments]);
   /* Nei giorni OFF i moduli pre/post-workout si nascondono da soli e gli
      stimolanti si azzerano per favorire il recupero recettoriale. */
@@ -7340,8 +7384,34 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
     [allMoments, isTrainingDay]
   );
 
-  const [entries, setEntries] = useState(() => SUPP_MOMENTS.reduce((a, m) => ({ ...a, [m.id]: [] }), {}));
+  const [demoEntries, setDemoEntries] = useState(() => SUPP_MOMENTS.reduce((a, m) => ({ ...a, [m.id]: [] }), {}));
+  const realEntries = useMemo(() => {
+    const grouped = {};
+    (realRows ?? []).forEach((r) => {
+      if (!grouped[r.moment_id]) grouped[r.moment_id] = [];
+      grouped[r.moment_id].push({
+        id: r.id, name: r.name, qty: r.qty || "", time: r.reminder_time || "",
+        dayType: r.day_type || "all", reminderOn: !!r.reminder_on, taken: !!realTaken?.has(r.id),
+      });
+    });
+    return grouped;
+  }, [realRows, realTaken]);
+  const entries = isRealMode ? realEntries : demoEntries;
+
   const [draft, setDraft] = useState(() => SUPP_MOMENTS.reduce((a, m) => ({ ...a, [m.id]: { name: "", qty: "", time: "", dayType: "all" } }), {}));
+  // Ogni momento (canonico o personalizzato, in arrivo da un fetch reale o
+  // creato al volo) deve avere una riga di bozza pronta prima che l'input
+  // provi a leggerla — seeding automatico appena compare un momento nuovo.
+  useEffect(() => {
+    setDraft((d) => {
+      const missing = allMoments.filter((m) => !d[m.id]);
+      if (missing.length === 0) return d;
+      const next = { ...d };
+      missing.forEach((m) => { next[m.id] = { name: "", qty: "", time: "", dayType: "all" }; });
+      return next;
+    });
+  }, [allMoments]);
+
   const [nowClock, setNowClock] = useState(() => new Date().toTimeString().slice(0, 5));
   const [notifTriggered, setNotifTriggered] = useState({});
 
@@ -7349,14 +7419,26 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
     const label = newMomentName.trim();
     if (!label) return;
     const id = `custom-${Date.now()}`;
-    setCustomMoments((m) => [...m, { id, label, icon: "✨" }]);
-    setEntries((s) => ({ ...s, [id]: [] }));
-    setDraft((d) => ({ ...d, [id]: { name: "", qty: "", time: "", dayType: "all" } }));
+    if (isRealMode) {
+      setPendingCustomMoments((m) => [...m, { id, label, icon: "✨" }]);
+    } else {
+      setDemoCustomMoments((m) => [...m, { id, label, icon: "✨" }]);
+      setDemoEntries((s) => ({ ...s, [id]: [] }));
+    }
     setNewMomentName("");
   };
   const removeCustomMoment = (id) => {
-    setCustomMoments((m) => m.filter((x) => x.id !== id));
-    setEntries((s) => { const n = { ...s }; delete n[id]; return n; });
+    if (isRealMode) {
+      setPendingCustomMoments((m) => m.filter((x) => x.id !== id));
+      if (realCustomMoments.some((m) => m.id === id)) {
+        removeSelfSupplementMoment(supabase, userId, id)
+          .then(loadReal)
+          .catch((err) => console.error("PERFORM: errore rimozione momento integratori", err));
+      }
+    } else {
+      setDemoCustomMoments((m) => m.filter((x) => x.id !== id));
+      setDemoEntries((s) => { const n = { ...s }; delete n[id]; return n; });
+    }
     setDraft((d) => { const n = { ...d }; delete n[id]; return n; });
   };
 
@@ -7394,24 +7476,70 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
   const addEntry = (momentId) => {
     const d = draft[momentId];
     if (!d.name.trim()) return;
-    const entry = { id: Date.now() + Math.random(), name: d.name.trim(), qty: d.qty.trim(), time: d.time,
-      dayType: d.dayType || "all", reminderOn: !!d.time, taken: false };
-    setEntries((s) => ({ ...s, [momentId]: [...s[momentId], entry] }));
+    const reminderOn = !!d.time;
+    if (isRealMode) {
+      const custom = customMoments.find((m) => m.id === momentId);
+      const sortOrder = (entries[momentId] || []).length;
+      addSelfSupplement(supabase, userId, {
+        momentId, momentLabel: custom ? custom.label : null,
+        name: d.name.trim(), qty: d.qty.trim(), dayType: d.dayType || "all", sortOrder,
+      })
+        .then((row) => {
+          if (reminderOn) updateSelfSupplementReminder(supabase, row.id, { reminderTime: d.time, reminderOn: true }).catch(() => {});
+          setPendingCustomMoments((m) => m.filter((x) => x.id !== momentId));
+          loadReal();
+        })
+        .catch((err) => console.error("PERFORM: errore salvataggio integratore autogestito", err));
+    } else {
+      const entry = { id: Date.now() + Math.random(), name: d.name.trim(), qty: d.qty.trim(), time: d.time,
+        dayType: d.dayType || "all", reminderOn, taken: false };
+      setDemoEntries((s) => ({ ...s, [momentId]: [...(s[momentId] || []), entry] }));
+    }
     setDraft((dr) => ({ ...dr, [momentId]: { name: "", qty: "", time: "", dayType: "all" } }));
-    if (entry.reminderOn) requestReminderPermission();
+    if (reminderOn) requestReminderPermission();
   };
-  const removeEntry = (momentId, id) =>
-    setEntries((s) => ({ ...s, [momentId]: s[momentId].filter((e) => e.id !== id) }));
+  const removeEntry = (momentId, id) => {
+    if (isRealMode) {
+      removeSelfSupplement(supabase, id).then(loadReal).catch((err) => console.error("PERFORM: errore rimozione integratore autogestito", err));
+    } else {
+      setDemoEntries((s) => ({ ...s, [momentId]: s[momentId].filter((e) => e.id !== id) }));
+    }
+  };
   const toggleTaken = (momentId, id) => {
-    setEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, taken: !e.taken } : e)) }));
+    if (isRealMode) {
+      const wasTaken = realTaken?.has(id);
+      setRealTaken((s) => { const n = new Set(s); wasTaken ? n.delete(id) : n.add(id); return n; });
+      setSelfSupplementTaken(supabase, userId, id, !wasTaken).catch((err) => {
+        console.error("PERFORM: errore salvataggio spunta integratore autogestito", err);
+        setRealTaken((s) => { const n = new Set(s); wasTaken ? n.add(id) : n.delete(id); return n; }); // rollback
+      });
+    } else {
+      setDemoEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, taken: !e.taken } : e)) }));
+    }
     onCoachSync && onCoachSync({ type: "supplement", momentId, id });
   };
   const toggleReminder = (momentId, id) => {
-    setEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, reminderOn: !e.reminderOn } : e)) }));
+    if (isRealMode) {
+      const current = (realRows ?? []).find((r) => r.id === id);
+      const nextOn = !current?.reminder_on;
+      setRealRows((rows) => rows.map((r) => (r.id === id ? { ...r, reminder_on: nextOn } : r)));
+      updateSelfSupplementReminder(supabase, id, { reminderTime: current?.reminder_time, reminderOn: nextOn })
+        .catch((err) => console.error("PERFORM: errore aggiornamento promemoria", err));
+    } else {
+      setDemoEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, reminderOn: !e.reminderOn } : e)) }));
+    }
     requestReminderPermission();
   };
-  const setEntryTime = (momentId, id, time) =>
-    setEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, time } : e)) }));
+  const setEntryTime = (momentId, id, time) => {
+    if (isRealMode) {
+      const current = (realRows ?? []).find((r) => r.id === id);
+      setRealRows((rows) => rows.map((r) => (r.id === id ? { ...r, reminder_time: time } : r)));
+      updateSelfSupplementReminder(supabase, id, { reminderTime: time, reminderOn: current?.reminder_on })
+        .catch((err) => console.error("PERFORM: errore aggiornamento orario integratore", err));
+    } else {
+      setDemoEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, time } : e)) }));
+    }
+  };
 
   /* XP solo se si completa TUTTO il protocollo del giorno: chi ha costruito
      una lista più lunga non guadagna più punti di chi ne ha una più corta.
@@ -7426,6 +7554,10 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
     if (allDone && !wasAllDoneRef.current) onXpEarned && onXpEarned("Integrazione completata", 50);
     wasAllDoneRef.current = allDone;
   }, [allDone, onXpEarned]);
+
+  if (isRealMode && (realRows === null || realTaken === null)) {
+    return <p className="body px-1">Caricamento…</p>;
+  }
 
   return (
     <div className="spring-in">
