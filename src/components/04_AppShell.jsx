@@ -323,7 +323,7 @@ export function DesignSystem() {
    dentro una barra orizzontale e non in una card centrata a piena pagina.
    ========================================================================== */
 
-function BrandMark({ dark = false, size = 36 }) {
+export function BrandMark({ dark = false, size = 36 }) {
   const uid = useId();
   const gradId = `performIconGrad-${uid}`;
   // il box è nero in tema chiaro e bianco in tema Onyx (per contrasto):
@@ -434,6 +434,38 @@ export function AppHeader({ dark, accent, userLabel, onOpenSettings }) {
         </div>
       </div>
     </header>
+  );
+}
+
+/* Splash animato d'avvio: sostituisce il semplice pulse durante il bootstrap
+   (sessione/profilo ancora da caricare in App.jsx) — stesso marchio
+   (BrandMark + wordmark cangiante) dell'header, non un flash bianco o uno
+   spinner anonimo. Completamente autonomo (stile inline nel proprio
+   <style>): può comparire PRIMA che DesignSystem sia montato (che vive solo
+   dentro AppShell, a sua volta montato solo DOPO che auth/profilo sono
+   pronti), quindi non può dipendere dalle sue classi. */
+export function SplashScreen({ dark }) {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+                  backgroundColor: dark ? "#09090B" : "#FFFFFF" }}>
+      <style>{`
+        @keyframes splashPop{0%{opacity:0;transform:scale(.86)}60%{opacity:1;transform:scale(1.04)}100%{opacity:1;transform:scale(1)}}
+        @keyframes splashGlow{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+        .splash-pop{animation:splashPop .55s cubic-bezier(.22,1.2,.36,1) both}
+        .splash-word{background-size:220% auto;animation:splashGlow 3s ease-in-out infinite}
+        @media (prefers-reduced-motion:reduce){.splash-pop,.splash-word{animation:none}}
+      `}</style>
+      <div className="splash-pop flex flex-col items-center gap-3">
+        <BrandMark dark={dark} size={56} />
+        <p className="splash-word"
+           style={{ fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                    fontSize: "1.15rem", fontWeight: 600, letterSpacing: "0.36em", paddingLeft: "0.36em",
+                    backgroundImage: dark ? GOLD_GRADIENT_DARK : GOLD_GRADIENT_LIGHT,
+                    WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
+          PERFORM
+        </p>
+      </div>
+    </div>
   );
 }
 

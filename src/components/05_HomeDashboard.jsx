@@ -26,6 +26,7 @@ import {
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, fetchCheckins, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
+import { playSound } from "../lib/sounds.js";
 import { isMapboxConfigured, snapRouteToRoads, generateLoopRoute } from "../lib/mapbox.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -1644,7 +1645,7 @@ export function HomeDashboard({
   onSetSleep, onSetSteps, onToggleAutoSteps, onAddWater, onSetTargetOn, onSetTargetOff, onSetRhr, onSetHrv, onSetWaterTarget,
   onEditSleepDay, onEditStepsDay, // corregge un giorno PASSATO di sonno/passi cliccando la sua candela (mai "oggi")
   targetOn, targetOff, isTrainingDay, onToggleTrainingDay,
-  onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
+  onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday,
   onApplyReschedule, onDismissReschedule,
   onUpgrade, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
   userPlan, // 'free' | 'performance_pack' | 'scheda_personalizzata' | 'training' | 'full_coaching' — letta da Supabase
@@ -1833,6 +1834,7 @@ export function HomeDashboard({
     if (xpToastTimer.current) clearTimeout(xpToastTimer.current);
     setXpToast({ key: `${label}-${Date.now()}`, label, amount });
     xpToastTimer.current = setTimeout(() => setXpToast(null), 2600);
+    playSound("xp");
   };
   useEffect(() => () => { if (xpToastTimer.current) clearTimeout(xpToastTimer.current); }, []);
 
@@ -2469,7 +2471,7 @@ export function HomeDashboard({
             onRemoveFood={selectedNutritionIso ? removeFoodForPastDay : onRemoveFood}
             onUpdateFood={selectedNutritionIso ? updateFoodForPastDay : onUpdateFood}
             onOpenScanner={onOpenScanner} onAddCustomFood={onAddCustomFood}
-            onCopyYesterday={selectedNutritionIso ? null : onCopyYesterday} onShoppingList={onShoppingList} supabase={supabase}
+            onCopyYesterday={selectedNutritionIso ? null : onCopyYesterday} supabase={supabase}
             fullAccess={targetIsCoachSet}
             subsAccess={userPlan === "performance_pack" || userPlan === "full_coaching"}
             onUpgrade={onUpgrade}
@@ -5624,9 +5626,79 @@ function BarcodeScannerModal({ onDetected, onClose, accent }) {
   );
 }
 
+// Aggrega gli alimenti della Dieta Tipo (mealGuide, uno slot per pasto) in
+// un'unica lista per nome, sommando i grammi dove lo stesso alimento
+// ricorre in più pasti — stessa fonte già mostrata pasto per pasto qui
+// sotto, nessun secondo calcolo/piano parallelo.
+function aggregateShoppingList(mealGuide) {
+  const totals = new Map();
+  (mealGuide || []).forEach((slot) => {
+    (slot.items || []).forEach((it) => {
+      totals.set(it.name, (totals.get(it.name) || 0) + (it.grams || 0));
+    });
+  });
+  return [...totals.entries()]
+    .map(([name, grams]) => ({ name, grams: Math.round(grams) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "it"));
+}
+
+/* Lista della spesa: spuntabile mentre si è al supermercato (stato solo
+   locale, si azzera chiudendo — è un aiuto per quella spesa, non un dato da
+   salvare). Stesso linguaggio visivo di CompliancePopup/WeeklyCheckModal. */
+function ShoppingListModal({ items, accent, onClose }) {
+  const [checked, setChecked] = useState({});
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+           style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)", overflowY: "auto" }}
+           onClick={onClose}>
+        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 overflow-y-auto"
+             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "88vh" }}
+             onClick={(e) => e.stopPropagation()}>
+          <div ref={headerRef}>
+            <SwipeHandle />
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="h1 flex items-center gap-2">
+                <ShoppingCart size={18} style={{ color: accent }} /> Lista della spesa
+              </p>
+              <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+            </div>
+          </div>
+          <p className="body mb-4">Dagli alimenti della tua dieta tipo, quantità totali per l'intera giornata.</p>
+          {items.length === 0 ? (
+            <p className="meta">Nessun alimento nel piano di oggi.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {items.map((it) => {
+                const on = !!checked[it.name];
+                return (
+                  <button key={it.name} onClick={() => setChecked((c) => ({ ...c, [it.name]: !c[it.name] }))}
+                    className="inner w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition-transform active:scale-[0.99]">
+                    <span className="flex items-center gap-2.5 min-w-0">
+                      {on
+                        ? <CheckCircle2 size={19} style={{ color: accent }} className="shrink-0" />
+                        : <span className="shrink-0" style={{ width: 19, height: 19, borderRadius: "50%", border: "1.5px solid var(--line)" }} />}
+                      <span className="truncate" style={{ color: on ? "var(--ink-2)" : "var(--ink)", textDecoration: on ? "line-through" : "none" }}>
+                        {it.name}
+                      </span>
+                    </span>
+                    <span className="font-data text-xs shrink-0" style={{ color: "var(--ink-2)" }}>{it.grams} g</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide, substitutions,
-  onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
+  onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday,
   fullAccess, subsAccess, onUpgrade,
   userPlan, gender, waterMl, microAddon, digestValue, onDigestChange, supabase,
   pastDayMode, // true quando si sta correggendo un giorno passato (NutritionCalendarStrip):
@@ -5645,6 +5717,7 @@ function NutritionTabs({
   // cancella-e-ricerca per correggere una quantità sbagliata o cambiata.
   const [editingGramsKey, setEditingGramsKey] = useState(null); // `${slotId}-${index}`
   const [editGramsValue, setEditGramsValue] = useState("");
+  const [shoppingListOpen, setShoppingListOpen] = useState(false);
 
   // Diario Libero resta sempre disponibile. "I Miei Target" non è più un tab
   // qui accanto: i target vivono ora in cima alla schermata Alimentazione
@@ -6122,7 +6195,7 @@ function NutritionTabs({
               Le grammature sono già scalate: è la traccia, il Diario Libero resta il posto dove registri
               ciò che mangi davvero.
             </p>
-            <button onClick={onShoppingList}
+            <button onClick={() => setShoppingListOpen(true)}
               className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full mb-4"
               style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
               <ShoppingCart size={15} style={{ color: "#FFFFFF" }} />
@@ -6172,6 +6245,10 @@ function NutritionTabs({
               text="La Wiki Alimentazione è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
           )}
         </div>
+      )}
+
+      {shoppingListOpen && (
+        <ShoppingListModal items={aggregateShoppingList(mealGuide)} accent={accent} onClose={() => setShoppingListOpen(false)} />
       )}
     </>
   );
@@ -8459,7 +8536,7 @@ export default function HomePreview({
             });
           }}
           onOpenScanner={() => {}} onAddCustomFood={addCustomFood}
-          onCopyYesterday={() => {}} onShoppingList={() => {}}
+          onCopyYesterday={() => {}}
           onApplyReschedule={() => {}} onDismissReschedule={() => {}}
           onUpgrade={() => {}}
         />

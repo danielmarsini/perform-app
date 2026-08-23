@@ -38,7 +38,9 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER } from "../lib/coachingData.js";
+import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
+import { haptic } from "../lib/haptics.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -647,6 +649,113 @@ function RecompositionBadge({ weightPoints, circPoints }) {
   );
 }
 
+/* ---------------------------------------------------------------------------
+   Bacheca Trofei: raggiungimenti reali derivati dagli stessi dati già
+   mostrati altrove nel profilo (streak, livello, numero di check, lettura di
+   ricomposizione) — sbloccato/bloccato è sempre una soglia su un valore
+   vero, mai uno stato salvato a parte: impossibile disallinearsi da quello
+   che il profilo mostra davvero. Stessi nomi/icone di livello del resto
+   dell'app (LEVEL_TIERS), non una seconda nomenclatura.
+   ------------------------------------------------------------------------- */
+const STREAK_MILESTONES = [7, 30, 90, 180, 365];
+const CHECKIN_MILESTONES = [5, 15, 30, 50, 100];
+
+function computeTrophies({ level, streak, checkinsCount, recompGood }) {
+  const trophies = [];
+  STREAK_MILESTONES.forEach((days) => {
+    trophies.push({
+      id: `streak-${days}`, icon: "🔥", label: `Streak di ${days} giorni`,
+      requirement: `Mantieni ${days} giorni consecutivi di costanza`,
+      unlocked: (streak ?? 0) >= days,
+    });
+  });
+  LEVEL_TIERS.forEach((tier, i) => {
+    trophies.push({
+      id: `tier-${i}`, icon: tier.icon, label: tier.title,
+      requirement: `Raggiungi il rango "${tier.title}"`,
+      unlocked: (level ?? 0) >= i * LEVELS_PER_TIER,
+    });
+  });
+  CHECKIN_MILESTONES.forEach((n) => {
+    trophies.push({
+      id: `checkins-${n}`, icon: "📋", label: `${n} check registrati`,
+      requirement: `Registra ${n} check settimanali`,
+      unlocked: (checkinsCount ?? 0) >= n,
+    });
+  });
+  trophies.push({
+    id: "recomp-1", icon: "⚖️", label: "Prima ricomposizione rilevata",
+    requirement: "Peso stabile e circonferenze in calo nello stesso periodo",
+    unlocked: !!recompGood,
+  });
+  return trophies;
+}
+
+function TrophyCelebration({ trophy, onDone }) {
+  useEffect(() => {
+    playSound("trophy");
+    haptic("success");
+    const t = setTimeout(onDone, 2800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onDone]);
+  return (
+    <Portal>
+      <div className="trophy-celeb-wrap" role="status" aria-live="polite">
+        <div className="trophy-celeb-card">
+          <span className="trophy-celeb-icon">{trophy.icon}</span>
+          <p className="trophy-celeb-label">🎉 Trofeo sbloccato</p>
+          <p className="trophy-celeb-name">{trophy.label}</p>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+function TrophyShelf({ level, streak, checkinsCount, weightPoints, circPoints, userId }) {
+  const recomp = recompositionReading(weightPoints, circPoints);
+  const trophies = computeTrophies({ level, streak, checkinsCount, recompGood: recomp?.tone === "good" });
+  const unlockedCount = trophies.filter((t) => t.unlocked).length;
+
+  // Celebrazione solo per un trofeo comparso DA QUESTA visita in poi — mai
+  // alla primissima apertura (seen.length===0), altrimenti festeggerebbe
+  // come "appena raggiunto" ogni traguardo già vecchio del cliente.
+  const [celebrating, setCelebrating] = useState(null);
+  const storageKey = userId ? `perform_trophies_seen_${userId}` : null;
+  useEffect(() => {
+    if (!storageKey) return;
+    const unlockedIds = trophies.filter((t) => t.unlocked).map((t) => t.id);
+    let seen = [];
+    try { seen = JSON.parse(localStorage.getItem(storageKey) || "[]"); } catch { seen = []; }
+    const newOnes = unlockedIds.filter((id) => !seen.includes(id));
+    if (newOnes.length > 0 && seen.length > 0) {
+      setCelebrating(trophies.find((t) => t.id === newOnes[0]));
+    }
+    try { localStorage.setItem(storageKey, JSON.stringify(unlockedIds)); } catch { /* storage piena/negata: non blocca la pagina */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey, unlockedCount]);
+
+  return (
+    <>
+      <p className="meta mb-3">{unlockedCount}/{trophies.length} trofei sbloccati</p>
+      <div className="grid grid-cols-3 gap-2.5">
+        {trophies.map((tr) => (
+          <div key={tr.id} className="inner flex flex-col items-center justify-center text-center px-2 py-3.5" style={{ minHeight: 96 }}>
+            <span style={{ fontSize: "1.6rem", opacity: tr.unlocked ? 1 : 0.35, filter: tr.unlocked ? "none" : "grayscale(1)" }}>
+              {tr.unlocked ? tr.icon : "🔒"}
+            </span>
+            <p className="mt-1.5" style={{ fontSize: "0.66rem", fontWeight: 700, color: tr.unlocked ? "var(--ink)" : "var(--ink-2)" }}>
+              {tr.label}
+            </p>
+            {!tr.unlocked && <p className="meta mt-0.5" style={{ fontSize: "0.58rem", lineHeight: 1.3 }}>{tr.requirement}</p>}
+          </div>
+        ))}
+      </div>
+      {celebrating && <TrophyCelebration trophy={celebrating} onDone={() => setCelebrating(null)} />}
+    </>
+  );
+}
+
 /* Progressione settimanale di un singolo esercizio: peso del set migliore
    seduta per seduta. Stesso linguaggio visivo di WeightChart, generalizzato:
    qui il valore è il carico sollevato, non il peso corporeo. */
@@ -822,7 +931,7 @@ function ExerciseProgressCard({ ex, favorite, onToggleFavorite, accent, t }) {
 export function ClientProfileView({
   accent, accentText, gender, lang, onChangeLang,
   profile,           // { name, nickname, bio, avatar, joined_at, gender, email }
-  level, xp,
+  level, xp, streak, checkinsCount, // streak/checkinsCount: solo per la Bacheca Trofei
   checkPhotos, weightPoints, circPoints,
   exercises,                                   // [{ id, name, muscleGroup, compound, sessions:[{week,date,kg,reps}] }]
   favoriteExerciseIds, onToggleFavoriteExercise,
@@ -989,6 +1098,17 @@ export function ClientProfileView({
         </div>
       </div>
       </div>
+
+      {/* Bacheca Trofei: raggiungimenti reali (streak, livello, check
+          registrati, ricomposizione) — accordion chiuso di default, stessa
+          filosofia "pagina profilo pulita" dell'Archivio Check sotto. */}
+      <Section id="trofei" icon={Trophy}
+               title={<GradientText gender={gender}>I tuoi trofei</GradientText>}
+               sub="Streak, livelli, check e altri traguardi"
+               openId={openSection} setOpenId={setOpenSection}>
+        <TrophyShelf level={level} streak={streak} checkinsCount={checkinsCount}
+                     weightPoints={weightPoints} circPoints={circPoints} userId={userId} />
+      </Section>
 
       {/* Pausa (vacanza/riposo forzato): solo per chi ha un vero coach dietro
           (Scheda Personalizzata/Coaching Allenamento/Full Coaching) — un
@@ -1209,6 +1329,18 @@ export function SettingsDrawer({
     return () => { cancelled = true; };
   }, [open, isRealMode]);
 
+  // Suoni leggeri (XP, trofei...): spenti di default, letti/scritti solo in
+  // localStorage — nessuna dipendenza da Supabase, è una preferenza del
+  // dispositivo, non dell'account.
+  const [soundOn, setSoundOnState] = useState(false);
+  useEffect(() => { if (open) setSoundOnState(isSoundEnabled()); }, [open]);
+  const toggleSound = () => {
+    const next = !soundOn;
+    setSoundOnState(next);
+    setSoundEnabled(next);
+    if (next) playSound("xp"); // anteprima immediata di cosa si è appena attivato
+  };
+
   // "Scarica i miei dati": profilo + i 3 consensi legali esatti accettati
   // alla registrazione (legal_consents, mai letti da nessuna schermata
   // finora) in un unico file JSON leggibile, per gli archivi personali
@@ -1353,6 +1485,9 @@ export function SettingsDrawer({
                                  backgroundColor: "#FFFFFF", boxShadow: "0 2px 6px rgba(0,0,0,0.22)" }} />
                 </span>
               </button>
+
+              <Toggle on={soundOn} onClick={toggleSound} label="Suoni leggeri"
+                desc="Un piccolo suono discreto quando guadagni XP o sblocchi un trofeo — spento di default." />
 
               <p className="h2 mt-7 mb-3">{t.langLabel}</p>
               <LangSelector lang={lang} onChange={onChangeLang} />
@@ -1796,6 +1931,32 @@ export default function ClientProfileViewPreview({
         @keyframes drawerIn{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
         .drawer-in{animation:drawerIn .32s cubic-bezier(.22,1.2,.36,1) both}
         @keyframes gradientMove{0%{background-position:0% 50%}100%{background-position:300% 50%}}
+        /* Celebrazione trofeo: entra dall'alto con un piccolo rimbalzo,
+           resta un attimo, si dissolve da sola — stesso linguaggio del toast
+           XP della Home (xpToastPop in 05_HomeDashboard.jsx), qui più grande
+           e con un traguardo nominato perché è un evento raro, non uno XP
+           di routine. */
+        .trophy-celeb-wrap{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
+          padding:24px;pointer-events:none}
+        .trophy-celeb-card{background:linear-gradient(160deg,#1A1A1A,#09090B);border:1.5px solid rgba(212,175,55,0.5);
+          border-radius:1.5rem;padding:28px 32px;text-align:center;box-shadow:0 30px 70px -12px rgba(0,0,0,0.6);
+          animation:trophyCelebPop 2.8s cubic-bezier(.22,1,.36,1) both}
+        .trophy-celeb-icon{font-size:2.6rem;display:block;margin-bottom:10px;animation:trophyCelebSpin 2.8s ease-in-out both}
+        .trophy-celeb-label{color:#D4AF37;font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px}
+        .trophy-celeb-name{color:#FAFAFA;font-size:1.05rem;font-weight:800}
+        @keyframes trophyCelebPop{
+          0%{opacity:0;transform:translateY(-20px) scale(.9)}
+          14%{opacity:1;transform:translateY(0) scale(1.03)}
+          20%{transform:scale(1)}
+          85%{opacity:1;transform:none}
+          100%{opacity:0;transform:translateY(-10px) scale(.96)}
+        }
+        @keyframes trophyCelebSpin{
+          0%,20%{transform:scale(.5) rotate(-12deg)}
+          32%{transform:scale(1.15) rotate(6deg)}
+          40%{transform:scale(1) rotate(0deg)}
+          100%{transform:scale(1) rotate(0deg)}
+        }
         @media (prefers-reduced-motion:reduce){*{animation:none!important}}
       `}</style>
 
@@ -1823,6 +1984,7 @@ export default function ClientProfileViewPreview({
           onChangeLang={onChangeLangProp ?? setLang}
           profile={{ ...profile, email: owner ? (ownerEmail ?? OWNER_EMAIL) : profile.email }}
           level={isRealMode ? realLevelInfo.level : 4} xp={isRealMode ? realLevelInfo.xp : 4850}
+          streak={isRealMode ? (realXpStreak?.streak ?? 0) : 12} checkinsCount={isRealMode ? (realCheckins?.length ?? 0) : 6}
           checkPhotos={checkPhotos} weightPoints={weightPoints} circPoints={circPoints}
           exercises={exercises} favoriteExerciseIds={favoriteExerciseIds}
           onToggleFavoriteExercise={toggleFavoriteExercise}

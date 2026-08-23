@@ -939,7 +939,10 @@ function levelMinXp(level) {
 // Costruttore 1..5, ...); una volta esaurito l'ultimo tier (Immortale) il
 // numero continua a crescere all'infinito invece di richiedere un nome
 // nuovo per ogni livello possibile — è così che restano davvero infiniti.
-const LEVEL_TIERS = [
+// Esportati (non più solo interni a xpToLevelInfo): la Bacheca Trofei del
+// Profilo li riusa per i trofei "livello raggiunto", stessi nomi/icone del
+// livello reale mostrato altrove — mai una seconda nomenclatura duplicata.
+export const LEVEL_TIERS = [
   { title: "Recluta", icon: "🌱" },
   { title: "Costruttore", icon: "🔨" },
   { title: "Combattente", icon: "🥊" },
@@ -949,7 +952,7 @@ const LEVEL_TIERS = [
   { title: "Leggenda", icon: "👑" },
   { title: "Immortale", icon: "⚡" },
 ];
-const LEVELS_PER_TIER = 5;
+export const LEVELS_PER_TIER = 5;
 function levelTitleAndIcon(level) {
   const tierIdx = Math.min(Math.floor(level / LEVELS_PER_TIER), LEVEL_TIERS.length - 1);
   const tier = LEVEL_TIERS[tierIdx];
