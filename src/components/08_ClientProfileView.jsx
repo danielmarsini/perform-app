@@ -38,10 +38,9 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
-import TechniqueVideoPanel from "./TechniqueVideoPanel.jsx";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -522,7 +521,11 @@ export function WeightChart({ points, accent, t }) {
   const vals = points.map((p) => p.kg);
   const min = Math.min(...vals) - 0.6, max = Math.max(...vals) + 0.6;
   const x = (i) => pad + (i * (W - pad * 2)) / (points.length - 1);
-  const y = (v) => H - pad - ((v - min) / (max - min || 1)) * (H - pad * 1.8);
+  // Asse invertito rispetto a un grafico "letterale": il peso che scende
+  // (il caso normale per chi è in dimagrimento/ricomposizione, la stragrande
+  // maggioranza qui) deve leggersi come un progresso che sale a destra, non
+  // come un calo che scende — kg più basso → punto più in alto sul grafico.
+  const y = (v) => pad + ((v - min) / (max - min || 1)) * (H - pad * 1.8);
   const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(p.kg)}`).join(" ");
   const area = `${path} L${x(points.length - 1)},${H - pad} L${pad},${H - pad} Z`;
   const delta = +(vals[vals.length - 1] - vals[0]).toFixed(1);
@@ -757,47 +760,6 @@ function TrophyShelf({ level, streak, checkinsCount, weightPoints, circPoints, u
   );
 }
 
-/* Progressione settimanale di un singolo esercizio: peso del set migliore
-   seduta per seduta. Stesso linguaggio visivo di WeightChart, generalizzato:
-   qui il valore è il carico sollevato, non il peso corporeo. */
-function ExerciseTrendChart({ sessions, accent, t }) {
-  if (!sessions || sessions.length < 2) {
-    return <p className="meta" style={{ fontSize: "0.72rem" }}>{t.noProgressionData}</p>;
-  }
-  const W = 280, H = 84, pad = 16;
-  const vals = sessions.map((s) => s.kg);
-  const min = Math.min(...vals) - 2, max = Math.max(...vals) + 2;
-  const x = (i) => pad + (i * (W - pad * 2)) / (sessions.length - 1);
-  const y = (v) => H - pad - ((v - min) / (max - min || 1)) * (H - pad * 1.6);
-  const path = sessions.map((s, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(s.kg)}`).join(" ");
-  const last = sessions[sessions.length - 1];
-  const prev = sessions[sessions.length - 2];
-  const delta = +(last.kg - prev.kg).toFixed(1);
-
-  return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={t.title}>
-        <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="var(--line)" />
-        <path d={path} fill="none" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        {sessions.map((s, i) => (
-          <circle key={i} cx={x(i)} cy={y(s.kg)} r="2.8" fill="var(--surface)" stroke={accent} strokeWidth="1.8" />
-        ))}
-      </svg>
-      <div className="flex items-center justify-between mt-1">
-        <p className="meta font-data" style={{ fontSize: "0.66rem" }}>
-          {t.lastSession}: <span style={{ color: "var(--ink)", fontWeight: 700 }}>{last.kg} kg</span> × {last.reps}
-        </p>
-        {prev && (
-          <p className="font-data" style={{ fontSize: "0.62rem", fontWeight: 700,
-                       color: delta === 0 ? "var(--ink-2)" : delta > 0 ? "#10B981" : "#B45309" }}>
-            {delta > 0 ? "+" : ""}{delta} kg <span className="meta" style={{ fontWeight: 500 }}>{t.vsPrev}</span>
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* Confronto mensile: una foto al mese dal giorno dell'iscrizione, messe
    affiancate per vedere il cambiamento reale. checkPhotos va ordinato per
    data crescente prima di arrivare qui. */
@@ -983,38 +945,6 @@ function Section({ id, icon: Icon, title, sub, openId, setOpenId, children, badg
   );
 }
 
-/* Card di un esercizio nei Traguardi: stella preferiti, tag multiarticolare,
-   mini-grafico di progressione settimanale. I dati arrivano dagli
-   allenamenti che l'atleta registra in Home, sulla scheda impostata dal
-   coach (Supabase: `workout_logs` filtrati per `exercise_id`). */
-function ExerciseProgressCard({ ex, favorite, onToggleFavorite, accent, t }) {
-  return (
-    <div className="inner px-4 py-3.5 mb-2.5">
-      <div className="flex items-start justify-between gap-2 mb-2.5">
-        <div className="min-w-0">
-          <p className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 700 }}>{ex.name}</p>
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            {ex.muscleGroup && (
-              <span className="label" style={{ fontSize: "0.56rem", color: "var(--ink-2)" }}>{ex.muscleGroup}</span>
-            )}
-            {ex.compound && (
-              <span className="rounded-full px-2 py-0.5" style={{ fontSize: "0.56rem", fontWeight: 700,
-                       backgroundColor: `${accent}22`, color: accent }}>{t.compoundTag}</span>
-            )}
-          </div>
-        </div>
-        <button onClick={() => onToggleFavorite(ex.id)}
-          className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-transform active:scale-90"
-          style={{ border: "1px solid var(--line)", color: favorite ? accent : "var(--ink-2)" }}
-          aria-label={favorite ? t.favoriteRemove : t.favoriteAdd} aria-pressed={favorite}>
-          <span style={{ fontSize: "0.95rem" }}>{favorite ? "★" : "☆"}</span>
-        </button>
-      </div>
-      <ExerciseTrendChart sessions={ex.sessions} accent={accent} t={t} />
-    </div>
-  );
-}
-
 /* ============================================================================
    3 · PROFILO ATLETA — vista unica per chiunque apra l'app
    ========================================================================== */
@@ -1024,8 +954,6 @@ export function ClientProfileView({
   profile,           // { name, nickname, bio, avatar, joined_at, gender, email }
   level, xp, streak, checkinsCount, // streak/checkinsCount: solo per la Bacheca Trofei
   checkPhotos, weightPoints, circPoints,
-  exercises,                                   // [{ id, name, muscleGroup, compound, sessions:[{week,date,kg,reps}] }]
-  favoriteExerciseIds, onToggleFavoriteExercise,
   onSaveProfile, onOpenSettings, nicknameTaken,
   onOpenManualCheck,   // se passato, mostra il pulsante "Registra ora" nell'Archivio Check
   supabase, userId,    // solo per "Vai in vacanza / chiedi riposo forzato" (PauseSection)
@@ -1045,7 +973,6 @@ export function ClientProfileView({
   // chiudibile — tap per espandere/richiudere, un accordion: mai due aperte
   // insieme, così la pagina resta sempre corta).
   const [openSection, setOpenSection] = useState(null);
-  const [exFilter, setExFilter] = useState("all"); // "all" | "compound" | "favorites"
   const [reportOpen, setReportOpen] = useState(false);
   const fileRef = useRef(null);
 
@@ -1193,44 +1120,16 @@ export function ClientProfileView({
       </div>
       </div>
 
-      {/* Bacheca Trofei: raggiungimenti reali (streak, livello, check
-          registrati, ricomposizione) — accordion chiuso di default, stessa
-          filosofia "pagina profilo pulita" dell'Archivio Check sotto. */}
-      <Section id="trofei" icon={Trophy}
-               title={<GradientText gender={gender}>I tuoi trofei</GradientText>}
-               sub="Streak, livelli, check e altri traguardi"
-               openId={openSection} setOpenId={setOpenSection}>
-        <TrophyShelf level={level} streak={streak} checkinsCount={checkinsCount}
-                     weightPoints={weightPoints} circPoints={circPoints} userId={userId} />
-      </Section>
-
-      {/* Pausa (vacanza/riposo forzato): solo per chi ha un vero coach dietro
-          (Scheda Personalizzata/Coaching Allenamento/Full Coaching) — un
-          Free/Premium autogestito non ha nessuno a cui "avvisare" di una
-          pausa, il concetto stesso non si applica. */}
-      {supabase && userId && ["scheda", "training", "full"].includes(plan) && (
-        <div className="mb-4">
-          <PauseSection supabase={supabase} userId={userId} accent={accent} accentText={accentText} />
-        </div>
-      )}
-
-      {/* Chat col coach: ora un pulsante di navigazione dedicato (quinto tab
-          in basso, solo per chi ha davvero un coach dietro) invece che una
-          sezione qui — niente più due strade diverse per la stessa
-          conversazione, vedi CHAT_TAB in 04_AppShell.jsx/App.jsx. */}
-
-      {hasCoachChat && (
-        <Section id="video-tecnica" icon={Video}
-                 title={<GradientText gender={gender}>Video Tecnica</GradientText>}
-                 sub="Carica un video di un esercizio per farti correggere"
-                 openId={openSection} setOpenId={setOpenSection}>
-          <TechniqueVideoPanel supabase={supabase} clientId={userId} role="client" accent={accent} />
-        </Section>
-      )}
+      {/* Chat col coach (messaggi, dubbi, feedback e video degli esercizi da
+          correggere — video-check tecnica compreso) e' ora un pulsante di
+          navigazione dedicato (terzo tab, subito dopo News, solo per chi ha
+          davvero un coach dietro) invece che una sezione qui — niente più
+          due strade diverse per la stessa conversazione, vedi CHAT_TAB in
+          04_AppShell.jsx/App.jsx. */}
 
       {/* ---------- Il Mio Archivio Check ---------- */}
       <Section id="archivio" icon={TrendingDown}
-               title={<GradientText gender={gender}>{t.archive.title}</GradientText>}
+               title={<>📈 <GradientText gender={gender}>{t.archive.title}</GradientText></>}
                openId={openSection} setOpenId={setOpenSection}
                sub={weightPoints?.length ? t.archive.subReady(weightPoints.length) : t.archive.subEmpty}>
         <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
@@ -1266,41 +1165,26 @@ export function ClientProfileView({
         <BiometricPhotoGallery checkPhotos={checkPhotos} t={t.archive} />
       </Section>
 
-      <Section id="traguardi" icon={Trophy}
-               title={<GradientText gender={gender}>{t.records.title}</GradientText>}
-               openId={openSection} setOpenId={setOpenSection}
-               sub={exercises?.length ? t.records.sub(exercises.length) : t.records.emptyAll}>
-        {(() => {
-          const favSet = new Set(favoriteExerciseIds || []);
-          const filtered = (exercises || []).filter((ex) => exFilter === "favorites" ? favSet.has(ex.id) : true);
-          const emptyText = exFilter === "favorites" ? t.records.emptyFavorites : t.records.emptyAll;
-          return (
-            <>
-              <div className="grid grid-cols-2 gap-1.5 mb-4">
-                {[["all", t.records.filterAll], ["favorites", t.records.filterFavorites]].map(([id, lab]) => {
-                  const on = exFilter === id;
-                  return (
-                    <button key={id} onClick={() => setExFilter(id)}
-                      className="rounded-xl px-1 py-2.5 text-center"
-                      style={on ? { backgroundColor: "var(--ink)", color: "var(--page)" }
-                                : { border: "1px solid var(--line)", color: "var(--ink-2)" }}>
-                      <span style={{ fontSize: "0.7rem", fontWeight: 600 }}>{lab}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {!filtered.length ? (
-                <p className="body">{emptyText}</p>
-              ) : (
-                filtered.map((ex) => (
-                  <ExerciseProgressCard key={ex.id} ex={ex} favorite={favSet.has(ex.id)}
-                    onToggleFavorite={onToggleFavoriteExercise} accent={accent} t={t.records} />
-                ))
-              )}
-            </>
-          );
-        })()}
+      {/* Bacheca Trofei: raggiungimenti reali (streak, livello, check
+          registrati, ricomposizione) — più in basso nell'ordine delle
+          sezioni, dopo l'Archivio Check. */}
+      <Section id="trofei" icon={Trophy}
+               title={<>🏆 <GradientText gender={gender}>I tuoi trofei</GradientText></>}
+               sub="Streak, livelli, check e altri traguardi"
+               openId={openSection} setOpenId={setOpenSection}>
+        <TrophyShelf level={level} streak={streak} checkinsCount={checkinsCount}
+                     weightPoints={weightPoints} circPoints={circPoints} userId={userId} />
       </Section>
+
+      {/* Pausa (vacanza/riposo forzato): in fondo a tutta la pagina, sotto
+          ogni altra sezione — solo per chi ha un vero coach dietro (Scheda
+          Personalizzata/Coaching Allenamento/Full Coaching), un Free/Premium
+          autogestito non ha nessuno a cui "avvisare" di una pausa. */}
+      {supabase && userId && ["scheda", "training", "full"].includes(plan) && (
+        <div className="mb-4">
+          <PauseSection supabase={supabase} userId={userId} accent={accent} accentText={accentText} />
+        </div>
+      )}
 
       {reportOpen && (
         <MonthlyReportView profile={profile} accent={accent} level={level} xp={xp} streak={streak}
@@ -1937,74 +1821,6 @@ export default function ClientProfileViewPreview({
   }, [isRealMode, supabase, realCheckins]);
   const checkPhotos = isRealMode ? (resolvedCheckPhotos ?? []) : demoCheckPhotos;
 
-  // Esercizi registrati in Home, sulla scheda impostata dal coach. In
-  // isRealMode arrivano da fetchExerciseRecords (storico reale da
-  // workout_sets, carico massimo per sessione) invece dalla lista demo
-  // sotto; i preferiti si leggono/scrivono su profiles.favorite_exercises
-  // (fetchFavoriteExercises/saveFavoriteExercises) così sopravvivono al
-  // logout, non più solo stato locale della sessione.
-  const [realExercises, setRealExercises] = useState(null); // null = non ancora caricato
-  const [realFavoriteIds, setRealFavoriteIds] = useState([]);
-  useEffect(() => {
-    if (!isRealMode) return;
-    let cancelled = false;
-    fetchExerciseRecords(supabase, userId)
-      .then((rows) => { if (!cancelled) setRealExercises(rows); })
-      .catch((err) => { console.error("PERFORM: errore caricamento Traguardi reali", err); if (!cancelled) setRealExercises([]); });
-    fetchFavoriteExercises(supabase, userId)
-      .then((ids) => { if (!cancelled) setRealFavoriteIds(ids); })
-      .catch((err) => console.error("PERFORM: errore caricamento preferiti Traguardi", err));
-    return () => { cancelled = true; };
-  }, [isRealMode, supabase, userId]);
-
-  const [demoFavoriteExerciseIds, setDemoFavoriteExerciseIds] = useState(["panca", "squat", "stacco"]);
-  const demoExercises = [
-    { id: "panca", name: "Panca Piana Bilanciere", muscleGroup: "Petto", compound: true,
-      sessions: [
-        { week: "Sett 1", date: "2026-06-01", kg: 72.5, reps: 8 },
-        { week: "Sett 2", date: "2026-06-08", kg: 75, reps: 7 },
-        { week: "Sett 3", date: "2026-06-15", kg: 77.5, reps: 6 },
-        { week: "Sett 4", date: "2026-06-22", kg: 80, reps: 6 },
-        { week: "Sett 5", date: "2026-07-20", kg: 82.5, reps: 6 },
-      ] },
-    { id: "squat", name: "Squat con Bilanciere", muscleGroup: "Gambe", compound: true,
-      sessions: [
-        { week: "Sett 1", date: "2026-06-02", kg: 105, reps: 6 },
-        { week: "Sett 2", date: "2026-06-09", kg: 110, reps: 6 },
-        { week: "Sett 3", date: "2026-06-23", kg: 115, reps: 5 },
-        { week: "Sett 4", date: "2026-07-15", kg: 120, reps: 5 },
-      ] },
-    { id: "stacco", name: "Stacco da Terra", muscleGroup: "Dorso/Posteriore", compound: true,
-      sessions: [
-        { week: "Sett 1", date: "2026-05-30", kg: 135, reps: 4 },
-        { week: "Sett 2", date: "2026-06-13", kg: 142.5, reps: 3 },
-        { week: "Sett 3", date: "2026-06-28", kg: 150, reps: 3 },
-      ] },
-    { id: "trazioni", name: "Trazioni Presa Prona", muscleGroup: "Dorso", compound: true,
-      sessions: [
-        { week: "Sett 1", date: "2026-06-05", kg: 8, reps: 8 },
-        { week: "Sett 2", date: "2026-06-19", kg: 10, reps: 7 },
-        { week: "Sett 3", date: "2026-07-10", kg: 12.5, reps: 6 },
-      ] },
-    { id: "curl", name: "Curl Manubri", muscleGroup: "Bicipiti", compound: false,
-      sessions: [
-        { week: "Sett 1", date: "2026-06-06", kg: 14, reps: 10 },
-        { week: "Sett 2", date: "2026-06-20", kg: 15, reps: 10 },
-        { week: "Sett 3", date: "2026-07-11", kg: 16, reps: 9 },
-      ] },
-  ];
-  const exercises = isRealMode ? (realExercises ?? []) : demoExercises;
-  const favoriteExerciseIds = isRealMode ? realFavoriteIds : demoFavoriteExerciseIds;
-  const toggleFavoriteExercise = (id) => {
-    if (isRealMode) {
-      const next = realFavoriteIds.includes(id) ? realFavoriteIds.filter((x) => x !== id) : [...realFavoriteIds, id];
-      setRealFavoriteIds(next); // ottimistico: la UI risponde subito
-      saveFavoriteExercises(supabase, userId, next).catch((err) => console.error("PERFORM: errore salvataggio preferiti", err));
-      return;
-    }
-    setDemoFavoriteExerciseIds((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
-  };
-
   return (
     <div className={isControlled ? "app-root" : "app-root min-h-screen"} data-theme={dark ? "dark" : "light"}
          style={{ backgroundColor: isControlled ? "transparent" : (dark ? "#09090B" : "#FFFFFF"), transition: "background-color 0.4s ease" }}>
@@ -2125,8 +1941,6 @@ export default function ClientProfileViewPreview({
           level={isRealMode ? realLevelInfo.level : 4} xp={isRealMode ? realLevelInfo.xp : 4850}
           streak={isRealMode ? (realXpStreak?.streak ?? 0) : 12} checkinsCount={isRealMode ? (realCheckins?.length ?? 0) : 6}
           checkPhotos={checkPhotos} weightPoints={weightPoints} circPoints={circPoints}
-          exercises={exercises} favoriteExerciseIds={favoriteExerciseIds}
-          onToggleFavoriteExercise={toggleFavoriteExercise}
           onSaveProfile={(d) => {
             setProfile((p) => ({ ...p, ...d }));
             // BUG PRESO: qui si aggiornava SOLO lo state locale — nickname e

@@ -12,15 +12,14 @@ import ChatThread from "./components/ChatThread.jsx";
 import { touchLastActivity } from "./lib/coachingData.js";
 
 // Piani a coaching reale (Scheda Personalizzata, Coaching Allenamento, Full
-// Coaching): solo questi sbloccano il quinto pulsante Chat in basso — un
-// Free/Premium autogestito non ha un coach dietro con cui scrivere. Stessa
-// condizione già usata per la sezione Chat/Video Tecnica nel Profilo
-// (08_ClientProfileView.jsx) e per REAL_COACHING_PLANS lato coach.
+// Coaching): solo questi sbloccano il pulsante Chat (terzo tab, subito dopo
+// News) — un Free/Premium autogestito non ha un coach dietro con cui
+// scrivere. Stessa condizione già usata per REAL_COACHING_PLANS lato coach.
 const REAL_COACHING_PLANS = new Set(["scheda_personalizzata", "training", "full_coaching"]);
 
-/* Schermata Chat a schermo intero, dietro il quinto pulsante di navigazione —
-   stesso ChatThread già in uso nell'accordion Profilo, qui come destinazione
-   diretta invece che una sezione da aprire tra le altre. */
+/* Schermata Chat a schermo intero, dietro il tab di navigazione dedicato —
+   include anche il video-check tecnica (invio video esercizi dentro la
+   stessa conversazione, non più una sezione a sé nel Profilo). */
 function ChatScreen({ supabase, userId, accent }) {
   return (
     <div className="card">
@@ -324,8 +323,13 @@ export default function App() {
               supabase={supabase}
               userId={session.user.id}
               profileOverride={{
-                name: session.user.user_metadata?.full_name || "Atleta",
-                nickname: session.user.user_metadata?.nickname || session.user.email?.split("@")[0],
+                name: profile?.full_name || session.user.user_metadata?.full_name || "Atleta",
+                // BUG PRESO: leggeva session.user.user_metadata?.nickname (mai
+                // scritto da nessuna parte, l'utente lo imposta nel Profilo che
+                // scrive su profiles.nickname) — cadeva quindi sempre sul
+                // fallback email-prefix, mai il vero nickname scelto. `profile`
+                // qui è già la riga reale di profiles (vedi loadProfile sopra).
+                nickname: profile?.nickname || session.user.email?.split("@")[0],
               }}
             />
           ),

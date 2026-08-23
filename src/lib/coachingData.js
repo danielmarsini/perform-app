@@ -566,10 +566,15 @@ export async function computeTrainingCompliance(supabase, userId) {
   // abbondante anche per chi si allena 6 volte a settimana da un anno) e
   // dedup lato client — l'ordine desc si preserva perché un Set mantiene
   // l'ordine di primo inserimento.
+  // lte(oggi): il coach può programmare settimane future in anticipo
+  // (MAX_FORWARD_WEEKS in 09_CoachDashboard.jsx) — senza questo taglio,
+  // "le date più recenti" pescherebbe sessioni future mai ancora svolte al
+  // posto delle ultime 7 sedute REALMENTE fatte, falsando il cerchio.
   const { data: recentLogs, error: recentError } = await supabase
     .from("workout_logs")
     .select("date")
     .eq("user_id", userId)
+    .lte("date", toLocalISODate())
     .order("date", { ascending: false })
     .limit(250);
   if (recentError) throw recentError;
@@ -630,7 +635,15 @@ export async function computeTrainingCompliance(supabase, userId) {
     else if (improved > 0) progression = "positive";
   }
 
-  const pct = progression === "negative" ? Math.round(completionPct * 0.75) : completionPct;
+  // Tre livelli distinti, non solo "penalità se regredisce": chi progredisce
+  // sul carico mantenendo la costanza merita il punteggio pieno (bonus sopra
+  // il solo completamento), chi mantiene le prestazioni resta al punteggio
+  // di completamento così com'è, chi regredisce ma continua ad allenarsi
+  // resta comunque premiato per la costanza — solo un po' meno di chi
+  // mantiene o migliora, mai una bocciatura netta.
+  const pct = progression === "positive" ? Math.min(100, completionPct + 10)
+    : progression === "negative" ? Math.round(completionPct * 0.8)
+    : completionPct;
   return { status: "ok", pct, completionPct, progression };
 }
 
