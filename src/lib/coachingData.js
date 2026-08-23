@@ -317,7 +317,7 @@ export async function updateNutritionLogItem(supabase, logId, patch) {
 // alcuna registrazione vale 0 (non "va bene", un buco nel diario è un buco).
 // Se in NESSUno dei 7 giorni c'è un target attivo (il coach non ha ancora
 // assegnato nulla), torna neutro esplicito.
-function dayNutritionScore(logsTotals, target) {
+export function dayNutritionScore(logsTotals, target) {
   if (!target) return null; // nessun target attivo quel giorno: non giudicabile
   const dims = ["kcal", "p", "c", "f"];
   const devs = dims.map((d) => (target[d] > 0 ? Math.min(1, Math.abs(logsTotals[d] - target[d]) / target[d]) : 0));

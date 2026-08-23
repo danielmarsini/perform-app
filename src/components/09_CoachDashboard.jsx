@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef, createContext, useContext } from "react";
 import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
-  AlertTriangle, Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
-  Trash2, ArrowLeft, CalendarDays, Wallet, Server, X, ShieldCheck, Check, Video,
+  Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
+  Trash2, ArrowLeft, Wallet, Server, X, ShieldCheck, Check, Video,
+  BarChart3, FileText,
 } from "lucide-react";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -176,6 +177,7 @@ import {
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
   fetchExerciseLibrary, learnExercise, computeVolume, fetchUnreadChatCount, fetchPendingTechniqueVideoCount,
+  fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3153,12 +3155,17 @@ function ClientPausesCard({ client }) {
   );
 }
 
-function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses, setXpBonuses, teamPosts, setTeamPosts, initialTab = "anamnesi" }) {
+function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses, setXpBonuses, teamPosts, setTeamPosts, initialTab = "chat" }) {
   const { supabase, coachId, isRealMode, reloadRoster } = useContext(CoachDataContext);
   const status = computeStatus(client);
   const meta = STATUS_META[status];
   const [tab, setTab] = useState(initialTab);
   const isPaidCoaching = REAL_COACHING_PLANS.has(client.plan);
+  // Anamnesi non è più un tab tra gli altri: si legge la prima volta che si
+  // conosce il cliente e poi solo saltuariamente per ristrutturare i
+  // programmi futuri, non ogni giorno come chat/dati/editor — resta quindi
+  // un pulsante che apre il pannello a schermo intero solo quando serve.
+  const [showAnamnesis, setShowAnamnesis] = useState(false);
 
   // Pallino "nuovo messaggio" sul tab Chat, visibile anche prima di aprirlo —
   // si azzera aprendo il tab (ChatThread segna i messaggi come letti da sola).
@@ -3205,8 +3212,15 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
       </div>
 
       <div className="c-card mb-5">
-        <p className={`font-display text-xl ${titleClass}`}>{client.name}</p>
-        <p className="c-muted font-data text-xs uppercase mt-1">{client.goal} · {client.calories} kcal · streak {client.streak} giorni · aderenza {client.adherence != null ? `${client.adherence}%` : "n/d"}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className={`font-display text-xl ${titleClass}`}>{client.name}</p>
+            <p className="c-muted font-data text-xs uppercase mt-1">{client.goal} · {client.calories} kcal · streak {client.streak} giorni · aderenza {client.adherence != null ? `${client.adherence}%` : "n/d"}</p>
+          </div>
+          <button onClick={() => setShowAnamnesis(true)} className="c-ghost shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium">
+            <FileText size={14} /> Anamnesi
+          </button>
+        </div>
         {isRealMode && (
           <div className="mt-3">
             {changingPlan ? (
@@ -3220,8 +3234,8 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
         )}
       </div>
 
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5 mb-5">
-        {[["anamnesi", "Anamnesi", ChevronDown], ["check", "Check Settimanali", CalendarDays], ["bioritmi", "Bioritmi & Grafici", AlertTriangle], ["editor", "Editor & AI", Dumbbell], ["chat", "Chat", MessageCircle], ["video", "Video Tecnica", Video]].map(([id, lab, Ico]) => {
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-5">
+        {[["chat", "Chat", MessageCircle], ["video", "Video Tecnica", Video], ["dati", "Dati", BarChart3], ["editor", "Editor", Dumbbell]].map(([id, lab, Ico]) => {
           const on = tab === id;
           return (
             <button key={id} onClick={() => setTab(id)} className="relative rounded-2xl px-2 py-3.5 flex flex-col items-center gap-1.5"
@@ -3236,17 +3250,15 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
         })}
       </div>
 
-      {tab === "anamnesi" && <AnamnesisPanel client={client} />}
-
-      {tab === "check" && (
+      {tab === "dati" && (
         <div className="space-y-4">
+          <BioritmiGrafici client={client} />
+          <ClientDayLog client={client} />
           <GoalAchievedPanel client={client} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} />
           <ClientPausesCard client={client} />
           <CheckDetail client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} onSwitchToEditor={() => setTab("editor")} />
         </div>
       )}
-
-      {tab === "bioritmi" && <BioritmiGrafici client={client} />}
 
       {tab === "chat" && (
         <div className="c-card">
@@ -3289,6 +3301,25 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, xpBonuses
         <div>
           <ClientTimeline client={client} quickTargets={quickTargets} setQuickTargets={setQuickTargets} />
         </div>
+      )}
+
+      {showAnamnesis && (
+        <Portal>
+          <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+            <div className="flex items-center justify-between gap-3 px-4 py-4 shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
+              <div className="min-w-0">
+                <p className="c-heading font-display font-bold truncate">Anamnesi · {client.name}</p>
+                <p className="c-muted text-xs">Letta al primo contatto e rivista periodicamente, non ogni giorno</p>
+              </div>
+              <button onClick={() => setShowAnamnesis(false)} aria-label="Chiudi" className="c-ghost w-9 h-9 rounded-full flex items-center justify-center shrink-0">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-5 max-w-2xl md:max-w-3xl mx-auto w-full">
+              <AnamnesisPanel client={client} />
+            </div>
+          </div>
+        </Portal>
       )}
     </div>
   );
@@ -3810,6 +3841,184 @@ function QuickDietEditPanel({ client, quickTargets, setQuickTargets, onOpenTimel
         })}
       </div>
       <p className="c-muted text-[10px] mt-3">Modifica qui o nella Timeline: è lo stesso target, si aggiorna in entrambi i posti.</p>
+    </div>
+  );
+}
+
+/* Elenco giorni (allenamento + alimentazione) del cliente, dato reale da
+   Supabase — mai simulato. Riusa le stesse funzioni/punteggi già validati
+   altrove nel progetto invece di duplicare la logica:
+   - fetchAssignedWorkouts: stesso fetch usato lato cliente per la scheda,
+     qui letto in sola lettura per l'elenco giorni.
+   - fetchExerciseRecords: storico reale per esercizio, usato per capire se
+     il carico di un giorno è più alto della sessione precedente dello
+     stesso esercizio (progressione), stesso principio di
+     computeTrainingCompliance ma esposto giorno per giorno invece che come
+     unico punteggio aggregato.
+   - dayNutritionScore: stesso punteggio kcal/macro-vs-target già usato dal
+     cerchio Alimentazione, qui per singolo giorno invece che come media.
+   Integratori: la tabella prescribed_supplements è il protocollo ASSEGNATO
+   (sempre reale), ma non esiste da nessuna parte uno storico di "preso
+   davvero il giorno X" — non è mai stato tracciato, quindi non compare
+   nell'elenco giorno per giorno (mai un dato inventato): si mostra solo il
+   protocollo attuale come riferimento. */
+const CLIENT_DAY_LOG_DAYS = 14;
+function ClientDayLog({ client }) {
+  const { supabase, isRealMode } = useContext(CoachDataContext);
+  const [days, setDays] = useState(null); // null = caricamento
+  const [supplements, setSupplements] = useState([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!isRealMode) { setDays([]); return undefined; }
+    let cancelled = false;
+    setError("");
+    const todayISO = toLocalISODate();
+    const fromDate = new Date(`${todayISO}T00:00:00`);
+    fromDate.setDate(fromDate.getDate() - (CLIENT_DAY_LOG_DAYS - 1));
+    const fromISO = toLocalISODate(fromDate);
+
+    Promise.all([
+      fetchAssignedWorkouts(supabase, client.id, fromISO, todayISO),
+      fetchExerciseRecords(supabase, client.id),
+      supabase.from("nutrition_logs").select("date, kcal, protein, carbs, fat").eq("user_id", client.id).gte("date", fromISO).lte("date", todayISO),
+      supabase.from("nutrition_targets").select("day_type, kcal, protein, carbs, fat, effective_from").eq("user_id", client.id).lte("effective_from", todayISO).order("effective_from", { ascending: true }),
+      fetchPrescribedSupplements(supabase, client.id),
+    ]).then(([workoutRows, exerciseRecords, nutritionResp, targetsResp, supplementRows]) => {
+      if (cancelled) return;
+      if (nutritionResp.error) throw nutritionResp.error;
+      if (targetsResp.error) throw targetsResp.error;
+      const nutritionLogs = nutritionResp.data ?? [];
+      const targets = targetsResp.data ?? [];
+      setSupplements(supplementRows ?? []);
+
+      const historyByExercise = new Map();
+      exerciseRecords.forEach((ex) => historyByExercise.set(ex.name, ex.sessions)); // già ordinate per data crescente
+
+      const byDate = new Map();
+      workoutRows.forEach((r) => {
+        if (!byDate.has(r.date)) byDate.set(r.date, []);
+        byDate.get(r.date).push(r);
+      });
+
+      const targetFor = (dateISO, dayType) => {
+        const rows = targets.filter((t) => t.day_type === dayType && t.effective_from <= dateISO);
+        if (rows.length === 0) return null;
+        const latest = rows[rows.length - 1]; // già ordinati ascending per effective_from
+        return { kcal: Number(latest.kcal), p: Number(latest.protein), c: Number(latest.carbs), f: Number(latest.fat) };
+      };
+
+      const list = [];
+      for (let i = 0; i < CLIENT_DAY_LOG_DAYS; i++) {
+        const d = new Date(fromDate);
+        d.setDate(d.getDate() + i);
+        const dateISO = toLocalISODate(d);
+        const exercises = byDate.get(dateISO);
+        let workout = null;
+        if (exercises && exercises.length > 0) {
+          const done = exercises.filter((e) => e.status === "done").length;
+          const withProgress = exercises.map((e) => {
+            if (e.status !== "done" || !e.load_kg) return { ...e, progressed: null };
+            const history = historyByExercise.get(e.exercise_name) || [];
+            const prior = [...history].filter((s) => s.date < dateISO).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+            return { ...e, progressed: prior ? Number(e.load_kg) > prior.kg : null };
+          });
+          workout = { total: exercises.length, done, exercises: withProgress };
+        }
+        const dayType = exercises && exercises.length > 0 ? "on" : "off";
+        const target = targetFor(dateISO, dayType);
+        const dayLogs = nutritionLogs.filter((l) => l.date === dateISO);
+        let nutrition = null;
+        if (dayLogs.length > 0 || target) {
+          const totals = dayLogs.reduce((a, l) => ({
+            kcal: a.kcal + Number(l.kcal), p: a.p + Number(l.protein), c: a.c + Number(l.carbs), f: a.f + Number(l.fat),
+          }), { kcal: 0, p: 0, c: 0, f: 0 });
+          nutrition = { logged: dayLogs.length > 0, totals, target, score: dayLogs.length > 0 ? dayNutritionScore(totals, target) : null };
+        }
+        list.push({ date: dateISO, workout, nutrition });
+      }
+      setDays(list.reverse()); // più recente prima
+    }).catch((err) => {
+      if (cancelled) return;
+      console.error("PERFORM: errore caricamento elenco giorni cliente", err);
+      setError("Non sono riuscito a caricare lo storico dei giorni.");
+      setDays([]);
+    });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, client.id]);
+
+  if (!isRealMode) return null; // solo dati reali, niente da mostrare in anteprima demo
+
+  const fmtDate = (dateISO) => {
+    const d = new Date(`${dateISO}T00:00:00`);
+    return d.toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" });
+  };
+
+  return (
+    <div className="c-card">
+      <p className="c-heading font-display font-bold mb-1">Elenco giorni — ultimi {CLIENT_DAY_LOG_DAYS}</p>
+      <p className="c-muted text-xs mb-3">
+        Allenamento (esercizi svolti e progressione sul carico) e alimentazione (kcal/macro rispetto al target assegnato), dato reale registrato dal cliente.
+      </p>
+      {supplements.length > 0 && (
+        <p className="font-data text-[11px] mb-3 px-2.5 py-1.5 rounded-md inline-block" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-tertiary)" }}>
+          Integratori assegnati: {supplements.map((s) => s.name).join(", ")} — nessuno storico di assunzione giornaliera disponibile
+        </p>
+      )}
+      {error && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{error}</p>}
+      {days === null ? (
+        <p className="c-muted text-sm">Caricamento…</p>
+      ) : days.length === 0 ? (
+        <p className="c-muted text-sm">Nessun dato ancora registrato in questo intervallo.</p>
+      ) : (
+        <div className="space-y-2">
+          {days.map((day) => (
+            <div key={day.date} className="t-inner px-3 py-2.5">
+              <p className="font-data text-xs font-bold mb-1.5" style={{ color: "var(--ink)" }}>{fmtDate(day.date)}</p>
+              <div className="flex flex-col gap-1">
+                {day.workout ? (
+                  <div className="flex items-start gap-1.5 text-xs">
+                    <Dumbbell size={13} className="shrink-0 mt-0.5" style={{ color: "var(--ink-soft)" }} />
+                    <span style={{ color: "var(--ink)" }}>
+                      {day.workout.done}/{day.workout.total} esercizi svolti
+                      {day.workout.exercises.some((e) => e.progressed === true) && (
+                        <span style={{ color: "#10B981", fontWeight: 600 }}> · progressione ↑ su {day.workout.exercises.filter((e) => e.progressed === true).map((e) => e.exercise_name).join(", ")}</span>
+                      )}
+                      {day.workout.exercises.some((e) => e.progressed === false) && (
+                        <span style={{ color: "#F0A020", fontWeight: 600 }}> · calo su {day.workout.exercises.filter((e) => e.progressed === false).map((e) => e.exercise_name).join(", ")}</span>
+                      )}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--ink-tertiary)" }}>
+                    <Dumbbell size={13} className="shrink-0" /> Nessun allenamento assegnato
+                  </div>
+                )}
+                {day.nutrition ? (
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <Salad size={13} className="shrink-0" style={{ color: "var(--ink-soft)" }} />
+                    {day.nutrition.logged ? (
+                      <span style={{ color: "var(--ink)" }}>
+                        {Math.round(day.nutrition.totals.kcal)} kcal registrate
+                        {day.nutrition.target && ` / ${day.nutrition.target.kcal} target`}
+                        {day.nutrition.score != null && (
+                          <span style={{ color: day.nutrition.score >= 80 ? "#10B981" : day.nutrition.score >= 50 ? "#F0A020" : "#DC2626", fontWeight: 600 }}> · {day.nutrition.score}% rispettato</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span style={{ color: "#DC2626" }}>Nessuna registrazione alimentare</span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--ink-tertiary)" }}>
+                    <Salad size={13} className="shrink-0" /> Nessun target assegnato
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -4348,7 +4557,6 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
 
   const [tab, setTab] = useState("atleti");
   const [selectedId, setSelectedId] = useState(null);
-  const [clientInitialTab, setClientInitialTab] = useState("anamnesi");
   const client = clients.find((c) => c.id === selectedId);
   // Store condiviso tra Registro Check, Co-Pilota AI e Timeline dell'atleta
   // per il target ON/OFF della settimana corrente — vedi nota in ClientTimeline.
@@ -4382,7 +4590,7 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
             spesso da desktop e beneficia dello spazio extra per le tabelle. */}
         <main className="max-w-2xl md:max-w-6xl mx-auto px-4 py-8 pb-24" style={{ overflowX: "hidden" }}>
           {selectedId != null ? (
-            <ClientDetail client={client} onBack={() => { setSelectedId(null); setClientInitialTab("anamnesi"); }} quickTargets={quickTargets} setQuickTargets={setQuickTargets} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} initialTab={clientInitialTab} />
+            <ClientDetail client={client} onBack={() => setSelectedId(null)} quickTargets={quickTargets} setQuickTargets={setQuickTargets} xpBonuses={xpBonuses} setXpBonuses={setXpBonuses} teamPosts={teamPosts} setTeamPosts={setTeamPosts} />
           ) : (
             <>
               <div className="flex gap-1.5 mb-6">
