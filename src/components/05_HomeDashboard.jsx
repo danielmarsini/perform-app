@@ -7422,6 +7422,16 @@ export const TRAINING_WIKI = [
       "di volume totale. Il danno muscolare innesca la risposta infiammatoria e la sintesi proteica riparativa, ma " +
       "un danno eccessivo (DOMS molto forte) può addirittura ritardare il recupero e ridurre il volume allenabile " +
       "nella settimana successiva — l'obiettivo non è 'distruggere' il muscolo ogni sessione.",
+    pros: [
+      "Spiega perché approcci molto diversi (bodybuilding a volume alto, powerlifting a basso volume/alta intensità) possono comunque produrre crescita: pesano diversamente sui tre meccanismi.",
+      "Dà un modello pratico per variare lo stimolo nel tempo senza cambiare sport: più carico per la tensione, più prossimità al cedimento/isolamento per lo stress metabolico, più ROM/eccentriche per il danno.",
+      "Aiuta a capire perché il solo 'sentire bruciore' non è un indicatore affidabile di qualità della seduta.",
+    ],
+    cons: [
+      "I tre meccanismi non sono misurabili individualmente in palestra: restano un modello utile per ragionare, non un numero da tracciare.",
+      "Un'enfasi eccessiva sul danno muscolare (cercare il DOMS ad ogni costo) è controproducente e allunga i tempi di recupero reale.",
+    ],
+    conclusion: "Nessuno dei tre meccanismi va inseguito isolatamente: un piano che unisce carichi progressivi vicino al cedimento, una quota di lavoro metabolico e un ROM adeguato copre tutte e tre le vie senza bisogno di 'sentire' nulla in particolare per sapere che la seduta ha funzionato.",
   },
   {
     id: "volume", name: "Volume di allenamento", icon: "📊",
@@ -7435,6 +7445,25 @@ export const TRAINING_WIKI = [
       "indirette' (es. i tricipiti lavorati durante la panca) contano circa al 50% di una serie diretta nel computo " +
       "totale — un piano ben progettato tiene conto di questa sovrapposizione invece di sommare ogni serie come se " +
       "fosse isolata, altrimenti il volume reale su un gruppo può essere doppio di quanto sembra sulla carta.",
+    chart: {
+      title: "Stimolo ipertrofico per fascia di volume settimanale",
+      labels: ["<6", "6-10", "10-14", "14-20", "20-25", ">25"],
+      values: [3, 6, 8, 9, 7, 5],
+      unit: "",
+      highlight: 3,
+      caption: "Andamento relativo (curva a campana), non un punteggio assoluto: la finestra 14-20 serie è indicativa per un praticante intermedio, individualmente può spostarsi in entrambe le direzioni.",
+    },
+    pros: [
+      "È la leva con il rapporto sforzo/risultato più prevedibile: aumentare le serie settimanali dentro il proprio range recuperabile produce quasi sempre più crescita.",
+      "Facile da programmare e da tracciare in modo oggettivo (basta contare le serie dirette per gruppo).",
+      "Si presta bene a una progressione graduale nel tempo (mesociclo che parte basso e sale verso il picco prima del deload).",
+    ],
+    cons: [
+      "Più volume richiede più tempo in palestra e più capacità di recupero (sonno, alimentazione, stress di vita) — non è una leva 'gratis'.",
+      "Oltre la propria soglia individuale il volume extra non solo non aiuta, ma può peggiorare il recupero e quindi la qualità delle serie successive.",
+      "Contare le serie in modo grezzo, senza considerare il lavoro sinergico/indiretto, porta facilmente a sovrastimare il volume reale su alcuni gruppi.",
+    ],
+    conclusion: "Il volume va programmato come un cursore da muovere nel tempo, non come un numero fisso: partire nella parte bassa del proprio range recuperabile, salire nelle settimane successive, e usare i segnali di recupero (qualità delle serie, sonno, motivazione) per capire quando si è vicini al proprio limite personale più che affidarsi a un numero identico per tutti.",
   },
   {
     id: "rir-rpe", name: "RIR e RPE", icon: "🎯",
@@ -7449,6 +7478,16 @@ export const TRAINING_WIKI = [
       "usato con criterio (ultima serie di un esercizio, non su tutte), specie su esercizi monoarticolari a basso " +
       "rischio articolare (leg extension, curl), dove il costo di recupero è più basso che su un multiarticolare " +
       "pesante come lo squat.",
+    pros: [
+      "Permette di regolare l'intensità di sforzo in modo soggettivo ma coerente, anche senza conoscere il massimale esatto su ogni esercizio.",
+      "Riduce il rischio di sovrallenamento rispetto a cercare il cedimento assoluto su ogni serie.",
+      "Si adatta automaticamente ai giorni no (stanchezza, sonno scarso): lo stesso RIR target richiede meno peso quando il corpo è meno pronto.",
+    ],
+    cons: [
+      "È una stima soggettiva: i principianti tendono a sovrastimare il RIR reale (pensano di avere più margine di quanto ne abbiano) finché non maturano esperienza propriocettiva.",
+      "Il RIR percepito cambia con la fatica accumulata nella sessione: le ultime serie di un allenamento lungo tendono a 'sembrare' più vicine al cedimento anche a parità di reps in riserva reali.",
+    ],
+    conclusion: "Il RIR/RPE è uno strumento di auto-regolazione, non un numero scientifico esatto: usato con costanza (stessa scala, stesso criterio ogni sessione) diventa affidabile nel tempo e permette di allenarsi vicino al cedimento senza sforare in fatica ingestibile quasi ogni volta.",
   },
   {
     id: "frequenza", name: "Frequenza di allenamento", icon: "📅",
@@ -7462,6 +7501,15 @@ export const TRAINING_WIKI = [
       "su 2-3 sessioni per gruppo mantiene più costante l'attivazione della sintesi proteica nell'arco della " +
       "settimana. Attenzione però al volume PER sessione: raddoppiare la frequenza senza dimezzare adeguatamente il " +
       "volume per seduta porta solo più fatica, non più crescita.",
+    pros: [
+      "A parità di volume settimanale totale, distribuirlo su più sessioni riduce la fatica accumulata per singola seduta e mantiene più alta la qualità media delle serie.",
+      "Permette di allenare un gruppo muscolare più spesso senza necessariamente aumentare il volume totale, utile quando il tempo per sessione è limitato.",
+    ],
+    cons: [
+      "Più sessioni per gruppo significa più giorni in palestra o sessioni più lunghe: un vincolo organizzativo reale, non solo fisiologico.",
+      "Aumentare la frequenza senza ridurre il volume per seduta porta solo più fatica accumulata, non un beneficio aggiuntivo.",
+    ],
+    conclusion: "La frequenza è uno strumento per distribuire il volume, non un obiettivo a sé: 2-3 sedute a settimana per gruppo sono un buon punto di partenza per la maggior parte, ma il volume totale settimanale resta la variabile che guida davvero il risultato.",
   },
   {
     id: "sovraccarico", name: "Sovraccarico progressivo", icon: "📈",
@@ -7475,6 +7523,15 @@ export const TRAINING_WIKI = [
       "parità di tutto il resto, o tecnica più pulita/ROM più ampio a parità di carico esterno. Un programma ben " +
       "strutturato alterna queste leve nel tempo (spesso in blocchi/mesocicli) invece di forzare solo l'aumento del " +
       "carico, che porta più rapidamente a stallo o infortunio.",
+    pros: [
+      "È il principio che spiega ogni altro progresso: senza sovraccarico progressivo nessuna variabile (esercizi, split, integratori) produce crescita a lungo termine.",
+      "Avere più leve disponibili (carico, reps, serie, recupero, tecnica) permette di continuare a progredire anche quando una singola leva è esaurita nel breve periodo.",
+    ],
+    cons: [
+      "Cercare di progredire su tutte le leve contemporaneamente ogni settimana è insostenibile e porta a stallo precoce o infortunio.",
+      "Non tutte le leve sono ugualmente tracciabili: 'tecnica più pulita' è più difficile da misurare oggettivamente di carico o reps.",
+    ],
+    conclusion: "Il sovraccarico progressivo va pianificato, non lasciato al caso: scegliere quale leva spingere in ogni blocco di allenamento (es. carico in un mesociclo, volume nel successivo) è più sostenibile che inseguire un aumento su tutti i fronti ogni singola settimana.",
   },
   {
     id: "recupero-serie", name: "Recupero tra le serie", icon: "⏳",
@@ -7488,6 +7545,15 @@ export const TRAINING_WIKI = [
       "totale nella sessione. Su esercizi di isolamento, dove il rischio tecnico è più basso e lo stimolo target è " +
       "spesso lo stress metabolico più che il carico assoluto, recuperi più brevi non compromettono significativamente " +
       "la qualità e permettono di fare più volume nello stesso tempo di sessione.",
+    pros: [
+      "Calibrare il recupero per esercizio (non un tempo fisso uguale per tutto l'allenamento) massimizza sia la qualità sui compound pesanti sia la densità di lavoro sull'isolamento.",
+      "Recuperi più brevi su isolamento permettono sessioni più corte a parità di volume totale svolto.",
+    ],
+    cons: [
+      "Recuperi troppo brevi su esercizi pesanti multiarticolari compromettono il carico utilizzabile nelle serie successive, riducendo lo stimolo di tensione meccanica totale.",
+      "Recuperi molto lunghi su tutto l'allenamento allungano eccessivamente la durata della sessione senza benefici aggiuntivi oltre un certo punto.",
+    ],
+    conclusion: "Non esiste un tempo di recupero 'giusto' universale: la regola pratica è recuperare abbastanza da mantenere la qualità tecnica e il carico target sulla serie successiva, di più sui multiarticolari pesanti, di meno sull'isolamento a basso rischio.",
   },
   {
     id: "deload", name: "Deload", icon: "🔋",
@@ -7501,6 +7567,15 @@ export const TRAINING_WIKI = [
       "alla propria media recente insieme a stress percepito alto: quella combinazione, non la sola sensazione " +
       "soggettiva di stanchezza, è l'indicatore più affidabile che è il momento di scaricare prima di arrivare al " +
       "sovrallenamento conclamato, molto più lento da recuperare di un deload programmato in tempo.",
+    pros: [
+      "Un deload programmato è molto più economico (in termini di tempo perso) di un infortunio da sovraccarico o di un sovrallenamento conclamato, che possono costare settimane.",
+      "Dà un punto di reset regolare per rivalutare tecnica, mobilità e sensazioni generali prima di aprire il blocco successivo.",
+    ],
+    cons: [
+      "Un deload troppo frequente (ogni 2-3 settimane) rallenta inutilmente il progresso se la fatica non lo giustifica ancora.",
+      "Un deload troppo drastico (stop completo) fa perdere parzialmente gli adattamenti neuromuscolari più freschi rispetto a una semplice riduzione di volume/intensità.",
+    ],
+    conclusion: "Il deload va programmato in anticipo dentro il piano (ogni 4-8 settimane, non a caso) ma anche letto in tempo reale attraverso i segnali di recupero: meglio scaricare una settimana prima del previsto che aspettare il sovrallenamento conclamato.",
   },
   {
     id: "tecniche-intensita", name: "Tecniche di intensità", icon: "🔥",
@@ -7515,6 +7590,15 @@ export const TRAINING_WIKI = [
       "pausa di 15-20 secondi dopo il cedimento per strappare altre 2-3 ripetizioni) o il drop-set (ridurre il carico " +
       "del 20-30% e continuare subito dopo il cedimento) diventano strumenti utili per estrarre altro stimolo dallo " +
       "stesso tempo di allenamento, tipicamente 1-2 volte a settimana per gruppo muscolare, non di più.",
+    pros: [
+      "Permettono di superare il cedimento apparente ed estrarre stimolo aggiuntivo in un tempo di sessione limitato, utile quando il tempo in palestra è la vera risorsa scarsa.",
+      "Su un atleta avanzato, dove il sovraccarico progressivo lineare rallenta, offrono una leva di progressione alternativa al semplice aumento di carico.",
+    ],
+    cons: [
+      "Il costo di recupero è alto: usate troppo spesso (ogni serie, ogni sessione) accumulano fatica più velocemente di quanto il corpo riesca a smaltirla.",
+      "Su un principiante non aggiungono un vantaggio reale rispetto al sovraccarico progressivo semplice, e bruciano margine di progressione futura inutilmente presto.",
+    ],
+    conclusion: "Le tecniche di intensità sono un'aggiunta per chi ha già esaurito i margini del sovraccarico progressivo semplice, da dosare (1-2 volte a settimana per gruppo) e non da usare come base dell'intero programma.",
   },
   {
     id: "rom", name: "Range di movimento (ROM)", icon: "↕️",
@@ -7528,6 +7612,15 @@ export const TRAINING_WIKI = [
       "sono usati con criterio per lavorare in sicurezza intorno a un fastidio articolare, per sovraccaricare oltre il " +
       "massimale su un tratto specifico (parziali in alto nello stacco per la forza di lockout), o come tecnica " +
       "d'intensità a fine serie quando il ROM completo non è più possibile mantenendo la forma corretta.",
+    pros: [
+      "Il ROM completo, specie nella porzione allungata, sembra produrre più ipertrofia per serie rispetto ai parziali a parità di altre condizioni.",
+      "I parziali restano uno strumento utile e sicuro per lavorare intorno a un fastidio articolare o per sovraccaricare un tratto specifico.",
+    ],
+    cons: [
+      "Il ROM completo richiede più mobilità articolare e spesso un carico assoluto inferiore rispetto ai parziali, a parità di sforzo percepito.",
+      "Usare solo parziali come scelta abituale (non per necessità) rinuncia allo stimolo extra della porzione allungata del movimento.",
+    ],
+    conclusion: "Il ROM completo va considerato la scelta di default per la maggior parte degli esercizi e dei praticanti; i parziali restano uno strumento mirato per situazioni specifiche, non un sostituto sistematico.",
   },
   {
     id: "cardio-interferenza", name: "Cardio e interferenza", icon: "🏃",
@@ -7542,6 +7635,15 @@ export const TRAINING_WIKI = [
       "possibile, distanziare cardio e pesi di alcune ore (o farli in giorni diversi) riduce ulteriormente qualunque " +
       "interferenza residua, ed è preferibile a farli sempre in sequenza diretta nella stessa sessione quando " +
       "l'obiettivo primario è la massa muscolare.",
+    pros: [
+      "Il cardio moderato migliora la capacità di recupero tra le serie e la salute cardiovascolare generale senza compromettere in modo significativo forza e ipertrofia.",
+      "Fatto in giorni o orari separati dai pesi, l'interferenza residua è minima anche a volumi medio-alti.",
+    ],
+    cons: [
+      "Cardio molto frequente e intenso, specialmente subito prima dei pesi, può ridurre la performance nella sessione di forza che segue.",
+      "Il cardio aggiunge un costo di recupero che va sottratto dalla capacità di recupero totale disponibile per l'allenamento con i pesi.",
+    ],
+    conclusion: "Il cardio moderato (2-3 sessioni a settimana) non va evitato per paura di perdere massa: va semplicemente dosato e, quando possibile, distanziato dai pesi per minimizzare qualsiasi interferenza sugli adattamenti di forza e ipertrofia.",
   },
   {
     id: "riscaldamento", name: "Riscaldamento", icon: "🌡️",
@@ -7556,6 +7658,15 @@ export const TRAINING_WIKI = [
       "generica. Lo stretching statico prolungato PRIMA di un esercizio di forza può temporaneamente ridurre la " +
       "produzione di forza: se serve mobilità, meglio mobilità dinamica prima e stretching statico eventualmente a " +
       "fine sessione.",
+    pros: [
+      "Riduce concretamente il rischio di infortunio sulle prime serie pesanti e migliora la performance immediata.",
+      "Le serie di avvicinamento fungono anche da ultimo controllo tecnico prima del carico di lavoro vero.",
+    ],
+    cons: [
+      "Un riscaldamento eccessivamente lungo consuma tempo ed energie che andrebbero risparmiate per le serie di lavoro.",
+      "Stretching statico prolungato subito prima dei pesi può temporaneamente ridurre la produzione di forza, un errore comune tra chi confonde mobilità pre-workout con stretching statico.",
+    ],
+    conclusion: "Un riscaldamento efficace è breve e mirato: pochi minuti generali seguiti da serie di avvicinamento progressive sull'esercizio specifico, con mobilità dinamica al posto dello stretching statico se serve preparare un range di movimento particolare.",
   },
   {
     id: "mobilita", name: "Mobilità articolare", icon: "🤸",
@@ -7569,6 +7680,340 @@ export const TRAINING_WIKI = [
       "specifica delle articolazioni limitanti per i propri esercizi principali (non un programma generico) è più " +
       "efficiente: 10-15 minuti mirati 3-4 volte a settimana, spesso integrati nel riscaldamento, sono sufficienti " +
       "per la maggior parte dei praticanti non agonisti.",
+    pros: [
+      "Una buona mobilità nelle articolazioni chiave permette di raggiungere il ROM completo con tecnica corretta, ampliando lo stimolo ipertrofico disponibile.",
+      "Lavoro mirato (non generico) richiede poco tempo per un beneficio importante sulla longevità articolare.",
+    ],
+    cons: [
+      "Un eccesso di mobility work generico, non mirato alle proprie limitazioni reali, sottrae tempo senza un beneficio proporzionale.",
+      "La mobilità va mantenuta nel tempo: i progressi si perdono se il lavoro viene interrotto per periodi lunghi.",
+    ],
+    conclusion: "La mobilità va trattata come manutenzione mirata delle articolazioni effettivamente limitanti nei propri esercizi principali, non come un programma generico uguale per tutti: pochi minuti mirati, con costanza, bastano per la maggior parte dei praticanti non agonisti.",
+  },
+  {
+    id: "volume-basso", name: "Volume basso: quando ha senso", icon: "📉",
+    badge1: "6-10 serie/settimana", badge2: "Recupero limitato o forza-focus",
+    body: "Un volume settimanale basso (indicativamente 6-10 serie dirette per gruppo) non è automaticamente " +
+      "'insufficiente': ha senso per chi ha capacità di recupero limitata, per periodi ad alta intensità/bassa " +
+      "densità (blocchi di forza), o come punto di partenza di un mesociclo che poi sale progressivamente.",
+    deepDive: "Il volume basso massimizza la qualità per serie: con meno serie totali è più facile mantenere carichi " +
+      "vicini al massimale e recupero quasi completo tra le sessioni, condizione tipica dei blocchi orientati alla " +
+      "forza più che all'ipertrofia pura. È anche la scelta giusta per chi ha poco tempo, per i principianti nelle " +
+      "prime settimane (dove anche poco stimolo produce adattamento, per la scarsa esperienza di allenamento), o per " +
+      "chi sta rientrando da un infortunio o da uno stop prolungato, dove un volume aggressivo rischierebbe di " +
+      "sommarsi a una capacità di recupero già ridotta.",
+    pros: [
+      "Massimizza la qualità e la freschezza per ogni singola serie, con recupero quasi completo tra le sessioni.",
+      "Più sostenibile nel tempo per chi ha poca disponibilità oraria o uno stile di vita molto stressante.",
+      "Punto di partenza ideale per un mesociclo che sale progressivamente verso volumi più alti.",
+    ],
+    cons: [
+      "Per un praticante intermedio/avanzato con buon recupero, un volume stabilmente basso lascia sul tavolo margine di crescita disponibile.",
+      "Rende più difficile distribuire lo stimolo su più angolazioni/varianti di esercizio per lo stesso gruppo muscolare.",
+    ],
+    conclusion: "Il volume basso non è un compromesso al ribasso: è la scelta corretta in specifiche fasi (forza, recupero da infortunio, rientro, principianti) o come base di partenza di un mesociclo — il problema nasce solo se resta basso per mesi consecutivi in un praticante che avrebbe margine di recupero per salire.",
+  },
+  {
+    id: "volume-alto", name: "Volume alto: quando ha senso", icon: "📈",
+    badge1: "20-25+ serie/settimana", badge2: "Solo su base di recupero solida",
+    body: "Un volume alto (20-25 o più serie dirette a settimana per gruppo) può produrre crescita superiore per chi " +
+      "ha già una buona capacità di recupero consolidata, ma è una leva ad alto rischio: senza sonno, alimentazione e " +
+      "gestione dello stress adeguati produce più fatica che crescita.",
+    deepDive: "Il volume alto ha senso tipicamente nella fase 'di picco' di un mesociclio in accumulo, nelle settimane " +
+      "immediatamente precedenti a un deload programmato, o per praticanti avanzati che hanno già esaurito i margini " +
+      "di crescita ai volumi moderati. Va introdotto gradualmente (non da zero a 25 serie in una settimana) e monitorato " +
+      "attentamente: un calo delle prestazioni nelle serie finali della settimana, un peggioramento del sonno o un RIR " +
+      "percepito che sale a parità di carico sono segnali che il volume ha superato la capacità di recupero reale, " +
+      "non solo quella teorica sulla carta.",
+    pros: [
+      "Nella fase giusta del mesociclo, può estrarre l'ultima quota di stimolo disponibile prima del deload.",
+      "Utile per praticanti avanzati che hanno già esaurito i margini di crescita ai volumi moderati.",
+    ],
+    cons: [
+      "Ad alto rischio di superare la capacità di recupero reale se non introdotto gradualmente, con effetto netto negativo sulla crescita.",
+      "Richiede una base di sonno, alimentazione e gestione dello stress già solida: senza quella, il volume alto è quasi sempre controproducente.",
+      "Aumenta significativamente il tempo richiesto in palestra per sessione.",
+    ],
+    conclusion: "Il volume alto è uno strumento da fase avanzata di mesociclo, non un punto di partenza: va raggiunto gradualmente, mantenuto per poche settimane, e seguito da un deload — usato come stato permanente porta quasi sempre a stallo o sovrallenamento.",
+  },
+  {
+    id: "piu-serie-meno-esercizi", name: "Più serie, meno esercizi", icon: "🔁",
+    badge1: "2-3 esercizi per gruppo", badge2: "Più serie a testa",
+    body: "Concentrare il volume settimanale su pochi esercizi (2-3 per gruppo) eseguiti con più serie ciascuno " +
+      "permette di padroneggiare meglio la tecnica e di applicare un sovraccarico progressivo più lineare e " +
+      "misurabile nel tempo.",
+    deepDive: "Con meno esercizi da gestire, la curva di apprendimento tecnico è più rapida: la stessa esecuzione " +
+      "ripetuta molte volte a settimana permette di affinare il pattern motorio e di caricare con più sicurezza. È " +
+      "anche più semplice tracciare la progressione (stesso esercizio, stesso schema di serie/reps settimana dopo " +
+      "settimana) e capire con chiarezza se si sta davvero progredendo o si è in stallo, cosa più difficile quando " +
+      "gli esercizi cambiano di continuo.",
+    pros: [
+      "Progressione più facile da tracciare e da interpretare: stesso esercizio, stesso schema, confronto diretto settimana su settimana.",
+      "Permette di padroneggiare la tecnica più rapidamente, riducendo il rischio infortunio nel tempo.",
+      "Sessioni spesso più rapide da organizzare, con meno cambi di attrezzatura.",
+    ],
+    cons: [
+      "Espone di più a stalli specifici di quell'esercizio (plateau tecnico o articolare) senza alternative pronte.",
+      "Copre meno angolazioni del muscolo, potenzialmente lasciando alcune porzioni meno stimolate nel tempo.",
+    ],
+    conclusion: "Questo approccio è ideale in fasi di apprendimento tecnico o di forza, dove la coerenza dell'esecuzione conta più della varietà — va bilanciato periodicamente con qualche variante per coprire angolazioni diverse ed evitare stalli specifici di un solo movimento.",
+  },
+  {
+    id: "meno-serie-piu-esercizi", name: "Meno serie, più esercizi", icon: "🔀",
+    badge1: "4-6 esercizi per gruppo", badge2: "Meno serie a testa",
+    body: "Distribuire lo stesso volume settimanale su più esercizi diversi (4-6 per gruppo, con meno serie ciascuno) " +
+      "copre più angolazioni del muscolo e riduce il logoramento articolare/tecnico di un singolo movimento ripetuto " +
+      "molte volte.",
+    deepDive: "Muscoli con più capi o inserzioni (es. il deltoide, il pettorale, i dorsali) rispondono ad angolazioni " +
+      "diverse in modo parzialmente differenziato: variare gli esercizi permette di stimolare porzioni che un singolo " +
+      "movimento privilegia meno. Il rovescio della medaglia è che con meno serie per esercizio è più difficile " +
+      "isolare un vero e proprio trend di progressione (il carico può variare per motivi tecnici da un esercizio " +
+      "all'altro, rendendo il confronto meno diretto), e il tempo dedicato all'apprendimento tecnico si divide su più " +
+      "movimenti contemporaneamente.",
+    pros: [
+      "Copre più angolazioni dello stesso gruppo muscolare, utile per uno sviluppo più completo nel lungo periodo.",
+      "Riduce il logoramento tecnico/articolare di un singolo movimento ripetuto con carichi alti molte volte a settimana.",
+      "Mantiene la sessione più varia e stimolante dal punto di vista motivazionale.",
+    ],
+    cons: [
+      "Più difficile tracciare una progressione lineare chiara su ogni singolo esercizio con così poche serie a testa.",
+      "Richiede più tempo per padroneggiare tecnicamente ogni movimento, rallentando l'apprendimento su ciascuno.",
+    ],
+    conclusion: "Utile soprattutto in fasi di ipertrofia pura orientate a uno sviluppo completo del muscolo, o quando serve variare per gestire un fastidio articolare — l'equilibrio ideale per la maggior parte dei praticanti sta nel mezzo tra i due estremi, non in uno dei due puri.",
+  },
+  {
+    id: "rep-effettive", name: "Ripetizioni effettive (serie vicino al cedimento)", icon: "🧮",
+    badge1: "Solo le ultime reps contano davvero", badge2: "Le prime reps di una serie da 12 sono 'gratis'",
+    body: "In una serie fino a RIR 1-2, solo le ultime ripetizioni (quelle svolte a fatica alta, vicino al reclutamento " +
+      "massimo delle unità motorie) generano la maggior parte dello stimolo ipertrofico — le prime ripetizioni di una " +
+      "serie lunga sono relativamente 'a basso costo/basso stimolo'.",
+    deepDive: "Il reclutamento delle unità motorie a soglia più alta (quelle col maggior potenziale di crescita) avviene " +
+      "progressivamente durante una serie, man mano che le fibre già attive si affaticano: nelle prime ripetizioni di " +
+      "una serie da 12 lavorano soprattutto le unità motorie a soglia più bassa, quelle a soglia alta entrano in gioco " +
+      "solo verso la fine, quando la fatica costringe il sistema nervoso a reclutarle. Questo è il motivo per cui il " +
+      "concetto di 'ripetizioni effettive' (le reps svolte in prossimità del cedimento) è più predittivo della crescita " +
+      "rispetto al semplice conteggio totale di ripetizioni svolte in una sessione: due serie da 12 fermate a metà " +
+      "producono meno ripetizioni effettive di una singola serie da 12 portata a RIR 1.",
+    pros: [
+      "Spiega perché fermarsi troppo lontano dal cedimento (RIR 4-5 sistematico) riduce lo stimolo anche a parità di reps totali svolte.",
+      "Aiuta a capire perché poche serie ben eseguite vicino al cedimento possono superare molte serie fatte con ampio margine.",
+    ],
+    cons: [
+      "Concettualmente utile, ma non è misurabile con precisione in tempo reale — resta una stima basata sulla sensazione di fatica.",
+      "Spinge, se mal interpretato, a cercare il cedimento assoluto su ogni serie, con un costo di recupero che spesso supera il beneficio.",
+    ],
+    conclusion: "Contare le 'reps effettive' più che le reps totali aiuta a valutare la qualità reale di una serie: l'obiettivo pratico è arrivare vicino al cedimento (RIR 1-3) sulla maggior parte delle serie di lavoro, non accumulare ripetizioni lontane dalla fatica reale.",
+  },
+  {
+    id: "basso-rep-range", name: "Range di ripetizioni basso (1-6)", icon: "🏋️",
+    badge1: "Forza + tensione meccanica alta", badge2: "Carichi 80-95% del massimale",
+    body: "Le ripetizioni basse (1-6) con carichi pesanti (80-95% del massimale) massimizzano la tensione meccanica " +
+      "per ripetizione e sono lo stimolo principale per lo sviluppo della forza massimale, con un contributo " +
+      "ipertrofico comunque presente se il volume totale è sufficiente.",
+    deepDive: "A carichi molto alti il numero di ripetizioni disponibili prima del cedimento è basso, quindi per " +
+      "accumulare un volume totale di lavoro paragonabile a range più alti servono più serie. Il vantaggio specifico " +
+      "del range basso è l'adattamento neurale (reclutamento ed efficienza del sistema nervoso nel produrre forza), " +
+      "determinante per le prestazioni di forza pura, oltre alla tensione meccanica elevata per singola ripetizione. " +
+      "Lo svantaggio pratico è il maggior stress articolare/sul sistema nervoso centrale e il tempo di recupero più " +
+      "lungo necessario tra le sessioni sullo stesso schema.",
+    pros: [
+      "Massimizza gli adattamenti neurali e la forza massimale espressa, oltre alla tensione meccanica per ripetizione.",
+      "Le sessioni sono spesso più brevi a parità di serie (meno tempo sotto tensione per ripetizione).",
+    ],
+    cons: [
+      "Stress articolare e sul sistema nervoso centrale più alto, con tempi di recupero tra sessioni generalmente più lunghi.",
+      "Da solo (senza altri range) lascia meno stimolo di stress metabolico, una delle tre vie dell'ipertrofia.",
+    ],
+    conclusion: "Il range basso è indispensabile per chi persegue la forza massimale ed è una componente utile anche in un programma di ipertrofia, ma raramente conviene come unico range di lavoro: la combinazione con range medi/alti copre meglio tutte le vie dello stimolo.",
+  },
+  {
+    id: "alto-rep-range", name: "Range di ripetizioni alto (15-30+)", icon: "🔄",
+    badge1: "Stress metabolico alto", badge2: "Carichi 40-60% del massimale",
+    body: "Le ripetizioni alte (15-30 o più) con carichi più leggeri (40-60% del massimale) generano molto stress " +
+      "metabolico e, se portate vicino al cedimento, producono un'ipertrofia comparabile ai range più bassi a parità " +
+      "di prossimità allo sforzo massimo — con un impatto articolare/sistemico generalmente inferiore.",
+    deepDive: "La letteratura più recente mostra che l'ipertrofia è simile tra range di ripetizioni molto diversi " +
+      "quando le serie sono portate a una simile prossimità del cedimento e il volume è equalizzato — la variabile " +
+      "chiave non è il numero di ripetizioni in sé, ma quanto vicino al cedimento si arriva. Il range alto ha però un " +
+      "costo specifico: richiede una tolleranza al disagio metabolico (bruciore, fiato corto) più alta, e su alcuni " +
+      "esercizi (es. squat pesante) risulta poco pratico portare 25-30 ripetizioni vicino al cedimento in sicurezza. " +
+      "È particolarmente utile su esercizi di isolamento a basso rischio articolare, o per chi ha limitazioni che " +
+      "sconsigliano carichi molto pesanti.",
+    pros: [
+      "Impatto articolare inferiore rispetto ai carichi molto pesanti, utile per chi ha limitazioni o fastidi articolari.",
+      "Ipertrofia comparabile ai range bassi quando le serie sono portate vicino al cedimento con volume equalizzato.",
+      "Buon complemento per esercizi di isolamento dove il rischio tecnico ad alte reps resta basso.",
+    ],
+    cons: [
+      "Richiede una tolleranza al disagio metabolico alta: molte serie vengono interrotte prima del vero cedimento per il disagio percepito, non per esaurimento muscolare reale.",
+      "Poco pratico o sicuro su alcuni multiarticolari pesanti portati vicino al cedimento a reps molto alte.",
+    ],
+    conclusion: "Il range alto è uno strumento valido e sottoutilizzato, specie su isolamento o per chi ha limitazioni articolari — la condizione necessaria per farlo funzionare è portare davvero le serie vicino al cedimento, non fermarsi presto per il disagio percepito.",
+  },
+  {
+    id: "ipertrofia-mio-sarco", name: "Ipertrofia miofibrillare vs. sarcoplasmatica", icon: "🔬",
+    badge1: "Miofibrillare: più forza", badge2: "Sarcoplasmatica: più volume percepito",
+    body: "L'ipertrofia miofibrillare (crescita delle proteine contrattili, actina e miosina) aumenta soprattutto la " +
+      "forza; l'ipertrofia sarcoplasmatica (aumento del fluido e delle riserve energetiche nel sarcoplasma) contribuisce " +
+      "più al volume visivo del muscolo. In pratica i due processi coesistono sempre, non sono allenabili in modo " +
+      "completamente separato.",
+    deepDive: "La distinzione, storicamente usata per spiegare le differenze tra powerlifter (più forza per centimetro " +
+      "di muscolo) e bodybuilder (più volume muscolare visibile a parità di forza relativa), è utile concettualmente " +
+      "ma va presa con cautela: la ricerca diretta sull'ipertrofia sarcoplasmatica isolata nell'uomo è limitata, e i " +
+      "due tipi di adattamento non sono facilmente separabili con i protocolli di allenamento tipici. In termini " +
+      "pratici, range di ripetizioni più bassi e carichi più pesanti tendono a privilegiare relativamente di più gli " +
+      "adattamenti neurali e miofibrillari, mentre volumi più alti a range medio-alto con maggiore stress metabolico " +
+      "sembrano associarsi relativamente di più agli adattamenti sarcoplasmatici/metabolici — ma è una differenza di " +
+      "enfasi, non un interruttore on/off.",
+    pros: [
+      "Aiuta a spiegare perché atleti con la stessa massa muscolare visibile possono avere livelli di forza molto diversi.",
+      "Dà un razionale per variare range di ripetizioni e volume nel tempo invece di allenarsi sempre nello stesso modo.",
+    ],
+    cons: [
+      "La distinzione è più teorica che praticamente allenabile in modo isolato: ogni programma di allenamento produce entrambi i tipi di adattamento in proporzioni diverse, mai uno puro.",
+      "Rischia di essere usata per giustificare protocolli estremi ('solo alte reps per il volume') senza basi solide altrettanto forti quanto il concetto sottostante.",
+    ],
+    conclusion: "Utile come modello per capire perché atleti di forza e atleti estetici si allenano diversamente, ma da non prendere alla lettera come due 'interruttori' separati da allenare in isolamento — un programma bilanciato tra range di ripetizioni copre naturalmente entrambe le vie.",
+  },
+  {
+    id: "mono-frequenza", name: "Mono-frequenza (1×/settimana per gruppo)", icon: "1️⃣",
+    badge1: "1 sessione/settimana per gruppo", badge2: "Volume alto concentrato",
+    body: "Allenare ogni gruppo muscolare una sola volta a settimana, con tutto il volume settimanale concentrato in " +
+      "un'unica sessione lunga (tipico degli split 'bro split'), può funzionare ma è generalmente meno efficiente della " +
+      "multi-frequenza a parità di volume totale.",
+    deepDive: "Con la mono-frequenza, il volume molto alto in un'unica sessione porta spesso a un calo di qualità " +
+      "nelle ultime serie (fatica accumulata) e lascia il muscolo senza un nuovo stimolo per la maggior parte della " +
+      "settimana, dato che la sintesi proteica elevata post-allenamento dura circa 24-48 ore. È comunque un approccio " +
+      "valido per chi ha vincoli organizzativi (poche sessioni disponibili a settimana), per chi preferisce sessioni " +
+      "focalizzate su 1-2 gruppi con grande varietà di esercizi ed angolazioni, o come fase di specializzazione mirata " +
+      "su un singolo gruppo in ritardo.",
+    pros: [
+      "Permette sessioni molto focalizzate con grande varietà di esercizi/angolazioni sullo stesso gruppo in un'unica seduta.",
+      "Si adatta bene a chi ha disponibilità di sole 3-5 sessioni a settimana e vuole coprire tutto il corpo.",
+      "Utile come fase di specializzazione temporanea su un gruppo muscolare specifico in ritardo.",
+    ],
+    cons: [
+      "Il volume molto alto concentrato in un'unica sessione porta spesso a un calo di qualità nelle ultime serie per fatica accumulata.",
+      "Il muscolo resta senza un nuovo stimolo di sintesi proteica per la maggior parte della settimana rispetto alla multi-frequenza.",
+    ],
+    conclusion: "La mono-frequenza non è sbagliata, ma a parità di volume settimanale totale la multi-frequenza tende a produrre risultati leggermente superiori per la maggior parte dei praticanti — resta comunque una scelta legittima per vincoli organizzativi o fasi di specializzazione mirata.",
+  },
+  {
+    id: "multi-frequenza", name: "Multi-frequenza (2-4×/settimana per gruppo)", icon: "🔢",
+    badge1: "2-4 sessioni/settimana per gruppo", badge2: "Volume distribuito",
+    body: "Distribuire il volume settimanale di un gruppo muscolare su 2-4 sessioni più brevi mantiene la sintesi " +
+      "proteica muscolare stimolata più a lungo nell'arco della settimana ed è generalmente l'approccio con il miglior " +
+      "rapporto tra risultato e recupero per la maggior parte dei praticanti intermedi/avanzati.",
+    deepDive: "Con la multi-frequenza ogni sessione lavora un gruppo muscolare quando è ancora relativamente fresco, " +
+      "permettendo di mantenere carichi e qualità tecnica più alti su ogni serie rispetto a concentrare tutto in " +
+      "un'unica sessione molto lunga e faticosa. Il punto critico è dividere correttamente il volume totale: se la " +
+      "frequenza aumenta senza una corrispondente riduzione del volume per sessione, il risultato è solo più fatica " +
+      "settimanale complessiva, non più stimolo utile — motivo per cui la multi-frequenza va programmata pensando al " +
+      "volume settimanale totale diviso sulle sessioni, non aggiunta come extra sopra un volume già pieno.",
+    pros: [
+      "Mantiene la sintesi proteica stimolata più costantemente nell'arco della settimana rispetto alla mono-frequenza.",
+      "Permette di lavorare ogni gruppo muscolare quando è relativamente fresco, con carichi e qualità tecnica più alti.",
+      "Si adatta bene a schemi full-body o upper/lower, spesso più sostenibili nel tempo.",
+    ],
+    cons: [
+      "Richiede più sessioni a settimana o sessioni che coprono più gruppi contemporaneamente, un vincolo organizzativo per chi ha poco tempo.",
+      "Se il volume per sessione non viene ridotto in proporzione all'aumento di frequenza, il risultato netto è solo più fatica senza beneficio aggiuntivo.",
+    ],
+    conclusion: "Per la maggior parte dei praticanti intermedi/avanzati, distribuire il volume settimanale su 2-3 sessioni per gruppo è la scelta con il miglior rapporto tra risultato e recupero — a patto di dividere correttamente il volume totale sulle sessioni, non di sommarne uno nuovo ad ogni seduta aggiuntiva.",
+  },
+  {
+    id: "mev", name: "MEV — Minimo Volume Effettivo", icon: "🌱",
+    badge1: "La soglia minima che produce crescita", badge2: "Sotto il MEV: mantenimento, non crescita",
+    body: "Il MEV (Minimum Effective Volume) è la quantità minima di serie settimanali per gruppo muscolare sotto la " +
+      "quale non si ottiene più una crescita significativa — è più bassa del volume di mantenimento e cambia da " +
+      "persona a persona e da periodo a periodo.",
+    deepDive: "Il MEV non è un numero fisso identico per tutti: dipende dall'esperienza di allenamento (un principiante " +
+      "ha un MEV più basso di un avanzato, perché ogni stimolo produce relativamente più adattamento), dalla genetica " +
+      "individuale di risposta al volume, e dallo stato di recupero del momento (stress di vita, sonno, alimentazione). " +
+      "In pratica il MEV è utile soprattutto come concetto guida per periodi a bassa disponibilità (rientro da " +
+      "infortunio, periodi di vita molto stressanti, deload) — sapere qual è la propria soglia minima personale evita " +
+      "di scendere sotto il punto in cui il volume smette di produrre adattamento, sprecando comunque tempo e fatica " +
+      "senza il ritorno atteso.",
+    chart: {
+      title: "MEV / MAV / MRV — zone di volume settimanale",
+      labels: ["MEV", "MAV (basso)", "MAV (alto)", "MRV"],
+      values: [8, 14, 20, 26],
+      unit: " serie",
+      highlight: 0,
+      caption: "Valori indicativi per un praticante intermedio; le soglie individuali si spostano con esperienza, genetica e capacità di recupero del momento.",
+    },
+    pros: [
+      "Utile come soglia di sicurezza nei periodi di scarsa disponibilità: sapere il proprio MEV evita di scendere sotto la quantità minima che ancora produce crescita.",
+      "Aiuta a distinguere un periodo di mantenimento intenzionale da uno stallo per volume insufficiente.",
+    ],
+    cons: [
+      "Non è misurabile con un numero preciso e universale: resta una stima che richiede tempo e osservazione dei propri progressi per essere calibrata individualmente.",
+      "Cambia nel tempo (con esperienza e stato di recupero), quindi non è una soglia fissa da impostare una volta per sempre.",
+    ],
+    conclusion: "Il MEV è la soglia da conoscere per i periodi difficili, non l'obiettivo a cui puntare stabilmente: la maggior parte della programmazione dovrebbe muoversi tra MEV e MRV, usando il MEV come rete di sicurezza quando la vita lascia poco spazio al recupero.",
+  },
+  {
+    id: "mav", name: "MAV — Massimo Volume Adattivo", icon: "🌿",
+    badge1: "La zona dove si cresce di più", badge2: "Il grosso della programmazione va qui",
+    body: "Il MAV (Maximum Adaptive Volume) è la fascia di volume che produce il miglior rapporto tra stimolo e " +
+      "recupero — non il volume più alto tollerabile, ma quello che massimizza la crescita reale nel tempo. La maggior " +
+      "parte della programmazione dovrebbe stare in questa fascia, non ai suoi estremi.",
+    deepDive: "A differenza del MRV (il tetto massimo tollerabile) e del MEV (la soglia minima efficace), il MAV " +
+      "descrive un intervallo, non un punto singolo: tipicamente la parte centrale-alta del range recuperabile " +
+      "individuale, dove ogni serie aggiuntiva produce ancora un ritorno chiaramente positivo senza però erodere il " +
+      "recupero della settimana successiva. Praticamente, un mesociclo ben strutturato parte vicino al MEV nelle prime " +
+      "settimane, sale progressivamente attraverso il MAV nelle settimane centrali, e tocca (o supera leggermente) il " +
+      "MRV solo nell'ultima settimana prima del deload — passare la maggior parte del tempo nel MAV, non ai due estremi, " +
+      "è ciò che distingue una programmazione efficace da una che oscilla tra troppo poco e troppo stimolo.",
+    chart: {
+      title: "MEV / MAV / MRV — zone di volume settimanale",
+      labels: ["MEV", "MAV (basso)", "MAV (alto)", "MRV"],
+      values: [8, 14, 20, 26],
+      unit: " serie",
+      highlight: 2,
+      caption: "Il MAV è la fascia centrale (non un punto singolo) dove la maggior parte del mesociclo dovrebbe essere programmata.",
+    },
+    pros: [
+      "È la fascia con il miglior rapporto tra stimolo e recupero: il posto dove dovrebbe stare la maggior parte della programmazione.",
+      "Dà un criterio pratico per strutturare un mesociclo (partire basso, salire attraverso il MAV, toccare il MRV solo alla fine).",
+    ],
+    cons: [
+      "Come MEV e MRV, non è un numero preciso misurabile in laboratorio dal singolo utente: richiede osservazione dei progressi nel tempo per essere stimato bene.",
+      "Si sposta con lo stato di recupero, quindi la stessa quantità di serie può essere 'nel MAV' in una settimana e 'sopra il MRV' in un'altra più stressante.",
+    ],
+    conclusion: "Il MAV è dove dovrebbe vivere la maggior parte della programmazione settimanale: non il minimo per crescere né il massimo tollerabile, ma la zona dove ogni serie aggiuntiva rende ancora chiaramente di più di quanto costa in recupero.",
+  },
+  {
+    id: "mrv", name: "MRV — Massimo Volume Recuperabile", icon: "🚧",
+    badge1: "Il tetto massimo tollerabile", badge2: "Oltre il MRV: solo fatica, non più crescita",
+    body: "L'MRV (Maximum Recoverable Volume) è la quantità massima di volume settimanale che il corpo riesce ancora " +
+      "a recuperare completamente prima della sessione successiva — oltre questa soglia il volume extra produce solo " +
+      "fatica accumulata, non ulteriore crescita.",
+    deepDive: "L'MRV non è un limite fisico assoluto ma la soglia oltre la quale il rapporto costo/beneficio del " +
+      "volume diventa negativo: il recupero (sonno, alimentazione, gestione dello stress, età allenante) determina " +
+      "quanto è alto per ciascuno. Segnali pratici che si è vicini o oltre il proprio MRV includono un calo delle " +
+      "prestazioni nelle ultime sessioni della settimana nonostante lo sforzo percepito resti alto, un peggioramento " +
+      "della qualità del sonno, un RIR percepito che sale a parità di carico abituale, o una motivazione che cala senza " +
+      "una causa esterna evidente. Toccare (o superare leggermente) l'MRV ha un ruolo solo nell'ultima settimana prima " +
+      "di un deload programmato — usarlo come volume di crociera stabile porta quasi sempre a sovrallenamento nel " +
+      "medio periodo.",
+    chart: {
+      title: "MEV / MAV / MRV — zone di volume settimanale",
+      labels: ["MEV", "MAV (basso)", "MAV (alto)", "MRV"],
+      values: [8, 14, 20, 26],
+      unit: " serie",
+      highlight: 3,
+      caption: "L'MRV è il tetto, non l'obiettivo: va toccato solo nell'ultima settimana di un mesociclo, seguito da un deload.",
+    },
+    pros: [
+      "Conoscere approssimativamente il proprio MRV aiuta a riconoscere in anticipo i segnali di sovraccarico prima che diventino sovrallenamento conclamato.",
+      "Utile come picco pianificato nell'ultima settimana di un mesociclo, subito prima di un deload.",
+    ],
+    cons: [
+      "Oltre il MRV il volume extra è puro spreco di tempo e recupero: un errore comune è confondere 'riesco a farlo' con 'sto recuperando bene', quando in realtà si sta già oltre la soglia.",
+      "L'MRV si abbassa rapidamente in periodi di vita più stressanti (sonno scarso, lavoro intenso), e continuare a programmare come se fosse costante porta a stallo.",
+    ],
+    conclusion: "L'MRV è il tetto da rispettare, non il volume da inseguire ogni settimana: va toccato solo nella fase finale di un mesociclo, con un deload programmato subito dopo — usato come regime stabile è la causa più comune di stallo e sovrallenamento nei praticanti che 'vogliono fare sempre di più'.",
   },
 ];
 
@@ -7576,6 +8021,42 @@ export const TRAINING_WIKI = [
    Wiki Integratori sopra resta com'era (SUPP_WIKI/SupplementWikiBrowser/
    SupplementDetailModal), non l'ho toccata: stesso pattern visivo, dati e
    didascalie diverse passate come prop invece di duplicare il componente. */
+/* Grafico a barre minimale per la Wiki (nessuna libreria, SVG puro): rende
+   visivi i concetti dose-risposta (volume, MEV/MAV/MRV, range di
+   ripetizioni...) invece di lasciarli solo a parole. Valori "relativi"
+   quando la letteratura descrive una FORMA di curva (sale-plateau-scende)
+   più che un numero assoluto uguale per chiunque — mai spacciare per
+   precisione individuale quello che è un andamento di popolazione. */
+function WikiBarChart({ labels, values, unit, accent, highlight, caption }) {
+  const W = 280, H = 128, pad = 8, baseY = H - 30;
+  const max = Math.max(...values) * 1.2;
+  const n = values.length;
+  const slot = (W - pad * 2) / n;
+  const barW = Math.min(46, slot - 14);
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Grafico">
+        <line x1={pad} y1={baseY} x2={W - pad} y2={baseY} stroke="var(--line)" />
+        {values.map((v, i) => {
+          const h = Math.max(2, (v / max) * (baseY - 18));
+          const x = pad + i * slot + (slot - barW) / 2;
+          const y = baseY - h;
+          const isHi = highlight === i;
+          return (
+            <g key={i}>
+              <rect x={x} y={y} width={barW} height={h} rx={5}
+                fill={isHi ? accent : "var(--surface-2)"} stroke={isHi ? accent : "var(--line)"} strokeWidth="1" />
+              <text x={x + barW / 2} y={y - 6} textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--ink)">{v}{unit || ""}</text>
+              <text x={x + barW / 2} y={H - 12} textAnchor="middle" fontSize="8" fill="var(--ink-2)">{labels[i]}</text>
+            </g>
+          );
+        })}
+      </svg>
+      {caption && <p className="meta mt-1" style={{ fontSize: "0.66rem", lineHeight: 1.4, fontStyle: "italic" }}>{caption}</p>}
+    </div>
+  );
+}
+
 function WikiDetailModal({ entry, accent, onClose }) {
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose, !!entry);
@@ -7610,9 +8091,41 @@ function WikiDetailModal({ entry, accent, onClose }) {
           </div>
           <p className="body mb-4">{entry.body}</p>
           {entry.deepDive && (
-            <div className="inner p-4">
+            <div className="inner p-4 mb-3">
               <p className="label mb-2" style={{ letterSpacing: "0.08em" }}>Approfondimento scientifico</p>
               <p className="body" style={{ fontSize: "0.86rem", lineHeight: 1.6 }}>{entry.deepDive}</p>
+            </div>
+          )}
+          {entry.chart && (
+            <div className="inner p-4 mb-3">
+              <p className="label mb-2" style={{ letterSpacing: "0.08em" }}>{entry.chart.title || "In grafico"}</p>
+              <WikiBarChart {...entry.chart} accent={accent} />
+            </div>
+          )}
+          {(entry.pros?.length || entry.cons?.length) && (
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {entry.pros?.length > 0 && (
+                <div className="rounded-xl p-3" style={{ backgroundColor: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)" }}>
+                  <p className="label mb-1.5" style={{ color: "#10B981", fontSize: "0.6rem" }}>Pro</p>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {entry.pros.map((p, i) => <li key={i} className="meta" style={{ fontSize: "0.74rem", lineHeight: 1.5, marginBottom: 3 }}>{p}</li>)}
+                  </ul>
+                </div>
+              )}
+              {entry.cons?.length > 0 && (
+                <div className="rounded-xl p-3" style={{ backgroundColor: "rgba(240,160,32,0.08)", border: "1px solid rgba(240,160,32,0.28)" }}>
+                  <p className="label mb-1.5" style={{ color: "#B45309", fontSize: "0.6rem" }}>Contro</p>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {entry.cons.map((c, i) => <li key={i} className="meta" style={{ fontSize: "0.74rem", lineHeight: 1.5, marginBottom: 3 }}>{c}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {entry.conclusion && (
+            <div className="rounded-xl p-3.5" style={{ backgroundColor: `${accent}12`, border: `1px solid ${accent}35` }}>
+              <p className="label mb-1" style={{ color: accent, fontSize: "0.6rem" }}>Conclusione</p>
+              <p className="body" style={{ fontSize: "0.82rem", lineHeight: 1.55 }}>{entry.conclusion}</p>
             </div>
           )}
         </div>
