@@ -1121,13 +1121,19 @@ function LevelRoadmapModal({ currentXp, onClose }) {
    dissolve da sola, non richiede alcuna interazione. */
 function XpToastBanner({ toast }) {
   if (!toast) return null;
+  // BUG PRESO: il testo usava .title-shine (gradiente background-clip:text
+  // che legge --title-a/b/c dall'inline style di .app-root) — quando quelle
+  // variabili non erano ancora disponibili nel punto esatto in cui il Portal
+  // viene montato, il testo restava senza alcun colore di fallback (nero su
+  // uno sfondo quasi nero, illeggibile). Colori ora fissi e garantiti,
+  // indipendenti da qualunque variabile ereditata.
   return (
     <Portal>
       <div key={toast.key} className="xp-toast-wrap" aria-live="polite">
         <div className="xp-toast">
-          <Sparkles size={15} style={{ color: "var(--title-a)" }} />
-          <span className="title-shine">+{toast.amount} XP</span>
-          <span className="xp-toast-label title-shine">{toast.label}</span>
+          <Sparkles size={15} style={{ color: "#F3E5AB" }} />
+          <span style={{ color: "#F3E5AB", fontWeight: 800 }}>+{toast.amount} XP</span>
+          <span className="xp-toast-label" style={{ color: "#FFFFFF" }}>{toast.label}</span>
         </div>
       </div>
     </Portal>
@@ -1145,7 +1151,7 @@ function PRCelebrationToast({ toast }) {
       <div key={toast.key} className="xp-toast-wrap" aria-live="polite">
         <div className="xp-toast" style={{ background: "rgba(140,110,20,0.94)" }}>
           <span aria-hidden="true">🎉</span>
-          <span className="title-shine">Nuovo record</span>
+          <span style={{ color: "#FFFFFF", fontWeight: 800 }}>Nuovo record</span>
           <span className="xp-toast-label" style={{ color: "#FFFFFF" }}>
             {toast.exerciseName}: {toast.prevBest} → {toast.kg} kg
           </span>
@@ -1235,6 +1241,31 @@ function VoiceSearchButton({ onTranscript, lang = "it-IT" }) {
         : <Mic size={16} style={{ color: "var(--ink-2)" }} />}
     </button>
   );
+}
+
+/* Anima un numero intero dal suo valore precedente al nuovo, invece di un
+   salto istantaneo — usata dalla barra XP per dare un feedback visivo
+   "conta in su" quando si sbloccano punti, non solo il toast. Nessuna
+   dipendenza esterna: un semplice requestAnimationFrame con easing. */
+function useCountUp(value, durationMs = 900) {
+  const [display, setDisplay] = useState(value);
+  const fromRef = useRef(value);
+  useEffect(() => {
+    const from = fromRef.current;
+    if (from === value) return undefined;
+    let raf;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - (1 - t) * (1 - t); // ease-out quadratico
+      setDisplay(Math.round(from + (value - from) * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+      else fromRef.current = value;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, durationMs]);
+  return display;
 }
 
 /* ============================================================================
@@ -1357,7 +1388,7 @@ function WorkoutFeedbackCard({ motivation, fatigue, onMotivationChange, onFatigu
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
    parametri biometrici storici su Supabase (legati all'ID utente) e sblocca
    di nuovo la navigazione della Home. */
-export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose }) {
+export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose, onSkip, fullCheckDue }) {
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
   const [thigh, setThigh] = useState("");
@@ -1378,6 +1409,11 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
   // richiedeva TUTTI gli 8 campi anche qui, ed è il motivo per cui il
   // pulsante sembrava "non funzionare": restava disabilitato in silenzio.
   const isFreeMode = !!onClose;
+  // Circonferenze e foto: sempre disponibili nel check libero dal Profilo
+  // (il cliente le aggiunge quando vuole monitorarle), nel check periodico
+  // solo quando è passato un mese dall'ultima volta (fullCheckDue) — vedi
+  // gating in HomeDashboard.
+  const showFullSection = isFreeMode || fullCheckDue;
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose, isFreeMode);
 
@@ -1390,14 +1426,14 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
     });
   };
 
-  // Circonferenze/peso non sono più obbligatori nel check del lunedì: quello
-  // che conta davvero ogni settimana sono le sensazioni (dolori, stress,
-  // digestione, sonno), che l'app non può dedurre da sola — misure e foto
-  // restano facoltative, da compilare solo se il cliente vuole monitorarle o
-  // se il coach le richiede privatamente quella settimana.
+  // Nel check periodico servono peso E sensazioni (dolori, stress,
+  // digestione, sonno) — quello che davvero cambia settimana per settimana e
+  // che l'app non può dedurre da sola. Circonferenze e foto non bloccano mai
+  // l'invio, in nessuna modalità: contano solo se il cliente (o il ritmo
+  // mensile) le porta in questo giro.
   const canSubmit = isFreeMode
     ? !!weight
-    : !!(pain && stress && digestion && sleepQuality);
+    : !!(weight && pain && stress && digestion && sleepQuality);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -1462,44 +1498,49 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           <p className="h1 mb-2">{onClose ? "Registra un check" : "Check settimanale"}</p>
           <p className="body mb-4">
             {onClose
-              ? "Registra misure e stato del momento quando vuoi, non solo il lunedì: ogni check in più affina il trend che vedi qui e che vede il coach."
-              : "Nuova settimana: dimmi come va — dolori, stress, digestione, sonno — quello che l'app non può " +
-                "dedurre da sola da ciò che hai già tracciato durante la settimana. Peso, circonferenze e foto " +
-                "sono facoltativi: aggiungili solo se vuoi tenerli d'occhio o se te li chiedo io privatamente."}
+              ? "Registra misure e stato del momento quando vuoi: ogni check in più affina il trend che vedi qui e che vede il coach."
+              : showFullSection
+                ? "Il check di oggi è più completo: include anche circonferenze e foto, che si aggiornano una volta al mese per seguire l'andamento nel tempo. Peso e sensazioni servono per registrarlo."
+                : "Peso e sensazioni della settimana: bastano questi per registrare il check."}
           </p>
 
-          <div className="on-light rounded-2xl px-4 py-3 mb-4" style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
-            <p className="text-sm leading-relaxed" style={{ fontWeight: 500 }}>
-              📏 Peso e circonferenze sono facoltativi. Se decidi di misurarli, fallo preferibilmente al mattino, a
-              digiuno, dopo essere andato/a in bagno: sono le condizioni in cui i numeri sono più confrontabili da
-              una settimana all'altra.
-            </p>
-          </div>
+          {showFullSection && (
+            <div className="on-light rounded-2xl px-4 py-3 mb-4" style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
+              <p className="text-sm leading-relaxed" style={{ fontWeight: 500 }}>
+                📏 Se registri peso o circonferenze, fallo preferibilmente al mattino, a digiuno, dopo essere
+                andato/a in bagno: sono le condizioni in cui i numeri restano confrontabili da un controllo all'altro.
+              </p>
+            </div>
+          )}
 
-          <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className={showFullSection ? "grid grid-cols-2 gap-3 mb-5" : "mb-5"}>
             <label className="block">
-              <span className="label block mb-1.5">Peso mattina (kg){isFreeMode ? "" : " (facoltativo)"}</span>
+              <span className="label block mb-1.5">Peso mattina (kg)</span>
               <input type="text" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value.replace(",", "."))}
                      placeholder="es. 78.4" className="input w-full px-4 py-3 font-data" />
             </label>
-            <label className="block">
-              <span className="label block mb-1.5">Addome (cm) (facoltativo)</span>
-              <input type="text" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value.replace(",", "."))}
-                     placeholder="es. 84" className="input w-full px-4 py-3 font-data" />
-            </label>
-            <label className="block">
-              <span className="label block mb-1.5">Coscia (cm) (facoltativo)</span>
-              <input type="text" inputMode="decimal" value={thigh} onChange={(e) => setThigh(e.target.value.replace(",", "."))}
-                     placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
-            </label>
-            <label className="block">
-              <span className="label block mb-1.5">Braccio (cm) (facoltativo)</span>
-              <input type="text" inputMode="decimal" value={arm} onChange={(e) => setArm(e.target.value.replace(",", "."))}
-                     placeholder="es. 37" className="input w-full px-4 py-3 font-data" />
-            </label>
+            {showFullSection && (
+              <>
+                <label className="block">
+                  <span className="label block mb-1.5">Addome (cm)</span>
+                  <input type="text" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value.replace(",", "."))}
+                         placeholder="es. 84" className="input w-full px-4 py-3 font-data" />
+                </label>
+                <label className="block">
+                  <span className="label block mb-1.5">Coscia (cm)</span>
+                  <input type="text" inputMode="decimal" value={thigh} onChange={(e) => setThigh(e.target.value.replace(",", "."))}
+                         placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
+                </label>
+                <label className="block">
+                  <span className="label block mb-1.5">Braccio (cm)</span>
+                  <input type="text" inputMode="decimal" value={arm} onChange={(e) => setArm(e.target.value.replace(",", "."))}
+                         placeholder="es. 37" className="input w-full px-4 py-3 font-data" />
+                </label>
+              </>
+            )}
           </div>
 
-          <p className="label mb-2">Quello che i dati da soli non dicono{isFreeMode ? " (facoltativo)" : ""}</p>
+          <p className="label mb-2">Quello che i dati da soli non dicono</p>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <label className="block">
               <span className="label block mb-1.5">Dolori / fastidi (1-10)</span>
@@ -1533,7 +1574,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
 
           {gender === "F" && (
             <label className="block mb-5">
-              <span className="label block mb-1.5">Fase del ciclo (facoltativo)</span>
+              <span className="label block mb-1.5">Fase del ciclo</span>
               <select value={cyclePhase} onChange={(e) => setCyclePhase(e.target.value)} className="input w-full px-4 py-3 text-sm">
                 <option value="">— non specificato —</option>
                 <option value="mestruale">Fase mestruale</option>
@@ -1545,39 +1586,48 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           )}
           {gender !== "F" && <div className="mb-1" />}
 
-          <p className="label mb-2">Foto (fronte, lato, retro) (facoltative)</p>
-          <div className="grid grid-cols-3 gap-2 mb-5">
-            {[["front", "Fronte"], ["side", "Lato"], ["back", "Retro"]].map(([key, lab]) => (
-              <label key={key}
-                     className="relative overflow-hidden rounded-2xl flex flex-col items-center justify-center gap-1.5 py-4 cursor-pointer transition-transform active:scale-95"
-                     style={photos[key]
-                       ? { background: `linear-gradient(160deg, ${accent}, ${accentText})` }
-                       : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-                {photos[key]
-                  ? <img src={photos[key].preview} alt={lab} className="absolute inset-0 w-full h-full object-cover opacity-60" />
-                  : null}
-                <span className="relative z-10 flex flex-col items-center gap-1.5">
-                  {photos[key]
-                    ? <CheckCircle2 size={20} style={{ color: "#FFFFFF" }} />
-                    : <Camera size={20} style={{ color: accent }} />}
-                  <span className="text-xs" style={{ color: photos[key] ? "#FFFFFF" : "var(--ink-2)", fontWeight: 600 }}>{lab}</span>
-                </span>
-                <input type="file" accept="image/*" capture="user" className="hidden" onChange={handlePhoto(key)} />
-              </label>
-            ))}
-          </div>
+          {showFullSection && (
+            <>
+              <p className="label mb-2">Foto (fronte, lato, retro)</p>
+              <div className="grid grid-cols-3 gap-2 mb-5">
+                {[["front", "Fronte"], ["side", "Lato"], ["back", "Retro"]].map(([key, lab]) => (
+                  <label key={key}
+                         className="relative overflow-hidden rounded-2xl flex flex-col items-center justify-center gap-1.5 py-4 cursor-pointer transition-transform active:scale-95"
+                         style={photos[key]
+                           ? { background: `linear-gradient(160deg, ${accent}, ${accentText})` }
+                           : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+                    {photos[key]
+                      ? <img src={photos[key].preview} alt={lab} className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                      : null}
+                    <span className="relative z-10 flex flex-col items-center gap-1.5">
+                      {photos[key]
+                        ? <CheckCircle2 size={20} style={{ color: "#FFFFFF" }} />
+                        : <Camera size={20} style={{ color: accent }} />}
+                      <span className="text-xs" style={{ color: photos[key] ? "#FFFFFF" : "var(--ink-2)", fontWeight: 600 }}>{lab}</span>
+                    </span>
+                    <input type="file" accept="image/*" capture="user" className="hidden" onChange={handlePhoto(key)} />
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
 
           <button onClick={handleSubmit} disabled={!canSubmit || saving}
                   className="w-full rounded-full px-4 py-3.5 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
                   style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
             {saving ? "Salvataggio in corso…" : "Registra"}
           </button>
+          {onSkip && (
+            <button onClick={onSkip} className="w-full text-center mt-3 text-sm" style={{ color: "var(--ink-2)", fontWeight: 500 }}>
+              Salta per ora
+            </button>
+          )}
           {saveError && (
             <p className="mt-2 text-center text-sm" style={{ color: "#B91C1C" }}>{saveError}</p>
           )}
           {!canSubmit && (
             <p className="meta mt-2 text-center" style={{ fontSize: "0.68rem" }}>
-              {isFreeMode ? "Inserisci almeno il peso per registrare." : "Valuta dolori, stress, digestione e sonno per registrare (peso, circonferenze e foto sono facoltativi)."}
+              {isFreeMode ? "Inserisci almeno il peso per registrare." : "Inserisci peso, dolori, stress, digestione e sonno per registrare."}
             </p>
           )}
         </div>
@@ -1884,30 +1934,40 @@ export function HomeDashboard({
   useEffect(() => { window.scrollTo(0, 0); }, [screen]);
   useEdgeSwipeBack(() => setScreen("dash"), screen !== "dash");
 
-  /* Check settimanale: si attiva da solo appena scatta lunedì (non più anche
-     domenica) e blocca la navigazione finché l'atleta non lo compila — solo
-     per chi ha davvero un coach (access.pro: full_coaching/scheda
-     personalizzata/training), MAI per free/Performance Pack, che registrano
-     i propri dati quando vogliono dal Profilo (SEZIONE Recupero/"Registra un
-     check", sempre disponibile a tutti). BUG PRESO: "compilato" viveva solo
-     in uno stato locale (weeklyCheckDone) che si azzerava a ogni refresh —
-     bastava ricaricare la pagina per rivederlo ricomparire lo stesso lunedì.
-     Ora si verifica il vero ultimo check salvato (checkins, la stessa
-     tabella che legge anche il coach): se è di questa settimana (da lunedì
-     in poi) resta chiuso fino al lunedì successivo, altrimenti ricompare. */
+  /* Check settimanale: non più legato al lunedì — si ripropone ad ogni
+     apertura dell'app finché l'atleta non lo compila almeno con peso e
+     sensazioni (dolori/stress/digestione/sonno), skippabile per quella
+     sessione ma non "per sempre": solo per chi ha davvero un coach
+     (access.pro), MAI per free/Performance Pack, che registrano i propri
+     dati quando vogliono dal Profilo ("Registra un check", sempre
+     disponibile a tutti).
+     Circonferenze e foto sono state spostate su cadenza MENSILE (non più
+     settimanale): tenerne traccia ogni settimana per ogni cliente avrebbe
+     riempito il database di misure/foto che si leggono solo in un trend di
+     lungo periodo, mentre peso e sensazioni cambiano davvero settimana per
+     settimana. fullCheckDue segnala quando sono passati 30+ giorni dall'ultima
+     volta che sono state registrate (o mai, per un cliente nuovo): solo in
+     quel caso il pop-up mostra anche quella sezione. */
   const [showWeeklyCheck, setShowWeeklyCheck] = useState(false);
   const [weeklyCheckDone, setWeeklyCheckDone] = useState(false);
+  const [fullCheckDue, setFullCheckDue] = useState(false);
   useEffect(() => {
-    const dow = new Date().getDay(); // 1 = lunedì
-    if (dow !== 1 || weeklyCheckDone || !access.pro) return;
-    if (!(supabase && userId)) { setShowWeeklyCheck(true); return; } // anteprima demo: comportamento invariato
+    if (weeklyCheckDone || !access.pro) return undefined;
+    if (!(supabase && userId)) { setShowWeeklyCheck(true); setFullCheckDue(true); return undefined; } // anteprima demo
     let cancelled = false;
     const mondayIso = toLocalISODate(mondayOfLocal());
-    fetchCheckins(supabase, userId, 1)
+    fetchCheckins(supabase, userId, 60)
       .then((rows) => {
         if (cancelled) return;
-        const last = rows[rows.length - 1];
-        if (!last || last.date < mondayIso) setShowWeeklyCheck(true);
+        const thisWeek = rows.filter((r) => r.date >= mondayIso);
+        const weeklyAlreadyDone = thisWeek.some((r) =>
+          r.weight != null && r.pain != null && r.stress != null && r.digestion != null && r.sleep_quality != null);
+        if (weeklyAlreadyDone) { setShowWeeklyCheck(false); return; }
+        const fullRows = rows.filter((r) => r.has_photos || r.waist != null || r.thigh != null || r.arm != null);
+        const lastFull = fullRows[fullRows.length - 1]; // fetchCheckins: dal più vecchio al più recente
+        const daysSinceFull = lastFull ? Math.floor((Date.now() - new Date(`${lastFull.date}T00:00:00`)) / 86400000) : Infinity;
+        setFullCheckDue(daysSinceFull >= 30);
+        setShowWeeklyCheck(true);
       })
       .catch((err) => console.error("PERFORM: errore verifica check settimanale già fatto", err));
     return () => { cancelled = true; };
@@ -2015,17 +2075,30 @@ export function HomeDashboard({
   // deve già vedere lo streak reale se disponibile.
   const isRealMode = Boolean(supabase && userId);
   const [realXpStreak, setRealXpStreak] = useState(null); // null = non ancora calcolato
+  // BUG PRESO: prima si ricalcolava SOLO una volta al mount — se l'atleta
+  // completava una serie, registrava un pasto o il sonno mentre era già
+  // sulla Home, xp_total/streak mostrati restavano quelli letti all'apertura
+  // finché non ricaricava la pagina, dando l'impressione che "a volte gli XP
+  // non si registrano" (in realtà il dato reale era scritto, solo non
+  // riletto). Ora si ricalcola anche ad ogni nuovo evento (coachSyncCount,
+  // che cresce a ogni serie completata) e periodicamente come rete di
+  // sicurezza per gli altri casi (pasto aggiunto, sonno/passi salvati).
   useEffect(() => {
-    if (!isRealMode) return;
+    if (!isRealMode) return undefined;
     let cancelled = false;
-    computeRealXpAndStreak(supabase, userId)
-      .then((r) => { if (!cancelled) setRealXpStreak(r); })
-      .catch((err) => {
-        console.error("PERFORM: errore calcolo XP/streak", err);
-        if (!cancelled) setRealXpStreak({ xpTotal: 0, streak: 0 });
-      });
-    return () => { cancelled = true; };
-  }, [isRealMode, supabase, userId]);
+    const refresh = () => {
+      computeRealXpAndStreak(supabase, userId)
+        .then((r) => { if (!cancelled) setRealXpStreak(r); })
+        .catch((err) => {
+          console.error("PERFORM: errore calcolo XP/streak", err);
+          if (!cancelled) setRealXpStreak((prev) => prev ?? { xpTotal: 0, streak: 0 });
+        });
+    };
+    refresh();
+    const id = setInterval(refresh, 20000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRealMode, supabase, userId, coachSyncCount]);
   const realLevelInfo = isRealMode ? xpToLevelInfo(realXpStreak?.xpTotal ?? 0) : null;
   if (isRealMode) {
     streak = realXpStreak?.streak ?? 0;
@@ -2038,6 +2111,11 @@ export function HomeDashboard({
     // barra resta piena (xpNeeded = xpInLevel, mai 0/0).
     xpNeeded = realLevelInfo.isMaxLevel ? Math.max(1, realLevelInfo.xpInLevel) : realLevelInfo.xpForNextLevel;
   }
+  // Valore mostrato sulla barra XP: segue xpInLevel con un'animazione "conta
+  // in su" invece di un salto istantaneo quando arriva un ricalcolo con più
+  // punti — la larghezza della barra stessa anima via CSS transition (vedi
+  // render qui sotto), qui si anima solo il numero.
+  const xpBarDisplay = useCountUp(xpInLevel, 900);
 
   /* Più giorni di streak si accumulano, più in proporzione si guadagnano punti
      sulle task di oggi: +2% di XP per ogni giorno di streak, fino a un tetto
@@ -2053,7 +2131,7 @@ export function HomeDashboard({
   const fireXpToast = (label, amount) => {
     if (xpToastTimer.current) clearTimeout(xpToastTimer.current);
     setXpToast({ key: `${label}-${Date.now()}`, label, amount });
-    xpToastTimer.current = setTimeout(() => setXpToast(null), 4500); // deve combaciare con xpToastPop qui sotto
+    xpToastTimer.current = setTimeout(() => setXpToast(null), 7000); // deve combaciare con xpToastPop qui sotto
     playSound("xp");
   };
   useEffect(() => () => { if (xpToastTimer.current) clearTimeout(xpToastTimer.current); }, []);
@@ -2262,13 +2340,15 @@ export function HomeDashboard({
     </div>
   );
 
-  /* Check del lunedì: blocca TUTTA la navigazione, qualunque schermata
-     sia attiva, finché l'atleta non lo compila e invia. */
+  /* Check settimanale: occupa tutta la schermata (non un vero blocco di
+     navigazione: skippabile per questa sessione, vedi onSkip), finché
+     l'atleta non lo compila almeno con peso e sensazioni. */
   if (showWeeklyCheck) {
     return (
       <WeeklyCheckModal
         accent={accent} accentText={accentText} accentSoft={accentSoft} gender={profile.gender}
-        supabase={supabase} userId={userId}
+        supabase={supabase} userId={userId} fullCheckDue={fullCheckDue}
+        onSkip={() => setShowWeeklyCheck(false)}
         onSubmit={(data) => {
           onCoachSync && onCoachSync({ type: "weekly-check", ...data });
           setWeeklyCheckDone(true);
@@ -2335,11 +2415,12 @@ export function HomeDashboard({
               <span style={{ color: "var(--ink)", fontSize: "0.9rem", fontWeight: 500 }}>
                 Livello {level}
               </span>
-              <span className="meta font-data">{xpInLevel} / {xpNeeded} XP</span>
+              <span className="meta font-data">{xpBarDisplay} / {xpNeeded} XP</span>
             </div>
             <div className="rounded-full overflow-hidden" style={{ height: 10, backgroundColor: "var(--surface-2)" }}>
               <div className="xp-bar xp-bar-shine relative h-full rounded-full overflow-hidden"
-                   style={{ width: `${Math.min(100, (xpInLevel / xpNeeded) * 100)}%`,
+                   style={{ width: `${Math.min(100, (xpBarDisplay / xpNeeded) * 100)}%`,
+                            transition: "width 900ms cubic-bezier(.22,1,.36,1)",
                             boxShadow: "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.5)" }}>
                 <div className="absolute inset-x-0 top-0" style={{ height: "55%",
                        background: "linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0))" }} />
@@ -4130,7 +4211,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
         const kg = Number(rows[i].kg) || 0;
         if (best > 0 && kg > best) {
           setPrToast({ key: Date.now(), exerciseName: ex.name, prevBest: best, kg });
-          setTimeout(() => setPrToast(null), 4500);
+          setTimeout(() => setPrToast(null), 7000);
         }
       }
       return next;
@@ -9313,14 +9394,23 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
     ? realGroups
     : SUPP_MOMENTS.map((m) => ({ id: m.id, label: m.label, icon: m.icon, items: SUPP_PLAN_PRO[m.id].map((it, i) => ({ id: `${m.id}-${i}`, ...it })) }));
 
+  // BUG PRESO (segnalato): la spunta "preso" a volte sembrava non
+  // registrarsi davvero. Il salvataggio era già corretto (ottimistico +
+  // rollback), ma un rollback silenzioso (nessun messaggio) è indistinguibile
+  // da "ho toccato e non è successo niente" se l'utente nel frattempo ha già
+  // cambiato schermata: ora un fallimento resta visibile finché non viene
+  // ritentato con successo, invece di sparire senza traccia.
+  const [intakeError, setIntakeError] = useState("");
   const toggle = (momentId, itemId) => {
     haptic("tap");
     if (isRealMode) {
       const wasTaken = takenIds?.has(itemId);
+      setIntakeError("");
       setTakenIds((s) => { const n = new Set(s); wasTaken ? n.delete(itemId) : n.add(itemId); return n; });
       setSupplementTaken(supabase, userId, itemId, !wasTaken).catch((err) => {
         console.error("PERFORM: errore salvataggio supplement_intake", err);
         setTakenIds((s) => { const n = new Set(s); wasTaken ? n.add(itemId) : n.delete(itemId); return n; }); // rollback
+        setIntakeError("Non sono riuscito a salvare — controlla la connessione e riprova.");
       });
     } else {
       const key = `${momentId}-${itemId}`;
@@ -9354,6 +9444,11 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
           </span>
           {allDone && <CheckCircle2 size={18} style={{ color: accentText }} />}
         </div>
+      )}
+      {intakeError && (
+        <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
+          {intakeError}
+        </p>
       )}
 
       {totalItems === 0 ? (
@@ -9983,11 +10078,11 @@ export default function HomePreview({
           background:rgba(9,9,11,0.88);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px) saturate(160%);
           border:1px solid rgba(255,255,255,0.1);
           font-size:0.82rem;font-weight:700;box-shadow:0 14px 30px -8px rgba(0,0,0,0.5);
-          animation:xpToastPop 4.5s cubic-bezier(.22,1,.36,1) both}
+          animation:xpToastPop 7s cubic-bezier(.22,1,.36,1) both}
         .xp-toast-label{font-weight:600;opacity:0.92}
         @keyframes xpToastPop{0%{opacity:0;transform:translateY(14px) scale(.92)}
-          6%{opacity:1;transform:translateY(0) scale(1)}
-          50%{opacity:1;transform:translateY(0) scale(1)}
+          4%{opacity:1;transform:translateY(0) scale(1)}
+          60%{opacity:1;transform:translateY(0) scale(1)}
           100%{opacity:0;transform:translateY(4px) scale(.99)}}
         @media (prefers-reduced-motion: reduce){.xp-toast{animation:none}}
         @keyframes springIn{0%{opacity:0;transform:translateY(10px) scale(.985)}

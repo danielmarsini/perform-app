@@ -1,0 +1,24 @@
+-- PERFORM — SCHEMA_v60_chat_messages_grant.sql
+-- ============================================================================
+-- BUG PRESO (persistente dopo SCHEMA_v53): la chat continuava a dare 403 sia
+-- in lettura ("Non sono riuscito a caricare la conversazione") sia in
+-- scrittura ("Non sono riuscito a inviare"), anche dopo aver riallineato la
+-- RLS a public.is_coach() — la console del browser mostrava 403 esattamente
+-- sulla select (order=created_at.asc&limit=300) e sull'insert/select di
+-- ritorno (created_at,read_at), cioè permission denied prima ancora che le
+-- policy RLS entrino in gioco.
+--
+-- Causa reale: SCHEMA_v48_chat_messages.sql (la creazione originale della
+-- tabella) è l'UNICO schema di tutto il progetto che non termina con un
+-- "grant ... to authenticated" — ogni altra tabella (workout_sets,
+-- daily_metrics, supplement_intake, streak_freezes, ecc.) lo ha sempre
+-- avuto. Senza quel grant, il ruolo "authenticated" di Postgres non ha
+-- NESSUN privilegio di base sulla tabella: la richiesta viene rifiutata a
+-- monte (permission denied, riportato da PostgREST come 403) a prescindere
+-- da quanto sia corretta la RLS — che SCHEMA_v53 aveva già sistemato, ma non
+-- bastava da sola.
+--
+-- Da eseguire in Supabase SQL Editor. Idempotente (un grant ripetuto non
+-- fa danni).
+
+grant select, insert, update on public.chat_messages to authenticated;
