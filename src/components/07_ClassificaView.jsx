@@ -339,13 +339,14 @@ function AvatarCircle({ avatarUrl, className = '' }) {
 
 const METAL_FOR_RANK = { 1: 'gold', 2: 'silver', 3: 'bronze' };
 
-function PodiumCard({ athlete: a, position, delay, onSelect }) {
+function PodiumCard({ athlete: a, position, delay, onSelect, isMe }) {
   const heightClass = position === 'center' ? 'pc-podium-tall' : position === 'left' ? 'pc-podium-mid' : 'pc-podium-low';
   const metal = METAL_FOR_RANK[a.rank];
 
   return (
-    <div className={`pc-podium-card pc-metal-${metal} ${heightClass}`} style={{ animationDelay: `${delay}ms`, cursor: onSelect ? 'pointer' : undefined }}
+    <div className={`pc-podium-card pc-metal-${metal} ${heightClass}${isMe ? ' pc-podium-me' : ''}`} style={{ animationDelay: `${delay}ms`, cursor: onSelect ? 'pointer' : undefined }}
          onClick={onSelect ? () => onSelect(a) : undefined} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined}>
+      {isMe && <div className="pc-podium-me-tag">TU</div>}
       <div className="pc-medal-float">
         {a.rank === 1 ? <TrophyIcon3D size={38} /> : <MedalIcon3D size={34} variant={metal} />}
       </div>
@@ -363,10 +364,10 @@ function PodiumCard({ athlete: a, position, delay, onSelect }) {
   );
 }
 
-function LeaderboardRow({ athlete: a, maxXP, onSelect, isMe }) {
+function LeaderboardRow({ athlete: a, maxXP, onSelect, isMe, rowRef }) {
   const barWidth = Math.max(8, Math.round((a.xp / maxXP) * 100));
   return (
-    <div className={`pc-row${isMe ? ' pc-row-me' : ''}`} style={{ cursor: onSelect ? 'pointer' : undefined }}
+    <div ref={isMe ? rowRef : undefined} className={`pc-row${isMe ? ' pc-row-me' : ''}`} style={{ cursor: onSelect ? 'pointer' : undefined }}
          onClick={onSelect ? () => onSelect(a) : undefined} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined}>
       <div className="pc-row-rank">{a.rank}°</div>
       <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-row" />
@@ -427,11 +428,13 @@ function AthleteDetailModal({ athlete: a, onClose }) {
   );
 }
 
-function StickyUserBar({ isCurrent, rank, xp, gapToTop10, avatarUrl, level, streakDays }) {
+function StickyUserBar({ isCurrent, rank, xp, gapToTop10, avatarUrl, level, streakDays, onLocateMe }) {
   const inTop10 = rank <= 10;
   return (
     <div className="pc-sticky">
-      <div className="pc-sticky-inner">
+      <div className={`pc-sticky-inner${onLocateMe ? ' pc-sticky-clickable' : ''}`}
+           onClick={onLocateMe} role={onLocateMe ? 'button' : undefined} tabIndex={onLocateMe ? 0 : undefined}
+           title={onLocateMe ? 'Vai alla mia posizione in classifica' : undefined}>
         <div className="pc-sticky-rank">
           <span className="pc-sticky-rank-num pc-shine-text">{rank}°</span>
           <span className="pc-field-label pc-sticky-rank-label">Posizione</span>
@@ -688,6 +691,18 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
   const handleToggleExpand = (id) => setExpandedMonthId((cur) => (cur === id ? null : id));
 
+  // "Vai alla mia posizione": se sei già sul podio (rank 1-3) sei evidenziato
+  // lì in cima, niente da scorrere — il pulsante scorre fino alla propria
+  // riga solo per chi è più giù nella lista completa.
+  const myRowRef = useRef(null);
+  const scrollToMe = () => {
+    if (currentMonth.userResult.rank && currentMonth.userResult.rank <= 3) {
+      window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+      return;
+    }
+    myRowRef.current?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
+  };
+
   if (isLoadingRealBoard) {
     return (
       <div className={`pc-root pc-theme-${gender} pc-mode-${mode}`} style={{ minHeight: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pc-text-secondary, #888)' }}>
@@ -758,6 +773,12 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           position: relative;
           overflow-x: hidden;
           transition: color 0.25s ease;
+          /* Flex-column: con poche righe in classifica il pulsante Archivio
+             Storico Report finiva a metà pagina, con un vuoto enorme sotto —
+             ora resta sempre ancorato in fondo (margin-top:auto su di lui),
+             quale che sia la lunghezza della lista sopra. */
+          display: flex;
+          flex-direction: column;
         }
 
         .pc-shine-text {
@@ -899,6 +920,17 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         .pc-metal-bronze { border-color: rgba(205, 127, 50, 0.85); }
         .pc-mode-light .pc-metal-silver { border-color: rgba(148, 163, 184, 0.85); }
 
+        /* Il proprio account sul podio: se sei già nei primi 3 non serve
+           nessun pulsante per "trovarti" nella lista, basta capire al volo
+           che sei tu — stesso bordo/tag della riga evidenziata più sotto. */
+        .pc-podium-me { box-shadow: 0 0 0 2px var(--pc-accent-1); }
+        .pc-podium-me-tag {
+          position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+          font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+          color: #0F0F11; background: var(--pc-accent-1);
+          padding: 2px 8px; border-radius: 999px; z-index: 3;
+        }
+
         /* Icona/medaglia che "fluttua" sopra il bordo superiore della card */
         .pc-medal-float {
           margin-top: -30px;
@@ -958,6 +990,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         .pc-archive-btn {
           display: block;
           margin: 36px auto 6px;
+          margin-top: auto;
           font-size: 12px;
           font-weight: 400;
           letter-spacing: -0.005em;
@@ -1106,6 +1139,8 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
           box-shadow: var(--pc-shadow);
         }
 
+        .pc-sticky-clickable { cursor: pointer; }
+
         .pc-sticky-rank { display: flex; flex-direction: column; align-items: center; line-height: 1.15; flex-shrink: 0; }
         .pc-sticky-rank-num { font-size: 22px; font-weight: 300; letter-spacing: -0.02em; }
         .pc-sticky-rank-label { margin-top: 2px; }
@@ -1177,13 +1212,13 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
       <div className="pc-podium">
         {podiumOrder.map(({ athlete: a, position, delay }) => (
-          <PodiumCard key={a.rank} athlete={a} position={position} delay={delay} onSelect={setSelectedAthlete} />
+          <PodiumCard key={a.rank} athlete={a} position={position} delay={delay} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
         ))}
       </div>
 
       <div className="pc-list">
         {restOfList.map((a) => (
-          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
+          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} rowRef={myRowRef} />
         ))}
       </div>
 
@@ -1200,6 +1235,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         avatarUrl={isRealMode ? null : USER_AVATAR_URL}
         level={currentMonth.userResult.level}
         streakDays={currentMonth.userResult.streakDays}
+        onLocateMe={isRealMode && currentMonth.isCurrent ? scrollToMe : undefined}
       />
 
       <ArchiveDrawer

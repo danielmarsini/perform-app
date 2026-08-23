@@ -404,6 +404,34 @@ export async function fetchPrescribedSupplements(supabase, userId) {
   return data ?? [];
 }
 
+// Integratori del protocollo prescritto già "presi" OGGI (SCHEMA_v54): una
+// riga per integratore spuntato, niente colonna booleana — spuntare = insert,
+// togliere la spunta = delete (vedi setSupplementTaken). Torna solo gli id
+// di prescribed_supplements presi, così SupplementsPlanLocked può ricostruire
+// lo stato "checked" da un dato reale invece che da uno stato React che si
+// perdeva a ogni riavvio dell'app.
+export async function fetchSupplementIntakeToday(supabase, userId) {
+  const { data, error } = await supabase
+    .from("supplement_intake")
+    .select("prescribed_supplement_id")
+    .eq("user_id", userId)
+    .eq("date", toLocalISODate());
+  if (error) throw error;
+  return new Set((data ?? []).map((r) => r.prescribed_supplement_id));
+}
+
+export async function setSupplementTaken(supabase, userId, prescribedSupplementId, taken) {
+  if (taken) {
+    const { error } = await supabase.from("supplement_intake")
+      .insert({ user_id: userId, prescribed_supplement_id: prescribedSupplementId, date: toLocalISODate() });
+    if (error && error.code !== "23505") throw error; // 23505 = già preso oggi, atteso e ok
+  } else {
+    const { error } = await supabase.from("supplement_intake").delete()
+      .eq("user_id", userId).eq("prescribed_supplement_id", prescribedSupplementId).eq("date", toLocalISODate());
+    if (error) throw error;
+  }
+}
+
 // Storico di un esercizio specifico (per il grafico/cronologia in HomeDashboard),
 // solo le sessioni realmente svolte (status='done'), più recenti prima.
 export async function fetchExerciseHistory(supabase, userId, exerciseName, limit = 8) {
@@ -944,26 +972,30 @@ export async function fetchClientList(supabase) {
 // 5° livello. Un cliente già a livello 4 vede lo stesso identico numero di
 // prima; da lì in poi il livello continua a salire, sempre più lentamente
 // in termini di XP-per-livello percepito, mai un tetto raggiunto.
-function levelMinXp(level) {
+export function levelMinXp(level) {
   return level <= 0 ? 0 : Math.round(1000 * (2 ** level - 1));
 }
 
-// Nomi raggruppati in "tier" da 5 sotto-livelli ciascuno (Recluta 1..5,
-// Costruttore 1..5, ...); una volta esaurito l'ultimo tier (Immortale) il
-// numero continua a crescere all'infinito invece di richiedere un nome
+// Nomi raggruppati in "tier" da 5 sotto-livelli ciascuno (Principiante 1..5,
+// Amatore 1..5, ...); una volta esaurito l'ultimo tier (Leggenda del Ferro)
+// il numero continua a crescere all'infinito invece di richiedere un nome
 // nuovo per ogni livello possibile — è così che restano davvero infiniti.
 // Esportati (non più solo interni a xpToLevelInfo): la Bacheca Trofei del
 // Profilo li riusa per i trofei "livello raggiunto", stessi nomi/icone del
 // livello reale mostrato altrove — mai una seconda nomenclatura duplicata.
+// Nomi ancorati al mondo reale di palestra/bodybuilding (non più un
+// generico tier militare/RPG): la stessa scala di classificazione che
+// userebbe un coach — principiante → amatore → intermedio → avanzato →
+// atleta → bodybuilder → mostro natural → leggenda del ferro.
 export const LEVEL_TIERS = [
-  { title: "Recluta", icon: "🌱" },
-  { title: "Costruttore", icon: "🔨" },
-  { title: "Combattente", icon: "🥊" },
-  { title: "Guerriero", icon: "⚔️" },
-  { title: "Atleta d'Élite", icon: "🏆" },
-  { title: "Predatore", icon: "🐺" },
-  { title: "Leggenda", icon: "👑" },
-  { title: "Immortale", icon: "⚡" },
+  { title: "Principiante", icon: "🌱" },
+  { title: "Amatore", icon: "🏋️" },
+  { title: "Intermedio", icon: "💪" },
+  { title: "Avanzato", icon: "🔥" },
+  { title: "Atleta", icon: "🥇" },
+  { title: "Bodybuilder", icon: "🦍" },
+  { title: "Natural Monster", icon: "👹" },
+  { title: "Leggenda del Ferro", icon: "⚡" },
 ];
 export const LEVELS_PER_TIER = 5;
 function levelTitleAndIcon(level) {

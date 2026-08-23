@@ -808,9 +808,13 @@ function BiometricPhotoGallery({ checkPhotos, t }) {
   if (!checkPhotos?.length) {
     return <p className="body">{t.photoEmpty}</p>;
   }
+  // checkPhotos arriva in ordine cronologico crescente (lo stesso che si
+  // aspettano i grafici altrove) — qui invece la lista si legge dall'ultima
+  // registrazione (mensile) alla prima, non il contrario.
+  const mostRecentFirst = [...checkPhotos].reverse();
   return (
     <div className="space-y-4">
-      {checkPhotos.map((s) => (
+      {mostRecentFirst.map((s) => (
         <div key={s.date}>
           <p className="label mb-2">
             {new Date(s.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
@@ -1011,14 +1015,11 @@ export function ClientProfileView({
              animation: "gradientMove 3.6s linear infinite",
            }}>
       <div className="card" style={{ border: "none", margin: 0 }}>
-        <button onClick={onOpenSettings}
-          className="absolute top-5 right-5 w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-90"
-          style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}
-          aria-label={t.settingsTitle}>
-          <Settings size={17} strokeWidth={1.7} style={{ color: "var(--ink)" }} />
-        </button>
-
-        <div className="flex items-start gap-4 pr-12">
+        {/* Rotella impostazioni rimossa da qui: è un doppione dell'unica già
+            presente in alto nell'app (AppHeader, sempre visibile su ogni
+            tab incluso questo) — non serve una seconda scorciatoia identica
+            dentro al Profilo. */}
+        <div className="flex items-start gap-4">
           <button onClick={() => editing && fileRef.current?.click()}
             className="relative rounded-full overflow-hidden shrink-0"
             style={{ width: 84, height: 84, backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}
