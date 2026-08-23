@@ -8,6 +8,29 @@ import ProfileScreen, { SettingsDrawer } from "./components/08_ClientProfileView
 import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
+import ChatThread from "./components/ChatThread.jsx";
+
+// Piani a coaching reale (Scheda Personalizzata, Coaching Allenamento, Full
+// Coaching): solo questi sbloccano il quinto pulsante Chat in basso — un
+// Free/Premium autogestito non ha un coach dietro con cui scrivere. Stessa
+// condizione già usata per la sezione Chat/Video Tecnica nel Profilo
+// (08_ClientProfileView.jsx) e per REAL_COACHING_PLANS lato coach.
+const REAL_COACHING_PLANS = new Set(["scheda_personalizzata", "training", "full_coaching"]);
+
+/* Schermata Chat a schermo intero, dietro il quinto pulsante di navigazione —
+   stesso ChatThread già in uso nell'accordion Profilo, qui come destinazione
+   diretta invece che una sezione da aprire tra le altre. */
+function ChatScreen({ supabase, userId, accent }) {
+  return (
+    <div className="card">
+      <p className="h1 mb-1">Chat con il coach</p>
+      <p className="body mb-4" style={{ color: "var(--ink-2)" }}>
+        Scrivi feedback, aggiornamenti, o manda foto, video, vocali e file — come su WhatsApp.
+      </p>
+      <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} />
+    </div>
+  );
+}
 
 // Caricati solo quando servono davvero (React.lazy → chunk separato), non
 // nel bundle iniziale: sono schermate secondarie (CoachDashboard esiste solo
@@ -208,6 +231,7 @@ export default function App() {
 
   const accent = accentFor(gender, dark);
   const isCoach = (session?.user?.email || "").trim().toLowerCase() === COACH_EMAIL;
+  const hasCoachChat = REAL_COACHING_PLANS.has(userPlan);
 
   const stripePlanId =
     userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : "free";
@@ -275,6 +299,7 @@ export default function App() {
         dark={dark}
         userLabel={session.user.user_metadata?.full_name || session.user.email}
         userEmail={session.user.email || ""}
+        hasChat={!isCoach && hasCoachChat}
         tab={tab}
         onTabChange={setTab}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -331,6 +356,7 @@ export default function App() {
           // il nome di un cliente dentro il Pannello Coach (ClientDetail \u2192
           // tab "editor"), due percorsi per la stessa azione.
           coach: isCoach ? <CoachDashboard supabase={supabase} coachId={session.user.id} dark={dark} /> : null,
+          chat: hasCoachChat ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} /> : null,
         }}
       />
       </Suspense>
