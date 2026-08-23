@@ -35,7 +35,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import {
-  User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings, Moon, Sun,
+  User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, MessageCircle, Video,
 } from "lucide-react";
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, fetchExerciseRecords, fetchFavoriteExercises, saveFavoriteExercises, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchUnreadChatCount } from "../lib/coachingData.js";
@@ -1446,7 +1446,7 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
 }
 
 export function SettingsDrawer({
-  open, onClose, dark, onToggleDark, accent, accentText, gender, lang, onChangeLang,
+  open, onClose, dark, accent, accentText, gender, lang, onChangeLang,
   currentPlan, planRenewsOn, accountEmail,
   notifications, onToggleNotification,
   onOpenBillingPortal, onChangePlan, onDeleteAccount, onLogout,
@@ -1609,24 +1609,6 @@ export function SettingsDrawer({
           {/* ---------------- ASPETTO ---------------- */}
           {tab === "aspetto" && (
             <div className="spring-in">
-              <button onClick={onToggleDark} className="card w-full flex items-center justify-between gap-3 mb-3">
-                <span className="flex items-center gap-2.5">
-                  {dark ? <Moon size={17} style={{ color: accent }} /> : <Sun size={17} style={{ color: accent }} />}
-                  {dark ? (
-                    <GradientText gender={gender} style={{ fontWeight: 700 }}>{t.darkModeOnyx}</GradientText>
-                  ) : (
-                    <span style={{ fontWeight: 700, color: "var(--ink)" }}>{t.darkModeOnyx}</span>
-                  )}
-                </span>
-                <span className="relative rounded-full transition-all duration-300"
-                      style={{ width: 48, height: 28, backgroundColor: dark ? accent : "var(--surface-2)",
-                               border: dark ? "none" : "1px solid var(--line)" }}>
-                  <span className="absolute rounded-full transition-all duration-300"
-                        style={{ width: 22, height: 22, top: 3, left: dark ? 23 : 3,
-                                 backgroundColor: "#FFFFFF", boxShadow: "0 2px 6px rgba(0,0,0,0.22)" }} />
-                </span>
-              </button>
-
               <Toggle on={soundOn} onClick={toggleSound} label="Suoni leggeri"
                 desc="Un piccolo suono discreto quando guadagni XP o sblocchi un trofeo — spento di default." />
 

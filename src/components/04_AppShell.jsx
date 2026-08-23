@@ -698,8 +698,7 @@ function LiveBackground({ gender, dark }) {
 
 export function AppShell({
   gender = "M",
-  dark = false,
-  onToggleDark,
+  dark = true,
   userLabel,
   userEmail = "",        // usata SOLO per determinare l'accesso al Coach Panel
   tab,
@@ -711,14 +710,6 @@ export function AppShell({
 
   /* Confronto case-insensitive e senza spazi accidentali: unico varco. */
   const isCoach = userEmail.trim().toLowerCase() === COACH_EMAIL;
-
-  /* Il tema segue anche la preferenza di sistema al primo avvio */
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia || dark) return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    if (mq.matches && onToggleDark) onToggleDark(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   /* Se un utente non-coach si ritrova su tab "coach" (link diretto, stato
      residuo, manomissione client-side...) lo si riporta su Home invece di
