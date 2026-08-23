@@ -136,8 +136,13 @@ export function DesignSystem() {
         position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%;
         filter: blur(32px); will-change: transform;
       }
-      .live-bg-blob-1 { top: -10%; right: -20%; animation: liveBgDrift1 26s ease-in-out infinite; }
-      .live-bg-blob-2 { bottom: -25%; left: -20%; animation: liveBgDrift2 32s ease-in-out infinite; }
+      /* Due animazioni per macchia, su proprietà diverse (non in conflitto):
+         "drift" muove/scala la posizione, "hue" fa scivolare lentamente la
+         tonalità del colore (oro↔rosa/ambra) — così lo sfondo non è solo
+         una macchia che si sposta ma una luce che cambia davvero nel tempo,
+         restando dentro alla stessa famiglia di colore (mai verde/blu). */
+      .live-bg-blob-1 { top: -10%; right: -20%; animation: liveBgDrift1 26s ease-in-out infinite, liveBgHue1 19s ease-in-out infinite; }
+      .live-bg-blob-2 { bottom: -25%; left: -20%; animation: liveBgDrift2 32s ease-in-out infinite, liveBgHue2 23s ease-in-out infinite; }
       @keyframes liveBgDrift1 {
         0%, 100% { transform: translate(0, 0) scale(1); }
         50% { transform: translate(-6%, 6%) scale(1.08); }
@@ -145,6 +150,14 @@ export function DesignSystem() {
       @keyframes liveBgDrift2 {
         0%, 100% { transform: translate(0, 0) scale(1); }
         50% { transform: translate(6%, -6%) scale(1.1); }
+      }
+      @keyframes liveBgHue1 {
+        0%, 100% { filter: blur(32px) hue-rotate(0deg) saturate(1); }
+        50% { filter: blur(32px) hue-rotate(-22deg) saturate(1.25); }
+      }
+      @keyframes liveBgHue2 {
+        0%, 100% { filter: blur(32px) hue-rotate(0deg) saturate(1); }
+        50% { filter: blur(32px) hue-rotate(22deg) saturate(1.25); }
       }
       @media (prefers-reduced-motion: reduce) {
         .live-bg-blob-1, .live-bg-blob-2 { animation: none; }

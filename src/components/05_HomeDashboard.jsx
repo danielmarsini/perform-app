@@ -1687,6 +1687,60 @@ export function HomeDashboard({
   const [recoveryOverride, setRecoveryOverride] = useState(null);
   const [activeRingPopup, setActiveRingPopup] = useState(null);
   const [selectedCalendarIso, setSelectedCalendarIso] = useState(null); // null = oggi
+  // Diario Alimentazione di un giorno PASSATO cliccato sulla striscia
+  // calendario (NutritionCalendarStrip) — stesso principio di
+  // selectedCalendarIso/CalendarDayReadOnlyView per l'Allenamento, ma qui
+  // modificabile (aggiungi/rimuovi alimenti) invece che sola lettura: serve
+  // proprio a correggere un pasto dimenticato in un giorno già passato.
+  const [selectedNutritionIso, setSelectedNutritionIso] = useState(null); // null = oggi
+  const [pastMeals, setPastMeals] = useState(null);
+  const [pastMealsLoading, setPastMealsLoading] = useState(false);
+  useEffect(() => {
+    if (!selectedNutritionIso) { setPastMeals(null); return; }
+    if (!supabase || !userId) { setPastMeals(MEAL_SLOTS.reduce((a, s) => ({ ...a, [s.id]: [] }), {})); return; }
+    let cancelled = false;
+    setPastMealsLoading(true);
+    fetchNutritionLogsForDate(supabase, userId, selectedNutritionIso)
+      .then((rows) => {
+        if (cancelled) return;
+        const bySlot = MEAL_SLOTS.reduce((a, s) => ({ ...a, [s.id]: [] }), {});
+        rows.forEach((r) => {
+          if (!bySlot[r.meal_slot]) bySlot[r.meal_slot] = [];
+          bySlot[r.meal_slot].push({ id: r.id, name: r.name, grams: r.grams, kcal: r.kcal, p: r.protein, c: r.carbs, f: r.fat });
+        });
+        setPastMeals(bySlot);
+      })
+      .catch((err) => {
+        console.error("PERFORM: errore lettura diario giorno passato", err);
+        if (!cancelled) setPastMeals(MEAL_SLOTS.reduce((a, s) => ({ ...a, [s.id]: [] }), {}));
+      })
+      .finally(() => { if (!cancelled) setPastMealsLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedNutritionIso, supabase, userId]);
+  const addFoodForPastDay = (slot, item) => {
+    if (!selectedNutritionIso) return;
+    const localItem = { ...item };
+    setPastMeals((m) => ({ ...(m || {}), [slot]: [...((m || {})[slot] || []), localItem] }));
+    if (supabase && userId) {
+      addNutritionLogItem(supabase, userId, selectedNutritionIso, slot, item)
+        .then((saved) => {
+          setPastMeals((m) => ({ ...(m || {}), [slot]: ((m || {})[slot] || []).map((it) => (it === localItem ? { ...it, id: saved.id } : it)) }));
+        })
+        .catch((err) => console.error("PERFORM: errore salvataggio pasto giorno passato", err));
+    }
+  };
+  const removeFoodForPastDay = (slot, index) => {
+    setPastMeals((m) => {
+      const item = (m || {})[slot]?.[index];
+      if (supabase && userId && item?.id) {
+        removeNutritionLogItem(supabase, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto giorno passato", err));
+      }
+      return { ...(m || {}), [slot]: ((m || {})[slot] || []).filter((_, i) => i !== index) };
+    });
+  };
+  // Uscendo da Alimentazione si riparte sempre da "oggi" al prossimo ingresso,
+  // invece di restare bloccati sull'ultimo giorno passato corretto.
+  useEffect(() => { if (screen !== "nutrition") setSelectedNutritionIso(null); }, [screen]);
   const [, forceMidnightTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => forceMidnightTick((n) => n + 1), 60000); // ricontrolla ogni minuto
@@ -2243,89 +2297,124 @@ export function HomeDashboard({
         <XpToastBanner toast={xpToast} />
         {back("Alimentazione")}
 
-        {/* I tuoi target + Idratazione: in cima, compatti e affiancati — non
-            più un box grande "Rimanenti oggi" seguito da un tab separato "I
-            Miei Target" più sotto. "Modifica"/"Dettagli" espande il pannello
-            completo (calcolo con le formule, o sola lettura se Full Coaching)
-            qui sotto, senza lasciare la pagina. */}
-        <div className="grid grid-cols-2 gap-3 mb-5">
-          <div className="card">
-            <p className="label mb-1.5">I tuoi target · oggi</p>
-            {/* consumato/target per ciascun valore, non più solo "rimanenti":
-                il numero a sinistra (consumato) sale con calcolo preciso ad
-                ogni alimento aggiunto — stessa fonte (consumed) del diario. */}
-            <p className="font-data mb-1.5" style={{ fontSize: "1.15rem", fontWeight: 800, color: accent }}>
-              {consumed.kcal}<span style={{ fontSize: "0.85rem", fontWeight: 600, opacity: 0.75 }}>/{target.kcal}</span>
-              <span className="meta" style={{ fontSize: "0.62rem", fontWeight: 600, marginLeft: 4 }}>kcal consumate</span>
-            </p>
-            {/* un macro per riga: affiancati andavano a capo male su schermi
-                stretti (spaginava), qui ogni riga sta sempre su una colonna. */}
-            <div className="space-y-0.5 font-data mb-2.5" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
-              <p style={{ color: MACRO_COLORS.p.base }}>Proteine {consumed.p}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.p}g</span></p>
-              <p style={{ color: MACRO_COLORS.c.base }}>Carboidrati {consumed.c}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.c}g</span></p>
-              <p style={{ color: MACRO_COLORS.f.base }}>Grassi {consumed.f}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.f}g</span></p>
+        {/* Striscia calendario: come su Allenamento, per tornare su un giorno
+            passato e aggiungere un pasto dimenticato. Oro/Rosa (Giorno ON,
+            allenamento) o superficie neutra (Giorno OFF, riposo) — stesso
+            weekPlan usato per isTrainingDay/i target di oggi. */}
+        <NutritionCalendarStrip weekPlan={weekPlan} selectedIso={selectedNutritionIso} onSelectIso={setSelectedNutritionIso} accent={accent} />
+
+        {selectedNutritionIso ? (
+          <div className="rounded-2xl px-4 py-3 mb-5 flex items-center justify-between gap-3"
+               style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+            <div>
+              <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700, textTransform: "capitalize" }}>
+                {new Date(selectedNutritionIso).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
+              </p>
+              <p className="meta mt-0.5">{weekPlan[isoWeekdayOf(new Date(selectedNutritionIso))] ? "🏋️ Giorno ON — Allenamento" : "🧘 Giorno OFF — Riposo"}</p>
             </div>
-            <button onClick={() => setTargetsOpen((v) => !v)}
-              className="w-full rounded-full px-3 py-2 text-xs transition-transform active:scale-[0.98]"
-              style={{ backgroundColor: targetsOpen ? "var(--ink)" : "var(--surface-2)",
-                       color: targetsOpen ? "var(--page)" : "var(--ink-2)",
-                       border: targetsOpen ? "none" : "1px solid var(--line)", fontWeight: 600 }}>
-              {targetsOpen ? "Chiudi" : targetIsCoachSet ? "Dettagli" : "Modifica"}
+            <button onClick={() => setSelectedNutritionIso(null)}
+              className="shrink-0 rounded-full px-3.5 py-2 text-xs"
+              style={{ backgroundColor: "var(--ink)", color: "var(--page)", fontWeight: 600 }}>
+              Torna a oggi
             </button>
           </div>
-
-          <div className="card">
-            <p className="label mb-1.5">Idratazione</p>
-            <div className="flex items-center gap-2.5">
-              <button onClick={() => { haptic("tap"); onAddWater(); }} aria-label="Aggiungi 250 ml"
-                      className="relative rounded-xl overflow-hidden shrink-0 transition-transform active:scale-95"
-                      style={{ width: 40, height: 62,
-                               background: "linear-gradient(145deg, var(--surface-2) 0%, var(--surface) 100%)",
-                               border: "2px solid var(--line)",
-                               boxShadow: "inset 0 2px 4px rgba(255,255,255,0.5), 0 6px 16px rgba(0,0,0,0.12)" }}>
-                <span className="water-wave absolute left-0 right-0 bottom-0"
-                      style={{ height: `${Math.min(100, (water / waterTarget) * 100)}%`,
-                               background: water >= waterTarget
-                                 ? `linear-gradient(180deg, ${accentSoft} 0%, ${accent} 100%)`
-                                 : "linear-gradient(180deg, #BFD9E8 0%, #7FB3D0 100%)",
-                               transition: "height 0.5s cubic-bezier(0.22,1,0.36,1)" }} />
-                <span className="absolute inset-0 flex items-center justify-center">
-                  <Droplets size={15} style={{ color: water >= waterTarget ? "#111111" : "#4A6B7C" }} />
-                </span>
-              </button>
-              <div className="min-w-0">
-                <p className="font-data" style={{ color: "var(--ink)", fontSize: "1.05rem", fontWeight: 700 }}>
-                  {(water / 1000).toFixed(2)} L
+        ) : (
+          <>
+            {/* I tuoi target + Idratazione: in cima, compatti e affiancati — non
+                più un box grande "Rimanenti oggi" seguito da un tab separato "I
+                Miei Target" più sotto. "Modifica"/"Dettagli" espande il pannello
+                completo (calcolo con le formule, o sola lettura se Full Coaching)
+                qui sotto, senza lasciare la pagina. */}
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="card">
+                <p className="label mb-1.5">I tuoi target · oggi</p>
+                {/* consumato/target per ciascun valore, non più solo "rimanenti":
+                    il numero a sinistra (consumato) sale con calcolo preciso ad
+                    ogni alimento aggiunto — stessa fonte (consumed) del diario. */}
+                <p className="font-data mb-1.5" style={{ fontSize: "1.15rem", fontWeight: 800, color: accent }}>
+                  {consumed.kcal}<span style={{ fontSize: "0.85rem", fontWeight: 600, opacity: 0.75 }}>/{target.kcal}</span>
+                  <span className="meta" style={{ fontSize: "0.62rem", fontWeight: 600, marginLeft: 4 }}>kcal consumate</span>
                 </p>
-                <p className="meta" style={{ fontSize: "0.65rem" }}>/ {(waterTarget / 1000).toFixed(1)} L</p>
+                {/* un macro per riga: affiancati andavano a capo male su schermi
+                    stretti (spaginava), qui ogni riga sta sempre su una colonna. */}
+                <div className="space-y-0.5 font-data mb-2.5" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
+                  <p style={{ color: MACRO_COLORS.p.base }}>Proteine {consumed.p}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.p}g</span></p>
+                  <p style={{ color: MACRO_COLORS.c.base }}>Carboidrati {consumed.c}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.c}g</span></p>
+                  <p style={{ color: MACRO_COLORS.f.base }}>Grassi {consumed.f}<span style={{ opacity: 0.6, fontWeight: 500 }}>/{target.f}g</span></p>
+                </div>
+                <button onClick={() => setTargetsOpen((v) => !v)}
+                  className="w-full rounded-full px-3 py-2 text-xs transition-transform active:scale-[0.98]"
+                  style={{ backgroundColor: targetsOpen ? "var(--ink)" : "var(--surface-2)",
+                           color: targetsOpen ? "var(--page)" : "var(--ink-2)",
+                           border: targetsOpen ? "none" : "1px solid var(--line)", fontWeight: 600 }}>
+                  {targetsOpen ? "Chiudi" : targetIsCoachSet ? "Dettagli" : "Modifica"}
+                </button>
+              </div>
+
+              <div className="card">
+                <p className="label mb-1.5">Idratazione</p>
+                <div className="flex items-center gap-2.5">
+                  <button onClick={() => { haptic("tap"); onAddWater(); }} aria-label="Aggiungi 250 ml"
+                          className="relative rounded-xl overflow-hidden shrink-0 transition-transform active:scale-95"
+                          style={{ width: 40, height: 62,
+                                   background: "linear-gradient(145deg, var(--surface-2) 0%, var(--surface) 100%)",
+                                   border: "2px solid var(--line)",
+                                   boxShadow: "inset 0 2px 4px rgba(255,255,255,0.5), 0 6px 16px rgba(0,0,0,0.12)" }}>
+                    <span className="water-wave absolute left-0 right-0 bottom-0"
+                          style={{ height: `${Math.min(100, (water / waterTarget) * 100)}%`,
+                                   background: water >= waterTarget
+                                     ? `linear-gradient(180deg, ${accentSoft} 0%, ${accent} 100%)`
+                                     : "linear-gradient(180deg, #BFD9E8 0%, #7FB3D0 100%)",
+                                   transition: "height 0.5s cubic-bezier(0.22,1,0.36,1)" }} />
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <Droplets size={15} style={{ color: water >= waterTarget ? "#111111" : "#4A6B7C" }} />
+                    </span>
+                  </button>
+                  <div className="min-w-0">
+                    <p className="font-data" style={{ color: "var(--ink)", fontSize: "1.05rem", fontWeight: 700 }}>
+                      {(water / 1000).toFixed(2)} L
+                    </p>
+                    <p className="meta" style={{ fontSize: "0.65rem" }}>/ {(waterTarget / 1000).toFixed(1)} L</p>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {targetsOpen && (
-          <div className="mb-5">
-            <NutritionTargetsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
-              targetOn={targetOn} targetOff={targetOff} onSetTargetOn={onSetTargetOn} onSetTargetOff={onSetTargetOff}
-              isTrainingDay={isTrainingDay} onToggleTrainingDay={onToggleTrainingDay}
-              waterTarget={waterTarget} onSetWaterTarget={onSetWaterTarget}
-              isPro={targetIsCoachSet} onUpgrade={onUpgrade} />
-          </div>
+            {targetsOpen && (
+              <div className="mb-5">
+                <NutritionTargetsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
+                  targetOn={targetOn} targetOff={targetOff} onSetTargetOn={onSetTargetOn} onSetTargetOff={onSetTargetOff}
+                  isTrainingDay={isTrainingDay} onToggleTrainingDay={onToggleTrainingDay}
+                  waterTarget={waterTarget} onSetWaterTarget={onSetWaterTarget}
+                  isPro={targetIsCoachSet} onUpgrade={onUpgrade} />
+              </div>
+            )}
+          </>
         )}
 
-        <NutritionTabs
-          accent={accent} accentSoft={accentSoft} accentText={accentText}
-          target={target} mealsBySlot={mealsBySlot} foods={foods}
-          mealGuide={mealGuide} substitutions={substitutions}
-          onAddFood={onAddFood} onRemoveFood={onRemoveFood} onOpenScanner={onOpenScanner} onAddCustomFood={onAddCustomFood}
-          onCopyYesterday={onCopyYesterday} onShoppingList={onShoppingList} supabase={supabase}
-          fullAccess={targetIsCoachSet}
-          subsAccess={userPlan === "performance_pack" || userPlan === "full_coaching"}
-          onUpgrade={onUpgrade}
-          userPlan={userPlan} gender={profile.gender} waterMl={water} microAddon={microAddon}
-          digestValue={digestValue}
-          onDigestChange={(v) => { setDigestValue(v); onCoachSync && onCoachSync({ type: "bio-symptom", symptom: "digest", value: v }); }}
-        />
+        {selectedNutritionIso && pastMealsLoading ? (
+          <div className="card text-center py-10">
+            <Loader2 size={22} className="mx-auto mb-2 animate-spin" style={{ color: accent }} />
+            <p className="body">Carico il diario di quel giorno…</p>
+          </div>
+        ) : (
+          <NutritionTabs
+            accent={accent} accentSoft={accentSoft} accentText={accentText}
+            target={target} mealsBySlot={selectedNutritionIso ? (pastMeals || {}) : mealsBySlot} foods={foods}
+            mealGuide={mealGuide} substitutions={substitutions}
+            onAddFood={selectedNutritionIso ? addFoodForPastDay : onAddFood}
+            onRemoveFood={selectedNutritionIso ? removeFoodForPastDay : onRemoveFood}
+            onOpenScanner={onOpenScanner} onAddCustomFood={onAddCustomFood}
+            onCopyYesterday={selectedNutritionIso ? null : onCopyYesterday} onShoppingList={onShoppingList} supabase={supabase}
+            fullAccess={targetIsCoachSet}
+            subsAccess={userPlan === "performance_pack" || userPlan === "full_coaching"}
+            onUpgrade={onUpgrade}
+            userPlan={userPlan} gender={profile.gender} waterMl={water} microAddon={microAddon}
+            digestValue={digestValue}
+            onDigestChange={(v) => { setDigestValue(v); onCoachSync && onCoachSync({ type: "bio-symptom", symptom: "digest", value: v }); }}
+            pastDayMode={!!selectedNutritionIso}
+          />
+        )}
       </div>
     );
   }
@@ -3616,7 +3705,52 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
   );
 }
 
+/* Stesso principio del calendario Allenamento (WorkoutCalendarStrip), qui per
+   l'Alimentazione: una striscia di giorni passati su cui tornare per
+   aggiungere un pasto dimenticato. Il colore distingue Giorno ON (allenamento,
+   target più alto) da Giorno OFF (riposo) — stesso weekPlan già usato per
+   calcolare isTrainingDay, niente doppia fonte di verità. Solo passato/oggi:
+   non si può registrare un pasto nel futuro. */
+function NutritionCalendarStrip({ weekPlan, selectedIso, onSelectIso, accent }) {
+  const scrollRef = useRef(null);
+  useDragScroll(scrollRef);
+  const todayMid = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+  const days = useMemo(() => Array.from({ length: 31 }, (_, i) => {
+    const d = new Date(todayMid); d.setDate(d.getDate() - (30 - i)); return d;
+  }), [todayMid]);
 
+  useEffect(() => {
+    const el = scrollRef.current?.querySelector('[data-today="1"]');
+    if (el) el.scrollIntoView({ inline: "center", block: "nearest" });
+  }, []);
+
+  return (
+    <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-2 mb-4" style={{ cursor: "grab" }}>
+      {days.map((d) => {
+        const iso = toLocalISODate(d);
+        const isToday = d.getTime() === todayMid.getTime();
+        const wd = isoWeekdayOf(d);
+        const isOn = !!weekPlan[wd];
+        const selected = selectedIso ? iso === selectedIso : isToday;
+
+        return (
+          <button key={iso} data-today={isToday ? "1" : "0"} onClick={() => onSelectIso(isToday ? null : iso)}
+                  className="shrink-0 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-transform active:scale-95"
+                  style={{ width: 52, height: 60,
+                           background: isOn ? "linear-gradient(135deg, var(--title-a), var(--title-b))" : "var(--surface)",
+                           border: `1.5px solid ${selected ? "var(--ink)" : isOn ? "transparent" : "var(--line)"}`,
+                           boxShadow: isToday ? `0 0 0 2px ${accent}` : "none" }}>
+            <span style={{ fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase", opacity: 0.85,
+                           color: isOn ? "#FFFFFF" : "var(--ink-2)" }}>
+              {WEEK_DAYS[wd]}
+            </span>
+            <span style={{ fontSize: "1.05rem", fontWeight: 800, color: isOn ? "#FFFFFF" : "var(--ink)" }}>{d.getDate()}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, gender, onUpgrade, onCoachSync }) {
   const [plates, setPlates] = useState(false);
@@ -5409,6 +5543,9 @@ function NutritionTabs({
   onAddFood, onRemoveFood, onOpenScanner, onAddCustomFood, onCopyYesterday, onShoppingList,
   fullAccess, subsAccess, onUpgrade,
   userPlan, gender, waterMl, microAddon, digestValue, onDigestChange, supabase,
+  pastDayMode, // true quando si sta correggendo un giorno passato (NutritionCalendarStrip):
+               // solo il Diario Libero ha senso qui, Sostituzioni/Dieta Tipo/Wiki non sono
+               // legate a una data e micronutrienti/check-in digestivo riguardano "oggi".
 }) {
   const [tab, setTab] = useState("diary");        // diary è il default
   const [openSlot, setOpenSlot] = useState(null);
@@ -5427,7 +5564,7 @@ function NutritionTabs({
   // stretto di "qualunque piano a pagamento"); Dieta Tipo, scritta dal
   // coach, solo Full Coaching (fullAccess) — visibili solo i tab a cui il
   // piano dà davvero accesso, non mostrati-ma-bloccati.
-  const visibleTabs = [
+  const visibleTabs = pastDayMode ? [["diary", "Diario Libero"]] : [
     ["diary", "Diario Libero"],
     ...(subsAccess ? [["subs", "Sostituzioni"]] : []),
     ...(fullAccess ? [["plan", "Dieta Tipo"]] : []),
@@ -5531,20 +5668,22 @@ function NutritionTabs({
 
   return (
     <>
-      <div className="grid gap-1.5 mb-5" style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}>
-        {visibleTabs.map(([id, lab]) => {
-          const on = tab === id;
-          return (
-            <button key={id} onClick={() => setTab(id)}
-              className="rounded-2xl px-1.5 py-3 transition-all duration-300"
-              style={on ? { backgroundColor: "var(--ink)", color: "var(--page)" }
-                        : { backgroundColor: "var(--surface)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
-              <span className="font-data block leading-tight" style={{ fontSize: "0.52rem", letterSpacing: "0.04em",
-                      textTransform: "uppercase", fontWeight: on ? 600 : 400 }}>{lab}</span>
-            </button>
-          );
-        })}
-      </div>
+      {!pastDayMode && (
+        <div className="grid gap-1.5 mb-5" style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}>
+          {visibleTabs.map(([id, lab]) => {
+            const on = tab === id;
+            return (
+              <button key={id} onClick={() => setTab(id)}
+                className="rounded-2xl px-1.5 py-3 transition-all duration-300"
+                style={on ? { backgroundColor: "var(--ink)", color: "var(--page)" }
+                          : { backgroundColor: "var(--surface)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                <span className="font-data block leading-tight" style={{ fontSize: "0.52rem", letterSpacing: "0.04em",
+                        textTransform: "uppercase", fontWeight: on ? 600 : 400 }}>{lab}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ---------------- DIARIO LIBERO ---------------- */}
       {tab === "diary" && (
@@ -5816,23 +5955,31 @@ function NutritionTabs({
             })}
           </div>
 
-        <MicronutrientGrid mealsBySlot={mealsBySlot} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} waterMl={waterMl} microAddon={microAddon} />
+        {/* Micronutrienti, upsell e check-in digestivo riguardano "oggi" (il
+            check-in in particolare è un dato biologico del momento, non del
+            giorno che si sta correggendo) — nascosti mentre si modifica un
+            giorno passato dalla striscia calendario. */}
+        {!pastDayMode && (
+          <>
+            <MicronutrientGrid mealsBySlot={mealsBySlot} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} waterMl={waterMl} microAddon={microAddon} />
 
-        {/* Non "!fullAccess" (che ora significa solo "non è Full Coaching"):
-            Scheda Personalizzata e Solo Allenamento Coaching hanno già un
-            coach vero, non ha senso proporgli di trovarne uno. Il nudge ha
-            senso solo per chi non ne ha nessuno. */}
-        {(userPlan === "free" || userPlan === "performance_pack") && (
-          <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
-            text="Registrare cosa mangi è il primo passo. Il secondo è sapere se sta davvero funzionando: fatti aiutare da un professionista del settore che legge il tuo diario e aggiusta il piano per te." />
+            {/* Non "!fullAccess" (che ora significa solo "non è Full Coaching"):
+                Scheda Personalizzata e Solo Allenamento Coaching hanno già un
+                coach vero, non ha senso proporgli di trovarne uno. Il nudge ha
+                senso solo per chi non ne ha nessuno. */}
+            {(userPlan === "free" || userPlan === "performance_pack") && (
+              <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
+                text="Registrare cosa mangi è il primo passo. Il secondo è sapere se sta davvero funzionando: fatti aiutare da un professionista del settore che legge il tuo diario e aggiusta il piano per te." />
+            )}
+
+            {/* ultima cosa del Diario Libero: check-in digestivo, facoltativo */}
+            <div className="card mt-4">
+              <p className="label mb-1">Ultima cosa</p>
+              <EmojiRating label="Digestione / Gonfiore" icon="🤢" emojis={DIGEST_EMOJIS}
+                value={digestValue} onChange={onDigestChange} />
+            </div>
+          </>
         )}
-
-        {/* ultima cosa del Diario Libero: check-in digestivo, facoltativo */}
-        <div className="card mt-4">
-          <p className="label mb-1">Ultima cosa</p>
-          <EmojiRating label="Digestione / Gonfiore" icon="🤢" emojis={DIGEST_EMOJIS}
-            value={digestValue} onChange={onDigestChange} />
-        </div>
         </div>
       )}
 
