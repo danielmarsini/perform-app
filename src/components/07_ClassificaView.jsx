@@ -700,7 +700,11 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
         .pc-mode-onyx {
           --pc-bg: #09090B;
-          --pc-glass-bg: rgba(24, 24, 27, 0.4);
+          /* Prima 0.4: con lo sfondo condiviso ora visibile dietro (vedi
+             .pc-root sopra), un vetro così trasparente faceva sembrare le
+             card dello stesso colore dello sfondo vivo — stesso bug già
+             risolto in News&Tips/04_AppShell.jsx, stessa correzione qui. */
+          --pc-glass-bg: rgba(24, 24, 27, 0.94);
           --pc-glass-border: rgba(63, 63, 70, 0.3);
           --pc-track-bg: rgba(255, 255, 255, 0.05);
           --pc-text-primary: #F4F4F5;
@@ -712,7 +716,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
         .pc-mode-light {
           --pc-bg: #FAFAF9;
-          --pc-glass-bg: rgba(255, 255, 255, 0.4);
+          --pc-glass-bg: rgba(255, 255, 255, 0.94);
           --pc-glass-border: rgba(228, 228, 231, 0.55);
           --pc-track-bg: rgba(24, 24, 27, 0.06);
           --pc-text-primary: #18181B;
@@ -735,13 +739,19 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         .pc-root, .pc-root * { font-family: var(--pc-sans) !important; box-sizing: border-box; }
 
         .pc-root {
-          background: var(--pc-bg);
+          /* BUG PRESO: dipingeva var(--pc-bg) qui, un nero/bianco pieno che
+             copriva del tutto lo sfondo animato condiviso (LiveBackground in
+             04_AppShell.jsx) — la schermata sembrava un rettangolo piatto
+             isolato invece che le altre pagine, dove lo sfondo vivo si vede
+             sempre dietro alle card. Trasparente: lo sfondo condiviso torna
+             visibile, coerente col resto dell'app. */
+          background: transparent;
           color: var(--pc-text-primary);
           min-height: 100vh;
           padding: 18px 18px 152px;
           position: relative;
           overflow-x: hidden;
-          transition: background-color 0.25s ease, color 0.25s ease;
+          transition: color 0.25s ease;
         }
 
         .pc-shine-text {

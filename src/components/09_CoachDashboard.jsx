@@ -41,7 +41,12 @@ export const GlobalStyle = () => (
       --surface: #FFFFFF; --surface-2: #FCFCFD; --ink: #1A1A1A; --ink-soft: #A1A1AA; --ink-tertiary: #6C757D;
       --line: rgba(17,17,17,0.05); --line-strong: #F1F3F5; --card-shadow: 0 8px 30px rgba(0,0,0,0.02);
       --page-bg: #F8F9FA; --pill-off-bg: #FFFFFF;
-      background-color: var(--page-bg); min-height: 100vh; transition: background-color 0.25s ease;
+      /* BUG PRESO: dipingeva var(--page-bg), un pieno grigio/nero che copriva
+         del tutto lo sfondo animato condiviso (LiveBackground in
+         04_AppShell.jsx) — il pannello coach sembrava un rettangolo piatto a
+         sé, non una schermata dell'app come le altre. Trasparente: lo sfondo
+         vivo torna visibile dietro alle card, coerente col resto dell'app. */
+      background-color: transparent; min-height: 100vh;
     }
     /* MODALITÀ ONYX — vero tema scuro attivabile dal toggle in cima, non solo
        decorativo: tutte le superfici (card, input, bordi, testo secondario)
@@ -55,9 +60,12 @@ export const GlobalStyle = () => (
     .coach-root.dark .c-ghost:hover { background-color: #27272A; }
     .coach-root.dark .t-input:focus { border-color: #C5A059; }
     /* Le 3 card del Fatturato (MRR/Annuale/Transazioni): vetro satinato che
-       deve scurirsi davvero in Onyx, non restare bianco con testo che sparisce. */
-    .coach-root { --glass-bg: rgba(255,255,255,0.6); --glass-border: rgba(255,255,255,0.8); }
-    .coach-root.dark { --glass-bg: rgba(24,24,27,0.55); --glass-border: rgba(255,255,255,0.1); }
+       deve scurirsi davvero in Onyx, non restare bianco con testo che sparisce.
+       Quasi piene (0.94, non più 0.6/0.55): ora che .coach-root è trasparente
+       e lo sfondo vivo si vede dietro, un vetro troppo trasparente le farebbe
+       sembrare dello stesso colore dello sfondo. */
+    .coach-root { --glass-bg: rgba(255,255,255,0.94); --glass-border: rgba(255,255,255,0.8); }
+    .coach-root.dark { --glass-bg: rgba(24,24,27,0.94); --glass-border: rgba(255,255,255,0.1); }
     /* Titoli grandi: bold geometrico, tracking stretto, effetto "vivo
        cangiante" — valori reali già approvati in ClientProfileView.jsx:
        Oro Lucido Vivo per profili maschili, Rosa Cipria per femminili. */
@@ -4428,6 +4436,10 @@ function predictiveBadge(client, history) {
   const sorted = [...history].sort((a, b) => (a.date < b.date ? 1 : -1));
   if (sorted.length < 3) return null;
   const today = sorted[0], twoWeeksAgo = sorted[2];
+  // Peso/vita ora facoltativi nel check: senza guardia qui, un check "solo
+  // sensazioni" (peso/vita null) veniva letto come 0 nella sottrazione e
+  // poteva far scattare un badge di ricomposizione/stallo del tutto falso.
+  if (today.weight == null || twoWeeksAgo.weight == null || today.waistCm == null || twoWeeksAgo.waistCm == null) return null;
   const dWeight = today.weight - twoWeeksAgo.weight;
   const dWaist = today.waistCm - twoWeeksAgo.waistCm;
   const weightStable = Math.abs(dWeight) <= 0.3;
@@ -4569,7 +4581,13 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
           dolori: c.pain, stress: c.stress, digestione: c.digestion, sonno: c.sleep_quality,
           cyclePhase: c.cycle_phase,
         })));
-        setRealHistory(mapped.filter((h) => h.weight != null));
+        // BUG PRESO: filtrava via ogni check senza peso — utile finché il
+        // peso era obbligatorio, ma ora che il check settimanale lo lascia
+        // facoltativo (contano soprattutto le sensazioni) un check "solo
+        // sensazioni/foto" spariva del tutto dal Registro Check del coach,
+        // foto comprese. Restano tutti i check reali; i pannelli sotto
+        // gestiscono già il peso assente con "—" invece di un numero finto.
+        setRealHistory(mapped);
       })
       .catch((err) => { console.error("PERFORM: errore caricamento check reali (coach)", err); setRealHistory([]); });
   }, [isRealMode, isPaidCoaching, supabase, client.id]);
@@ -4578,8 +4596,12 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
   const history = isRealMode ? (realHistory ?? []) : demoHistory;
   const sorted = [...history].sort((a, b) => (a.date < b.date ? 1 : -1));
   const latest = sorted[0], previous = sorted[1];
-  const avg5 = average(history.slice(-5).map((h) => h.weight));
-  const delta = previous ? latest.weight - previous.weight : 0;
+  // Peso facoltativo nel check: media e delta si calcolano solo sui check
+  // che hanno davvero un peso, altrimenti un check "solo sensazioni"
+  // conterebbe come 0 kg e falserebbe entrambi i numeri.
+  const weighedHistory = history.filter((h) => h.weight != null);
+  const avg5 = weighedHistory.length ? average(weighedHistory.slice(-5).map((h) => h.weight)) : null;
+  const delta = (previous && latest.weight != null && previous.weight != null) ? latest.weight - previous.weight : null;
   const badge = latest ? predictiveBadge(client, history) : null;
 
   const registerCheck = async () => {
@@ -4653,15 +4675,17 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
         <div className="grid grid-cols-4 gap-2.5 mb-4">
           <div className="t-inner px-3 py-2 text-center">
             <p className="c-label mb-0.5">Ultimo check</p>
-            <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{latest.weight} kg</p>
+            <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{latest.weight != null ? `${latest.weight} kg` : "—"}</p>
           </div>
           <div className="t-inner px-3 py-2 text-center">
             <p className="c-label mb-0.5">vs prec.</p>
-            <p className="font-data text-sm font-bold" style={{ color: delta <= 0 ? "#10B981" : "#F0A020" }}>{delta > 0 ? "+" : ""}{delta.toFixed(1)} kg</p>
+            <p className="font-data text-sm font-bold" style={{ color: delta == null ? "var(--ink-soft)" : delta <= 0 ? "#10B981" : "#F0A020" }}>
+              {delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} kg`}
+            </p>
           </div>
           <div className="t-inner px-3 py-2 text-center">
             <p className="c-label mb-0.5">Media 5w</p>
-            <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{avg5.toFixed(1)} kg</p>
+            <p className="font-data text-sm font-bold" style={{ color: "var(--ink)" }}>{avg5 != null ? `${avg5.toFixed(1)} kg` : "—"}</p>
           </div>
           <div className="t-inner px-3 py-2 text-center">
             <p className="c-label mb-0.5">Vita</p>
@@ -4715,12 +4739,12 @@ function CheckDetail({ client, quickTargets, setQuickTargets, onSwitchToEditor }
         <div className="space-y-1.5">
           {sorted.map((h, i) => {
             const prev = sorted[i + 1];
-            const d = prev ? h.weight - prev.weight : 0;
+            const d = (prev && h.weight != null && prev.weight != null) ? h.weight - prev.weight : null;
             return (
               <div key={h.id} className="t-inner px-3 py-2 flex items-center justify-between gap-2">
                 <span className="font-data text-xs" style={{ color: "var(--ink-soft)" }}>{h.date}</span>
-                <span className="font-data text-xs font-bold" style={{ color: "var(--ink)" }}>{h.weight} kg</span>
-                <span className="font-data text-xs" style={{ color: d <= 0 ? "#10B981" : "#F0A020" }}>{prev ? `${d > 0 ? "+" : ""}${d.toFixed(1)}` : "—"}</span>
+                <span className="font-data text-xs font-bold" style={{ color: "var(--ink)" }}>{h.weight != null ? `${h.weight} kg` : "—"}</span>
+                <span className="font-data text-xs" style={{ color: d == null ? "var(--ink-tertiary)" : d <= 0 ? "#10B981" : "#F0A020" }}>{d != null ? `${d > 0 ? "+" : ""}${d.toFixed(1)}` : "—"}</span>
                 <span className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>{h.waistCm != null ? `${h.waistCm} cm` : "—"}</span>
                 <span className="text-xs" title="Foto disponibili">{h.hasPhotos ? "📷" : "—"}</span>
               </div>

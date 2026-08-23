@@ -1222,16 +1222,24 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
     });
   };
 
+  // Circonferenze/peso non sono più obbligatori nel check del lunedì: quello
+  // che conta davvero ogni settimana sono le sensazioni (dolori, stress,
+  // digestione, sonno), che l'app non può dedurre da sola — misure e foto
+  // restano facoltative, da compilare solo se il cliente vuole monitorarle o
+  // se il coach le richiede privatamente quella settimana.
   const canSubmit = isFreeMode
     ? !!weight
-    : weight && waist && thigh && arm && pain && stress && digestion && sleepQuality;
+    : !!(pain && stress && digestion && sleepQuality);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSaving(true);
     setSaveError("");
     const data = {
-      weight: Number(weight), waist: waist ? Number(waist) : null, thigh: thigh ? Number(thigh) : null, arm: arm ? Number(arm) : null,
+      // BUG PRESO: weight era sempre Number(weight) anche a campo vuoto —
+      // Number("") è 0, quindi un check senza peso (ora possibile) salvava
+      // un falso "0 kg" invece di lasciarlo assente.
+      weight: weight ? Number(weight) : null, waist: waist ? Number(waist) : null, thigh: thigh ? Number(thigh) : null, arm: arm ? Number(arm) : null,
       pain: pain ? Number(pain) : null, stress: stress ? Number(stress) : null, digestion: digestion ? Number(digestion) : null,
       sleepQuality: sleepQuality ? Number(sleepQuality) : null,
       cyclePhase: cyclePhase || null,
@@ -1287,36 +1295,37 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           <p className="body mb-4">
             {onClose
               ? "Registra misure e stato del momento quando vuoi, non solo il lunedì: ogni check in più affina il trend che vedi qui e che vede il coach."
-              : "Nuova settimana: registra le misure e rispondi a quello che l'app non può dedurre da sola da " +
-                "ciò che hai già tracciato durante la settimana. Serve tutto al coach per calibrare dieta e " +
-                "allenamento sui tuoi progressi reali."}
+              : "Nuova settimana: dimmi come va — dolori, stress, digestione, sonno — quello che l'app non può " +
+                "dedurre da sola da ciò che hai già tracciato durante la settimana. Peso, circonferenze e foto " +
+                "sono facoltativi: aggiungili solo se vuoi tenerli d'occhio o se te li chiedo io privatamente."}
           </p>
 
           <div className="on-light rounded-2xl px-4 py-3 mb-4" style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
             <p className="text-sm leading-relaxed" style={{ fontWeight: 500 }}>
-              📏 Misura peso e circonferenze preferibilmente al mattino, a digiuno, dopo essere andato/a
-              in bagno: sono le condizioni in cui i numeri sono più confrontabili da una settimana all'altra.
+              📏 Peso e circonferenze sono facoltativi. Se decidi di misurarli, fallo preferibilmente al mattino, a
+              digiuno, dopo essere andato/a in bagno: sono le condizioni in cui i numeri sono più confrontabili da
+              una settimana all'altra.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 mb-5">
             <label className="block">
-              <span className="label block mb-1.5">Peso mattina (kg)</span>
+              <span className="label block mb-1.5">Peso mattina (kg){isFreeMode ? "" : " (facoltativo)"}</span>
               <input type="text" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value.replace(",", "."))}
                      placeholder="es. 78.4" className="input w-full px-4 py-3 font-data" />
             </label>
             <label className="block">
-              <span className="label block mb-1.5">Addome (cm){isFreeMode ? " (facoltativo)" : ""}</span>
+              <span className="label block mb-1.5">Addome (cm) (facoltativo)</span>
               <input type="text" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value.replace(",", "."))}
                      placeholder="es. 84" className="input w-full px-4 py-3 font-data" />
             </label>
             <label className="block">
-              <span className="label block mb-1.5">Coscia (cm){isFreeMode ? " (facoltativo)" : ""}</span>
+              <span className="label block mb-1.5">Coscia (cm) (facoltativo)</span>
               <input type="text" inputMode="decimal" value={thigh} onChange={(e) => setThigh(e.target.value.replace(",", "."))}
                      placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
             </label>
             <label className="block">
-              <span className="label block mb-1.5">Braccio (cm){isFreeMode ? " (facoltativo)" : ""}</span>
+              <span className="label block mb-1.5">Braccio (cm) (facoltativo)</span>
               <input type="text" inputMode="decimal" value={arm} onChange={(e) => setArm(e.target.value.replace(",", "."))}
                      placeholder="es. 37" className="input w-full px-4 py-3 font-data" />
             </label>
@@ -1368,7 +1377,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           )}
           {gender !== "F" && <div className="mb-1" />}
 
-          <p className="label mb-2">Foto (fronte, lato, retro)</p>
+          <p className="label mb-2">Foto (fronte, lato, retro) (facoltative)</p>
           <div className="grid grid-cols-3 gap-2 mb-5">
             {[["front", "Fronte"], ["side", "Lato"], ["back", "Retro"]].map(([key, lab]) => (
               <label key={key}
@@ -1400,7 +1409,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           )}
           {!canSubmit && (
             <p className="meta mt-2 text-center" style={{ fontSize: "0.68rem" }}>
-              {isFreeMode ? "Inserisci almeno il peso per registrare." : "Compila tutti i campi (le foto sono facoltative) per sbloccare l'app."}
+              {isFreeMode ? "Inserisci almeno il peso per registrare." : "Valuta dolori, stress, digestione e sonno per registrare (peso, circonferenze e foto sono facoltativi)."}
             </p>
           )}
         </div>
@@ -2335,19 +2344,42 @@ export function HomeDashboard({
         <NutritionCalendarStrip weekPlan={weekPlan} selectedIso={selectedNutritionIso} onSelectIso={setSelectedNutritionIso} accent={accent} />
 
         {selectedNutritionIso ? (
-          <div className="rounded-2xl px-4 py-3 mb-5 flex items-center justify-between gap-3"
-               style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-            <div>
-              <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700, textTransform: "capitalize" }}>
-                {new Date(selectedNutritionIso).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
-              </p>
-              <p className="meta mt-0.5">{weekPlan[isoWeekdayOf(new Date(selectedNutritionIso))] ? "🏋️ Giorno ON — Allenamento" : "🧘 Giorno OFF — Riposo"}</p>
+          <div className="rounded-2xl px-4 py-3.5 mb-5" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700, textTransform: "capitalize" }}>
+                  {new Date(selectedNutritionIso).toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
+                </p>
+                <p className="meta mt-0.5">{weekPlan[isoWeekdayOf(new Date(selectedNutritionIso))] ? "🏋️ Giorno ON — Allenamento" : "🧘 Giorno OFF — Riposo"}</p>
+              </div>
+              <button onClick={() => setSelectedNutritionIso(null)}
+                className="shrink-0 rounded-full px-3.5 py-2 text-xs"
+                style={{ backgroundColor: "var(--ink)", color: "var(--page)", fontWeight: 600 }}>
+                Torna a oggi
+              </button>
             </div>
-            <button onClick={() => setSelectedNutritionIso(null)}
-              className="shrink-0 rounded-full px-3.5 py-2 text-xs"
-              style={{ backgroundColor: "var(--ink)", color: "var(--page)", fontWeight: 600 }}>
-              Torna a oggi
-            </button>
+            {/* Totale calorie/macro DI QUEL GIORNO (non di oggi): ricalcolato a
+                ogni render dai pastMeals già in stato, quindi sempre preciso
+                quando si aggiunge/toglie/modifica un alimento — nessuna cache
+                separata da tenere sincronizzata. */}
+            {(() => {
+              const dayTotals = Object.values(pastMeals || {}).flat().reduce(
+                (a, i) => ({ kcal: a.kcal + (i.kcal || 0), p: a.p + (i.p || 0), c: a.c + (i.c || 0), f: a.f + (i.f || 0) }),
+                { kcal: 0, p: 0, c: 0, f: 0 }
+              );
+              return (
+                <div className="pt-3" style={{ borderTop: "1px solid var(--line)" }}>
+                  <p className="font-data mb-1.5" style={{ fontSize: "1.05rem", fontWeight: 800, color: accent }}>
+                    {dayTotals.kcal}<span className="meta" style={{ fontSize: "0.62rem", fontWeight: 600, marginLeft: 4 }}>kcal totali quel giorno</span>
+                  </p>
+                  <div className="flex gap-3 font-data" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
+                    <span style={{ color: MACRO_COLORS.p.base }}>P {dayTotals.p}g</span>
+                    <span style={{ color: MACRO_COLORS.c.base }}>C {dayTotals.c}g</span>
+                    <span style={{ color: MACRO_COLORS.f.base }}>G {dayTotals.f}g</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <>
