@@ -1388,7 +1388,7 @@ function WorkoutFeedbackCard({ motivation, fatigue, onMotivationChange, onFatigu
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
    parametri biometrici storici su Supabase (legati all'ID utente) e sblocca
    di nuovo la navigazione della Home. */
-export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose }) {
+export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose, onSkip, fullCheckDue }) {
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
   const [thigh, setThigh] = useState("");
@@ -1409,6 +1409,11 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
   // richiedeva TUTTI gli 8 campi anche qui, ed è il motivo per cui il
   // pulsante sembrava "non funzionare": restava disabilitato in silenzio.
   const isFreeMode = !!onClose;
+  // Circonferenze e foto: sempre disponibili nel check libero dal Profilo
+  // (il cliente le aggiunge quando vuole monitorarle), nel check periodico
+  // solo quando è passato un mese dall'ultima volta (fullCheckDue) — vedi
+  // gating in HomeDashboard.
+  const showFullSection = isFreeMode || fullCheckDue;
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose, isFreeMode);
 
@@ -1421,14 +1426,14 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
     });
   };
 
-  // Circonferenze/peso non sono più obbligatori nel check del lunedì: quello
-  // che conta davvero ogni settimana sono le sensazioni (dolori, stress,
-  // digestione, sonno), che l'app non può dedurre da sola — misure e foto
-  // restano facoltative, da compilare solo se il cliente vuole monitorarle o
-  // se il coach le richiede privatamente quella settimana.
+  // Nel check periodico servono peso E sensazioni (dolori, stress,
+  // digestione, sonno) — quello che davvero cambia settimana per settimana e
+  // che l'app non può dedurre da sola. Circonferenze e foto non bloccano mai
+  // l'invio, in nessuna modalità: contano solo se il cliente (o il ritmo
+  // mensile) le porta in questo giro.
   const canSubmit = isFreeMode
     ? !!weight
-    : !!(pain && stress && digestion && sleepQuality);
+    : !!(weight && pain && stress && digestion && sleepQuality);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -1493,44 +1498,49 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           <p className="h1 mb-2">{onClose ? "Registra un check" : "Check settimanale"}</p>
           <p className="body mb-4">
             {onClose
-              ? "Registra misure e stato del momento quando vuoi, non solo il lunedì: ogni check in più affina il trend che vedi qui e che vede il coach."
-              : "Nuova settimana: dimmi come va — dolori, stress, digestione, sonno — quello che l'app non può " +
-                "dedurre da sola da ciò che hai già tracciato durante la settimana. Peso, circonferenze e foto " +
-                "sono facoltativi: aggiungili solo se vuoi tenerli d'occhio o se te li chiedo io privatamente."}
+              ? "Registra misure e stato del momento quando vuoi: ogni check in più affina il trend che vedi qui e che vede il coach."
+              : showFullSection
+                ? "Il check di oggi è più completo: include anche circonferenze e foto, che si aggiornano una volta al mese per seguire l'andamento nel tempo. Peso e sensazioni servono per registrarlo."
+                : "Peso e sensazioni della settimana: bastano questi per registrare il check."}
           </p>
 
-          <div className="on-light rounded-2xl px-4 py-3 mb-4" style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
-            <p className="text-sm leading-relaxed" style={{ fontWeight: 500 }}>
-              📏 Peso e circonferenze sono facoltativi. Se decidi di misurarli, fallo preferibilmente al mattino, a
-              digiuno, dopo essere andato/a in bagno: sono le condizioni in cui i numeri sono più confrontabili da
-              una settimana all'altra.
-            </p>
-          </div>
+          {showFullSection && (
+            <div className="on-light rounded-2xl px-4 py-3 mb-4" style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
+              <p className="text-sm leading-relaxed" style={{ fontWeight: 500 }}>
+                📏 Se registri peso o circonferenze, fallo preferibilmente al mattino, a digiuno, dopo essere
+                andato/a in bagno: sono le condizioni in cui i numeri restano confrontabili da un controllo all'altro.
+              </p>
+            </div>
+          )}
 
-          <div className="grid grid-cols-2 gap-3 mb-5">
+          <div className={showFullSection ? "grid grid-cols-2 gap-3 mb-5" : "mb-5"}>
             <label className="block">
-              <span className="label block mb-1.5">Peso mattina (kg){isFreeMode ? "" : " (facoltativo)"}</span>
+              <span className="label block mb-1.5">Peso mattina (kg)</span>
               <input type="text" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value.replace(",", "."))}
                      placeholder="es. 78.4" className="input w-full px-4 py-3 font-data" />
             </label>
-            <label className="block">
-              <span className="label block mb-1.5">Addome (cm) (facoltativo)</span>
-              <input type="text" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value.replace(",", "."))}
-                     placeholder="es. 84" className="input w-full px-4 py-3 font-data" />
-            </label>
-            <label className="block">
-              <span className="label block mb-1.5">Coscia (cm) (facoltativo)</span>
-              <input type="text" inputMode="decimal" value={thigh} onChange={(e) => setThigh(e.target.value.replace(",", "."))}
-                     placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
-            </label>
-            <label className="block">
-              <span className="label block mb-1.5">Braccio (cm) (facoltativo)</span>
-              <input type="text" inputMode="decimal" value={arm} onChange={(e) => setArm(e.target.value.replace(",", "."))}
-                     placeholder="es. 37" className="input w-full px-4 py-3 font-data" />
-            </label>
+            {showFullSection && (
+              <>
+                <label className="block">
+                  <span className="label block mb-1.5">Addome (cm)</span>
+                  <input type="text" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value.replace(",", "."))}
+                         placeholder="es. 84" className="input w-full px-4 py-3 font-data" />
+                </label>
+                <label className="block">
+                  <span className="label block mb-1.5">Coscia (cm)</span>
+                  <input type="text" inputMode="decimal" value={thigh} onChange={(e) => setThigh(e.target.value.replace(",", "."))}
+                         placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
+                </label>
+                <label className="block">
+                  <span className="label block mb-1.5">Braccio (cm)</span>
+                  <input type="text" inputMode="decimal" value={arm} onChange={(e) => setArm(e.target.value.replace(",", "."))}
+                         placeholder="es. 37" className="input w-full px-4 py-3 font-data" />
+                </label>
+              </>
+            )}
           </div>
 
-          <p className="label mb-2">Quello che i dati da soli non dicono{isFreeMode ? " (facoltativo)" : ""}</p>
+          <p className="label mb-2">Quello che i dati da soli non dicono</p>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <label className="block">
               <span className="label block mb-1.5">Dolori / fastidi (1-10)</span>
@@ -1564,7 +1574,7 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
 
           {gender === "F" && (
             <label className="block mb-5">
-              <span className="label block mb-1.5">Fase del ciclo (facoltativo)</span>
+              <span className="label block mb-1.5">Fase del ciclo</span>
               <select value={cyclePhase} onChange={(e) => setCyclePhase(e.target.value)} className="input w-full px-4 py-3 text-sm">
                 <option value="">— non specificato —</option>
                 <option value="mestruale">Fase mestruale</option>
@@ -1576,39 +1586,48 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
           )}
           {gender !== "F" && <div className="mb-1" />}
 
-          <p className="label mb-2">Foto (fronte, lato, retro) (facoltative)</p>
-          <div className="grid grid-cols-3 gap-2 mb-5">
-            {[["front", "Fronte"], ["side", "Lato"], ["back", "Retro"]].map(([key, lab]) => (
-              <label key={key}
-                     className="relative overflow-hidden rounded-2xl flex flex-col items-center justify-center gap-1.5 py-4 cursor-pointer transition-transform active:scale-95"
-                     style={photos[key]
-                       ? { background: `linear-gradient(160deg, ${accent}, ${accentText})` }
-                       : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-                {photos[key]
-                  ? <img src={photos[key].preview} alt={lab} className="absolute inset-0 w-full h-full object-cover opacity-60" />
-                  : null}
-                <span className="relative z-10 flex flex-col items-center gap-1.5">
-                  {photos[key]
-                    ? <CheckCircle2 size={20} style={{ color: "#FFFFFF" }} />
-                    : <Camera size={20} style={{ color: accent }} />}
-                  <span className="text-xs" style={{ color: photos[key] ? "#FFFFFF" : "var(--ink-2)", fontWeight: 600 }}>{lab}</span>
-                </span>
-                <input type="file" accept="image/*" capture="user" className="hidden" onChange={handlePhoto(key)} />
-              </label>
-            ))}
-          </div>
+          {showFullSection && (
+            <>
+              <p className="label mb-2">Foto (fronte, lato, retro)</p>
+              <div className="grid grid-cols-3 gap-2 mb-5">
+                {[["front", "Fronte"], ["side", "Lato"], ["back", "Retro"]].map(([key, lab]) => (
+                  <label key={key}
+                         className="relative overflow-hidden rounded-2xl flex flex-col items-center justify-center gap-1.5 py-4 cursor-pointer transition-transform active:scale-95"
+                         style={photos[key]
+                           ? { background: `linear-gradient(160deg, ${accent}, ${accentText})` }
+                           : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+                    {photos[key]
+                      ? <img src={photos[key].preview} alt={lab} className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                      : null}
+                    <span className="relative z-10 flex flex-col items-center gap-1.5">
+                      {photos[key]
+                        ? <CheckCircle2 size={20} style={{ color: "#FFFFFF" }} />
+                        : <Camera size={20} style={{ color: accent }} />}
+                      <span className="text-xs" style={{ color: photos[key] ? "#FFFFFF" : "var(--ink-2)", fontWeight: 600 }}>{lab}</span>
+                    </span>
+                    <input type="file" accept="image/*" capture="user" className="hidden" onChange={handlePhoto(key)} />
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
 
           <button onClick={handleSubmit} disabled={!canSubmit || saving}
                   className="w-full rounded-full px-4 py-3.5 text-sm transition-transform active:scale-[0.98] disabled:opacity-40 btn-3d"
                   style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
             {saving ? "Salvataggio in corso…" : "Registra"}
           </button>
+          {onSkip && (
+            <button onClick={onSkip} className="w-full text-center mt-3 text-sm" style={{ color: "var(--ink-2)", fontWeight: 500 }}>
+              Salta per ora
+            </button>
+          )}
           {saveError && (
             <p className="mt-2 text-center text-sm" style={{ color: "#B91C1C" }}>{saveError}</p>
           )}
           {!canSubmit && (
             <p className="meta mt-2 text-center" style={{ fontSize: "0.68rem" }}>
-              {isFreeMode ? "Inserisci almeno il peso per registrare." : "Valuta dolori, stress, digestione e sonno per registrare (peso, circonferenze e foto sono facoltativi)."}
+              {isFreeMode ? "Inserisci almeno il peso per registrare." : "Inserisci peso, dolori, stress, digestione e sonno per registrare."}
             </p>
           )}
         </div>
@@ -1915,30 +1934,40 @@ export function HomeDashboard({
   useEffect(() => { window.scrollTo(0, 0); }, [screen]);
   useEdgeSwipeBack(() => setScreen("dash"), screen !== "dash");
 
-  /* Check settimanale: si attiva da solo appena scatta lunedì (non più anche
-     domenica) e blocca la navigazione finché l'atleta non lo compila — solo
-     per chi ha davvero un coach (access.pro: full_coaching/scheda
-     personalizzata/training), MAI per free/Performance Pack, che registrano
-     i propri dati quando vogliono dal Profilo (SEZIONE Recupero/"Registra un
-     check", sempre disponibile a tutti). BUG PRESO: "compilato" viveva solo
-     in uno stato locale (weeklyCheckDone) che si azzerava a ogni refresh —
-     bastava ricaricare la pagina per rivederlo ricomparire lo stesso lunedì.
-     Ora si verifica il vero ultimo check salvato (checkins, la stessa
-     tabella che legge anche il coach): se è di questa settimana (da lunedì
-     in poi) resta chiuso fino al lunedì successivo, altrimenti ricompare. */
+  /* Check settimanale: non più legato al lunedì — si ripropone ad ogni
+     apertura dell'app finché l'atleta non lo compila almeno con peso e
+     sensazioni (dolori/stress/digestione/sonno), skippabile per quella
+     sessione ma non "per sempre": solo per chi ha davvero un coach
+     (access.pro), MAI per free/Performance Pack, che registrano i propri
+     dati quando vogliono dal Profilo ("Registra un check", sempre
+     disponibile a tutti).
+     Circonferenze e foto sono state spostate su cadenza MENSILE (non più
+     settimanale): tenerne traccia ogni settimana per ogni cliente avrebbe
+     riempito il database di misure/foto che si leggono solo in un trend di
+     lungo periodo, mentre peso e sensazioni cambiano davvero settimana per
+     settimana. fullCheckDue segnala quando sono passati 30+ giorni dall'ultima
+     volta che sono state registrate (o mai, per un cliente nuovo): solo in
+     quel caso il pop-up mostra anche quella sezione. */
   const [showWeeklyCheck, setShowWeeklyCheck] = useState(false);
   const [weeklyCheckDone, setWeeklyCheckDone] = useState(false);
+  const [fullCheckDue, setFullCheckDue] = useState(false);
   useEffect(() => {
-    const dow = new Date().getDay(); // 1 = lunedì
-    if (dow !== 1 || weeklyCheckDone || !access.pro) return;
-    if (!(supabase && userId)) { setShowWeeklyCheck(true); return; } // anteprima demo: comportamento invariato
+    if (weeklyCheckDone || !access.pro) return undefined;
+    if (!(supabase && userId)) { setShowWeeklyCheck(true); setFullCheckDue(true); return undefined; } // anteprima demo
     let cancelled = false;
     const mondayIso = toLocalISODate(mondayOfLocal());
-    fetchCheckins(supabase, userId, 1)
+    fetchCheckins(supabase, userId, 60)
       .then((rows) => {
         if (cancelled) return;
-        const last = rows[rows.length - 1];
-        if (!last || last.date < mondayIso) setShowWeeklyCheck(true);
+        const thisWeek = rows.filter((r) => r.date >= mondayIso);
+        const weeklyAlreadyDone = thisWeek.some((r) =>
+          r.weight != null && r.pain != null && r.stress != null && r.digestion != null && r.sleep_quality != null);
+        if (weeklyAlreadyDone) { setShowWeeklyCheck(false); return; }
+        const fullRows = rows.filter((r) => r.has_photos || r.waist != null || r.thigh != null || r.arm != null);
+        const lastFull = fullRows[fullRows.length - 1]; // fetchCheckins: dal più vecchio al più recente
+        const daysSinceFull = lastFull ? Math.floor((Date.now() - new Date(`${lastFull.date}T00:00:00`)) / 86400000) : Infinity;
+        setFullCheckDue(daysSinceFull >= 30);
+        setShowWeeklyCheck(true);
       })
       .catch((err) => console.error("PERFORM: errore verifica check settimanale già fatto", err));
     return () => { cancelled = true; };
@@ -2311,13 +2340,15 @@ export function HomeDashboard({
     </div>
   );
 
-  /* Check del lunedì: blocca TUTTA la navigazione, qualunque schermata
-     sia attiva, finché l'atleta non lo compila e invia. */
+  /* Check settimanale: occupa tutta la schermata (non un vero blocco di
+     navigazione: skippabile per questa sessione, vedi onSkip), finché
+     l'atleta non lo compila almeno con peso e sensazioni. */
   if (showWeeklyCheck) {
     return (
       <WeeklyCheckModal
         accent={accent} accentText={accentText} accentSoft={accentSoft} gender={profile.gender}
-        supabase={supabase} userId={userId}
+        supabase={supabase} userId={userId} fullCheckDue={fullCheckDue}
+        onSkip={() => setShowWeeklyCheck(false)}
         onSubmit={(data) => {
           onCoachSync && onCoachSync({ type: "weekly-check", ...data });
           setWeeklyCheckDone(true);
