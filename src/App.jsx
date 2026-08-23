@@ -9,6 +9,7 @@ import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
+import { touchLastActivity } from "./lib/coachingData.js";
 
 // Piani a coaching reale (Scheda Personalizzata, Coaching Allenamento, Full
 // Coaching): solo questi sbloccano il quinto pulsante Chat in basso — un
@@ -176,6 +177,15 @@ export default function App() {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  // "Ultimo accesso" reale per Hub Utenti (SCHEMA_v51): una scrittura per
+  // sessione, non a ogni render — il coach vede quando l'utente ha aperto
+  // l'app l'ultima volta, non un dato inventato. Fallisce in silenzio: non è
+  // mai bloccante per l'uso dell'app.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    touchLastActivity(supabase, session.user.id).catch(() => {});
+  }, [session?.user?.id]);
 
   // Fetch della riga `profiles` reale (gender, plan, onboarding_completed):
   // serve sia per allineare tema/piano allo stato salvato, sia per sapere se

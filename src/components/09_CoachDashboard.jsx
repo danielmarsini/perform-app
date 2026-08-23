@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef, createContext, useContext } from "react";
 import {
-  Users, Search, ChevronRight, ChevronDown, ChevronUp, Eye, EyeOff, Lock,
+  Users, Search, ChevronRight, ChevronDown, ChevronUp,
   Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
   Trash2, ArrowLeft, Wallet, Server, X, ShieldCheck, Check, Video,
   BarChart3, FileText,
@@ -249,7 +249,7 @@ const DEPTS = [
 ];
 // I 3 reparti sono SOLO per rapporti di coaching reale (chi ha pagato
 // scheda/training/full) — non per chiunque sia semplicemente registrato con
-// piano Free o Performance Pack: quelli vivono solo in Hub Rete & Accessi,
+// piano Free o Performance Pack: quelli vivono solo in Hub Utenti,
 // mai qui. BUG PRESO: prima ogni riga con un profiles.role reale (cioè
 // SEMPRE, per qualunque account vero) finiva in "In attesa" perché
 // clientStatus non era mai null grazie al fallback "registered" di
@@ -1202,36 +1202,6 @@ async function callPerformAI(kind, payload) {
 }
 
 /* ------------------------------- PASSWORD VIEWER ---------------------------- */
-/* onRegenerate opzionale: quando presente mostra anche un tasto per
-   rigenerare una nuova password provvisoria — è la stessa logica di "risolvi
-   il problema di accesso" che avevi in mente, ma non permette di digitare
-   una password libera: Supabase salva solo l'hash, quindi in produzione
-   "cambiare la password" significa sempre generarne una nuova provvisoria
-   via supabase.auth.admin.updateUserById(...), non scriverne una a mano. */
-function PasswordViewer({ password, onRegenerate }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="t-inner px-4 py-3 flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="c-label mb-1">Credenziali attuali</p>
-        <p className="font-data text-sm truncate" style={{ color: "var(--ink)", fontWeight: 600 }}>
-          {show ? (password || "—") : "••••••••••"}
-        </p>
-      </div>
-      <div className="flex items-center gap-1.5 shrink-0">
-        {onRegenerate && (
-          <button onClick={onRegenerate} className="c-ghost px-2.5 h-9 rounded-full flex items-center gap-1 text-[11px] font-medium" title="Genera una nuova password provvisoria">
-            🔄 Rigenera
-          </button>
-        )}
-        <button onClick={() => setShow((v) => !v)} className="c-ghost w-9 h-9 rounded-full flex items-center justify-center" aria-label={show ? "Nascondi password" : "Mostra password"}>
-          {show ? <EyeOff size={15} /> : <Eye size={15} />}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /* ------------------------------- CATALOGO CLIENTI --------------------------- */
 // I 3 cerchi di compliance (STESSA formula di Home cliente/Bioritmi — mai
 // calcolata due volte) accanto al nome: scorrendo l'elenco il coach vede
@@ -1348,24 +1318,10 @@ function ComplianceRing({ label, value }) {
 /* Interruttore "sezione confermata per l'atleta": guida il colore del
    pallino S1/S2/... nella timeline (verde solo se tutto il richiesto dal
    piano è confermato). */
-/* ---------------------- HUB RETE: CONTROLLO ACCESSI GLOBALE -----------------
-   Ultimo ingresso simulato (nessun log reale in questo file isolato): più lo
-   streak/aderenza sono alti, più il login è recente — in produzione questo
-   campo arriva da Supabase Auth (`last_sign_in_at`), non da questa euristica. */
-function buildLastLogin(client) {
-  if (client.status === "new") return null; // non ha mai effettuato il primo accesso
-  const now = new Date("2026-08-04T19:04:00");
-  const hoursAgo = client.streak > 20 ? 2 : client.streak > 5 ? 18 : client.adherence > 80 ? 30 : client.status === "pending_approval" ? 96 : 240;
-  return new Date(now.getTime() - hoursAgo * 3600 * 1000);
-}
-function fmtLastLogin(d) {
-  if (!d) return "Mai effettuato il login";
-  const now = new Date("2026-08-04T19:04:00");
-  const hours = Math.round((now - d) / 3600000);
-  if (hours < 24) return `${hours} h fa`;
-  return `${Math.round(hours / 24)} giorni fa`;
-}
-
+/* ---------------------------- HUB UTENTI ------------------------------------
+   L'ultimo accesso è un dato reale (profiles.last_activity, SCHEMA_v51),
+   non più una euristica simulata — vedi AccessControlTable più sotto e
+   touchLastActivity in App.jsx. */
 const COACHING_PLAN_OPTIONS = [
   { value: "scheda_personalizzata", label: "Scheda Personalizzata (8-12 sett.)" },
   { value: "training", label: "Solo Allenamento Coaching" },
@@ -1631,9 +1587,26 @@ function ClientWhitelistPanel({ client, onChanged }) {
 /* Dettaglio cliente da Controllo Accessi: nickname/livello XP/piano/date +
    whitelist — "se clicco su di esso fa vedere le loro impostazioni". */
 function ClientAccessDetailModal({ client, onClose }) {
+  const { supabase, reloadRoster } = useContext(CoachDataContext);
   const level = xpToLevelInfo(client.xp || 0);
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose);
+  const [picking, setPicking] = useState(false);
+  const [activating, setActivating] = useState(false);
+
+  const activate = async (plan) => {
+    setActivating(true);
+    try {
+      await activateClient(supabase, client.id, plan);
+      setPicking(false);
+      reloadRoster?.();
+    } catch (err) {
+      console.error("PERFORM: errore attivazione cliente", err);
+    } finally {
+      setActivating(false);
+    }
+  };
+
   return (
     <Portal>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -1643,7 +1616,7 @@ function ClientAccessDetailModal({ client, onClose }) {
             <SwipeHandle />
             <div className="flex items-start justify-between mb-4">
               <div className="min-w-0">
-                <p className="c-heading font-display font-bold truncate">{client.name}</p>
+                <p className="c-heading font-display font-bold truncate">{client.fullName || client.name}</p>
                 <p className="c-muted text-xs">Dettaglio accesso</p>
               </div>
               <button onClick={onClose} aria-label="Chiudi" className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0">
@@ -1688,7 +1661,29 @@ function ClientAccessDetailModal({ client, onClose }) {
                 <p className="c-label mb-0.5">Iscritto il</p>
                 <p className="text-sm" style={{ color: "var(--ink)" }}>{client.createdAt ? new Date(client.createdAt).toLocaleDateString("it-IT") : "—"}</p>
               </div>
+              <div className="t-inner px-3.5 py-2.5 col-span-2">
+                <p className="c-label mb-0.5">Ultimo accesso</p>
+                <p className="text-sm" style={{ color: "var(--ink)" }}>{client.lastActivity ? new Date(client.lastActivity).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Mai registrato"}</p>
+              </div>
             </div>
+          </div>
+
+          {client.clientStatus === "registered" && (
+            <div className="t-inner px-3.5 py-3 mb-4">
+              <p className="c-label mb-2">Prendi in gestione</p>
+              {picking ? (
+                <CoachingPlanPicker onPick={activate} busy={activating} onCancel={() => setPicking(false)} />
+              ) : (
+                <button onClick={() => setPicking(true)} className="c-btn px-3 py-2 rounded-lg text-xs font-medium">
+                  Assegna un piano a coaching
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="t-inner px-3.5 py-3 mb-4">
+            <p className="c-label mb-2">Account</p>
+            <AccountActions client={client} onRenamed={onClose} />
           </div>
 
           <ClientWhitelistPanel client={client} onChanged={onClose} />
@@ -1698,40 +1693,29 @@ function ClientAccessDetailModal({ client, onClose }) {
   );
 }
 
-function AccessControlTable({ passwordOverrides, onRegenerate }) {
-  const { clients: CLIENTS, supabase, isRealMode, reloadRoster } = useContext(CoachDataContext);
+/* HUB UTENTI — elenco semplice: solo nome (reale, di registrazione) ed
+   email, ordinato per ultimo accesso (più recente prima). Rinomina, reset
+   password, whitelist e copia dati vivono tutti nel dettaglio (click sulla
+   riga) — non più duplicati qui, richiesta esplicita: "voglio solo un
+   elenco di nomi degli utenti e le loro mail". last_activity è un dato
+   reale (profiles.last_activity, SCHEMA_v51), scritto una volta a sessione
+   da ogni utente che apre l'app (touchLastActivity in App.jsx) — mai una
+   euristica finta come il vecchio buildLastLogin. */
+function AccessControlTable() {
+  const { clients: CLIENTS, isRealMode } = useContext(CoachDataContext);
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  // Ordine CRONOLOGICO (più recenti prima) invece di alfabetico — il coach
-  // vede subito chi si è appena iscritto, non deve scorrere l'alfabeto per
-  // trovarlo. I dati demo non hanno createdAt: restano nell'ordine dato
-  // (sort è stabile), solo i dati reali vengono davvero riordinati.
   const rows = [...CLIENTS]
-    .filter((c) => q === "" || c.name.toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q))
-    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  const [pickingId, setPickingId] = useState(null); // id del cliente per cui è aperto il selettore piano
-  const [activatingId, setActivatingId] = useState(null);
+    .filter((c) => q === "" || c.name.toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q) || (c.fullName || "").toLowerCase().includes(q))
+    .sort((a, b) => new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0));
   const [detailClient, setDetailClient] = useState(null); // riga cliccata → apre ClientAccessDetailModal
-
-  const activate = async (c, plan) => {
-    setActivatingId(c.id);
-    try {
-      await activateClient(supabase, c.id, plan);
-      setPickingId(null);
-      reloadRoster?.();
-    } catch (err) {
-      console.error("PERFORM: errore attivazione cliente", err);
-    } finally {
-      setActivatingId(null);
-    }
-  };
 
   return (
     <div className="c-card">
-      <h3 className="c-heading font-display font-bold mb-1">🔐 Controllo Accessi — Tutti gli utenti</h3>
+      <h3 className="c-heading font-display font-bold mb-1">👥 Hub Utenti</h3>
       <p className="c-muted text-xs mb-4">
-        Ordine cronologico (più recenti prima), TUTTI gli iscritti (non solo gli attivi) — anche i doppioni di
-        registrazione restano visibili qui, riconoscibili da nome/email uguali: eliminali con l'azione dedicata.
+        Ordinato per ultimo accesso (più recente prima), TUTTI gli iscritti. Clicca un utente per rinominare,
+        copiare i dati, dare la whitelist o gestire l'account.
       </p>
       <div className="relative mb-4">
         <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: "var(--ink-tertiary)" }} />
@@ -1740,50 +1724,22 @@ function AccessControlTable({ passwordOverrides, onRegenerate }) {
       </div>
       <div className="space-y-2">
         {rows.map((c) => {
-          const login = buildLastLogin(c);
-          const password = passwordOverrides?.[c.id] || c.password;
           const whitelistActive = c.whitelistedUntil && new Date(c.whitelistedUntil) > new Date();
           return (
-            <div key={c.id} className="t-inner px-4 py-3 grid grid-cols-1 md:grid-cols-3 gap-2.5 items-center">
+            <button key={c.id} onClick={() => isRealMode && setDetailClient(c)} disabled={!isRealMode}
+              title={isRealMode ? "Apri dettaglio accesso" : undefined}
+              className="w-full flex items-center justify-between gap-3 t-inner px-4 py-3 text-left disabled:cursor-default">
               <div className="min-w-0">
-                <button onClick={() => isRealMode && setDetailClient(c)} className="flex items-center gap-1.5 max-w-full text-left"
-                        disabled={!isRealMode} title={isRealMode ? "Apri dettaglio accesso" : undefined}>
-                  <p className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 600 }}>{c.name}</p>
-                  {isRealMode && <CopyButton value={c.fullName || c.name} label="nome" />}
-                  {whitelistActive && (
-                    <span title="Whitelist attiva" style={{ fontSize: "0.9rem" }}>🛡️</span>
-                  )}
-                </button>
-                <div className="flex items-center gap-1.5">
-                  <p className="font-data text-xs truncate" style={{ color: "var(--ink-soft)" }}>{c.email}</p>
-                  {isRealMode && <CopyButton value={c.email} label="email" />}
-                </div>
-                {isRealMode && c.createdAt && (
-                  <p className="font-data text-[10px] mt-0.5" style={{ color: "var(--ink-tertiary)" }}>
-                    Iscritto il {new Date(c.createdAt).toLocaleDateString("it-IT")}
-                  </p>
-                )}
+                <p className="text-sm truncate flex items-center gap-1.5" style={{ color: "var(--ink)", fontWeight: 600 }}>
+                  {c.fullName || c.name}
+                  {whitelistActive && <span title="Whitelist attiva" style={{ fontSize: "0.85rem" }}>🛡️</span>}
+                </p>
+                <p className="font-data text-xs truncate" style={{ color: "var(--ink-soft)" }}>{c.email}</p>
               </div>
-              {isRealMode ? (
-                <p className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>Piano: {c.plan}</p>
-              ) : (
-                <p className="font-data text-xs" style={{ color: "var(--ink-tertiary)" }}>Ultimo ingresso: {fmtLastLogin(login)}</p>
-              )}
-              {isRealMode ? (
-                <AccountActions client={c} />
-              ) : (
-                <PasswordViewer password={password} onRegenerate={() => onRegenerate(c.id, c.name)} />
-              )}
-              {isRealMode && c.clientStatus === "registered" && (
-                pickingId === c.id ? (
-                  <CoachingPlanPicker onPick={(plan) => activate(c, plan)} busy={activatingId === c.id} onCancel={() => setPickingId(null)} />
-                ) : (
-                  <button onClick={() => setPickingId(c.id)} className="c-btn px-3 py-2 rounded-lg text-xs font-medium">
-                    Prendi in gestione
-                  </button>
-                )
-              )}
-            </div>
+              <p className="font-data text-[10px] shrink-0 text-right" style={{ color: "var(--ink-tertiary)" }}>
+                {c.lastActivity ? new Date(c.lastActivity).toLocaleDateString("it-IT") : "Mai registrato"}
+              </p>
+            </button>
           );
         })}
         {rows.length === 0 && <p className="c-muted text-sm py-6 text-center">Nessun risultato per questa ricerca</p>}
@@ -2914,7 +2870,7 @@ function AnamnesisPanel({ client }) {
           <span className="font-data text-xs font-bold" style={{ color: pct >= 90 ? "#10B981" : pct >= 50 ? "#F0A020" : "#DC2626" }}>{pct}% anamnesi compilata</span>
         </div>
         <p className="c-muted text-xs mb-4">
-          Email e password vengono dalla registrazione (la password si visualizza/modifica dal Hub Rete → Controllo Accessi); il resto (data di nascita, telefono, città, peso, altezza…) viene autocompilato dalle 56 domande di anamnesi qui sotto.
+          Email e password vengono dalla registrazione (la password si rigenera dal dettaglio utente in Hub Utenti); il resto (data di nascita, telefono, città, peso, altezza…) viene autocompilato dalle 56 domande di anamnesi qui sotto.
         </p>
         <div className="grid grid-cols-2 gap-2.5 mb-3">
           <div className="t-inner px-3 py-2.5">
@@ -4513,14 +4469,14 @@ function FinanceModule({ isDark }) {
 
 /* ----------------------------------- ROOT ------------------------------------
    Ristrutturazione radicale in 3 Macro-Aree, come richiesto: Hub Atleti
-   (catalogo + allarmi in cima + profilo a 4 sotto-tab), Hub Finanziario
-   (widget + grafico fatturato + transazioni), Hub Rete (whitelist +
-   controllo accessi globale). Nessun doppio banner: un solo CoachContextBar
-   in cima, condiviso da tutti e tre gli hub. */
+   (catalogo + profilo a 4 sotto-tab), Hub Finanziario (widget + grafico
+   fatturato + transazioni), Hub Utenti — ex "Hub Rete & Accessi" (whitelist
+   + elenco utenti). Nessun doppio banner: un solo CoachContextBar in cima,
+   condiviso da tutti e tre gli hub. */
 const TABS = [
   { id: "atleti", label: "Hub Atleti", icon: Users },
   { id: "finanziario", label: "Hub Finanziario", icon: Wallet },
-  { id: "rete", label: "Hub Rete & Accessi", icon: Server },
+  { id: "rete", label: "Hub Utenti", icon: Server },
 ];
 
 export default function CoachDashboard({ supabase, coachId, dark = true } = {}) {
@@ -4565,14 +4521,6 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
   // (vedi nota completa in GoalAchievedPanel sul collegamento Supabase reale).
   const [xpBonuses, setXpBonuses] = useState({});
   const [teamPosts, setTeamPosts] = useState([]);
-  // Hub Rete → Controllo Accessi: password rigenerate in questa sessione
-  // (vedi nota in PasswordViewer: in produzione è sempre una rigenerazione
-  // via supabase.auth.admin, mai una password libera scritta a mano).
-  const [passwordOverrides, setPasswordOverrides] = useState({});
-  const regeneratePassword = (clientId, name) => {
-    const newPass = `${name.split(" ")[0]}-${Math.floor(1000 + Math.random() * 9000)}`;
-    setPasswordOverrides((prev) => ({ ...prev, [clientId]: newPass }));
-  };
   // Il tema Onyx/Light non è più un toggle locale scollegato: segue lo
   // stesso stato globale del resto dell'app (dark, passato da App.jsx) —
   // prima restava sempre "Light" di default anche quando l'app era in
@@ -4617,7 +4565,7 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
 
               {tab === "rete" && (
                 <div className="space-y-5">
-                  <AccessControlTable passwordOverrides={passwordOverrides} onRegenerate={regeneratePassword} />
+                  <AccessControlTable />
                 </div>
               )}
             </>
