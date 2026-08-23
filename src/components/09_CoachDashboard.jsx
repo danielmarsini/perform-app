@@ -8,7 +8,7 @@ import {
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
-import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS } from "./05_HomeDashboard.jsx";
+import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS, matchSuppMoment } from "./05_HomeDashboard.jsx";
 import ChatThread from "./ChatThread.jsx";
 
 /* ============================================================================
@@ -2566,15 +2566,28 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
           if (!byMoment.has(r.moment)) byMoment.set(r.moment, []);
           byMoment.get(r.moment).push(r);
         });
-        const sections = [...byMoment.entries()].map(([moment, items]) => {
-          const known = SUPP_MOMENTS.find((m) => m.id === moment);
-          return {
-            id: uid(),
-            id_ref: known ? known.id : null,
-            title: known ? known.label : moment,
-            items: items.map((it) => ({ id: it.id, name: it.name, dose: it.dose || "", dayType: it.day_type || "all" })),
-          };
-        });
+        const canonicalOrder = SUPP_MOMENTS.map((m) => m.id);
+        const sections = [...byMoment.entries()]
+          .map(([moment, items]) => {
+            const known = matchSuppMoment(moment);
+            return {
+              id: uid(),
+              id_ref: known ? known.id : null,
+              title: known ? known.label : moment,
+              items: items.map((it) => ({ id: it.id, name: it.name, dose: it.dose || "", dayType: it.day_type || "all" })),
+            };
+          })
+          // Stesso ordine canonico che vedrà il cliente (mattina→pomeriggio→
+          // pre-wo→post-wo→sera): prima l'editor mostrava i momenti
+          // nell'ordine di lettura dal DB (alfabetico), diverso da quello
+          // che l'atleta vede davvero — confuso da modificare alla cieca.
+          .sort((a, b) => {
+            const ia = canonicalOrder.indexOf(a.id_ref ?? ""), ib = canonicalOrder.indexOf(b.id_ref ?? "");
+            if (ia === -1 && ib === -1) return 0;
+            if (ia === -1) return 1;
+            if (ib === -1) return -1;
+            return ia - ib;
+          });
         setRealSupplements(sections);
       })
       .catch((err) => {

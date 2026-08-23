@@ -52,6 +52,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Heart, Bookmark, Lock, Newspaper, ArrowLeft } from "lucide-react";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
+import { fetchSavedTips, saveTip, unsaveTip } from "../lib/coachingData.js";
 
 /* ============================================================================
    1 · UTILITÀ
@@ -173,6 +174,24 @@ function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3 }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
+
+  // BUG PRESO: toggleLike scrive davvero su tip_likes ma likedMine non
+  // veniva mai idratato da un fetch iniziale — dopo un refresh un articolo
+  // già "piaciuto" tornava a mostrarsi come non piaciuto, e ri-cliccare
+  // "mi piace" tentava un secondo insert (rifiutato in silenzio dal vincolo
+  // di unicità) invece di un delete: il "mi piace" restava rotto per
+  // sempre su quell'articolo in quella sessione.
+  useEffect(() => {
+    if (!real) return;
+    let alive = true;
+    supabase.from("tip_likes").select("tip_id").eq("user_id", meId)
+      .then(({ data }) => {
+        if (!alive || !data) return;
+        setLikedMine((all) => ({ ...all, ...Object.fromEntries(data.map((r) => [r.tip_id, true])) }));
+      })
+      .catch((err) => console.error("PERFORM: errore lettura tip_likes", err));
+    return () => { alive = false; };
+  }, [real, supabase, meId]);
 
   const fetchPage = useCallback(async (start) => {
     if (real) {
@@ -765,6 +784,31 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
   const [vaultOpen, setVaultOpen] = useState(false);
   const [readingVaultId, setReadingVaultId] = useState(null);
   const [vault, setVault] = useState({});                  // { itemId: { id, channel, savedAt, item } }
+  const real = !!supabase;
+
+  // BUG PRESO: la Cassaforte era solo stato React locale, mai scritta su
+  // Supabase (SCHEMA_v55) — ogni articolo "salvato" spariva ad ogni riavvio
+  // dell'app. Caricata ora al mount in modalità reale; coach_news_tips non
+  // cancella mai le righe scadute quindi basta il riferimento (tip_id), il
+  // contenuto resta leggibile anche a scadenza passata.
+  useEffect(() => {
+    if (!real) return;
+    let alive = true;
+    fetchSavedTips(supabase, meId)
+      .then(async (tips) => {
+        if (!alive) return;
+        const { data: likedRows } = await supabase.from("tip_likes").select("tip_id").eq("user_id", meId).in("tip_id", tips.map((t) => t.id));
+        if (!alive) return;
+        const likedSet = new Set((likedRows ?? []).map((r) => r.tip_id));
+        const next = {};
+        tips.forEach((t) => {
+          next[t.id] = { id: t.id, channel: t.channel, savedAt: new Date(t.savedAt).getTime(), item: { ...t, likedMine: likedSet.has(t.id), likeCount: t.like_count ?? 0 } };
+        });
+        setVault(next);
+      })
+      .catch((err) => console.error("PERFORM: errore caricamento cassaforte", err));
+    return () => { alive = false; };
+  }, [real, supabase, meId]);
 
   const fetchedGender = useUserGender({ supabase, meId, fallback: "M" });
   const gender = genderOverride || fetchedGender;
@@ -783,6 +827,7 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
   /* Salvare clona l'articolo nella Cassaforte: da quel momento la copia
      non è più soggetta a EXPIRES, qualunque cosa succeda all'originale. */
   const toggleSave = useCallback((item, channel, likedNow) => {
+    const alreadySaved = !!vault[item.id];
     setVault((v) => {
       if (v[item.id]) {
         const next = { ...v };
@@ -797,8 +842,11 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
         },
       };
     });
-    /* Produzione: supabase.from('saved_tips').insert/delete({ tip_id, user_id: meId }) */
-  }, []);
+    if (real) {
+      (alreadySaved ? unsaveTip(supabase, meId, item.id) : saveTip(supabase, meId, item.id))
+        .catch((err) => console.error("PERFORM: errore salvataggio cassaforte", err));
+    }
+  }, [real, supabase, meId, vault]);
 
   const removeFromVault = useCallback((id) => {
     setVault((v) => {
@@ -806,19 +854,31 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
       delete next[id];
       return next;
     });
-  }, []);
+    if (real) unsaveTip(supabase, meId, id).catch((err) => console.error("PERFORM: errore rimozione cassaforte", err));
+  }, [real, supabase, meId]);
 
   const toggleVaultLike = useCallback((id) => {
+    let likedNow = false;
     setVault((v) => {
       const entry = v[id];
       if (!entry) return v;
-      const likedNow = !!entry.item.likedMine;
+      likedNow = !!entry.item.likedMine;
       return {
         ...v,
         [id]: { ...entry, item: { ...entry.item, likedMine: !likedNow, likeCount: (entry.item.likeCount || 0) + (likedNow ? -1 : 1) } },
       };
     });
-  }, []);
+    if (!real) return;
+    const writeLike = async () => {
+      if (likedNow) {
+        await supabase.from("tip_likes").delete().eq("tip_id", id).eq("user_id", meId);
+      } else {
+        await supabase.from("tip_likes").insert({ tip_id: id, user_id: meId });
+        await supabase.from("feed_signals").insert({ user_id: meId, tip_id: id, signal: "like" });
+      }
+    };
+    writeLike().catch((err) => console.error("PERFORM: errore like dalla cassaforte", err));
+  }, [real, supabase, meId]);
 
   return (
     <div className="news-tips-root">

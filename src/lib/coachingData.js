@@ -432,6 +432,104 @@ export async function setSupplementTaken(supabase, userId, prescribedSupplementI
   }
 }
 
+// Cassaforte News & Tips (SCHEMA_v55): coach_news_tips non cancella mai le
+// righe scadute (la scadenza a 48h è solo un filtro sul feed live), quindi
+// basta salvare il riferimento (tip_id) — il contenuto resta comunque
+// leggibile in futuro, nessuna copia da tenere sincronizzata.
+export async function fetchSavedTips(supabase, userId) {
+  const { data: saved, error } = await supabase
+    .from("saved_tips")
+    .select("tip_id, saved_at")
+    .eq("user_id", userId)
+    .order("saved_at", { ascending: false });
+  if (error) throw error;
+  if (!saved || saved.length === 0) return [];
+  const { data: tips, error: tipsError } = await supabase
+    .from("coach_news_tips")
+    .select("id, channel, eyebrow, title, body, body_extended, source_query, like_count, published_at, photo_before_url, photo_after_url, weight_achieved")
+    .in("id", saved.map((s) => s.tip_id));
+  if (tipsError) throw tipsError;
+  const savedAtByTip = new Map(saved.map((s) => [s.tip_id, s.saved_at]));
+  const byTip = new Map((tips ?? []).map((t) => [t.id, t]));
+  // Ordine di salvataggio (più recente prima), non l'ordine di pubblicazione —
+  // un articolo salvato tempo fa resta dov'era anche se il suo contenuto è vecchio.
+  return saved.map((s) => byTip.get(s.tip_id)).filter(Boolean).map((t) => ({ ...t, savedAt: savedAtByTip.get(t.id) }));
+}
+
+export async function saveTip(supabase, userId, tipId) {
+  const { error } = await supabase.from("saved_tips").insert({ user_id: userId, tip_id: tipId });
+  if (error && error.code !== "23505") throw error; // 23505 = già salvato, atteso e ok
+}
+
+export async function unsaveTip(supabase, userId, tipId) {
+  const { error } = await supabase.from("saved_tips").delete().eq("user_id", userId).eq("tip_id", tipId);
+  if (error) throw error;
+}
+
+// Diario integratori AUTOGESTITO (SCHEMA_v56) — per chi non ha un piano
+// Pro/Full Coaching e quindi non riceve un protocollo dal coach
+// (prescribed_supplements): qui è l'utente stesso a scrivere nome/dose/
+// momento. Stesso pattern insert/delete "preso oggi" del protocollo Pro
+// (self_supplement_intake, mai una colonna booleana).
+export async function fetchSelfSupplements(supabase, userId) {
+  const { data, error } = await supabase
+    .from("self_supplements")
+    .select("id, moment_id, moment_label, name, qty, day_type, reminder_time, reminder_on, sort_order")
+    .eq("user_id", userId)
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function addSelfSupplement(supabase, userId, { momentId, momentLabel, name, qty, dayType, sortOrder }) {
+  const { data, error } = await supabase
+    .from("self_supplements")
+    .insert({ user_id: userId, moment_id: momentId, moment_label: momentLabel || null, name, qty: qty || null, day_type: dayType || "all", sort_order: sortOrder || 0 })
+    .select("id, moment_id, moment_label, name, qty, day_type, reminder_time, reminder_on, sort_order")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function removeSelfSupplement(supabase, id) {
+  const { error } = await supabase.from("self_supplements").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// Elimina un intero momento personalizzato e tutti i suoi integratori (le
+// righe di self_supplement_intake seguono a cascata, vedi schema).
+export async function removeSelfSupplementMoment(supabase, userId, momentId) {
+  const { error } = await supabase.from("self_supplements").delete().eq("user_id", userId).eq("moment_id", momentId);
+  if (error) throw error;
+}
+
+export async function updateSelfSupplementReminder(supabase, id, { reminderTime, reminderOn }) {
+  const { error } = await supabase.from("self_supplements").update({ reminder_time: reminderTime ?? null, reminder_on: !!reminderOn }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchSelfSupplementIntakeToday(supabase, userId) {
+  const { data, error } = await supabase
+    .from("self_supplement_intake")
+    .select("self_supplement_id")
+    .eq("user_id", userId)
+    .eq("date", toLocalISODate());
+  if (error) throw error;
+  return new Set((data ?? []).map((r) => r.self_supplement_id));
+}
+
+export async function setSelfSupplementTaken(supabase, userId, selfSupplementId, taken) {
+  if (taken) {
+    const { error } = await supabase.from("self_supplement_intake")
+      .insert({ user_id: userId, self_supplement_id: selfSupplementId, date: toLocalISODate() });
+    if (error && error.code !== "23505") throw error; // 23505 = già preso oggi, atteso e ok
+  } else {
+    const { error } = await supabase.from("self_supplement_intake").delete()
+      .eq("user_id", userId).eq("self_supplement_id", selfSupplementId).eq("date", toLocalISODate());
+    if (error) throw error;
+  }
+}
+
 // Storico di un esercizio specifico (per il grafico/cronologia in HomeDashboard),
 // solo le sessioni realmente svolte (status='done'), più recenti prima.
 export async function fetchExerciseHistory(supabase, userId, exerciseName, limit = 8) {
