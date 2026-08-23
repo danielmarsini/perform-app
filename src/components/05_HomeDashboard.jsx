@@ -23,7 +23,7 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -1205,42 +1205,50 @@ function computeStreak(referenceDateStr = "2026-07-19", baseStreak = 12, lastAct
   return gapDays > 1 ? 0 : grown; // più di 24h senza registrare nulla → streak azzerato
 }
 
-/* Bio-sintomo Digestione/Gonfiore: valutazione rapida da 1 a 5 con emoji,
-   sempre facoltativa, nell'ultima parte dell'Alimentazione. Energia/DOMS/
-   Dolori vivevano nel check-in di fine giornata, rimosso su richiesta
-   (poco utile, verrà reintrodotto altrove se serve). */
-const DIGEST_EMOJIS = ["🤢", "😖", "😐", "🙂", "✨"];
-
-function EmojiRating({ label, icon, emojis, value, onChange }) {
-  return (
-    <div>
-      <p className="text-sm mb-2 flex items-center gap-2 flex-wrap" style={{ color: "var(--ink)", fontWeight: 600 }}>
-        <span aria-hidden="true">{icon}</span> {label}
-        <span className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 400 }}>(facoltativo)</span>
-      </p>
-      <div className="flex items-center gap-2">
-        {emojis.map((e, i) => {
-          const n = i + 1;
-          const active = value === n;
-          return (
-            <button key={n} onClick={() => onChange(active ? 0 : n)}
-                    aria-label={`${label}: livello ${n} su 5`} aria-pressed={active}
-                    className="flex-1 rounded-2xl py-2.5 text-xl transition-all duration-200 active:scale-90"
-                    style={{ backgroundColor: active ? "var(--ink)" : "var(--surface-2)",
-                             border: active ? "none" : "1px solid var(--line)",
-                             filter: active ? "none" : "grayscale(0.5) opacity(0.65)" }}>
-              {e}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* Scala 1-10 generica per aderenza e stress/digestione: qui il valore va da
    1 (peggio) a 10 (meglio), coerente con le altre scale a 10 punti dell'app. */
 const CHECK_SCALE_10 = Array.from({ length: 10 }, (_, i) => i + 1);
+
+/* Scala 1-10 riutilizzabile (digestione/motivazione/fatica percepita — vedi
+   daily_metrics, SCHEMA_v57): stesso <select> del check settimanale sopra,
+   con una didascalia opzionale per chiarire il verso della scala quando non
+   è "10 = meglio" di default (fatica percepita è invertita: 1 = ottima). */
+function Scale10Rating({ label, value, onChange, hint }) {
+  return (
+    <label className="block">
+      <span className="label block mb-1.5">{label}</span>
+      <select value={value || ""} onChange={(e) => onChange(Number(e.target.value) || 0)}
+              className="input w-full px-4 py-3 text-sm">
+        <option value="">— valuta —</option>
+        {CHECK_SCALE_10.map((n) => <option key={n} value={n}>{n}</option>)}
+      </select>
+      {hint && <span className="text-xs block mt-1" style={{ color: "var(--ink-2)" }}>{hint}</span>}
+    </label>
+  );
+}
+
+/* Card di feedback a fine allenamento (motivazione + fatica percepita —
+   daily_metrics, SCHEMA_v57): disponibile a TUTTI i piani (non solo chi ha un
+   coach), un giorno = una riga, così il coach può incrociarla con sonno/
+   stress/digestione nei grafici trend invece di decidere refeed/deload a
+   caso. Facoltativa: l'atleta può chiudere l'app senza compilarla. */
+function WorkoutFeedbackCard({ motivation, fatigue, onMotivationChange, onFatigueChange, accentText }) {
+  const saved = motivation > 0 && fatigue > 0;
+  return (
+    <div className="card mt-4 p-5">
+      <p className="h2 mb-1">Come è andata oggi?</p>
+      <p className="meta mb-3" style={{ lineHeight: 1.5 }}>
+        Facoltativo, ma aiuta il tuo coach a leggere quando serve un giorno di scarico o un refeed — non solo dai
+        carichi sollevati.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <Scale10Rating label="Motivazione (1-10)" value={motivation} onChange={onMotivationChange} hint="10 = ottima" />
+        <Scale10Rating label="Fatica percepita (1-10)" value={fatigue} onChange={onFatigueChange} hint="1 = ottima, 10 = pessima" />
+      </div>
+      {saved && <p className="text-xs mt-3" style={{ color: accentText, fontWeight: 600 }}>✓ Salvato</p>}
+    </div>
+  );
+}
 
 /* Pop-up del Check settimanale (lunedì): bloccante, idro-satinato, con i 5 campi
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
@@ -1716,7 +1724,45 @@ export function HomeDashboard({
   // stessa sotto-schermata invece che sempre dalla Home.
   const [screen, setScreen] = useState(() => localStorage.getItem("perform_last_screen") || "dash");   // dash | workout | nutrition | recovery
   useEffect(() => { localStorage.setItem("perform_last_screen", screen); }, [screen]);
+  // Digestione (Alimentazione, ex check-in a emoji locale) + motivazione/
+  // fatica percepita (fine allenamento) — daily_metrics, SCHEMA_v57. 0 =
+  // non ancora valutato oggi. Disponibili a TUTTI i piani (non solo chi ha
+  // un coach): l'atleta le vede/compila da solo nel suo Profilo, il coach le
+  // legge in sola lettura per incrociarle con sonno/stress nei grafici trend.
   const [digestValue, setDigestValue] = useState(0);
+  const [motivation, setMotivation] = useState(0);
+  const [fatigue, setFatigue] = useState(0);
+  const [wellnessLoaded, setWellnessLoaded] = useState(false);
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let cancelled = false;
+    fetchTodayWellness(supabase, userId, toLocalISODate())
+      .then((row) => {
+        if (cancelled) return;
+        setDigestValue(row.digestion || 0);
+        setMotivation(row.motivation || 0);
+        setFatigue(row.fatigue || 0);
+        setWellnessLoaded(true);
+      })
+      .catch((err) => { console.error("PERFORM: errore lettura valutazioni giornaliere", err); if (!cancelled) setWellnessLoaded(true); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, userId]);
+  // Salvataggio reale, debounced (stesso principio di sonno/passi): solo dopo
+  // il primo caricamento, altrimenti il seed di "oggi" qui sopra si
+  // ri-salverebbe da solo (con gli altri due ancora a 0) un istante dopo
+  // averlo letto, azzerando un valore già presente sulle altre due colonne.
+  useEffect(() => {
+    if (!supabase || !userId || !wellnessLoaded) return;
+    const t = setTimeout(() => {
+      upsertDailyMetrics(supabase, userId, toLocalISODate(), {
+        digestion: digestValue || null,
+        motivation: motivation || null,
+        fatigue: fatigue || null,
+      }).catch((err) => console.error("PERFORM: errore salvataggio valutazioni giornaliere", err));
+    }, 600);
+    return () => clearTimeout(t);
+  }, [digestValue, motivation, fatigue, wellnessLoaded, supabase, userId]);
   // Alimentazione: "I tuoi target" ora è un pannello compatto in cima alla
   // pagina, non più un tab tra Diario Libero e Sostituzioni — chiuso di
   // default, si espande solo quando il cliente vuole davvero modificarli.
@@ -2397,6 +2443,12 @@ export function HomeDashboard({
               <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
                                    day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
                                    supabase={supabase} userId={userId} />
+            )}
+            {/* Disponibile a TUTTI i piani (PRO e FREE), non solo a fine giorno
+                di oggi (mai su un giorno passato aperto dal calendario). */}
+            {day.isTraining && !selectedCalendarIso && (
+              <WorkoutFeedbackCard motivation={motivation} fatigue={fatigue}
+                onMotivationChange={setMotivation} onFatigueChange={setFatigue} accentText={accentText} />
             )}
           </div>
         )}
@@ -6633,11 +6685,12 @@ function NutritionTabs({
                 text="Registrare cosa mangi è il primo passo. Il secondo è sapere se sta davvero funzionando: fatti aiutare da un professionista del settore che legge il tuo diario e aggiusta il piano per te." />
             )}
 
-            {/* ultima cosa del Diario Libero: check-in digestivo, facoltativo */}
+            {/* ultima cosa del Diario Libero: digestione di oggi, 1-10, facoltativa —
+                salvata su daily_metrics (SCHEMA_v57), visibile anche al coach nei
+                grafici trend per decidere refeed/deload non a caso. */}
             <div className="card mt-4">
               <p className="label mb-1">Ultima cosa</p>
-              <EmojiRating label="Digestione / Gonfiore" icon="🤢" emojis={DIGEST_EMOJIS}
-                value={digestValue} onChange={onDigestChange} />
+              <Scale10Rating label="Digestione (1-10)" value={digestValue} onChange={onDigestChange} hint="10 = ottima" />
             </div>
           </>
         )}

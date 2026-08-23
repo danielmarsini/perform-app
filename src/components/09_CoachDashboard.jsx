@@ -172,7 +172,7 @@ import {
   computeRecoveryCompliance, computeNutritionCompliance,
   notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
-  fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements,
+  fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
   fetchExerciseLibrary, learnExercise, computeVolume, fetchUnreadChatCount,
@@ -3788,6 +3788,30 @@ function CheckDetail({ client }) {
   }, [isRealMode, isPaidCoaching, supabase, client.id]);
   useEffect(() => { loadReal(); }, [loadReal]);
 
+  // Digestione/motivazione/fatica percepita — SCHEMA_v57, daily_metrics: a
+  // differenza del check settimanale (una riga al lunedì) qui è l'atleta
+  // stesso a compilarle ogni giorno (Alimentazione/fine allenamento), quindi
+  // arrivano da una tabella e una cadenza diverse — grafico separato, non
+  // mischiato per data con quello sopra basato su checkins. Stesso gate di
+  // privacy del resto di questo pannello (solo piani a coaching reale).
+  const [dailyWellness, setDailyWellness] = useState(null); // null = non ancora caricato
+  useEffect(() => {
+    if (!isRealMode || !isPaidCoaching) return undefined;
+    let cancelled = false;
+    const todayISO = toLocalISODate();
+    const fromDate = new Date(`${todayISO}T00:00:00`);
+    fromDate.setDate(fromDate.getDate() - 59);
+    fetchDailyMetricsRange(supabase, client.id, toLocalISODate(fromDate), todayISO)
+      .then((rows) => {
+        if (cancelled) return;
+        setDailyWellness(rows
+          .filter((r) => r.digestion != null || r.motivation != null || r.fatigue != null)
+          .map((r) => ({ date: r.date, digestione: r.digestion, motivazione: r.motivation, fatica: r.fatigue })));
+      })
+      .catch((err) => { console.error("PERFORM: errore lettura valutazioni giornaliere (coach)", err); if (!cancelled) setDailyWellness([]); });
+    return () => { cancelled = true; };
+  }, [isRealMode, isPaidCoaching, supabase, client.id]);
+
   const history = isRealMode ? (realHistory ?? []) : demoHistory;
   const sorted = [...history].sort((a, b) => (a.date < b.date ? 1 : -1));
   const latest = sorted[0], previous = sorted[1];
@@ -3904,6 +3928,23 @@ function CheckDetail({ client }) {
           <p className="c-muted text-xs mt-3">Fase del ciclo all'ultimo check: <span style={{ color: "#E5C1CD", fontWeight: 600 }}>{latest.cyclePhase || "—"}</span></p>
         )}
       </div>
+
+      {dailyWellness && dailyWellness.length > 0 && (
+        <div className="c-card">
+          <p className="c-heading font-display font-bold mb-1">Digestione, motivazione e fatica (giornaliero)</p>
+          <p className="c-muted text-xs mb-4">
+            Compilate dall'atleta ogni giorno (Alimentazione/fine allenamento), non solo al check del lunedì: usale per
+            capire quando serve davvero un refeed o una settimana di deload, non a caso.
+          </p>
+          <LineChart points={dailyWellness} xLabel={(p) => { const d = new Date(p.date); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; }}
+            series={[
+              { key: "digestione", label: "Digestione", color: "#10B981" },
+              { key: "motivazione", label: "Motivazione", color: "#2563EB" },
+              { key: "fatica", label: "Fatica percepita", color: "#DC2626" },
+            ]} />
+          <p className="c-muted text-[10px] mt-2">Fatica percepita è invertita: 1 = ottima, 10 = pessima (a differenza delle altre due, dove 10 = ottima).</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -175,7 +175,7 @@ export async function fetchBothNutritionTargets(supabase, userId) {
 export async function fetchDailyMetricsRange(supabase, userId, fromDateISO, toDateISO) {
   const { data, error } = await supabase
     .from("daily_metrics")
-    .select("date, sleep_start, sleep_end, sleep_hours, steps, hrv_ms, rhr_bpm")
+    .select("date, sleep_start, sleep_end, sleep_hours, steps, hrv_ms, rhr_bpm, digestion, motivation, fatigue")
     .eq("user_id", userId)
     .gte("date", fromDateISO)
     .lte("date", toDateISO)
@@ -197,6 +197,22 @@ export async function upsertDailyMetrics(supabase, userId, dateISO, patch) {
     .from("daily_metrics")
     .upsert({ user_id: userId, date: dateISO, updated_at: new Date().toISOString(), ...patch }, { onConflict: "user_id,date" });
   if (error) throw error;
+}
+
+// Le 3 valutazioni soggettive 1-10 di "oggi" (digestione, motivazione, fatica
+// percepita — SCHEMA_v57, stessa riga daily_metrics di sonno/passi): lettura
+// leggera di UN solo giorno, per idratare i tre riquadri (Alimentazione a
+// fine Diario Libero, Allenamento a fine sessione) senza dover caricare
+// l'intero storico. null = non ancora valutato oggi, mai un valore inventato.
+export async function fetchTodayWellness(supabase, userId, dateISO) {
+  const { data, error } = await supabase
+    .from("daily_metrics")
+    .select("digestion, motivation, fatigue")
+    .eq("user_id", userId)
+    .eq("date", dateISO)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? { digestion: null, motivation: null, fatigue: null };
 }
 
 // Cerchio Recupero reale — STESSA funzione chiamata sia da Home cliente sia
