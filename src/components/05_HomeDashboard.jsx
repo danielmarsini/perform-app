@@ -1069,9 +1069,9 @@ function XpToastBanner({ toast }) {
     <Portal>
       <div key={toast.key} className="xp-toast-wrap" aria-live="polite">
         <div className="xp-toast">
-          <Sparkles size={14} style={{ color: "#FFFFFF" }} />
-          <span>+{toast.amount} XP</span>
-          <span className="xp-toast-label">{toast.label}</span>
+          <Sparkles size={15} style={{ color: "var(--title-a)" }} />
+          <span className="title-shine">+{toast.amount} XP</span>
+          <span className="xp-toast-label title-shine">{toast.label}</span>
         </div>
       </div>
     </Portal>
@@ -1833,7 +1833,7 @@ export function HomeDashboard({
   const fireXpToast = (label, amount) => {
     if (xpToastTimer.current) clearTimeout(xpToastTimer.current);
     setXpToast({ key: `${label}-${Date.now()}`, label, amount });
-    xpToastTimer.current = setTimeout(() => setXpToast(null), 2600);
+    xpToastTimer.current = setTimeout(() => setXpToast(null), 4500); // deve combaciare con xpToastPop qui sotto
     playSound("xp");
   };
   useEffect(() => () => { if (xpToastTimer.current) clearTimeout(xpToastTimer.current); }, []);
@@ -1851,10 +1851,27 @@ export function HomeDashboard({
     ["Almeno 4 pasti su 6", Object.values(mealsBySlot).filter((a) => a.length).length >= 4, 15],
   ];
   const prevGoalsRef = useRef({});
+  // BUG PRESO: "was === false" doveva bastare a non festeggiare al primo
+  // mount, ma sonno/passi/pasti/macro arrivano da fetch async — nei primi
+  // istanti questo effetto gira già una volta con i valori di default
+  // (quasi tutti "non fatto"), che scrive was=false in prevGoalsRef PRIMA
+  // che i dati veri siano arrivati. Quando i dati veri arrivano un attimo
+  // dopo e un obiettivo risulta già completato (perché lo era da prima,
+  // non perché l'utente ha appena fatto qualcosa), questo sembrava una
+  // transizione false→true vera e faceva scattare il toast — quindi gli XP
+  // comparivano ad ogni apertura dell'app. readyRef rimanda l'inizio del
+  // "festeggia le transizioni" di qualche secondo, il tempo che i fetch
+  // reali si assestino: fino ad allora si aggiorna solo la baseline, senza
+  // sparare toast.
+  const goalsReadyRef = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => { goalsReadyRef.current = true; }, 2500);
+    return () => clearTimeout(t);
+  }, []);
   useEffect(() => {
     dailyGoals.forEach(([label, done, baseXp]) => {
       const was = prevGoalsRef.current[label];
-      if (done && was === false) fireXpToast(label, Math.round(baseXp * (1 + streakXpBonus)));
+      if (goalsReadyRef.current && done && was === false) fireXpToast(label, Math.round(baseXp * (1 + streakXpBonus)));
       prevGoalsRef.current[label] = done;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -8380,17 +8397,22 @@ export default function HomePreview({
           50%{filter:brightness(1.28) saturate(1.2)}
         }
         @media (prefers-reduced-motion: reduce){.ring-glow-pulse{animation:none}}
-        /* toast XP: entra dall'alto, resta un attimo, si dissolve da sola */
-        .xp-toast-wrap{position:fixed;top:calc(env(safe-area-inset-top, 0px) + 14px);left:0;right:0;
+        /* toast XP: entra dal basso appena sopra la barra di navigazione,
+           resta ben visibile, poi si dissolve da sola lentamente (non un
+           taglio netto) — testo lucido oro/rosa (title-shine), non più un
+           pillolo pieno colorato: più elegante, coerente coi titoli. */
+        .xp-toast-wrap{position:fixed;bottom:calc(env(safe-area-inset-bottom, 0px) + 82px);left:0;right:0;
           display:flex;justify-content:center;z-index:70;pointer-events:none}
-        .xp-toast{display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;
-          background:linear-gradient(120deg, var(--title-a), var(--title-b));color:#FFFFFF;
-          font-size:0.8rem;font-weight:700;box-shadow:0 10px 24px -6px rgba(0,0,0,0.4);
-          animation:xpToastPop 2.6s cubic-bezier(.22,1,.36,1) both}
-        .xp-toast-label{font-weight:500;opacity:0.9}
-        @keyframes xpToastPop{0%{opacity:0;transform:translateY(-14px) scale(.9)}
-          12%{opacity:1;transform:translateY(0) scale(1)}82%{opacity:1;transform:translateY(0) scale(1)}
-          100%{opacity:0;transform:translateY(-8px) scale(.96)}}
+        .xp-toast{display:flex;align-items:center;gap:7px;padding:10px 18px;border-radius:999px;
+          background:rgba(9,9,11,0.88);backdrop-filter:blur(14px) saturate(160%);-webkit-backdrop-filter:blur(14px) saturate(160%);
+          border:1px solid rgba(255,255,255,0.1);
+          font-size:0.82rem;font-weight:700;box-shadow:0 14px 30px -8px rgba(0,0,0,0.5);
+          animation:xpToastPop 4.5s cubic-bezier(.22,1,.36,1) both}
+        .xp-toast-label{font-weight:600;opacity:0.92}
+        @keyframes xpToastPop{0%{opacity:0;transform:translateY(14px) scale(.92)}
+          6%{opacity:1;transform:translateY(0) scale(1)}
+          50%{opacity:1;transform:translateY(0) scale(1)}
+          100%{opacity:0;transform:translateY(4px) scale(.99)}}
         @media (prefers-reduced-motion: reduce){.xp-toast{animation:none}}
         @keyframes springIn{0%{opacity:0;transform:translateY(10px) scale(.985)}
           55%{opacity:1;transform:translateY(-2px) scale(1.004)}100%{opacity:1;transform:none}}

@@ -85,21 +85,10 @@ export default function App() {
   const [profileLoading, setProfileLoading] = useState(true);
 
   // --- Stato condiviso tra TUTTE le schermate ---------------------------------
-  // Tema: Onyx (nero) è il default per TUTTI i dispositivi, a prescindere dal
-  // sistema — scelta esplicita del brand, non più dedotta da
-  // prefers-color-scheme. L'unica cosa che può cambiarlo è una scelta
-  // manuale salvata (il toggle nelle Impostazioni), mai il tema del telefono.
-  const [dark, setDark] = useState(() => {
-    try {
-      const saved = localStorage.getItem("perform-dark-mode");
-      if (saved === "true") return true;
-      if (saved === "false") return false;
-    } catch (err) { /* localStorage non disponibile: resta il default Onyx sotto */ }
-    return true;
-  });
-  useEffect(() => {
-    try { localStorage.setItem("perform-dark-mode", String(dark)); } catch (err) { /* best-effort */ }
-  }, [dark]);
+  // Tema: Onyx (nero) è l'UNICO tema dell'app, per tutti — la modalità
+  // chiara è stata rimossa definitivamente (scelta esplicita del brand, non
+  // più un toggle nelle Impostazioni). Non più uno stato: una costante.
+  const dark = true;
   // I popup montati via Portal (src/components/Portal.jsx) escono dall'albero
   // React e finiscono come figli diretti di <body> — se il tema (classe
   // app-root + data-theme, da cui vengono lette --surface/--line/--ink...)
@@ -110,8 +99,8 @@ export default function App() {
   // invece di dover ricordarsi di avvolgere ogni singolo popup a mano.
   useEffect(() => {
     document.documentElement.classList.add("app-root");
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
-  }, [dark]);
+    document.documentElement.dataset.theme = "dark";
+  }, []);
   const [gender, setGender] = useState("M");           // 'M' | 'F' — da profiles.gender
   const [lang, setLang] = useState("it");               // 'it' | 'en' | 'es' | 'fr'
   const [userPlan, setUserPlan] = useState("free");      // 'free' | 'performance_pack' | 'full_coaching'
@@ -284,7 +273,6 @@ export default function App() {
       <AppShell
         gender={gender}
         dark={dark}
-        onToggleDark={setDark}
         userLabel={session.user.user_metadata?.full_name || session.user.email}
         userEmail={session.user.email || ""}
         tab={tab}
@@ -359,7 +347,6 @@ export default function App() {
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
           dark={dark}
-          onToggleDark={() => setDark((v) => !v)}
           accent={accent}
           accentText={accent}
           gender={gender}
