@@ -23,7 +23,7 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, fetchCheckins, uploadCheckinPhoto, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, saveCheckin, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
 import { playSound } from "../lib/sounds.js";
@@ -1716,6 +1716,20 @@ export function HomeDashboard({
   const [recoveryOverride, setRecoveryOverride] = useState(null);
   const [activeRingPopup, setActiveRingPopup] = useState(null);
   const [selectedCalendarIso, setSelectedCalendarIso] = useState(null); // null = oggi
+
+  // Giorni realmente "saltati" nelle due strisce calendario (Allenamento e
+  // Alimentazione): letti una volta dal vero storico, mai un pattern finto.
+  const [workoutDoneDates, setWorkoutDoneDates] = useState(() => new Set());
+  const [nutritionLoggedDates, setNutritionLoggedDates] = useState(() => new Set());
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
+    const fromD = new Date(todayD); fromD.setDate(fromD.getDate() - 30);
+    const fromISO = toLocalISODate(fromD), toISO = toLocalISODate(todayD);
+    fetchWorkoutDoneDates(supabase, userId, fromISO, toISO).then(setWorkoutDoneDates).catch((err) => console.error("PERFORM: errore lettura giorni allenati", err));
+    fetchNutritionLoggedDates(supabase, userId, fromISO, toISO).then(setNutritionLoggedDates).catch((err) => console.error("PERFORM: errore lettura giorni alimentazione registrati", err));
+  }, [supabase, userId]);
+
   // Diario Alimentazione di un giorno PASSATO cliccato sulla striscia
   // calendario (NutritionCalendarStrip) — stesso principio di
   // selectedCalendarIso/CalendarDayReadOnlyView per l'Allenamento, ma qui
@@ -2281,7 +2295,7 @@ export function HomeDashboard({
             )}
             {access.pro ? (
               <>
-                <WorkoutCalendarStrip weekPlan={weekPlan} selectedIso={selectedCalendarIso} onSelectIso={setSelectedCalendarIso} />
+                <WorkoutCalendarStrip weekPlan={weekPlan} selectedIso={selectedCalendarIso} onSelectIso={setSelectedCalendarIso} doneDates={workoutDoneDates} />
                 {selectedCalendarIso ? (
                   <CalendarDayReadOnlyView date={new Date(selectedCalendarIso)} weekPlan={weekPlan} />
                 ) : !day.isTraining ? (
@@ -2360,7 +2374,7 @@ export function HomeDashboard({
             passato e aggiungere un pasto dimenticato. Oro/Rosa (Giorno ON,
             allenamento) o superficie neutra (Giorno OFF, riposo) — stesso
             weekPlan usato per isTrainingDay/i target di oggi. */}
-        <NutritionCalendarStrip weekPlan={weekPlan} selectedIso={selectedNutritionIso} onSelectIso={setSelectedNutritionIso} accent={accent} />
+        <NutritionCalendarStrip weekPlan={weekPlan} selectedIso={selectedNutritionIso} onSelectIso={setSelectedNutritionIso} accent={accent} loggedDates={nutritionLoggedDates} />
 
         {selectedNutritionIso ? (
           <div className="rounded-2xl px-4 py-3.5 mb-5" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
@@ -3677,15 +3691,14 @@ function exerciseAvoid(name) {
 /* Converte il giorno JS (0=Domenica) nella convenzione dell'app (0=Lunedì). */
 function isoWeekdayOf(date) { const d = date.getDay(); return d === 0 ? 6 : d - 1; }
 
-/* Simulazione deterministica di "saltato": non avendo un log reale giorno per
-   giorno su tutto il calendario, un giorno di allenamento passato risulta
-   "mancato" con un pattern stabile (~1 su 5), non casuale a ogni render. */
-function wasMissed(date) { return (date.getDate() * 13 + date.getMonth()) % 5 === 0; }
-
-/* Calendario orizzontale a scorrimento libero (drag/swipe): Giallo Oro/Rosa
-   per i giorni futuri da allenarsi, Verde per i passati fatti, Rosso per i
-   mancati. Cliccando un giorno diverso da oggi si entra in Sola Lettura. */
-function WorkoutCalendarStrip({ weekPlan, selectedIso, onSelectIso }) {
+/* Calendario orizzontale a scorrimento libero (drag/swipe): stesso sfondo
+   scuro per ogni giorno (mai più un pillolo colorato pieno), solo il testo
+   cambia colore — oggi lucido oro/rosa (title-shine), Giorno ON lucido
+   verde (allenamento previsto), Giorno OFF bianco normale. Un pallino rosso
+   sotto segnala un Giorno ON passato senza un allenamento REALMENTE
+   completato (doneDates, dal vero storico — mai un pattern finto). Cliccando
+   un giorno diverso da oggi si entra in Sola Lettura. */
+function WorkoutCalendarStrip({ weekPlan, selectedIso, onSelectIso, doneDates }) {
   const scrollRef = useRef(null);
   useDragScroll(scrollRef);
   const todayMid = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
@@ -3706,26 +3719,23 @@ function WorkoutCalendarStrip({ weekPlan, selectedIso, onSelectIso }) {
         const isFuture = d.getTime() > todayMid.getTime();
         const wd = isoWeekdayOf(d);
         const isTrainingDay = !!weekPlan[wd];
-        const missed = !isFuture && !isToday && isTrainingDay && wasMissed(d);
-
-        let bg = "var(--surface)", bd = "var(--line)", fg = "var(--ink)";
-        if (isToday) {
-          bg = "#F97316"; fg = "#FFFFFF"; bd = "transparent";
-        } else if (isTrainingDay) {
-          if (isFuture) { bg = "linear-gradient(135deg, var(--title-a), var(--title-b))"; fg = "#FFFFFF"; bd = "transparent"; }
-          else if (missed) { bg = "#EF4444"; fg = "#FFFFFF"; bd = "transparent"; }
-          else { bg = "#10B981"; fg = "#FFFFFF"; bd = "transparent"; }
-        }
+        const missed = !isFuture && !isToday && isTrainingDay && !(doneDates?.has(iso));
         const selected = selectedIso ? iso === selectedIso : isToday;
+        const textClass = isToday ? "title-shine" : isTrainingDay ? "green-shine" : "";
 
         return (
           <button key={iso} data-today={isToday ? "1" : "0"} onClick={() => onSelectIso(isToday ? null : iso)}
-                  className="shrink-0 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-transform active:scale-95"
-                  style={{ width: 52, height: 60, background: bg, border: `1.5px solid ${selected && !isToday ? "var(--ink)" : bd}` }}>
-            <span style={{ fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase", opacity: 0.85, color: fg }}>
+                  className="relative shrink-0 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-transform active:scale-95"
+                  style={{ width: 52, height: 60, backgroundColor: "var(--surface)",
+                           border: `1.5px solid ${selected ? "var(--ink)" : "var(--line)"}` }}>
+            <span className={textClass} style={{ fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase", opacity: 0.85,
+                           color: textClass ? undefined : "var(--ink)" }}>
               {WEEK_DAYS[wd]}
             </span>
-            <span style={{ fontSize: "1.05rem", fontWeight: 800, color: fg }}>{d.getDate()}</span>
+            <span className={textClass} style={{ fontSize: "1.05rem", fontWeight: 800, color: textClass ? undefined : "var(--ink)" }}>
+              {d.getDate()}
+            </span>
+            {missed && <span className="absolute rounded-full" style={{ bottom: 6, width: 5, height: 5, backgroundColor: "#EF4444" }} aria-label="Allenamento saltato" />}
           </button>
         );
       })}
@@ -3742,16 +3752,17 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
   const dayData = weekPlan[wd];
   const daysAgo = Math.round((todayMid - date) / 86400000);
   const weeksAgo = Math.max(1, Math.round(daysAgo / 7));
-  const dateLabel = date.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
 
+  // BUG PRESO/RICHIESTA: prima c'era un riquadro che ripeteva la data già
+  // visibile (evidenziata) sulla striscia calendario sopra — ridondante — e
+  // un giorno futuro mostrava sempre "nessun carico" anche quando esisteva
+  // uno storico reale. Scheda pulita: solo nome sessione ed esercizi; un
+  // giorno futuro mostra l'ULTIMO carico mai registrato per quell'esercizio
+  // (utile per sapere da dove ripartire), un giorno passato specifico mostra
+  // il carico di QUELLA settimana esatta — "nessun carico ancora
+  // registrato" resta solo quando lo storico è davvero vuoto.
   return (
     <div className="space-y-3">
-      <div className="rounded-2xl px-4 py-3" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-        <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700, textTransform: "capitalize" }}>{dateLabel}</p>
-        <p className="meta mt-0.5">
-          {isFuture ? "In programma · sola lettura" : "Sessione passata · sola lettura"}
-        </p>
-      </div>
       {!dayData ? (
         <div className="card text-center py-8">
           <BedDouble size={22} className="mx-auto mb-2" style={{ color: "var(--ink-2)" }} />
@@ -3762,22 +3773,22 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
           <p className="h2">{dayData.label}</p>
           {dayData.exercises.map((ex) => {
             const hist = ex.history || [];
-            const entry = !isFuture ? hist[hist.length - weeksAgo] : null;
+            const entry = isFuture ? hist[hist.length - 1] : hist[hist.length - weeksAgo];
             return (
               <div key={ex.id || ex.name} className="card">
                 <p className="h2 mb-1" style={{ fontSize: "1rem" }}>{ex.name}</p>
                 <p className="meta mb-2">{ex.sets} serie × {ex.reps} reps previste</p>
-                {isFuture ? (
-                  <p className="meta">Sessione futura: nessun carico ancora registrato.</p>
-                ) : entry ? (
+                {entry ? (
                   <div className="inner px-4 py-3.5 flex items-center justify-between">
-                    <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Carico registrato</span>
+                    <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
+                      {isFuture ? "Ultimo carico registrato" : "Carico registrato"}
+                    </span>
                     <span style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--ink)" }}>
                       {entry.kg} kg <span style={{ color: "var(--ink-3)", fontWeight: 600 }}>× {entry.reps} reps</span>
                     </span>
                   </div>
                 ) : (
-                  <p className="meta">Nessun dato registrato per questa giornata.</p>
+                  <p className="meta">Nessun carico ancora registrato.</p>
                 )}
               </div>
             );
@@ -3789,17 +3800,18 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
 }
 
 /* Stesso principio del calendario Allenamento (WorkoutCalendarStrip), qui per
-   l'Alimentazione: una striscia di giorni passati su cui tornare per
-   aggiungere un pasto dimenticato. Il colore distingue Giorno ON (allenamento,
-   target più alto) da Giorno OFF (riposo) — stesso weekPlan già usato per
-   calcolare isTrainingDay, niente doppia fonte di verità. Solo passato/oggi:
-   non si può registrare un pasto nel futuro. */
-function NutritionCalendarStrip({ weekPlan, selectedIso, onSelectIso, accent }) {
+   l'Alimentazione: una striscia di giorni — passati, oggi E futuri, come su
+   Allenamento — su cui tornare per aggiungere un pasto dimenticato o vedere
+   in anticipo il target di un giorno che deve ancora arrivare. Stesso sfondo
+   scuro per ogni giorno, solo il testo cambia colore: oggi lucido oro/rosa,
+   Giorno ON lucido verde, Giorno OFF bianco normale. Un pallino rosso sotto
+   segnala un giorno passato senza nemmeno un pasto registrato. */
+function NutritionCalendarStrip({ weekPlan, selectedIso, onSelectIso, accent, loggedDates }) {
   const scrollRef = useRef(null);
   useDragScroll(scrollRef);
   const todayMid = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
-  const days = useMemo(() => Array.from({ length: 31 }, (_, i) => {
-    const d = new Date(todayMid); d.setDate(d.getDate() - (30 - i)); return d;
+  const days = useMemo(() => Array.from({ length: 45 }, (_, i) => {
+    const d = new Date(todayMid); d.setDate(d.getDate() + (i - 30)); return d;
   }), [todayMid]);
 
   useEffect(() => {
@@ -3812,22 +3824,26 @@ function NutritionCalendarStrip({ weekPlan, selectedIso, onSelectIso, accent }) 
       {days.map((d) => {
         const iso = toLocalISODate(d);
         const isToday = d.getTime() === todayMid.getTime();
+        const isFuture = d.getTime() > todayMid.getTime();
         const wd = isoWeekdayOf(d);
         const isOn = !!weekPlan[wd];
+        const missed = !isFuture && !isToday && !(loggedDates?.has(iso));
         const selected = selectedIso ? iso === selectedIso : isToday;
+        const textClass = isToday ? "title-shine" : isOn ? "green-shine" : "";
 
         return (
           <button key={iso} data-today={isToday ? "1" : "0"} onClick={() => onSelectIso(isToday ? null : iso)}
-                  className="shrink-0 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-transform active:scale-95"
-                  style={{ width: 52, height: 60,
-                           background: isOn ? "linear-gradient(135deg, var(--title-a), var(--title-b))" : "var(--surface)",
-                           border: `1.5px solid ${selected ? "var(--ink)" : isOn ? "transparent" : "var(--line)"}`,
-                           boxShadow: isToday ? `0 0 0 2px ${accent}` : "none" }}>
-            <span style={{ fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase", opacity: 0.85,
-                           color: isOn ? "#FFFFFF" : "var(--ink-2)" }}>
+                  className="relative shrink-0 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-transform active:scale-95"
+                  style={{ width: 52, height: 60, backgroundColor: "var(--surface)",
+                           border: `1.5px solid ${selected ? "var(--ink)" : "var(--line)"}` }}>
+            <span className={textClass} style={{ fontSize: "0.58rem", fontWeight: 700, textTransform: "uppercase", opacity: 0.85,
+                           color: textClass ? undefined : "var(--ink)" }}>
               {WEEK_DAYS[wd]}
             </span>
-            <span style={{ fontSize: "1.05rem", fontWeight: 800, color: isOn ? "#FFFFFF" : "var(--ink)" }}>{d.getDate()}</span>
+            <span className={textClass} style={{ fontSize: "1.05rem", fontWeight: 800, color: textClass ? undefined : "var(--ink)" }}>
+              {d.getDate()}
+            </span>
+            {missed && <span className="absolute rounded-full" style={{ bottom: 6, width: 5, height: 5, backgroundColor: "#EF4444" }} aria-label="Nessun pasto registrato" />}
           </button>
         );
       })}
@@ -8346,6 +8362,13 @@ export default function HomePreview({
           background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;
           animation:performGlow 5s ease-in-out infinite;display:inline-block}
         @media (prefers-reduced-motion: reduce){.title-shine{animation:none}}
+        /* stesso meccanismo di title-shine, tonalità verde fissa (non
+           dipende dal genere): Giorno ON nelle strisce calendario
+           Allenamento/Alimentazione. */
+        .green-shine{background-image:linear-gradient(100deg, #10B981, #6EE7B7, #047857, #6EE7B7, #10B981);
+          background-size:220% auto;-webkit-background-clip:text;background-clip:text;color:transparent;
+          animation:performGlow 5s ease-in-out infinite;display:inline-block}
+        @media (prefers-reduced-motion: reduce){.green-shine{animation:none}}
         /* BUG PRESO: si chiamava ".h1" come la classe (diversa, testo pieno
            var(--ink)) di 08_ClientProfileView.jsx/04_AppShell.jsx — nomi
            di classe globali non isolati fra file, l'ultimo <style> montato
