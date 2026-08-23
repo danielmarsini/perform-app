@@ -871,6 +871,95 @@ function BiometricPhotoGallery({ checkPhotos, t }) {
   );
 }
 
+/* ---------------------------------------------------------------------------
+   Report Mensile stampabile: una pagina bianca pensata per la stampa/"Salva
+   come PDF" del browser (nessuna libreria PDF aggiunta — window.print() con
+   CSS @media print già fa il lavoro, senza pesare il bundle). Riusa gli
+   stessi componenti/dati già mostrati nell'Archivio Check (WeightChart,
+   CircumferenceChart, RecompositionBadge, foto), mai un secondo calcolo.
+   ------------------------------------------------------------------------- */
+function MonthlyReportView({ profile, accent, level, xp, streak, weightPoints, circPoints, checkPhotos, t, onClose }) {
+  const monthLabel = new Date().toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+  const reading = recompositionReading(weightPoints, circPoints);
+  const firstShot = checkPhotos?.[0];
+  const lastShot = checkPhotos?.length > 1 ? checkPhotos[checkPhotos.length - 1] : null;
+
+  return (
+    <Portal>
+      <div className="report-overlay">
+        <div className="report-toolbar no-print">
+          <button onClick={onClose} className="report-toolbar-btn report-toolbar-btn-ghost">Chiudi</button>
+          <button onClick={() => window.print()} className="report-toolbar-btn report-toolbar-btn-solid" style={{ backgroundColor: accent }}>
+            Stampa / Salva come PDF
+          </button>
+        </div>
+        <div className="report-page">
+          <div className="report-header">
+            <div>
+              <p className="report-brand">PERFORM</p>
+              <p className="report-title">Report mensile — {monthLabel}</p>
+            </div>
+            <p className="report-name">{profile.nickname || profile.name}</p>
+          </div>
+
+          <div className="report-stats">
+            {[["Livello", level], ["XP totali", xp.toLocaleString()], ["Streak", `${streak} giorni`]].map(([k, v]) => (
+              <div key={k} className="report-stat">
+                <p className="report-stat-label">{k}</p>
+                <p className="report-stat-value">{v}</p>
+              </div>
+            ))}
+          </div>
+
+          {weightPoints?.length > 0 && (
+            <div className="report-section">
+              <p className="report-section-title">Andamento peso</p>
+              <WeightChart points={weightPoints} accent={accent} t={t.archive} />
+            </div>
+          )}
+
+          {circPoints?.length > 0 && (
+            <div className="report-section">
+              <p className="report-section-title">Confronto circonferenze</p>
+              <CircumferenceChart points={circPoints} accent={accent} />
+            </div>
+          )}
+
+          {reading && (
+            <div className="report-section">
+              <p className="report-section-title">Lettura del periodo</p>
+              <p style={{ fontWeight: 800, fontSize: "0.95rem", marginBottom: 4 }}>{reading.label}</p>
+              <p style={{ color: "#52525B", fontSize: "0.82rem", lineHeight: 1.5 }}>{reading.detail}</p>
+            </div>
+          )}
+
+          {firstShot && (
+            <div className="report-section">
+              <p className="report-section-title">Confronto foto — inizio vs oggi</p>
+              <div className="report-photo-grid">
+                {[["Inizio", firstShot], ["Oggi", lastShot || firstShot]].map(([lab, shot]) => (
+                  <div key={lab}>
+                    <p style={{ fontSize: "0.68rem", fontWeight: 700, marginBottom: 6, textAlign: "center" }}>{lab}</p>
+                    <div className="report-photo-row">
+                      {["front", "side", "back"].map((k) => (
+                        <div key={k} className="report-photo-slot">
+                          {shot[k] ? <img src={shot[k]} alt={k} /> : <span>—</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="report-footer">Generato da PERFORM · Evidence-Based Method by D. Marsini</p>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 function Section({ id, icon: Icon, title, sub, openId, setOpenId, children }) {
   const on = openId === id;
   return (
@@ -955,6 +1044,7 @@ export function ClientProfileView({
   // insieme, così la pagina resta sempre corta).
   const [openSection, setOpenSection] = useState(null);
   const [exFilter, setExFilter] = useState("all"); // "all" | "compound" | "favorites"
+  const [reportOpen, setReportOpen] = useState(false);
   const fileRef = useRef(null);
 
   const save = () => {
@@ -1125,15 +1215,24 @@ export function ClientProfileView({
                title={<GradientText gender={gender}>{t.archive.title}</GradientText>}
                openId={openSection} setOpenId={setOpenSection}
                sub={weightPoints?.length ? t.archive.subReady(weightPoints.length) : t.archive.subEmpty}>
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
           <p className="label mb-0">{t.archive.weightTrend}</p>
-          {onOpenManualCheck && (
-            <button onClick={onOpenManualCheck}
-              className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs"
-              style={{ border: `1px solid ${accentText}`, color: accentText, fontWeight: 600 }}>
-              + Registra ora
-            </button>
-          )}
+          <span className="flex items-center gap-2">
+            {weightPoints?.length > 0 && (
+              <button onClick={() => setReportOpen(true)}
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs"
+                style={{ border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
+                📄 Report mensile
+              </button>
+            )}
+            {onOpenManualCheck && (
+              <button onClick={onOpenManualCheck}
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs"
+                style={{ border: `1px solid ${accentText}`, color: accentText, fontWeight: 600 }}>
+                + Registra ora
+              </button>
+            )}
+          </span>
         </div>
         <WeightChart points={weightPoints} accent={accent} t={t.archive} />
 
@@ -1184,6 +1283,12 @@ export function ClientProfileView({
           );
         })()}
       </Section>
+
+      {reportOpen && (
+        <MonthlyReportView profile={profile} accent={accent} level={level} xp={xp} streak={streak}
+          weightPoints={weightPoints} circPoints={circPoints} checkPhotos={checkPhotos} t={t}
+          onClose={() => setReportOpen(false)} />
+      )}
     </div>
   );
 }
@@ -1958,6 +2063,40 @@ export default function ClientProfileViewPreview({
           100%{transform:scale(1) rotate(0deg)}
         }
         @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+
+        /* Report mensile: pagina bianca fissa pensata per la stampa/PDF del
+           browser, indipendente dal tema (dark/light) dell'app — un report
+           stampato su carta scura sarebbe illeggibile e sprecherebbe inchiostro. */
+        .report-overlay{position:fixed;inset:0;z-index:90;background:#F1F1F2;overflow-y:auto}
+        .report-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;gap:10px;
+          padding:14px 20px;background:rgba(241,241,242,0.92);backdrop-filter:blur(10px)}
+        .report-toolbar-btn{border-radius:999px;padding:10px 18px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer}
+        .report-toolbar-btn-ghost{background:#FFFFFF;color:#3F3F46;border:1px solid #E4E4E7}
+        .report-toolbar-btn-solid{color:#FFFFFF}
+        .report-page{max-width:640px;margin:0 auto 40px;background:#FFFFFF;color:#18181B;
+          border-radius:16px;padding:36px 32px;box-shadow:0 20px 50px rgba(0,0,0,0.08)}
+        .report-header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;
+          border-bottom:2px solid #18181B;padding-bottom:14px;margin-bottom:20px}
+        .report-brand{font-size:0.7rem;font-weight:800;letter-spacing:0.3em;color:#8C6E33;margin:0 0 2px}
+        .report-title{font-size:1.3rem;font-weight:800;margin:0}
+        .report-name{font-size:0.95rem;font-weight:600;color:#52525B;margin:0}
+        .report-stats{display:flex;gap:12px;margin-bottom:24px}
+        .report-stat{flex:1;background:#F8F9FA;border-radius:12px;padding:12px;text-align:center}
+        .report-stat-label{font-size:0.62rem;text-transform:uppercase;letter-spacing:0.08em;color:#8E8E93;margin:0 0 4px}
+        .report-stat-value{font-size:1.1rem;font-weight:800;margin:0}
+        .report-section{margin-bottom:26px}
+        .report-section-title{font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:#8E8E93;font-weight:700;margin:0 0 10px}
+        .report-photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        .report-photo-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+        .report-photo-slot{aspect-ratio:3/4;border-radius:8px;overflow:hidden;background:#F1F1F2;
+          display:flex;align-items:center;justify-content:center;color:#A1A1AA;font-size:0.7rem}
+        .report-photo-slot img{width:100%;height:100%;object-fit:cover}
+        .report-footer{text-align:center;font-size:0.68rem;color:#A1A1AA;margin-top:30px}
+        @media print{
+          .no-print{display:none!important}
+          .report-overlay{position:static;background:#FFFFFF}
+          .report-page{box-shadow:none;border-radius:0;max-width:100%;margin:0;padding:0}
+        }
       `}</style>
 
       {!isControlled && (
