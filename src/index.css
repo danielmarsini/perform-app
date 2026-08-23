@@ -94,3 +94,18 @@ button:active::after, [role="button"]:active::after {
 @media (prefers-reduced-motion: reduce) {
   button::after, [role="button"]::after { transition: none; }
 }
+
+/* Niente barre di scorrimento a vista da nessuna parte (striscia giorni
+   Allenamento/Alimentazione, liste lunghe, ecc.) — lo scroll resta attivo,
+   solo la scrollbar grigia del browser sparisce. Applicato a ogni elemento,
+   non solo a classi specifiche: qualunque contenitore scrollabile futuro
+   eredita lo stesso comportamento senza doverlo ricordare ogni volta. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}

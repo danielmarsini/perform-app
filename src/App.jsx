@@ -29,10 +29,7 @@ function ChatScreen({ supabase, userId, accent, gender }) {
   return (
     <div className="flex flex-col h-full px-4 pt-4">
       <div className="mb-3 shrink-0">
-        <p className="h1 mb-1">Chat con il coach</p>
-        <p className="body" style={{ color: "var(--ink-2)" }}>
-          Scrivi feedback, aggiornamenti, o manda foto, video, vocali e file — come su WhatsApp.
-        </p>
+        <p className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>Chat privata col coach</p>
       </div>
       <div className="flex-1 min-h-0">
         <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} gender={gender} />
