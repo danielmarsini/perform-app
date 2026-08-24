@@ -827,7 +827,7 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
           </div>
           <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
             title="🔒 SBLOCCA LA PLANCIA ANALITICA DEI VOLUMI"
-            text="Passa al Performance Pack (€5/mese) per vedere l'istogramma dinamico in tempo reale dello stimolo settimanale sui 14 distretti muscolari." />
+            text="Passa al Performance Pack (€5/mese) per vedere l'istogramma dinamico in tempo reale dello stimolo settimanale sui 15 distretti muscolari." />
         </>
       ) : involved.length === 0 ? (
         <p className="meta">Aggiungi esercizi alla settimana per vedere la matrice popolarsi.</p>
@@ -5278,7 +5278,7 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
             <div className="inner p-3 mb-2">
               <p className="label mb-1.5">Assegna Muscolo Target</p>
               <p className="meta mb-2" style={{ fontSize: "0.65rem" }}>
-                Esercizio non riconosciuto: scegli a quale dei 14 distretti inviare il volume, altrimenti il
+                Esercizio non riconosciuto: scegli a quale dei 15 distretti inviare il volume, altrimenti il
                 grafico resterebbe vuoto per questo movimento.
               </p>
               <select value={targetMuscle} onChange={(e) => setTargetMuscle(e.target.value)}

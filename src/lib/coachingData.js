@@ -27,7 +27,7 @@
    ========================================================================== */
 
 const MUSCLE_TARGETS = [
-  "Pettorali", "Gran Dorsale", "Trapezio",
+  "Pettorali", "Gran Dorsale", "Lombari", "Trapezio",
   "Deltoide Anteriore", "Deltoide Laterale", "Deltoide Posteriore",
   "Bicipiti", "Tricipiti", "Addome", "Glutei",
   "Quadricipiti", "Femorali", "Adduttori", "Polpacci",
@@ -45,8 +45,12 @@ const MUSCLE_TARGETS = [
 
 // Nomi brevi per il grafico volumi (Petto, Dorsali, Deltoide Ant/Lat/Post,
 // Addominali...) — MUSCLE_TARGETS sopra è il check constraint reale di
-// workout_logs.muscle_target, con nomi estesi diversi in 6 casi su 14.
-const MUSCLES = ["Petto", "Trapezio", "Dorsali", "Deltoide Ant", "Deltoide Lat", "Deltoide Post", "Bicipiti", "Tricipiti", "Quadricipiti", "Femorali", "Adduttori", "Glutei", "Polpacci", "Addominali"];
+// workout_logs.muscle_target, con nomi estesi diversi in 6 casi su 15.
+// "Lombari" (richiesto esplicitamente, insieme ad "Addominali" — già
+// presente da prima come "Addome"/"Addominali", solo i lombari mancavano
+// davvero) coincide col nome esteso, come Trapezio/Bicipiti/ecc.: nessuna
+// voce nuova serve in EXERCISE_LIB_MUSCLE_TO_DB qui sotto.
+const MUSCLES = ["Petto", "Trapezio", "Dorsali", "Lombari", "Deltoide Ant", "Deltoide Lat", "Deltoide Post", "Bicipiti", "Tricipiti", "Quadricipiti", "Femorali", "Adduttori", "Glutei", "Polpacci", "Addominali"];
 
 const DEFAULT_EXERCISE_LIB = {
   "Panca piana bilanciere": { direct: ["Petto"], indirect: ["Tricipiti", "Deltoide Ant"] },
@@ -56,6 +60,8 @@ const DEFAULT_EXERCISE_LIB = {
   "Alzate laterali": { direct: ["Deltoide Lat"], indirect: [] },
   "Lat machine": { direct: ["Dorsali"], indirect: ["Bicipiti", "Deltoide Post"] },
   "Rematore bilanciere": { direct: ["Dorsali"], indirect: ["Bicipiti", "Deltoide Post", "Trapezio"] },
+  "Iperestensioni": { direct: ["Lombari"], indirect: ["Glutei", "Femorali"] },
+  "Stacco da terra": { direct: ["Lombari"], indirect: ["Dorsali", "Glutei", "Femorali", "Trapezio"] },
   "Face pull ai cavi": { direct: ["Deltoide Post"], indirect: ["Dorsali", "Trapezio"] },
   "Scrollate con bilanciere": { direct: ["Trapezio"], indirect: [] },
   "Curl bilanciere": { direct: ["Bicipiti"], indirect: [] },
