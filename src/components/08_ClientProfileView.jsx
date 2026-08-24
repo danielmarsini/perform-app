@@ -460,6 +460,16 @@ export function GradientText({ children, gender, className, style }) {
 // temporale del delta mostrato sotto il grafico (es. "in 6 settimane"): un
 // numero senza il periodo a cui si riferisce si presta a essere letto come
 // più significativo di quanto sia davvero.
+// Etichette dei grafici (Archivio Check): giorno.mese, MAI mese/giorno —
+// BUG PRESO (segnalato): date.slice(5).replace("-","/") su una data ISO
+// (YYYY-MM-DD) produceva "MM/DD" (es. "08/24"), che sembra un errore a
+// prima vista perché il resto dell'app/l'utente si aspetta il formato
+// italiano giorno-mese. Un punto come separatore, non una barra — coerente
+// con l'esempio dato esplicitamente ("24.08").
+function formatDayMonth(iso) {
+  const [, m, d] = iso.split("-");
+  return `${d}.${m}`;
+}
 function daysBetweenIso(a, b) {
   if (!a || !b) return null;
   const d = Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}T00:00:00`)) / 86400000);
@@ -804,7 +814,7 @@ function TrophyShelf({ level, streak, checkinsCount, weightPoints, circPoints, u
    affiancate per vedere il cambiamento reale. checkPhotos va ordinato per
    data crescente prima di arrivare qui. */
 function PhotoCompareGrid({ checkPhotos, t }) {
-  const monthLabel = (d) => new Date(d).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  const monthLabel = (d) => new Date(d).toLocaleDateString("it-IT", { month: "short", year: "numeric" });
   const [aIdx, setAIdx] = useState(0);
   const [bIdx, setBIdx] = useState(Math.max(0, (checkPhotos?.length || 1) - 1));
 
@@ -857,7 +867,7 @@ function BiometricPhotoGallery({ checkPhotos, t }) {
       {mostRecentFirst.map((s) => (
         <div key={s.date}>
           <p className="label mb-2">
-            {new Date(s.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
+            {new Date(s.date).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })}
           </p>
           <div className="grid grid-cols-3 gap-2">
             {["front", "side", "back"].map((k, i) => (
@@ -1866,7 +1876,7 @@ export function SettingsDrawer({
                       : activePlan.billing === "one_time"
                         ? t.plan.oneTimeRenew
                         : planRenewsOn
-                          ? t.plan.autoRenew(new Date(planRenewsOn).toLocaleDateString())
+                          ? t.plan.autoRenew(new Date(planRenewsOn).toLocaleDateString("it-IT"))
                           : t.plan.subscribed}
                 </p>
                 {activePlan.billing !== "none" && !(isOwner && activePlan.id === "full") && (
@@ -2128,7 +2138,7 @@ export default function ClientProfileViewPreview({
   const weightPoints = isRealMode
     ? (realCheckins ?? [])
         .filter((c) => c.weight != null)
-        .map((c) => ({ label: c.date.slice(5).replace("-", "/"), kg: Number(c.weight), date: c.date }))
+        .map((c) => ({ label: formatDayMonth(c.date), kg: Number(c.weight), date: c.date }))
     : demoWeightPoints;
 
   // Circonferenze: confronto ogni volta che il cliente le registra, così
@@ -2144,7 +2154,7 @@ export default function ClientProfileViewPreview({
     ? (realCheckins ?? [])
         .filter((c) => c.waist != null || c.thigh != null || c.arm != null)
         .map((c) => ({
-          label: c.date.slice(5).replace("-", "/"),
+          label: formatDayMonth(c.date),
           waist: c.waist != null ? Number(c.waist) : null,
           thigh: c.thigh != null ? Number(c.thigh) : null,
           arm: c.arm != null ? Number(c.arm) : null,
