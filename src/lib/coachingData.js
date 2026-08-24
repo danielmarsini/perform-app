@@ -984,13 +984,23 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
 }
 
 // Scrive l'allenamento di una settimana intera, giorno per giorno: per ogni
-// data confronta gli esercizi nuovi con quelli già assegnati (per NOME, non
-// per id — gli esercizi appena aggiunti in UI non hanno ancora un id reale),
-// aggiorna solo i campi prescrittivi di quelli già presenti (mai
-// reps_completed/load_kg/rir/status: quello è lo storico svolto dal
-// cliente, non va mai sovrascritto da qui), inserisce quelli nuovi, cancella
-// SOLO le righe del singolo giorno il cui esercizio non è più nella lista —
-// mai una delete dell'intera settimana in un colpo solo.
+// data confronta gli esercizi nuovi con quelli già assegnati PER ID (un id
+// conta come "reale" solo se combacia con una riga che esiste davvero su
+// quella data — un esercizio appena aggiunto in UI ha un id locale finto,
+// tipo "x3", che qui non troverà mai corrispondenza, e resta sempre un
+// insert, esattamente come prima), aggiorna solo i campi prescrittivi di
+// quelli già presenti (mai reps_completed/load_kg/rir/status: quello è lo
+// storico svolto dal cliente, non va mai sovrascritto da qui), inserisce
+// quelli nuovi, cancella SOLO le righe del singolo giorno il cui id non è
+// più rivendicato da nessun esercizio nella lista — mai una delete
+// dell'intera settimana in un colpo solo.
+// BUG PRESO (segnalato): il confronto era PER NOME. Rinominare un esercizio
+// già assegnato cambiava correttamente lo stato locale, ma al salvataggio
+// il nome nuovo non trovava più corrispondenza nella riga vecchia (stesso
+// id, nome diverso) — la riga veniva cancellata e ricreata da capo, con un
+// created_at più recente di tutte le altre. fetchWeekWorkout ordina per
+// created_at: l'esercizio rinominato saltava sempre in fondo alla lista del
+// giorno, invece di restare dov'era.
 export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workoutArray) {
   if (!Array.isArray(workoutArray) || workoutArray.length !== 7) {
     throw new Error("saveWeekWorkout: workoutArray deve avere 7 elementi (Lunedì→Domenica).");
@@ -1014,7 +1024,6 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
     const date = dates[i];
     const day = workoutArray[i];
     const newExercises = day?.exercises ?? [];
-    const newNames = new Set(newExercises.map((e) => e.name));
 
     const { data: existing, error: fetchError } = await supabase
       .from("workout_logs")
@@ -1023,8 +1032,9 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
       .eq("date", date);
     if (fetchError) throw fetchError;
 
-    const existingIdByName = new Map((existing ?? []).map((r) => [r.exercise_name, r.id]));
-    const toDelete = (existing ?? []).filter((r) => !newNames.has(r.exercise_name)).map((r) => r.id);
+    const existingIds = new Set((existing ?? []).map((r) => r.id));
+    const claimedIds = new Set(newExercises.filter((e) => existingIds.has(e.id)).map((e) => e.id));
+    const toDelete = (existing ?? []).filter((r) => !claimedIds.has(r.id)).map((r) => r.id);
     if (toDelete.length > 0) {
       const { error: deleteError } = await supabase.from("workout_logs").delete().in("id", toDelete);
       if (deleteError) throw deleteError;
@@ -1032,6 +1042,7 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
 
     for (const ex of newExercises) {
       const prescriptiveFields = {
+        exercise_name: ex.name,
         split_label: day.label || null,
         muscle_target: ex.muscleTarget,
         synergist_targets: ex.synergists && ex.synergists.length > 0 ? ex.synergists : null,
@@ -1041,15 +1052,13 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
         rir_target: ex.rirTarget || null,
         intensity_technique: ex.technique || null,
       };
-      const existingId = existingIdByName.get(ex.name);
-      if (existingId) {
-        const { error: updateError } = await supabase.from("workout_logs").update(prescriptiveFields).eq("id", existingId);
+      if (existingIds.has(ex.id)) {
+        const { error: updateError } = await supabase.from("workout_logs").update(prescriptiveFields).eq("id", ex.id);
         if (updateError) throw updateError;
       } else {
         const { error: insertError } = await supabase.from("workout_logs").insert({
           user_id: userId,
           date,
-          exercise_name: ex.name,
           status: "missed",
           is_read_only: true,
           ...prescriptiveFields,
@@ -1065,10 +1074,13 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
 // saveWeekWorkout già sa scrivere, e delega a quella — non una seconda
 // versione scritta a mano della logica di confronto/scrittura. Vantaggio
 // pratico: clonare due volte sulla stessa settimana destinazione AGGIORNA
-// (non duplica), perché passa dallo stesso percorso — confronto per nome,
-// update dei campi prescrittivi sulle righe già presenti, insert delle
-// nuove, delete solo di quelle non più presenti — usato dal salvataggio
-// manuale. Sempre come storico nuovo: reps_completed/load_kg/rir della
+// (non duplica) — passa dallo stesso percorso di saveWeekWorkout, che
+// confronta per id: qui gli esercizi copiati non portano MAI l'id reale
+// della destinazione (solo nome/target/prescrizione), quindi ogni riga già
+// presente sulla data di destinazione non viene mai "rivendicata" e viene
+// sempre cancellata e riscritta da capo con quella nuova — stesso risultato
+// finale di un update, per righe che comunque cambiano tutte insieme.
+// Sempre come storico nuovo: reps_completed/load_kg/rir della
 // sorgente non vengono letti né copiati, saveWeekWorkout li lascia intatti
 // per le righe già esistenti nella destinazione e non li imposta per quelle
 // nuove (nascono senza, come sempre).
