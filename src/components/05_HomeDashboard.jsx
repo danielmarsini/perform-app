@@ -4482,10 +4482,6 @@ function NutritionCalendarStrip({ weekPlan, selectedIso, onSelectIso, accent, lo
 function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, gender, onUpgrade, onOpenChat, onCoachSync }) {
   const [plates, setPlates] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
-  // Le righe già precompilate da workout_sets (vedi hydration nel wrapper)
-  // partono spuntate — altrimenti riaprendo l'app le serie già registrate
-  // apparirebbero non completate anche se i dati sono già salvati davvero.
-  const [doneRows, setDoneRows] = useState(() => rows.map((r) => r.kg !== "" && r.reps !== "" && r.rir !== ""));
   const [timer, setTimer] = useState(null); // { total, remaining } in secondi
   const [prToast, setPrToast] = useState(null);
 
@@ -4514,7 +4510,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const lastEntry = historyEntries.length ? historyEntries[historyEntries.length - 1] : null;
 
   const pl = platesFor(peak);
-  const complete = (r) => r.kg !== "" && r.reps !== "" && r.rir !== "";
+  const complete = (r) => r.kg !== "" && r.reps !== "";
   const curIdx = rows.findIndex((r) => !complete(r));
   const restIdx = curIdx === -1 ? rows.length - 1 : curIdx;
   const rest = ex.rests?.[restIdx] ?? 120;
@@ -4541,25 +4537,38 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
     return () => clearInterval(id);
   }, [timer]);
 
-  const toggleRowDone = (i) => {
-    setDoneRows((d) => {
-      const next = d.map((v, k) => (k === i ? !v : v));
-      if (next[i]) {
+  // Registrazione automatica: niente più spunta manuale — appena kg e reps
+  // sono entrambi inseriti la serie si considera fatta. Il confronto è per
+  // VALORE (non solo "completa sì/no") così un ritocco a una serie già
+  // completa la ri-salva senza far ripartire il timer una seconda volta;
+  // il timer e il controllo record partono solo al primo passaggio a
+  // "completa", il salvataggio invece segue ogni correzione successiva.
+  const prevRowsRef = useRef(rows.map((r) => ({ kg: r.kg, reps: r.reps })));
+  useEffect(() => {
+    rows.forEach((r, i) => {
+      const prev = prevRowsRef.current[i] || { kg: "", reps: "" };
+      const isComplete = complete(r);
+      const wasComplete = prev.kg !== "" && prev.reps !== "";
+      const valueChanged = prev.kg !== r.kg || prev.reps !== r.reps;
+      if (!isComplete || !valueChanged) return;
+
+      syncToCoach({ kind: "set-completed", rowIndex: i, row: r });
+      if (!wasComplete) {
         const dur = ex.rests?.[i] ?? 120;
         setTimer({ total: dur, remaining: dur });
-        syncToCoach({ kind: "set-completed", rowIndex: i, row: rows[i] });
-        // Celebrazione automatica: questa serie appena spuntata batte il
+        // Celebrazione automatica: questa serie appena completata batte il
         // carico massimo storico di questo esercizio (mai il primo giorno
         // registrato, best === 0 non è un vero confronto).
-        const kg = Number(rows[i].kg) || 0;
+        const kg = Number(r.kg) || 0;
         if (best > 0 && kg > best) {
           setPrToast({ key: Date.now(), exerciseName: ex.name, prevBest: best, kg });
           setTimeout(() => setPrToast(null), 7000);
         }
       }
-      return next;
     });
-  };
+    prevRowsRef.current = rows.map((r) => ({ kg: r.kg, reps: r.reps }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
 
   const ringR = 27, ringC = 2 * Math.PI * ringR;
   const ringOffset = timer ? ringC * (1 - timer.remaining / timer.total) : 0;
@@ -4609,31 +4618,32 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       <div className="mt-4 space-y-2">
         <div className="grid grid-cols-12 gap-2">
           <span className="col-span-2 label">Serie</span>
-          {["Kg", "Reps", "RIR"].map((h) => <span key={h} className="col-span-3 label text-center">{h}</span>)}
-          <span className="col-span-1 label text-center">✓</span>
+          {["Kg", "Reps"].map((h) => <span key={h} className="col-span-4 label text-center">{h}</span>)}
+          <span className="col-span-2 label text-center">✓</span>
         </div>
         {rows.map((row, i) => (
           <div key={i} className="grid grid-cols-12 gap-2 items-center">
             <span className="col-span-2 text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>S{i + 1}</span>
-            {["kg", "reps", "rir"].map((f) => (
+            {["kg", "reps"].map((f) => (
               <input key={f} type="number" min="0" value={row[f]}
-                     onChange={(e) => { onSetField(ex, i, f, e.target.value); syncToCoach({ kind: "field-change", rowIndex: i, field: f, value: e.target.value }); }}
+                     onChange={(e) => onSetField(ex, i, f, e.target.value)}
                      placeholder={f === "reps" ? repsTargets[i] : undefined}
-                     className="col-span-3 input w-full px-2 py-2.5 text-center text-sm"
+                     className="col-span-4 input w-full px-2 py-2.5 text-center text-sm"
                      aria-label={f === "reps" && repsTargets[i] ? `reps serie ${i + 1} di ${ex.name}, target ${repsTargets[i]}` : `${f} serie ${i + 1} di ${ex.name}`} />
             ))}
-            <button onClick={() => toggleRowDone(i)}
-                    aria-label={doneRows[i] ? `Segna serie ${i + 1} come da rifare` : `Segna serie ${i + 1} come completata e avvia il recupero`}
-                    className="col-span-1 flex items-center justify-center transition-transform active:scale-90">
-              {doneRows[i]
+            {/* Non più un pulsante: la serie si registra da sola appena kg e
+                reps sono compilati (vedi l'effetto sopra) — questo è solo
+                un riflesso passivo di quello stato, niente da toccare qui. */}
+            <span className="col-span-2 flex items-center justify-center" aria-hidden="true">
+              {complete(row)
                 ? <CheckCircle2 size={20} style={{ color: accent }} />
                 : <span className="rounded-full" style={{ width: 18, height: 18, border: "1.5px solid var(--ink-2)", display: "block" }} />}
-            </button>
+            </span>
           </div>
         ))}
       </div>
 
-      {/* Smart Rest Timer: countdown circolare automatico dopo la spunta */}
+      {/* Smart Rest Timer: countdown circolare automatico non appena la serie è completa */}
       {timer && (
         <div className="spring-in inner p-4 mt-3 flex items-center gap-4">
           <div className="relative shrink-0" style={{ width: 64, height: 64 }}>
@@ -4942,10 +4952,10 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
 
   const todayDay = weeks[0]?.[day.weekday] || null;
 
-  const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "", rir: "" }));
+  const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }));
   const onSetField = (ex, i, f, v) =>
     setSets((s) => {
-      const rows = (s[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "", rir: "" }))).map((r, j) => (j === i ? { ...r, [f]: v } : r));
+      const rows = (s[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }))).map((r, j) => (j === i ? { ...r, [f]: v } : r));
       return { ...s, [ex.id]: rows };
     });
 
@@ -10054,8 +10064,8 @@ export default function HomePreview({
               setsPatch[r.id] = Array.from({ length: r.sets_count ?? 3 }, (_, i) => {
                 const logged = loggedSets.find((s) => s.set_number === i + 1);
                 return logged
-                  ? { kg: logged.load_kg ?? "", reps: logged.reps_completed ?? "", rir: logged.rir ?? "" }
-                  : { kg: "", reps: "", rir: "" };
+                  ? { kg: logged.load_kg ?? "", reps: logged.reps_completed ?? "" }
+                  : { kg: "", reps: "" };
               });
             }
             return {
@@ -10278,17 +10288,19 @@ export default function HomePreview({
     setCoachFeed((f) => [...f.slice(-99), { ...evt, at: new Date().toISOString() }]);
     setLastActivityDate(toLocalISODate());
 
-    // Salvataggio reale: quando il cliente spunta una serie come completata su
-    // un esercizio assegnato dal coach (isRealMode + exerciseId reale), scrive
+    // Salvataggio reale: quando kg e reps sono entrambi compilati su un
+    // esercizio assegnato dal coach (isRealMode + exerciseId reale), scrive
     // sia lo storico completo (workout_sets, una riga per serie) sia un
-    // riassunto rapido su workout_logs (ultima serie + stato "done").
+    // riassunto rapido su workout_logs (ultima serie + stato "done"). Il RIR
+    // non si raccoglie più per singola serie (resta solo come indicazione
+    // del coach nella guida esercizio): sempre null qui.
     if (isRealMode && evt.type === "workout" && evt.kind === "set-completed" && evt.exerciseId && evt.row) {
-      const { kg, reps, rir } = evt.row;
+      const { kg, reps } = evt.row;
       const payload = {
         exerciseId: evt.exerciseId, userId, setNumber: evt.rowIndex + 1,
         repsCompleted: reps !== "" ? Number(reps) : null,
         loadKg: kg !== "" ? Number(kg) : null,
-        rir: rir !== "" ? Number(rir) : null,
+        rir: null,
       };
       logWorkoutSet(supabaseProp, payload.exerciseId, payload.userId, payload.setNumber, {
         repsCompleted: payload.repsCompleted, loadKg: payload.loadKg, rir: payload.rir,
@@ -10368,10 +10380,10 @@ export default function HomePreview({
     { id: "e3", name: "Alzate laterali manubri", sets: 3, reps: "12-15", rirTarget: "1", technique: "", rests: [90, 90, 90],
       history: [{ kg: 12, reps: 14 }, { kg: 12.5, reps: 13 }] },
   ];
-  const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "", rir: "" }));
+  const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }));
   const onSetField = (ex, i, f, v) =>
     setSets((s) => {
-      const rows = (s[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "", rir: "" }))).map((r, j) => (j === i ? { ...r, [f]: v } : r));
+      const rows = (s[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }))).map((r, j) => (j === i ? { ...r, [f]: v } : r));
       return { ...s, [ex.id]: rows };
     });
 
