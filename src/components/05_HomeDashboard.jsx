@@ -22,12 +22,13 @@ import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
-  Loader2, AlertTriangle, Mic, MicOff, MessageCircle,
+  Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, fetchCoachSettings } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
+import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
 import { playSound } from "../lib/sounds.js";
@@ -4971,6 +4972,9 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
       ...d, exercises: d.exercises.map((e, k) => (k !== exIdx ? e : { ...e, ...patch })),
     })))));
 
+  const reorderExercise = (weekIdx, dayIdx, fromIdx, toIdx) =>
+    setWeeks((ws) => ws.map((w, wi) => (wi !== weekIdx ? w : w.map((d, di) => (di !== dayIdx ? d : { ...d, exercises: moveItem(d.exercises, fromIdx, toIdx) })))));
+
   const addWeek = () => setWeeks((ws) => [...ws, emptyWeek()]);
   const duplicateWeek = (idx) =>
     setWeeks((ws) => [...ws, ws[idx].map((d) => (d ? { ...d, exercises: d.exercises.map((e) => ({ ...e })) } : null))]);
@@ -5118,6 +5122,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                   onAdd={(item) => addExercise(activeWeek, dIdx, item)}
                   onRemove={(exIdx) => removeExercise(activeWeek, dIdx, exIdx)}
                   onUpdate={(exIdx, patch) => updateExercise(activeWeek, dIdx, exIdx, patch)}
+                  onReorder={(fromIdx, toIdx) => reorderExercise(activeWeek, dIdx, fromIdx, toIdx)}
                   accent={accent} accentText={accentText} accentSoft={accentSoft}
                   supabase={supabase} userId={userId} exerciseLib={exerciseLib} onLearned={setExerciseLib} />
               );
@@ -5146,8 +5151,9 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
   );
 }
 
-function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, accent, accentText, accentSoft, supabase, userId, exerciseLib, onLearned }) {
+function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, onReorder, accent, accentText, accentSoft, supabase, userId, exerciseLib, onLearned }) {
   const [query, setQuery] = useState("");
+  const reorder = useDragReorder({ length: data?.exercises?.length ?? 0, onReorder });
   const [dropOpen, setDropOpen] = useState(false);
   const [targetMuscle, setTargetMuscle] = useState("");
   const [setsVal, setSetsVal] = useState("3");
@@ -5210,13 +5216,18 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
           {data.exercises.length > 0 && (
             <div className="space-y-2 mb-3">
               {data.exercises.map((e, i) => (
-                <div key={i} className="inner p-3">
+                <div key={i} ref={reorder.setRowRef(i)} style={reorder.rowStyle(i)} className="inner p-3">
                   <div className="flex items-center justify-between gap-3 mb-2">
-                    <span className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 500 }}>
-                      {e.name}
-                      {e.targetMuscle && (
-                        <span className="ml-1.5 meta" style={{ fontSize: "0.62rem" }}>· {e.targetMuscle}</span>
-                      )}
+                    <span className="flex items-center gap-1.5 text-sm truncate min-w-0" style={{ color: "var(--ink)", fontWeight: 500 }}>
+                      <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0" style={{ ...reorder.handleProps(i).style, color: "var(--ink-tertiary)" }}>
+                        <GripVertical size={15} />
+                      </span>
+                      <span className="truncate">
+                        {e.name}
+                        {e.targetMuscle && (
+                          <span className="ml-1.5 meta" style={{ fontSize: "0.62rem" }}>· {e.targetMuscle}</span>
+                        )}
+                      </span>
                     </span>
                     <button onClick={() => onRemove(i)} aria-label="Rimuovi esercizio" style={{ color: "var(--ink-2)" }} className="shrink-0">
                       <X size={14} />
@@ -5287,7 +5298,7 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
               <select value={targetMuscle} onChange={(e) => setTargetMuscle(e.target.value)}
                       className="input w-full px-3 py-2.5 text-sm">
                 <option value="">— scegli un distretto —</option>
-                {VOLUME_MUSCLE_ORDER.map((m) => <option key={m} value={m}>{m}</option>)}
+                {VOLUME_MUSCLES.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
           )}
