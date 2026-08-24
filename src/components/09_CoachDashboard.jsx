@@ -37,6 +37,17 @@ export const GlobalStyle = () => (
        — per uniformarsi ad AuthView e HomeDashboard. Niente più Monospace
        (IBM Plex Mono) né serif (Marcellus): rimossi entrambi, non solo
        "nascosti". */
+    /* BUG PRESO (segnalato): un overlay a schermo intero con "fixed inset-0"
+       e un campo di testo dentro (l'anamnesi, 56 domande) — su mobile, con
+       la tastiera aperta, "inset:0" può lasciare l'header con la X di
+       chiusura fuori dal viewport visivo reale (bug noto di iOS Safari su
+       elementi fixed quando la tastiera ridimensiona il viewport). 100dvh
+       (viewport dinamico: si adatta quando la tastiera è aperta) invece di
+       100vh fisso — il secondo "height" sovrascrive il primo SOLO nei
+       browser che capiscono dvh, altrimenti resta il fallback vh.
+       Il fallback vh (non dvh) viene ignorato dai browser che già
+       riconoscono dvh, letto solo da quelli più vecchi. */
+    .c-fullscreen-modal { position: fixed; inset: 0; height: 100vh; height: 100dvh; }
     .coach-root {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --surface: #FFFFFF; --surface-2: #FCFCFD; --ink: #1A1A1A; --ink-soft: #A1A1AA; --ink-tertiary: #6C757D;
@@ -3196,6 +3207,38 @@ export function AnamAreaSection({ areaId, label, questions, answers, onChange, d
   );
 }
 
+// Overlay a schermo intero per l'anamnesi (estratto da ClientDetail per la
+// stessa ragione di ClientAccessDetailModal poco sopra): X sempre nell'header
+// fisso (mai dentro l'area che scrolla), PIÙ uno swipe-down come via di
+// fuga alternativa — mai una sola strada per chiudere un pannello pieno di
+// campi di testo, dove la tastiera del telefono può nascondere l'header
+// (BUG PRESO, segnalato: "sul telefono non riesco a chiuderla").
+function AnamnesisFullscreen({ client, onClose }) {
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
+  return (
+    <Portal>
+      <div className="c-fullscreen-modal z-50 flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
+        <div ref={headerRef} className="shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
+          <SwipeHandle />
+          <div className="flex items-center justify-between gap-3 px-4 pb-4">
+            <div className="min-w-0">
+              <p className="c-heading font-display font-bold truncate">Anamnesi · {client.name}</p>
+              <p className="c-muted text-xs">Letta al primo contatto e rivista periodicamente, non ogni giorno</p>
+            </div>
+            <button onClick={onClose} aria-label="Chiudi" className="c-ghost w-9 h-9 rounded-full flex items-center justify-center shrink-0">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-5 max-w-2xl md:max-w-3xl mx-auto w-full">
+          <AnamnesisPanel client={client} />
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 function AnamnesisPanel({ client }) {
   const { supabase, isRealMode } = useContext(CoachDataContext);
   const [answers, setAnswers] = useState(() => (isRealMode ? (client._anamnesisAnswers ?? {}) : simulateAnamnesis(client)));
@@ -3418,22 +3461,7 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
       )}
 
       {showAnamnesis && (
-        <Portal>
-          <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "var(--surface)" }}>
-            <div className="flex items-center justify-between gap-3 px-4 py-4 shrink-0" style={{ borderBottom: "1px solid var(--line)" }}>
-              <div className="min-w-0">
-                <p className="c-heading font-display font-bold truncate">Anamnesi · {client.name}</p>
-                <p className="c-muted text-xs">Letta al primo contatto e rivista periodicamente, non ogni giorno</p>
-              </div>
-              <button onClick={() => setShowAnamnesis(false)} aria-label="Chiudi" className="c-ghost w-9 h-9 rounded-full flex items-center justify-center shrink-0">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-5 max-w-2xl md:max-w-3xl mx-auto w-full">
-              <AnamnesisPanel client={client} />
-            </div>
-          </div>
-        </Portal>
+        <AnamnesisFullscreen client={client} onClose={() => setShowAnamnesis(false)} />
       )}
     </div>
   );
