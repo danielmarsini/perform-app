@@ -69,6 +69,35 @@ function toLocalISODate(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Data odierna che si auto-corregge, usata da ogni "preso oggi" (integratori,
+// protocollo Pro e diario autogestito) per forzare un refetch reale appena
+// cambia il giorno di calendario — altrimenti lo stato React resta quello di
+// ieri finché l'app non viene ricaricata del tutto. BUG PRESO: un
+// setInterval(60s) da solo non basta su mobile — un tab/PWA lasciato in
+// background viene sospeso dal browser (i timer non girano affatto finché
+// non torna in foreground), quindi riaprendo l'app la mattina dopo si vedeva
+// ancora "ieri" per un bel po' prima che l'intervallo si "svegliasse". Il
+// listener su visibilitychange ricontrolla subito al ritorno in foreground,
+// invece di aspettare il prossimo tick dell'intervallo.
+function useTodayIso() {
+  const [todayIso, setTodayIso] = useState(() => toLocalISODate());
+  useEffect(() => {
+    const recheck = () => setTodayIso((prev) => {
+      const now = toLocalISODate();
+      return prev !== now ? now : prev;
+    });
+    const id = setInterval(recheck, 60000);
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("focus", recheck);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("focus", recheck);
+    };
+  }, []);
+  return todayIso;
+}
+
 // Lunedì della settimana di `date` (default oggi), in locale — stessa identica
 // logica di mondayOf/weekDatesFrom lato coach (09_CoachDashboard.jsx /
 // coachingData.js), duplicata qui per lo stesso motivo di toLocalISODate: non
@@ -7861,18 +7890,7 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
         setRealRows([]); setRealTaken(new Set());
       });
   }, [isRealMode, supabase, userId]);
-  // BUG PRESO: stesso identico difetto di SupplementsPlanLocked (sopra) —
-  // "preso oggi" restava quello di ieri finché l'app non veniva ricaricata
-  // del tutto, perché la fetch girava solo al mount. todayIso, ricontrollato
-  // ogni minuto, forza un refetch reale appena cambia il giorno.
-  const [todayIso, setTodayIso] = useState(() => toLocalISODate());
-  useEffect(() => {
-    const id = setInterval(() => setTodayIso((prev) => {
-      const now = toLocalISODate();
-      return prev !== now ? now : prev;
-    }), 60000);
-    return () => clearInterval(id);
-  }, []);
+  const todayIso = useTodayIso();
   useEffect(() => { loadReal(); }, [loadReal, todayIso]);
 
   // Momenti personalizzati creati in questa sessione ma ancora senza nessun
@@ -9597,17 +9615,11 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
   // riapre il giorno dopo SENZA un reload completo continuava a vedere
   // takenIds di IERI (lo stato React non si aggiornava mai da solo). La
   // scrittura era già corretta (setSupplementTaken usa sempre la data di
-  // oggi), il problema era solo in lettura: todayIso, ricontrollato ogni
-  // minuto, rientra nelle dipendenze e forza un refetch reale appena
-  // cambia il giorno di calendario.
-  const [todayIso, setTodayIso] = useState(() => toLocalISODate());
-  useEffect(() => {
-    const id = setInterval(() => setTodayIso((prev) => {
-      const now = toLocalISODate();
-      return prev !== now ? now : prev;
-    }), 60000);
-    return () => clearInterval(id);
-  }, []);
+  // oggi), il problema era solo in lettura: todayIso rientra nelle
+  // dipendenze e forza un refetch reale appena cambia il giorno di
+  // calendario (vedi useTodayIso per il motivo del listener su
+  // visibilitychange, non solo un setInterval).
+  const todayIso = useTodayIso();
   useEffect(() => {
     if (!isRealMode) return;
     let cancelled = false;
