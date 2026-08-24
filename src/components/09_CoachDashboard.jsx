@@ -175,7 +175,7 @@ import {
   fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutTemplateToClients,
   xpToLevelInfo, whitelistClient, clearWhitelist,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
-  fetchExerciseLibrary, learnExercise, computeVolume,
+  fetchExerciseLibrary, saveExerciseGuide, computeVolume,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
 } from "../lib/coachingData.js";
 
@@ -1897,11 +1897,21 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   };
   const volume = useMemo(() => computeVolume(week.workout, exerciseLib), [week.workout, exerciseLib]);
   const [savedToLib, setSavedToLib] = useState({}); // { exId: true } — feedback visivo dopo "Salva in libreria"
+  // Guida biomeccanica per esercizio (SCHEMA_v61): bozza locale per
+  // esercizio, {exId: {howTo, avoid, videoUrl}} — scritta insieme ai
+  // muscoli target nello stesso "Salva in libreria", mai più indovinata
+  // lato cliente da un matching sul nome (la causa della guida sbagliata
+  // sugli esercizi inseriti manualmente).
+  const [guideDrafts, setGuideDrafts] = useState({});
+  const updateGuideDraft = (exId, field, value) =>
+    setGuideDrafts((d) => ({ ...d, [exId]: { ...d[exId], [field]: value } }));
   const saveExerciseToLib = async (ex) => {
     if (!isRealMode || !ex.name?.trim() || !ex.muscleTarget) return;
     const direct = [DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget];
     const indirect = (ex.synergists || []).map((m) => DB_MUSCLE_TO_CHART[m] || m);
-    await learnExercise(supabase, ex.name.trim(), direct, indirect, coachId);
+    const guide = guideDrafts[ex.id] || {};
+    await saveExerciseGuide(supabase, ex.name.trim(), direct, indirect,
+      { howTo: guide.howTo, avoid: guide.avoid, videoUrl: guide.videoUrl }, coachId);
     reloadExerciseLib();
     setSavedToLib((s) => ({ ...s, [ex.id]: true }));
   };
@@ -2075,6 +2085,37 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                           );
                         })}
                       </div>
+
+                      {/* Guida biomeccanica (SCHEMA_v61): opzionale, ma se
+                          compilata sostituisce per SEMPRE (per tutti i
+                          clienti) quella indovinata lato app sul nome
+                          dell'esercizio — è quello il motivo per cui un
+                          esercizio inserito a mano oggi mostra una guida
+                          sbagliata. */}
+                      <div className="w-full mt-3 space-y-2">
+                        <label className="block">
+                          <span className="c-label block mb-1">Come si esegue (opzionale)</span>
+                          <textarea value={guideDrafts[ex.id]?.howTo ?? ex.howTo ?? ""} rows={2}
+                            onChange={(e) => updateGuideDraft(ex.id, "howTo", e.target.value)}
+                            placeholder="Setup, esecuzione, respirazione..."
+                            className="t-input w-full text-sm rounded-md px-2 py-1.5" />
+                        </label>
+                        <label className="block">
+                          <span className="c-label block mb-1">Cosa evitare (opzionale)</span>
+                          <textarea value={guideDrafts[ex.id]?.avoid ?? ex.avoid ?? ""} rows={2}
+                            onChange={(e) => updateGuideDraft(ex.id, "avoid", e.target.value)}
+                            placeholder="Errori tecnici comuni da correggere..."
+                            className="t-input w-full text-sm rounded-md px-2 py-1.5" />
+                        </label>
+                        <label className="block">
+                          <span className="c-label block mb-1">Link video esecuzione (opzionale)</span>
+                          <input type="url" value={guideDrafts[ex.id]?.videoUrl ?? ex.videoUrl ?? ""}
+                            onChange={(e) => updateGuideDraft(ex.id, "videoUrl", e.target.value)}
+                            placeholder="https://..."
+                            className="t-input w-full text-sm rounded-md px-2 py-1.5" />
+                        </label>
+                      </div>
+
                       <button type="button" onClick={() => saveExerciseToLib(ex)}
                               className="c-ghost px-2.5 py-1.5 rounded-md text-[11px] font-data uppercase mt-2 flex items-center gap-1">
                         {savedToLib[ex.id] ? "✓ Salvato in libreria" : "💾 Salva in libreria"}

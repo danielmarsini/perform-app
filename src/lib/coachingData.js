@@ -77,9 +77,12 @@ function resolveMuscleTarget(exerciseName, lib) {
 // lo stesso esercizio. Ordinata alfabeticamente per il menu a tendina.
 async function fetchExerciseLibrary(supabase) {
   const lib = { ...DEFAULT_EXERCISE_LIB };
-  const { data, error } = await supabase.from("exercise_library").select("name, direct, indirect");
+  const { data, error } = await supabase.from("exercise_library").select("name, direct, indirect, how_to, avoid, video_url");
   if (error) { console.error("PERFORM: errore lettura libreria esercizi", error); return lib; }
-  (data ?? []).forEach((row) => { lib[row.name] = { direct: row.direct ?? [], indirect: row.indirect ?? [] }; });
+  (data ?? []).forEach((row) => {
+    lib[row.name] = { direct: row.direct ?? [], indirect: row.indirect ?? [],
+      howTo: row.how_to || null, avoid: row.avoid || null, videoUrl: row.video_url || null };
+  });
   return lib;
 }
 
@@ -91,6 +94,24 @@ async function learnExercise(supabase, name, direct, indirect, userId) {
     .insert({ name: name.trim(), direct, indirect: indirect || [], created_by: userId || null })
     .select().maybeSingle();
   if (error && error.code !== "23505") console.error("PERFORM: errore salvataggio esercizio in libreria", error); // 23505 = già esiste, atteso e ok
+}
+
+// SCHEMA_v61: a differenza di learnExercise (insert-only, mai sovrascrive),
+// questa è la scrittura editoriale del coach — how_to/avoid/video_url
+// SOSTITUISCONO il valore precedente per lo stesso esercizio (upsert su
+// name), riutilizzabili subito da qualunque cliente dell'app. La RLS lato
+// server ("exercise_library_update", SCHEMA_v61) accetta la scrittura solo
+// se chi chiama è davvero il coach: un cliente che invocasse questa
+// funzione otterrebbe comunque un errore di permessi, questo controllo qui
+// è solo per non tentare la chiamata da una UI che non dovrebbe esporla.
+async function saveExerciseGuide(supabase, name, direct, indirect, { howTo, avoid, videoUrl }, coachId) {
+  if (!name?.trim() || !direct?.length) return;
+  const { error } = await supabase.from("exercise_library")
+    .upsert({ name: name.trim(), direct, indirect: indirect || [],
+      how_to: howTo || null, avoid: avoid || null, video_url: videoUrl || null,
+      created_by: coachId || null }, { onConflict: "name" })
+    .select().maybeSingle();
+  if (error) console.error("PERFORM: errore salvataggio guida esercizio", error);
 }
 
 // Serie dirette 100% + serie sui sinergici 50%, per gruppo muscolare —
@@ -1971,7 +1992,7 @@ export function recompositionReading(weightPoints, circPoints) {
   return { label, detail, tone, weightDeltaPct, waistDeltaPct };
 }
 
-export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, computeVolume, parseRepsTarget };
+export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, saveExerciseGuide, computeVolume, parseRepsTarget };
 
 // Giorni con un allenamento REALMENTE completato (status 'done' in
 // workout_logs) in un range — per il pallino "saltato" nel calendario
