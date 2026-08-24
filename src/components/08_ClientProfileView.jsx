@@ -35,7 +35,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import {
-  User, Camera, Pencil, Check, X, ChevronDown, ChevronUp, Settings,
+  User, Camera, Pencil, Check, X, ChevronDown, ChevronUp,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
 } from "lucide-react";
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped } from "../lib/coachingData.js";
@@ -1140,19 +1140,11 @@ export function ClientProfileView({
              backgroundSize: "300% auto",
              animation: "gradientMove 3.6s linear infinite",
            }}>
-      <div className="card" style={{ border: "none", margin: 0, position: "relative" }}>
-        {/* L'app non ha più un header persistente in cima (rimosso per dare
-            più spazio verticale allo schermo, stile app nativa): questa è
-            ora l'UNICA rotella Impostazioni di tutta l'app, qui nel Profilo
-            invece che in una barra sempre visibile su ogni schermata. */}
-        {onOpenSettings && (
-          <button onClick={onOpenSettings} aria-label={t.settingsTitle || "Impostazioni"}
-                  className="absolute rounded-full flex items-center justify-center transition-transform active:scale-90"
-                  style={{ top: 14, right: 14, width: 34, height: 34,
-                           border: "1px solid var(--line)", backgroundColor: "var(--surface-2)" }}>
-            <Settings size={16} strokeWidth={1.7} style={{ color: "var(--ink-2)" }} />
-          </button>
-        )}
+      <div className="card" style={{ border: "none", margin: 0 }}>
+        {/* Rotella impostazioni rimossa da qui: è un doppione dell'unica già
+            presente in alto nell'app (AppHeader, sempre visibile su ogni
+            tab incluso questo, ora su banner trasparente) — non serve una
+            seconda scorciatoia identica dentro al Profilo. */}
         <div className="flex items-start gap-4">
           <button onClick={() => editing && fileRef.current?.click()}
             className="relative rounded-full overflow-hidden shrink-0"

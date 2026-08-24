@@ -41,7 +41,7 @@
    ========================================================================== */
 
 import React, { useState, useEffect, useId } from "react";
-import { BarChart3, Newspaper, Trophy, User, Activity, SlidersHorizontal, ShieldCheck, MessageCircle } from "lucide-react";
+import { BarChart3, Newspaper, Trophy, User, Settings, Activity, SlidersHorizontal, ShieldCheck, MessageCircle } from "lucide-react";
 
 export const BRAND = {
   gold: "#C5A059",
@@ -371,15 +371,66 @@ export function BrandMark({ dark = false, size = 36 }) {
 }
 
 /* ============================================================================
-   3 · (ex header istituzionale — rimosso)
-   L'header sticky con BrandMark + wordmark "PERFORM" + rotella impostazioni
-   occupava una fascia fissa in cima a OGNI schermata per mostrare sempre lo
-   stesso logo — tolto per lasciare all'app tutto lo spazio verticale dello
-   schermo, come un'app nativa di fascia alta senza barra del titolo. Le
-   Impostazioni restano raggiungibili dal Profilo (stesso onOpenSettings,
-   vedi 08_ClientProfileView.jsx). BrandMark resta usato da SplashScreen qui
-   sotto (identità del marchio ancora presente nell'avvio dell'app).
+   3 · HEADER ISTITUZIONALE — banner trasparente
+   Stesso BrandMark, stesso wordmark "PERFORM" cangiante, stessa rotella
+   impostazioni di sempre — ma niente più barra piena nero/bianco con
+   sfondo sfocato: qui sopra galleggia trasparente sul LiveBackground
+   (le stesse macchie di luce animate che si vedono dietro tutta l'app),
+   coerente con la pillola di navigazione in basso, anch'essa trasparente.
+   BUG PRESO: una versione precedente aveva tolto l'header del tutto (per
+   dare più spazio verticale allo schermo) — il coach voleva SOLO togliere
+   lo sfondo nero pieno, non il banner: logo e rotella dovevano restare,
+   diventare solo trasparenti.
    ========================================================================== */
+
+export function AppHeader({ dark, onOpenSettings }) {
+  return (
+    <header
+      id="app-header"
+      className="sticky top-0 z-30"
+      style={{
+        // Niente più backgroundColor/backdropFilter/borderBottom: il banner
+        // è ora completamente trasparente, il logo e la rotella galleggiano
+        // direttamente sopra lo sfondo vivo dell'app.
+        paddingTop: "env(safe-area-inset-top)",
+      }}
+    >
+      <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <BrandMark dark={dark} size={36} />
+          <p
+            className="font-brand perform-title leading-none truncate"
+            style={{
+              fontSize: "1.05rem",
+              fontWeight: 600,
+              letterSpacing: "0.36em",
+              paddingLeft: "0.36em",
+              backgroundImage: dark ? GOLD_GRADIENT_DARK : GOLD_GRADIENT_LIGHT,
+            }}
+          >
+            PERFORM
+          </p>
+        </div>
+
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            className="w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-90 shrink-0"
+            style={{
+              border: `1px solid ${dark ? "rgba(255,255,255,0.14)" : "rgba(17,17,17,0.1)"}`,
+              backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.5)",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+            }}
+            aria-label="Impostazioni"
+          >
+            <Settings size={17} strokeWidth={1.6} style={{ color: dark ? "#FAFAFA" : "#111111" }} />
+          </button>
+        )}
+      </div>
+    </header>
+  );
+}
 
 /* Splash animato d'avvio: sostituisce il semplice pulse durante il bootstrap
    (sessione/profilo ancora da caricare in App.jsx) — stesso marchio
@@ -668,6 +719,7 @@ export function AppShell({
   hasChat = false,       // piano a coaching reale: sblocca il pulsante Chat (dopo News)
   tab,
   onTabChange,
+  onOpenSettings,
   screens = {},          // { home, news, ranking, profile, chat, coach }
 }) {
   const accent = accentFor(gender, dark);
@@ -717,18 +769,18 @@ export function AppShell({
   // quella precedente.
   useEffect(() => { window.scrollTo(0, 0); }, [activeTab]);
 
-  // Altezza reale della barra di navigazione, misurata a runtime (non un
-  // numero fisso indovinato): serve alla tab Chat qui sotto, per occupare
-  // esattamente lo spazio sopra la pillola flottante senza sovrapporla né
-  // lasciare un vuoto — se il suo contenuto cambia altezza in futuro resta
-  // comunque corretto. Non c'è più un header di cui misurare l'altezza: è
-  // stato rimosso del tutto (vedi sotto) per lasciare all'app tutto lo
-  // spazio verticale dello schermo, come un'app nativa senza barra del
-  // titolo — stessa filosofia della pillola di navigazione flottante.
+  // Altezza reale di header e barra di navigazione, misurata a runtime (non
+  // un numero fisso indovinato): serve SOLO alla tab Chat qui sotto, per
+  // occupare esattamente lo spazio tra i due senza né sovrapporli né
+  // lasciare un vuoto — se il loro contenuto cambia altezza in futuro
+  // (nuova voce di menu, testo più lungo...) resta comunque corretto.
+  const [headerH, setHeaderH] = useState(64);
   const [bottomNavH, setBottomNavH] = useState(84);
   useEffect(() => {
     const measure = () => {
+      const h = document.getElementById("app-header")?.offsetHeight;
       const b = document.getElementById("app-bottomnav")?.offsetHeight;
+      if (h) setHeaderH(h);
       if (b) setBottomNavH(b);
     };
     measure();
@@ -750,31 +802,23 @@ export function AppShell({
           senza affidarsi alle regole di stacking di default del browser
           per elementi non posizionati (che possono variare). */}
       <div style={{ position: "relative", zIndex: 1 }}>
-        {/* Niente più header istituzionale (logo PERFORM + rotella
-            impostazioni): occupava una fascia fissa in alto su OGNI
-            schermata per mostrare sempre la stessa cosa — un lusso che
-            un'app nativa di fascia alta non si concede. Le Impostazioni
-            restano raggiungibili dal Profilo (icona in alto a destra
-            dell'intestazione lì, onOpenSettings è lo stesso identico
-            callback). paddingTop qui sotto sostituisce il solo compito
-            utile che l'header aveva: non far finire il contenuto sotto
-            la notch/isola dinamica. */}
-        <main className="max-w-2xl mx-auto px-4 pb-6"
-              style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 20px)", paddingBottom: 128 }}>
+        <AppHeader dark={dark} onOpenSettings={onOpenSettings} />
+
+        <main className="max-w-2xl mx-auto px-4 py-6" style={{ paddingBottom: 128 }}>
           {[...visitedTabs].map((key) => {
             const isChat = key === "chat";
             // La Chat non è una card dentro la pagina scrollabile come le
             // altre tab: è una schermata fissa e rigida, incastrata esatta
-            // tra la cima dello schermo (rispettando la notch) e la pillola
-            // di navigazione — solo i messaggi al suo interno scorrono, mai
-            // la pagina intera (era il pop-up centrato "poco professionale"
-            // segnalato). Sfondo leggermente trasparente nero: si
-            // intravedono le forme colorate animate sotto.
+            // tra header e pillola di navigazione — solo i messaggi al suo
+            // interno scorrono, mai la pagina intera (era il pop-up
+            // centrato "poco professionale" segnalato). Sfondo leggermente
+            // trasparente nero: si intravedono le forme colorate animate
+            // sotto.
             return (
               <div key={key} className={key === activeTab ? "spring-in" : undefined}
                    style={isChat
                      ? { display: key === activeTab ? "block" : "none", position: "fixed",
-                         top: "env(safe-area-inset-top, 0px)", bottom: bottomNavH, left: 0, right: 0, zIndex: 20 }
+                         top: headerH, bottom: bottomNavH, left: 0, right: 0, zIndex: 20 }
                      : { display: key === activeTab ? "block" : "none", minHeight: "calc(100vh - 230px)" }}>
                 {isChat ? (
                   <div className="max-w-2xl mx-auto h-full" style={{ backgroundColor: "rgba(9,9,11,0.55)" }}>
