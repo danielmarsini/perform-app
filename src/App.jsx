@@ -414,6 +414,7 @@ export default function App() {
         hasChat={hasCoachChat}
         tab={tab}
         onTabChange={setTab}
+        onOpenSettings={() => setSettingsOpen(true)}
         screens={{
           home: (
             <HomeScreen
