@@ -2035,6 +2035,62 @@ export function detectPersistentPain(historyNewestFirst, { threshold = 7, minCon
   return { consecutiveChecks: minConsecutive, lastPain: painOf(recent[0]), threshold };
 }
 
+// §02 memo "Verso l'élite" — La leva del coach: "clicco su chi mi viene in
+// mente" smette di funzionare con più clienti. Due sole query (mai una per
+// cliente: checkins e chat_messages filtrate con .in() su tutti gli id in
+// un colpo solo) per calcolare, per ogni cliente, i 3 segnali che il coach
+// oggi deve notare da solo scorrendo la lista: dolore persistente (riusa
+// detectPersistentPain), un messaggio del cliente rimasto senza risposta,
+// un check settimanale saltato da troppo tempo. Ritorna una Map(clientId →
+// segnali), il chiamante decide la UI e l'ordinamento per urgenza.
+export async function fetchAttentionSignals(supabase, clientIds) {
+  if (!clientIds?.length) return new Map();
+  const [{ data: checkRows, error: checkErr }, { data: chatRows, error: chatErr }] = await Promise.all([
+    supabase.from("checkins").select("user_id, date, pain").in("user_id", clientIds).order("date", { ascending: false }),
+    supabase.from("chat_messages").select("client_id, sender_id, created_at").in("client_id", clientIds).order("created_at", { ascending: false }),
+  ]);
+  if (checkErr) throw checkErr;
+  if (chatErr) throw chatErr;
+
+  // Già ordinate per data/orario decrescente: la prima occorrenza per
+  // cliente è sempre la più recente — nessun sort aggiuntivo necessario.
+  const checksByClient = new Map();
+  (checkRows ?? []).forEach((r) => {
+    if (!checksByClient.has(r.user_id)) checksByClient.set(r.user_id, []);
+    checksByClient.get(r.user_id).push(r);
+  });
+  const lastCheckDateByClient = new Map();
+  (checkRows ?? []).forEach((r) => { if (!lastCheckDateByClient.has(r.user_id)) lastCheckDateByClient.set(r.user_id, r.date); });
+  const lastMsgByClient = new Map();
+  (chatRows ?? []).forEach((r) => { if (!lastMsgByClient.has(r.client_id)) lastMsgByClient.set(r.client_id, r); });
+
+  const today = toLocalISODate();
+  const signals = new Map();
+  clientIds.forEach((id) => {
+    const painFlag = detectPersistentPain(checksByClient.get(id) ?? []);
+    const lastMsg = lastMsgByClient.get(id);
+    // "Senza risposta" solo se l'ULTIMO messaggio della conversazione è
+    // stato scritto dal cliente stesso (sender_id === id) — se l'ultimo a
+    // scrivere è stato il coach, la palla è già tornata al cliente.
+    const hoursSinceClientMsg = (lastMsg && lastMsg.sender_id === id)
+      ? (Date.now() - new Date(lastMsg.created_at).getTime()) / 3600000 : null;
+    const lastCheckDate = lastCheckDateByClient.get(id) ?? null;
+    const daysSinceCheck = lastCheckDate != null
+      ? Math.round((new Date(`${today}T00:00:00`) - new Date(`${lastCheckDate}T00:00:00`)) / 86400000) : null;
+    signals.set(id, {
+      painFlag,
+      hoursSinceClientMsg,
+      unanswered: hoursSinceClientMsg != null && hoursSinceClientMsg >= 24,
+      // Solo se esiste GIÀ uno storico di check che si è fatto vecchio — un
+      // cliente appena arrivato, che non ha ancora avuto modo di farne uno,
+      // non deve risultare "a rischio" fin dal primo giorno.
+      missedCheck: daysSinceCheck != null && daysSinceCheck > 10,
+      daysSinceCheck,
+    });
+  });
+  return signals;
+}
+
 // Punteggio di ricomposizione: legge peso e vita (non "un numero" arbitrario
 // — un'etichetta onesta derivata da due delta reali già misurati) per capire
 // se sta succedendo dimagrimento, bulk o vera ricomposizione (peso stabile/su,
