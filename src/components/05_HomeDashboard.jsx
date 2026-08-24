@@ -150,6 +150,56 @@ const grade = (kind, v) => {
     : (v < t.bad ? "bad" : v < t.mid ? "warn" : "good");
 };
 
+/* ============================================================================
+   PUNTEGGIO DI PRONTEZZA — sonno, passi, motivazione e fatica di oggi
+   sintetizzati in UN numero azionabile (0-100), invece di 5 valori separati
+   da leggere e interpretare da soli. Stessa curva a semaforo di chart3dPct
+   qui sopra (mai una media grezza lineare): un valore appena sopra soglia
+   pesa già molto di più di uno appena sotto.
+
+   Ogni componente entra nel punteggio SOLO se il dato esiste davvero per
+   oggi — mai un fallback che finge un valore non registrato (stesso
+   principio di tutto il resto dell'app: un dato mancante è "non
+   disponibile", mai zero silenzioso). Se non c'è nessun dato per oggi,
+   ritorna null: il chiamante decide come mostrare "dati insufficienti".
+
+   Dolore e stress non sono giornalieri (arrivano solo dal check
+   settimanale/mensile in checkins), quindi entrano come una PENALITÀ
+   separata dal punteggio principale, che decade nei 7 giorni successivi
+   alla registrazione invece di continuare a pesare per sempre — un dolore
+   segnalato ieri conta più di uno segnalato 6 giorni fa. */
+export function computeReadinessScore({ sleepHours, steps, motivation, fatigue, recentSensations }) {
+  const parts = [];
+  if (sleepHours != null && sleepHours > 0) parts.push({ key: "sleep", pct: chart3dPct("sleep", sleepHours), label: "Sonno" });
+  if (steps != null && steps > 0) parts.push({ key: "steps", pct: chart3dPct("steps", steps), label: "Passi" });
+  if (motivation) parts.push({ key: "motivation", pct: (motivation / 10) * 100, label: "Motivazione" });
+  // fatigue: 1 = nessuna fatica (meglio), 10 = massima fatica (peggio) — scala invertita.
+  if (fatigue) parts.push({ key: "fatigue", pct: ((11 - fatigue) / 10) * 100, label: "Fatica" });
+
+  if (parts.length === 0) return null;
+
+  let score = parts.reduce((s, p) => s + p.pct, 0) / parts.length;
+
+  let penalty = 0;
+  const { pain, stress, daysAgo } = recentSensations || {};
+  if (daysAgo != null && daysAgo <= 7) {
+    const decay = 1 - daysAgo / 7;
+    if (pain != null && pain >= 3) penalty += (pain >= 6 ? 22 : pain >= 4 ? 14 : 7) * decay;
+    if (stress != null && stress >= 7) penalty += 10 * decay;
+  }
+  score = Math.max(0, Math.min(100, Math.round(score - penalty)));
+
+  const lowest = [...parts].sort((a, b) => a.pct - b.pct)[0];
+  // Soglie allineate a quelle dell'etichetta qui sotto (mai un colore che
+  // dice una cosa e un testo che ne dice un'altra): verde da "buona" in su,
+  // ambra per "media"/"bassa", rosso solo sotto "bassa".
+  const tone = score >= 65 ? "good" : score >= 30 ? "warn" : "bad";
+  const label = score >= 80 ? "Prontezza ottima" : score >= 65 ? "Prontezza buona"
+    : score >= 50 ? "Prontezza nella media" : score >= 30 ? "Prontezza bassa" : "Prontezza molto bassa";
+
+  return { score, tone, label, parts, lowest, penaltyApplied: penalty > 0.5 };
+}
+
 /* Transizione fluida: quando lo stato collegato cambia (es. i passi da 5.000
    a 12.000), la barra si alza/abbassa e ricolora da sola in tempo reale,
    senza librerie esterne — solo CSS transition su attributi SVG animabili. */
@@ -1367,6 +1417,41 @@ function MesocicloBadge({ mesociclo, week, weeks }) {
   );
 }
 
+/* ============================================================================
+   PUNTEGGIO DI PRONTEZZA — card compatta subito sotto il banner principale:
+   un solo numero azionabile invece di 4 dati sparsi da interpretare da soli
+   (vedi computeReadinessScore più sopra). Sparisce del tutto se non c'è
+   ancora nessun dato per oggi — mai uno "0" finto prima che l'atleta abbia
+   registrato qualcosa. */
+function ReadinessCard({ readiness }) {
+  if (!readiness) return null;
+  const { score, tone, label, parts, penaltyApplied } = readiness;
+  const col = CANDLE[tone];
+  const PART_ICON = { sleep: "😴", steps: "🚶", motivation: "🔥", fatigue: "🔋" };
+
+  return (
+    <div className="card mb-4" style={{ padding: "16px 20px" }}>
+      <div className="flex items-center gap-4">
+        <div className="shrink-0 flex flex-col items-center justify-center rounded-2xl"
+             style={{ width: 58, height: 58, backgroundColor: `${col.mid}1A`, border: `1px solid ${col.mid}40` }}>
+          <span className="font-data" style={{ fontSize: "1.3rem", fontWeight: 800, color: col.label, lineHeight: 1 }}>{score}</span>
+          <span style={{ fontSize: "0.52rem", fontWeight: 700, color: col.label, letterSpacing: "0.04em" }}>/100</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm" style={{ fontWeight: 700, color: "var(--ink)" }}>{label}</p>
+          <p className="meta mt-0.5" style={{ lineHeight: 1.4 }}>
+            {parts.map((p) => `${PART_ICON[p.key] || ""} ${p.label}`).join(" · ")}
+            {penaltyApplied && " · dolore/stress recenti considerati"}
+          </p>
+          <div className="rounded-full overflow-hidden mt-2" style={{ height: 5, backgroundColor: "var(--surface-2)" }}>
+            <div style={{ width: `${score}%`, height: "100%", backgroundColor: col.mid, transition: "width 700ms cubic-bezier(.22,1,.36,1)" }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Stima del sonno profondo (REM) senza dispositivo reale a monte: parte da
 // una quota fisiologica media (~22% delle ore totali dormite) e la corregge
 // con i 4 segnali che il cliente PUÒ davvero riferire a occhio — stress
@@ -1976,6 +2061,28 @@ export function HomeDashboard({
     }, 600);
     return () => clearTimeout(t);
   }, [digestValue, motivation, fatigue, wellnessLoaded, supabase, userId]);
+
+  // Punteggio di prontezza (vedi computeReadinessScore più sopra): dolore e
+  // stress arrivano solo dal check periodico (checkins), non giornalieri —
+  // fetch dedicato e indipendente da quello del check settimanale qui sotto
+  // (che smette di girare una volta completato o per chi non è access.pro,
+  // mentre il punteggio di prontezza serve a TUTTI i piani).
+  const [recentSensations, setRecentSensations] = useState(null);
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let cancelled = false;
+    fetchCheckins(supabase, userId, 10)
+      .then((rows) => {
+        if (cancelled) return;
+        const last = [...rows].reverse().find((r) => r.pain != null || r.stress != null);
+        if (!last) { setRecentSensations(null); return; }
+        const daysAgo = Math.floor((Date.now() - new Date(`${last.date}T00:00:00`)) / 86400000);
+        setRecentSensations({ pain: last.pain, stress: last.stress, daysAgo });
+      })
+      .catch((err) => console.error("PERFORM: errore lettura sensazioni recenti", err));
+    return () => { cancelled = true; };
+  }, [supabase, userId]);
+
   // Alimentazione: "I tuoi target" ora è un pannello compatto in cima alla
   // pagina, non più un tab tra Diario Libero e Sostituzioni — chiuso di
   // default, si espande solo quando il cliente vuole davvero modificarli.
@@ -2423,6 +2530,7 @@ export function HomeDashboard({
   if (screen === "dash") {
     const greeting = getGreeting();
     const firstName = profile.nickname || profile.name.split(" ")[0];
+    const readiness = computeReadinessScore({ sleepHours: sleep.hours, steps: Number(steps) || 0, motivation, fatigue, recentSensations });
 
     return (
       <div className="spring-in">
@@ -2515,6 +2623,8 @@ export function HomeDashboard({
           </button>
           </div>
         </div>
+
+        <ReadinessCard readiness={readiness} />
 
         {/* "Vai in vacanza / chiedi riposo forzato" vive ora nel Profilo
             personale (08_ClientProfileView.jsx), non più qui in Home. */}
@@ -2643,6 +2753,17 @@ export function HomeDashboard({
     // prima di iniziare la sessione, non solo un numero su un grafico.
     const lastNightSleep = sleep?.hours || fullHistory?.sleep?.[fullHistory.sleep.length - 1] || null;
     const poorSleep = lastNightSleep != null && lastNightSleep > 0 && lastNightSleep < THRESH.sleep.bad;
+    // Stesso punteggio di prontezza della Home: qui diventa un avviso
+    // concreto SOLO quando il fattore più basso non è già il sonno (coperto
+    // dall'avviso sopra, più specifico) — mai due avvisi sovrapposti per lo
+    // stesso giorno.
+    const readinessWorkout = computeReadinessScore({ sleepHours: sleep.hours, steps: Number(steps) || 0, motivation, fatigue, recentSensations });
+    const lowReadinessNonSleep = readinessWorkout && readinessWorkout.tone === "bad" && readinessWorkout.lowest?.key !== "sleep" && !poorSleep;
+    const READINESS_ADVICE = {
+      steps: "Sei stato molto fermo negli ultimi giorni: il corpo arriva alla sessione meno pronto a livello circolatorio. Un riscaldamento più lungo del solito aiuta.",
+      motivation: "La motivazione registrata è bassa: valuta di iniziare dall'esercizio che ti piace di più invece che dal primo in scheda, o di accorciare leggermente la sessione.",
+      fatigue: "La fatica percepita è alta: valuta di scendere di 1-2 RIR sull'ultima serie di ogni esercizio o di togliere una serie sugli esercizi più pesanti.",
+    };
     return (
       <div className="spring-in">
         <XpToastBanner toast={xpToast} />
@@ -2676,6 +2797,20 @@ export function HomeDashboard({
                   <p className="meta mt-0.5" style={{ lineHeight: 1.5 }}>
                     Il recupero del sistema nervoso è ridotto: valuta di scendere di 1-2 RIR sull'ultima serie di ogni
                     esercizio o di togliere una serie sugli esercizi più pesanti. Non serve saltare la sessione.
+                  </p>
+                </div>
+              </div>
+            )}
+            {lowReadinessNonSleep && day.isTraining && (
+              <div className="rounded-2xl px-4 py-3.5 mb-4 flex items-start gap-3"
+                   style={{ backgroundColor: "rgba(240,160,32,0.1)", border: "1px solid rgba(240,160,32,0.35)" }}>
+                <span style={{ fontSize: "1.2rem" }}>⚠️</span>
+                <div>
+                  <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>
+                    {readinessWorkout.label} oggi ({readinessWorkout.score}/100)
+                  </p>
+                  <p className="meta mt-0.5" style={{ lineHeight: 1.5 }}>
+                    {READINESS_ADVICE[readinessWorkout.lowest.key] || "Valuta una sessione più leggera del solito. Non serve saltarla."}
                   </p>
                 </div>
               </div>
