@@ -1261,8 +1261,8 @@ function StreakInfoModal({ streak, supabase, userId, accent, onClose }) {
             {streak}
           </p>
           <p className="body mb-4" style={{ lineHeight: 1.5 }}>
-            Giorni consecutivi in cui hai registrato qualcosa — un allenamento, un pasto, sonno e passi. Basta un
-            giorno intero senza nessuna registrazione per azzerarlo.
+            Giorni consecutivi in cui hai registrato qualcosa — un allenamento, un pasto, sonno e passi. Se ti
+            dimentichi un giorno hai fino a tutto il giorno dopo per recuperarlo prima che si azzeri davvero.
           </p>
           {supabase && userId && <StreakFreezeButton supabase={supabase} userId={userId} accent={accent} />}
         </div>

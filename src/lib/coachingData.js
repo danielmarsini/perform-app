@@ -1239,6 +1239,19 @@ function expandPauseDates(periods) {
   return dates;
 }
 
+// Finestra di recupero dello streak: un giorno mancante resta "in grazia"
+// (non ancora un'interruzione definitiva) fino a tutto il giorno successivo
+// alla sua data — un solo giorno extra per registrarlo prima che conti come
+// davvero perso. Puramente basata sulle due date (mai uno stato salvato da
+// far scadere): un giorno vecchio, mai recuperato, torna automaticamente
+// "fuori grazia" ad ogni ricalcolo successivo, quindi non passa gratis per
+// sempre — si applica sempre e solo al giorno più recente della catena.
+const STREAK_GRACE_DAYS = 1;
+function isWithinGraceWindow(missedDayIso, todayIso) {
+  const diffDays = Math.round((new Date(`${todayIso}T00:00:00`) - new Date(`${missedDayIso}T00:00:00`)) / 86400000);
+  return diffDays <= STREAK_GRACE_DAYS;
+}
+
 // Ricalcola XP totale e streak corrente di un cliente dai dati reali già
 // salvati (workout_sets, nutrition_logs, daily_metrics, workout_logs,
 // xp_bonuses) e li scrive in cache su profiles. Ritorna sempre il valore
@@ -1283,14 +1296,27 @@ export async function computeRealXpAndStreak(supabase, userId) {
   // Streak: giorni consecutivi completi risalendo da oggi. Se oggi non è
   // ancora completo la giornata è semplicemente "ancora aperta" e non rompe
   // lo streak — si riparte da ieri, come nel comportamento già in uso prima.
+  //
+  // BUG PRESO (concettuale, non tecnico): un giorno perso per una sola
+  // dimenticanza (es. dimenticare di segnare sonno/passi la sera) rompeva
+  // lo streak all'istante, alla prima apertura dell'app il giorno dopo —
+  // lo schema che punisce di più chi ha avuto una brutta giornata isolata,
+  // non chi si allena davvero poco. Ora "ieri", se risulta incompleto, ha
+  // una finestra di recupero di 24h (tutto il giorno di oggi) prima di
+  // essere considerato davvero perso: isWithinGraceWindow confronta la data
+  // del giorno mancante con quella di oggi, quindi si applica SOLO al
+  // giorno più recente e scade da sola il giorno successivo — mai un giorno
+  // vecchio dimenticato per sempre che continua a "passare gratis" ogni
+  // volta che lo streak si ricalcola.
   let streak = 0;
   const cursor = new Date(`${today}T00:00:00`);
   if (!isDayComplete(today, ctx)) cursor.setDate(cursor.getDate() - 1);
   for (let i = 0; i < 3650; i++) {
     const d = toLocalISODate(cursor);
-    if (d < sinceDate || !isDayComplete(d, ctx)) break;
-    streak++;
-    cursor.setDate(cursor.getDate() - 1);
+    if (d < sinceDate) break;
+    if (isDayComplete(d, ctx)) { streak++; cursor.setDate(cursor.getDate() - 1); continue; }
+    if (isWithinGraceWindow(d, today)) { cursor.setDate(cursor.getDate() - 1); continue; }
+    break;
   }
 
   let completeDays = 0;
