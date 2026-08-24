@@ -3,7 +3,7 @@ import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp,
   Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
   Trash2, ArrowLeft, Wallet, Server, X, ShieldCheck, Check,
-  BarChart3, FileText,
+  BarChart3, FileText, AlertTriangle,
 } from "lucide-react";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -177,6 +177,7 @@ import {
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
+  detectPersistentPain, sendChatMessage,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -4060,7 +4061,7 @@ function ClientDayLog({ client, mode }) {
 }
 
 function CheckDetail({ client }) {
-  const { supabase, isRealMode } = useContext(CoachDataContext);
+  const { supabase, isRealMode, coachId } = useContext(CoachDataContext);
   // BUG PRESO: in modalità reale client.evening/client.waistCm non esistono
   // (fetchClientRoster non li produce, sono campi solo del roster demo) —
   // l'inizializzatore di useState leggeva client.evening.digestione e andava
@@ -4137,6 +4138,43 @@ function CheckDetail({ client }) {
   const delta = (previous && latest.weight != null && previous.weight != null) ? latest.weight - previous.weight : null;
   const badge = latest ? predictiveBadge(client, history) : null;
 
+  // Dovere di cura (§09): dolore alto per più check consecutivi segnalato
+  // subito, con un testo pronto che il coach può modificare prima di
+  // inviarlo — mai un messaggio che parte da solo senza revisione, mai un
+  // segnale che il coach deve notare da solo scorrendo lo storico. Gli hook
+  // vanno chiamati sempre, prima di ogni return anticipato qui sotto.
+  const painAlert = detectPersistentPain(sorted);
+  const [painMsgDraft, setPainMsgDraft] = useState("");
+  const [painMsgSending, setPainMsgSending] = useState(false);
+  const [painMsgSent, setPainMsgSent] = useState(false);
+  const [painMsgError, setPainMsgError] = useState("");
+  useEffect(() => {
+    if (!painAlert) return;
+    const firstName = client.name.split(" ")[0];
+    setPainMsgDraft(
+      `Ciao ${firstName}, ho notato che negli ultimi ${painAlert.consecutiveChecks} check hai segnalato un dolore ` +
+      `alto (${painAlert.lastPain}/10). Prima di continuare ad allenare quella zona ti consiglio di valutare un ` +
+      `consulto medico — meglio fermarsi un attimo che rischiare di peggiorare. Fammi sapere come va appena puoi.`
+    );
+    setPainMsgSent(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [painAlert?.consecutiveChecks, painAlert?.lastPain]);
+
+  const sendPainMessage = async () => {
+    if (!painMsgDraft.trim()) return;
+    setPainMsgSending(true);
+    setPainMsgError("");
+    try {
+      await sendChatMessage(supabase, client.id, coachId, painMsgDraft.trim(), null);
+      setPainMsgSent(true);
+    } catch (err) {
+      console.error("PERFORM: errore invio messaggio dolore persistente", err);
+      setPainMsgError("Non sono riuscito a inviare il messaggio — riprova.");
+    } finally {
+      setPainMsgSending(false);
+    }
+  };
+
   if (isRealMode && !isPaidCoaching) {
     return (
       <div className="c-card">
@@ -4164,6 +4202,30 @@ function CheckDetail({ client }) {
 
   return (
     <div className="space-y-4">
+      {painAlert && (
+        <div className="c-card" style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA" }}>
+          <div className="flex items-start gap-2.5 mb-2">
+            <AlertTriangle size={18} style={{ color: "#B91C1C", flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <p className="font-display font-bold text-sm" style={{ color: "#991B1B" }}>
+                Dolore alto per {painAlert.consecutiveChecks} check consecutivi
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "#B91C1C" }}>
+                Ultimo valore registrato: {painAlert.lastPain}/10 — meglio segnalarlo ora che aspettare.
+              </p>
+            </div>
+          </div>
+          <textarea value={painMsgDraft} onChange={(e) => { setPainMsgDraft(e.target.value); setPainMsgSent(false); }}
+            rows={3} className="w-full rounded-xl px-3 py-2.5 text-sm mb-2"
+            style={{ backgroundColor: "#FFFFFF", border: "1px solid #FECACA", color: "#450A0A" }} />
+          {painMsgError && <p className="text-xs mb-2" style={{ color: "#B91C1C" }}>{painMsgError}</p>}
+          <button onClick={sendPainMessage} disabled={painMsgSending || painMsgSent || !painMsgDraft.trim()}
+            className="rounded-full px-4 py-2 text-xs font-bold"
+            style={{ backgroundColor: painMsgSent ? "#059669" : "#B91C1C", color: "#FFFFFF", opacity: painMsgSending ? 0.7 : 1 }}>
+            {painMsgSent ? "✓ Inviato in chat" : painMsgSending ? "Invio…" : "Invia in chat"}
+          </button>
+        </div>
+      )}
       <div className="c-card">
         <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
           <h3 className="c-heading font-display font-bold">{client.name}</h3>
