@@ -232,6 +232,8 @@ export function computeReadinessScore({ sleepHours, steps, motivation, fatigue, 
   return { score, tone, label, parts, lowest, penaltyApplied: penalty > 0.5 };
 }
 
+const READINESS_PART_ICON = { sleep: "😴", steps: "🚶", motivation: "🔥", fatigue: "🔋" };
+
 /* Transizione fluida: quando lo stato collegato cambia (es. i passi da 5.000
    a 12.000), la barra si alza/abbassa e ricolora da sola in tempo reale,
    senza librerie esterne — solo CSS transition su attributi SVG animabili. */
@@ -1039,6 +1041,17 @@ function recoveryWeekScore(sleep7, steps7, pain7) {
   const rawAvg = sleep7.reduce((sum, h, i) => sum + recoveryDayScore(h, steps7[i], pain7[i] === 1), 0) / n;
   return complPct(rawAvg * freqPenalty);
 }
+/* Il cerchio Recupero è una media storica (7 giorni di sonno/passi): non
+   sente ancora com'è oggi. La prontezza (computeReadinessScore) è invece il
+   segnale di OGGI — pesa 30% sul cerchio, il resto resta lo storico, così un
+   giorno eccellente/pessimo si vede subito ma non ribalta da solo una
+   settimana intera. Se manca lo storico ma c'è la prontezza di oggi, il
+   cerchio parte comunque da quella invece di restare "n/d". */
+export function blendRecoveryWithReadiness(basePct, readiness) {
+  if (!readiness) return basePct;
+  if (basePct == null) return Math.round(readiness.score);
+  return complPct(basePct * 0.7 + readiness.score * 0.3);
+}
 function nutritionPrecision(target, consumed) {
   const dims = ["kcal", "p", "c", "f"];
   const devs = dims.map((d) => (target[d] > 0 ? Math.min(1, Math.abs(consumed[d] - target[d]) / target[d]) : 0));
@@ -1128,7 +1141,12 @@ function ComplianceRings({ rings, onSelect }) {
 
 /* Popup analitico a comparsa, stile Instagram: si apre dal basso, sfondo
    sfumato, dettaglio del singolo reparto in un colpo d'occhio. */
-function CompliancePopup({ ring, onClose }) {
+/* Il punteggio di prontezza (vedi computeReadinessScore più sopra) vive qui
+   dentro, non più come card separata in Home: è il segnale di OGGI che
+   spiega perché il cerchio Recupero è quello che è (ci contribuisce
+   direttamente, vedi blendRecoveryWithReadiness), quindi il suo dettaglio
+   appartiene al popup del cerchio Recupero. */
+function CompliancePopup({ ring, onClose, readiness }) {
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose);
   if (!ring) return null;
@@ -1152,6 +1170,23 @@ function CompliancePopup({ ring, onClose }) {
           </div>
           <p style={{ fontSize: "2.6rem", fontWeight: 700, color: tier.color, lineHeight: 1 }}>{isNeutral ? "n/d" : `${ring.pct}%`}</p>
           <p className="meta mb-4 mt-1">{isNeutral ? tier.label : `${tier.label} · media ultimi 7 giorni`}</p>
+          {ring.id === "recovery" && readiness && (
+            <div className="rounded-2xl px-4 py-3.5 mb-4" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-sm" style={{ fontWeight: 700, color: "var(--ink)" }}>Prontezza di oggi</span>
+                <span className="font-data" style={{ fontSize: "0.95rem", fontWeight: 800, color: CANDLE[readiness.tone].label }}>
+                  {readiness.score}/100
+                </span>
+              </div>
+              <p className="meta" style={{ lineHeight: 1.4 }}>
+                {readiness.label} · {readiness.parts.map((p) => `${READINESS_PART_ICON[p.key] || ""} ${p.label}`).join(" · ")}
+                {readiness.penaltyApplied && " · dolore/stress recenti considerati"}
+              </p>
+              <p className="meta mt-1.5" style={{ fontSize: "0.62rem" }}>
+                Contribuisce al {"Recupero"} di oggi insieme alla media di sonno e passi degli ultimi 7 giorni.
+              </p>
+            </div>
+          )}
           <div className="space-y-2">
             {ring.details.map((d) => (
               <div key={d.label} className="inner flex items-center justify-between px-4 py-2.5">
@@ -1502,41 +1537,6 @@ function DayJourneyCard({ joinedAt }) {
         </button>
       </div>
       <p className="text-sm" style={{ color: "var(--ink)", lineHeight: 1.5 }}>{tip}</p>
-    </div>
-  );
-}
-
-/* ============================================================================
-   PUNTEGGIO DI PRONTEZZA — card compatta subito sotto il banner principale:
-   un solo numero azionabile invece di 4 dati sparsi da interpretare da soli
-   (vedi computeReadinessScore più sopra). Sparisce del tutto se non c'è
-   ancora nessun dato per oggi — mai uno "0" finto prima che l'atleta abbia
-   registrato qualcosa. */
-function ReadinessCard({ readiness }) {
-  if (!readiness) return null;
-  const { score, tone, label, parts, penaltyApplied } = readiness;
-  const col = CANDLE[tone];
-  const PART_ICON = { sleep: "😴", steps: "🚶", motivation: "🔥", fatigue: "🔋" };
-
-  return (
-    <div className="card mb-4" style={{ padding: "16px 20px" }}>
-      <div className="flex items-center gap-4">
-        <div className="shrink-0 flex flex-col items-center justify-center rounded-2xl"
-             style={{ width: 58, height: 58, backgroundColor: `${col.mid}1A`, border: `1px solid ${col.mid}40` }}>
-          <span className="font-data" style={{ fontSize: "1.3rem", fontWeight: 800, color: col.label, lineHeight: 1 }}>{score}</span>
-          <span style={{ fontSize: "0.52rem", fontWeight: 700, color: col.label, letterSpacing: "0.04em" }}>/100</span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm" style={{ fontWeight: 700, color: "var(--ink)" }}>{label}</p>
-          <p className="meta mt-0.5" style={{ lineHeight: 1.4 }}>
-            {parts.map((p) => `${PART_ICON[p.key] || ""} ${p.label}`).join(" · ")}
-            {penaltyApplied && " · dolore/stress recenti considerati"}
-          </p>
-          <div className="rounded-full overflow-hidden mt-2" style={{ height: 5, backgroundColor: "var(--surface-2)" }}>
-            <div style={{ width: `${score}%`, height: "100%", backgroundColor: col.mid, transition: "width 700ms cubic-bezier(.22,1,.36,1)" }} />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -2488,6 +2488,11 @@ export function HomeDashboard({
   const recoveryPain7 = [...RECOVERY_PAIN_6D, 1]; // oggi: nessun dolore segnalato (default)
   const recoveryPctComputed = recoveryWeekScore(recoverySleep7, recoverySteps7, recoveryPain7);
 
+  // Punteggio di prontezza di oggi: calcolato una sola volta qui (non più
+  // duplicato per ogni schermata che ne ha bisogno — Home, popup del cerchio
+  // Recupero, avviso pre-allenamento), vedi computeReadinessScore più sopra.
+  const readiness = computeReadinessScore({ sleepHours: sleep.hours, steps: Number(steps) || 0, motivation, fatigue, recentSensations });
+
   // Cerchio Allenamento reale: STESSA formula di ClientDetail (coach), mai
   // calcolata due volte — vedi computeTrainingCompliance in coachingData.js.
   // Il simulatore di test (trainOverride) resta solo per la preview demo:
@@ -2545,7 +2550,8 @@ export function HomeDashboard({
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId]);
 
-  const recoveryPct = isRealMode ? (realRecoveryCompliance?.pct ?? null) : (recoveryOverride ?? recoveryPctComputed);
+  const recoveryBasePct = isRealMode ? (realRecoveryCompliance?.pct ?? null) : recoveryPctComputed;
+  const recoveryPct = recoveryOverride ?? blendRecoveryWithReadiness(recoveryBasePct, readiness);
   const recoveryTrackedDays = isRealMode ? (realRecoveryCompliance?.trackedDays ?? 0) : recoverySleep7.filter((h) => h > 0).length;
 
   const progressionLabel = { positive: "In crescita", negative: "In calo", neutral: "Stabile" };
@@ -2634,7 +2640,6 @@ export function HomeDashboard({
   if (screen === "dash") {
     const greeting = getGreeting();
     const firstName = profile.nickname || profile.name.split(" ")[0];
-    const readiness = computeReadinessScore({ sleepHours: sleep.hours, steps: Number(steps) || 0, motivation, fatigue, recentSensations });
 
     return (
       <div className="spring-in">
@@ -2738,7 +2743,11 @@ export function HomeDashboard({
           </div>
         )}
         <DayJourneyCard joinedAt={joinedAt} />
-        <ReadinessCard readiness={readiness} />
+
+        {/* La prontezza di oggi non è più una card separata qui: vive dentro
+            il popup del cerchio Recupero (CompliancePopup, tocca il cerchio
+            per aprirlo) e contribuisce già alla sua percentuale, vedi
+            blendRecoveryWithReadiness più sopra. */}
 
         {/* "Vai in vacanza / chiedi riposo forzato" vive ora nel Profilo
             personale (08_ClientProfileView.jsx), non più qui in Home. */}
@@ -2791,7 +2800,7 @@ export function HomeDashboard({
           </div>
         )}
 
-        <CompliancePopup ring={complianceRings.find((r) => r.id === activeRingPopup)} onClose={() => setActiveRingPopup(null)} />
+        <CompliancePopup ring={complianceRings.find((r) => r.id === activeRingPopup)} onClose={() => setActiveRingPopup(null)} readiness={readiness} />
         {levelRoadmapOpen && (
           <LevelRoadmapModal currentXp={isRealMode ? (realXpStreak?.xpTotal ?? 0) : xp} onClose={() => setLevelRoadmapOpen(false)} />
         )}
@@ -2867,12 +2876,11 @@ export function HomeDashboard({
     // prima di iniziare la sessione, non solo un numero su un grafico.
     const lastNightSleep = sleep?.hours || fullHistory?.sleep?.[fullHistory.sleep.length - 1] || null;
     const poorSleep = lastNightSleep != null && lastNightSleep > 0 && lastNightSleep < THRESH.sleep.bad;
-    // Stesso punteggio di prontezza della Home: qui diventa un avviso
-    // concreto SOLO quando il fattore più basso non è già il sonno (coperto
-    // dall'avviso sopra, più specifico) — mai due avvisi sovrapposti per lo
-    // stesso giorno.
-    const readinessWorkout = computeReadinessScore({ sleepHours: sleep.hours, steps: Number(steps) || 0, motivation, fatigue, recentSensations });
-    const lowReadinessNonSleep = readinessWorkout && readinessWorkout.tone === "bad" && readinessWorkout.lowest?.key !== "sleep" && !poorSleep;
+    // Stesso punteggio di prontezza della Home (calcolato una sola volta più
+    // sopra, vedi `readiness`): qui diventa un avviso concreto SOLO quando il
+    // fattore più basso non è già il sonno (coperto dall'avviso sopra, più
+    // specifico) — mai due avvisi sovrapposti per lo stesso giorno.
+    const lowReadinessNonSleep = readiness && readiness.tone === "bad" && readiness.lowest?.key !== "sleep" && !poorSleep;
     const READINESS_ADVICE = {
       steps: "Sei stato molto fermo negli ultimi giorni: il corpo arriva alla sessione meno pronto a livello circolatorio. Un riscaldamento più lungo del solito aiuta.",
       motivation: "La motivazione registrata è bassa: valuta di iniziare dall'esercizio che ti piace di più invece che dal primo in scheda, o di accorciare leggermente la sessione.",
@@ -2921,10 +2929,10 @@ export function HomeDashboard({
                 <span style={{ fontSize: "1.2rem" }}>⚠️</span>
                 <div>
                   <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>
-                    {readinessWorkout.label} oggi ({readinessWorkout.score}/100)
+                    {readiness.label} oggi ({readiness.score}/100)
                   </p>
                   <p className="meta mt-0.5" style={{ lineHeight: 1.5 }}>
-                    {READINESS_ADVICE[readinessWorkout.lowest.key] || "Valuta una sessione più leggera del solito. Non serve saltarla."}
+                    {READINESS_ADVICE[readiness.lowest.key] || "Valuta una sessione più leggera del solito. Non serve saltarla."}
                   </p>
                 </div>
               </div>
