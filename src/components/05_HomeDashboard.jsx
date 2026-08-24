@@ -17,6 +17,7 @@
    ========================================================================== */
 
 import React, { useState, useMemo, useEffect, useRef, useCallback, useId } from "react";
+import ErrorBoundary from "./ErrorBoundary.jsx";
 import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
@@ -2988,9 +2989,15 @@ export function HomeDashboard({
               </>
             ) : (
               <>
-                <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
-                                     day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
-                                     supabase={supabase} userId={userId} />
+                {/* Boundary locale, non solo quella globale in main.jsx: un
+                    crash qui non deve travolgere il resto dell'app — e con
+                    l'autosave su localStorage sopra, anche un "Ricarica"
+                    forzato da qui non perde più la routine in corso. */}
+                <ErrorBoundary>
+                  <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
+                                       day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
+                                       supabase={supabase} userId={userId} />
+                </ErrorBoundary>
                 {/* Disponibile a TUTTI i piani, non solo a fine giorno di
                     oggi (mai su un giorno passato aperto dal calendario). */}
                 {day.isTraining && !selectedCalendarIso && (
@@ -4885,13 +4892,47 @@ function makeExercise(name, sets, reps, targetMuscle) {
   return ex;
 }
 
+// BUG PRESO (segnalato): la routine costruita qui (giorni/esercizi/serie di
+// "La Mia Routine", piano Free/Performance Pack autogestito) non veniva MAI
+// scritta da nessuna parte — solo stato React locale. Un reload qualunque
+// (l'app riavviata, il tab ucciso in background da Android per liberare
+// RAM, un crash imprevisto catturato da ErrorBoundary più in alto)
+// cancellava ore di lavoro senza preavviso: è così che un cliente non è
+// riuscito a impostare i suoi esercizi. Salvataggio reale su Supabase è un
+// progetto più grande (nuova tabella, RLS) — qui, subito, un autosave su
+// localStorage per singolo utente: niente più lavoro perso a un reload,
+// qualunque sia la causa del reload.
+function freeRoutineStorageKey(userId) {
+  return `perform_free_routine_${userId || "demo"}`;
+}
+function loadFreeRoutine(userId) {
+  try {
+    const raw = localStorage.getItem(freeRoutineStorageKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.weeks) || parsed.weeks.length === 0) return null;
+    return parsed;
+  } catch {
+    return null; // JSON corrotto o privacy mode: si riparte da vuoto, mai un crash
+  }
+}
+
 function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, gender, supabase, userId }) {
   const [innerTab, setInnerTab] = useState("oggi");
-  const [weeks, setWeeks] = useState([emptyWeek()]);
-  const [activeWeek, setActiveWeek] = useState(0);
+  const restored = useMemo(() => loadFreeRoutine(userId), [userId]);
+  const [weeks, setWeeks] = useState(() => restored?.weeks ?? [emptyWeek()]);
+  const [activeWeek, setActiveWeek] = useState(() => restored?.activeWeek ?? 0);
   const [sets, setSets] = useState({});
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(() => restored?.startDate ?? "");
+  const [endDate, setEndDate] = useState(() => restored?.endDate ?? "");
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(freeRoutineStorageKey(userId), JSON.stringify({ weeks, activeWeek, startDate, endDate }));
+    } catch {
+      /* quota piena o privacy mode: niente di grave, l'autosave riprova al prossimo cambiamento */
+    }
+  }, [userId, weeks, activeWeek, startDate, endDate]);
 
   // Libreria esercizi condivisa (SCHEMA_v39), caricata una volta qui e
   // riusata sia dal grafico volumi sia da DayEditor per sapere se un
@@ -5216,7 +5257,7 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
           {/* ricerca con suggerimenti live + digitazione totalmente libera */}
           <div className="relative mb-2">
             <input type="text" value={query}
-              onChange={(e) => { setQuery(e.target.value); setDropOpen(true); setTargetMuscle(""); }}
+              onChange={(e) => { setQuery(String(e.target.value ?? "")); setDropOpen(true); setTargetMuscle(""); }}
               onFocus={() => setDropOpen(true)}
               onBlur={() => setTimeout(() => setDropOpen(false), 150)}
               placeholder="Cerca o scrivi un esercizio (anche una variante tua)…"
