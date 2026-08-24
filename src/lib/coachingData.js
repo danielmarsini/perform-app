@@ -1903,6 +1903,30 @@ export async function clearWhitelist(supabase, clientId) {
   if (error) throw error;
 }
 
+// "Smetti di gestire" (richiesto esplicitamente): il coach vuole togliere un
+// cliente dalla gestione attiva SENZA eliminare l'account — tipicamente
+// account di test creati per provare l'app, ora mescolati con clienti veri
+// dopo aver iniziato a inserirne di reali. Riporta il cliente a un piano
+// autogestito (free o performance_pack, scelto dal coach — non lo
+// indoviniamo da uno storico che non teniamo) e client_status torna a null
+// ("registered", fuori dal reparto Attivi/In attesa/Scaduti). Cancella
+// anche whitelisted_until: un cliente non più in gestione non deve avere un
+// timer di scadenza whitelist che scorre nel vuoto. NON tocca mai un
+// abbonamento Stripe reale — se il cliente ha davvero pagato, l'unico modo
+// corretto per fermare gli addebiti resta il portale fatturazione lato
+// cliente; questa funzione serve solo per chi non ha mai pagato per davvero
+// (whitelist/test).
+const UNMANAGE_TARGET_PLANS = ["free", "performance_pack"];
+export async function unmanageClient(supabase, clientId, targetPlan) {
+  if (!UNMANAGE_TARGET_PLANS.includes(targetPlan)) {
+    throw new Error(`piano di destinazione non valido per "smetti di gestire": "${targetPlan}"`);
+  }
+  const { error } = await supabase.from("profiles")
+    .update({ plan: targetPlan, client_status: null, whitelisted_until: null })
+    .eq("id", clientId);
+  if (error) throw error;
+}
+
 // §08 memo "Verso l'élite" — Il business dietro l'app: programma referral.
 // Codice a 8 caratteri da un alfabeto senza ambiguità (niente 0/O/1/I): si
 // legge a voce e si scrive senza errori, quanto basta per non collidere
