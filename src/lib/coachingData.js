@@ -2091,6 +2091,23 @@ export async function fetchAttentionSignals(supabase, clientIds) {
   return signals;
 }
 
+// §05 memo "Verso l'élite" — I primi 14 giorni: video di benvenuto
+// registrato UNA volta dal coach (SCHEMA_v62, singleton coach_settings), non
+// per-cliente. maybeSingle: la riga esiste sempre (creata dalla migrazione),
+// ma resta un fallback null-safe se qualcuno la cancella per errore.
+export async function fetchCoachSettings(supabase) {
+  const { data, error } = await supabase.from("coach_settings").select("welcome_video_url").eq("id", true).maybeSingle();
+  if (error) throw error;
+  return { welcomeVideoUrl: data?.welcome_video_url || null };
+}
+
+export async function saveWelcomeVideoUrl(supabase, url) {
+  const { error } = await supabase.from("coach_settings")
+    .update({ welcome_video_url: url?.trim() || null, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (error) throw error;
+}
+
 // Punteggio di ricomposizione: legge peso e vita (non "un numero" arbitrario
 // — un'etichetta onesta derivata da due delta reali già misurati) per capire
 // se sta succedendo dimagrimento, bulk o vera ricomposizione (peso stabile/su,
