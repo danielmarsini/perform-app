@@ -30,7 +30,7 @@
    ========================================================================== */
 
 import React, { useState, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Dumbbell, ShieldCheck, BarChart3, Trophy, ChevronRight } from "lucide-react";
 
 import { DesignSystem } from "./04_AppShell.jsx";
 import { STRIPE_PLANS, translations, GradientText, PlanCard, hasAnnualPricing, withBillingCycle, BillingCycleToggle } from "./08_ClientProfileView.jsx";
@@ -52,6 +52,107 @@ const DB_TO_UI_PLAN = { scheda_personalizzata: "scheda", training: "training", f
 const ANAM_FILLABLE = ANAM_QUESTIONS.filter((q) => q.t !== "photos");
 const ANAM_REQUIRED = ANAM_FILLABLE.filter((q) => q.req);
 
+/* ============================================================================
+   MINI-TUTORIAL DI BENVENUTO — mostrato UNA volta, subito dopo la
+   registrazione e PRIMA della scelta del piano: prima di chiedere una carta
+   di credito, va costruita l'aspettativa. Posiziona PERFORM come un metodo
+   costruito per chi si allena sul serio (atleti, persone che vogliono
+   mettersi alla prova) seguito da un team reale — non l'ennesima app fitness
+   generica scaricata e dimenticata dopo una settimana. Nessun dato reale
+   qui dentro: solo presentazione, si passa allo step "plan" al termine (o
+   subito, con "Salta introduzione").
+   ========================================================================== */
+const INTRO_SLIDES = [
+  {
+    icon: Dumbbell,
+    kicker: "Benvenuto in PERFORM",
+    title: "Non l'ennesima app fitness.",
+    body: "Un metodo evidence-based costruito per chi non si accontenta: atleti e persone che vogliono allenarsi sul serio, mettersi alla prova e raggiungere obiettivi estetici, di performance e di salute veri — con un team di professionisti al tuo fianco, non un algoritmo generico.",
+  },
+  {
+    icon: ShieldCheck,
+    kicker: "Un coach reale, non un piano scaricato",
+    title: "Ti segue una persona, non un modello.",
+    body: "Scheda di allenamento e piano alimentare costruiti su misura, aggiornati nel tempo in base ai tuoi progressi reali — check dopo check, mai un piano statico lasciato a se stesso dopo il primo giorno.",
+  },
+  {
+    icon: BarChart3,
+    kicker: "Ogni progresso conta",
+    title: "Tracciato come un atleta vero.",
+    body: "Allenamento, alimentazione, recupero e integrazione monitorati giorno per giorno: dati che il tuo coach legge davvero per calibrare il percorso, non numeri che spariscono in un diario dimenticato.",
+  },
+  {
+    icon: Trophy,
+    kicker: "Pronto a iniziare",
+    title: "Mettiti alla prova.",
+    body: "Scegli il piano più adatto a te per cominciare il tuo percorso con PERFORM.",
+  },
+];
+
+function AppIntroTutorial({ gender, dark, onFinish }) {
+  const [slide, setSlide] = useState(0);
+  const last = slide === INTRO_SLIDES.length - 1;
+  const s = INTRO_SLIDES[slide];
+  const Icon = s.icon;
+
+  return (
+    <div className="app-root min-h-screen flex flex-col" data-theme={dark ? "dark" : "light"}
+         style={{
+           backgroundColor: "var(--page)",
+           backgroundImage: `radial-gradient(circle at 50% 0%, ${gender === "F" ? "rgba(212,165,165,0.16)" : "rgba(197,160,89,0.16)"} 0%, transparent 60%)`,
+         }}>
+      <DesignSystem />
+      <div className="flex justify-end px-5 pt-5">
+        <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+          Salta introduzione
+        </button>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" style={{ maxWidth: 480, margin: "0 auto" }}>
+        <div key={slide} className="spring-in">
+          <div className="mx-auto mb-6 rounded-full flex items-center justify-center"
+               style={{
+                 width: 84, height: 84,
+                 background: gender === "F"
+                   ? "linear-gradient(135deg, rgba(212,165,165,0.22), rgba(212,165,165,0.06))"
+                   : "linear-gradient(135deg, rgba(197,160,89,0.22), rgba(197,160,89,0.06))",
+                 border: `1px solid ${gender === "F" ? "rgba(212,165,165,0.4)" : "rgba(197,160,89,0.4)"}`,
+                 boxShadow: `0 0 40px ${gender === "F" ? "rgba(212,165,165,0.25)" : "rgba(197,160,89,0.25)"}`,
+               }}>
+            <Icon size={34} style={{ color: gender === "F" ? "#D4A5A5" : "#C5A059" }} />
+          </div>
+
+          <p className="font-data mb-3" style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-2)" }}>
+            {s.kicker}
+          </p>
+          <GradientText gender={gender} style={{ fontSize: "1.7rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2, display: "block" }}>
+            {s.title}
+          </GradientText>
+          <p className="mt-4 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
+            {s.body}
+          </p>
+        </div>
+      </div>
+
+      <div className="px-6 pb-10" style={{ maxWidth: 480, width: "100%", margin: "0 auto" }}>
+        <div className="flex items-center justify-center gap-2 mb-6">
+          {INTRO_SLIDES.map((_, i) => (
+            <button key={i} onClick={() => setSlide(i)} aria-label={`Vai alla schermata ${i + 1}`}
+              className="rounded-full transition-all duration-300"
+              style={{ width: i === slide ? 22 : 7, height: 7,
+                       backgroundColor: i === slide ? (gender === "F" ? "#D4A5A5" : "#C5A059") : "var(--line)" }} />
+          ))}
+        </div>
+        <button onClick={() => (last ? onFinish() : setSlide((v) => v + 1))}
+          className="w-full rounded-full px-4 py-3.5 text-sm flex items-center justify-center gap-1.5 btn-3d"
+          style={{ backgroundColor: gender === "F" ? "#D4A5A5" : "#C5A059", color: "#111111", fontWeight: 700 }}>
+          {last ? "Scegli il tuo piano" : "Avanti"} <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // `initialPlan` è il valore già presente su profiles.plan quando questo
 // componente monta. Il default DB per un profilo nuovo è 'free', quindi non
 // basta da solo a dire "il piano è già stato scelto qui" — MA se vale uno dei
@@ -68,7 +169,7 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
   // l'effect subito sotto, "step" resta 'plan' solo per il breve istante in
   // cui quell'effect gira (isFinishingPack copre quel caso a schermo).
   const isResumedPerformancePack = initialPlan === "performance_pack";
-  const [step, setStep] = useState(resumedPlanId ? "anamnesi" : "plan"); // 'plan' | 'anamnesi'
+  const [step, setStep] = useState(resumedPlanId ? "anamnesi" : "intro"); // 'intro' | 'plan' | 'anamnesi'
   const [chosenPlan, setChosenPlan] = useState(
     resumedPlanId ? { id: resumedPlanId, dbValue: initialPlan } : null
   ); // { id, dbValue } — id STRIPE_PLANS, dbValue colonna reale
@@ -179,6 +280,10 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
     );
   }
 
+  if (step === "intro") {
+    return <AppIntroTutorial gender={gender} dark={dark} onFinish={() => setStep("plan")} />;
+  }
+
   if (step === "anamnesi") {
     return (
       <div className={`coach-root${dark ? " dark" : ""}`} style={{ minHeight: "100vh" }}>
@@ -259,27 +364,6 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
           <GradientText gender={gender} style={{ fontSize: "1.5rem", fontWeight: 800, letterSpacing: "-0.01em" }}>
             {t.plan.chooseTitle}
           </GradientText>
-          <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
-            Puoi sempre cambiare piano più avanti dalle Impostazioni. Se scegli uno dei piani
-            seguiti da un coach, subito dopo ti chiedo di compilare la tua anamnesi.
-          </p>
-        </div>
-
-        <div className="rounded-2xl px-4 py-3.5 mb-5" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}>
-          <p className="text-xs mb-2" style={{ color: "var(--ink-2)", fontWeight: 600 }}>Hai un codice invito? (facoltativo)</p>
-          <div className="flex items-center gap-2">
-            <input type="text" value={referralCode}
-              onChange={(e) => { setReferralCode(e.target.value.toUpperCase()); setReferralStatus("idle"); }}
-              placeholder="Es. AB3D9F2K" maxLength={8} disabled={referralStatus === "applied"}
-              className="input flex-1 px-3 py-2 text-sm font-data" style={{ letterSpacing: "0.06em" }} />
-            <button onClick={applyReferralCode} disabled={referralStatus === "applying" || referralStatus === "applied" || !referralCode.trim()}
-              className="rounded-full px-4 py-2 text-xs shrink-0"
-              style={{ backgroundColor: referralStatus === "applied" ? "#059669" : "var(--ink)", color: "var(--page)", fontWeight: 700, opacity: referralStatus === "applying" ? 0.7 : 1 }}>
-              {referralStatus === "applied" ? "✓ Applicato" : referralStatus === "applying" ? "…" : "Applica"}
-            </button>
-          </div>
-          {referralStatus === "invalid" && <p className="text-xs mt-1.5" style={{ color: "#DC2626" }}>Codice non valido — controlla di averlo scritto giusto.</p>}
-          {referralStatus === "error" && <p className="text-xs mt-1.5" style={{ color: "#DC2626" }}>Non sono riuscito ad applicarlo — riprova.</p>}
         </div>
 
         {error && (
@@ -303,6 +387,7 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
             dark={dark}
             t={t}
             isOwner={false}
+            signupContext
             onChangePlan={busy ? () => {} : choosePlan}
           />
         ))}
@@ -312,6 +397,32 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
             <Loader2 size={13} className="animate-spin" /> Un attimo…
           </p>
         )}
+
+        {/* Codice invito e nota "puoi sempre cambiare" in fondo a tutta la
+            pagina, sotto ogni card piano: sono informazioni di contorno,
+            non devono competere con i piani per l'attenzione di chi arriva
+            qui per la prima volta. */}
+        <div className="rounded-2xl px-4 py-3.5 mt-6" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}>
+          <p className="text-xs mb-2" style={{ color: "var(--ink-2)", fontWeight: 600 }}>Hai un codice invito? (facoltativo)</p>
+          <div className="flex items-center gap-2">
+            <input type="text" value={referralCode}
+              onChange={(e) => { setReferralCode(e.target.value.toUpperCase()); setReferralStatus("idle"); }}
+              placeholder="Es. AB3D9F2K" maxLength={8} disabled={referralStatus === "applied"}
+              className="input flex-1 px-3 py-2 text-sm font-data" style={{ letterSpacing: "0.06em" }} />
+            <button onClick={applyReferralCode} disabled={referralStatus === "applying" || referralStatus === "applied" || !referralCode.trim()}
+              className="rounded-full px-4 py-2 text-xs shrink-0"
+              style={{ backgroundColor: referralStatus === "applied" ? "#059669" : "var(--ink)", color: "var(--page)", fontWeight: 700, opacity: referralStatus === "applying" ? 0.7 : 1 }}>
+              {referralStatus === "applied" ? "✓ Applicato" : referralStatus === "applying" ? "…" : "Applica"}
+            </button>
+          </div>
+          {referralStatus === "invalid" && <p className="text-xs mt-1.5" style={{ color: "#DC2626" }}>Codice non valido — controlla di averlo scritto giusto.</p>}
+          {referralStatus === "error" && <p className="text-xs mt-1.5" style={{ color: "#DC2626" }}>Non sono riuscito ad applicarlo — riprova.</p>}
+        </div>
+
+        <p className="mt-4 text-xs text-center leading-relaxed" style={{ color: "var(--ink-2)" }}>
+          Puoi sempre cambiare piano più avanti dalle Impostazioni. Se scegli uno dei piani
+          seguiti da un coach, subito dopo ti chiedo di compilare la tua anamnesi.
+        </p>
       </main>
     </div>
   );

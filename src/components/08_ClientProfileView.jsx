@@ -119,17 +119,17 @@ export const translations = {
       autoRenew: (d) => `Rinnovo automatico il ${d}`,
       subscribed: "Abbonamento attivo",
       current: "Piano attuale",
-      freeCta: "Torna al Free", oneTimeCta: "Acquista ora", switchCta: "Passa a questo piano",
+      freeCta: "Torna al Free", freeCtaSignup: "Iscriviti gratis", oneTimeCta: "Acquista ora", switchCta: "Acquista abbonamento",
       billingMonthly: "Mensile", billingAnnual: "Annuale · 2 mesi gratis",
     },
     plans: {
-      free:        { name: "Free", includes: ["Diario libero autogestito: dieta, carichi, integrazione, passi e sonno"],
+      free:        { name: "Free", includes: ["Diario libero autogestito: allenamento, dieta, integrazione, passi, sonno, novità sull'ambito fitness e wiki"],
                      excludes: ["Nessun coach reale che segue i tuoi progressi", "Nessuna scheda o dieta personalizzata", "Nessun grafico storico avanzato", "Nessuna guida biomeccanica agli esercizi"] },
       performance: { name: "Premium", includes: ["Tutto il Free", "Grafici storici 2D avanzati: Sonno, Passi, HRV, stile Apple Salute", "Guida biomeccanica ad ogni esercizio: come eseguirlo, cosa evitare", "Analisi in tempo reale dei micronutrienti (Sodio, Potassio, Ferro, Calcio, Magnesio)"],
-                     excludes: ["Nessuna scheda creata da me personalmente", "Nessun check settimanale con un coach reale", "Nessun supporto diretto su WhatsApp"] },
-      scheda:      { name: "Scheda Personalizzata", includes: ["Scheda di allenamento personalizzata fatta da me", "2 settimane di follow-up incluse", "Video review delle esecuzioni"],
+                     excludes: ["Nessuna scheda di allenamento personalizzata dal coach", "Nessun check settimanale con un coach reale", "Nessun supporto diretto su WhatsApp"] },
+      scheda:      { name: "Scheda Personalizzata", includes: ["Scheda di allenamento su misura, costruita dal coach sui tuoi obiettivi e sul tuo livello", "2 settimane di follow-up incluse", "Video review delle esecuzioni"],
                      excludes: ["Non è un abbonamento: dopo le 2 settimane resti da solo", "Nessun aggiornamento del piano nel tempo", "Nessun piano alimentare incluso"] },
-      training:    { name: "Coaching Allenamento", includes: ["Scheda su misura aggiornata in continuo, mai ferma", "Video review delle esecuzioni", "Check settimanale con me", "Supporto diretto H24 su WhatsApp"],
+      training:    { name: "Coaching Allenamento", includes: ["Scheda su misura aggiornata in continuo, mai ferma", "Video review delle esecuzioni", "Check settimanale diretto con il coach", "Supporto diretto H24 su WhatsApp"],
                      excludes: ["Nessun piano alimentare incluso", "Nessun protocollo di integrazione"] },
       full:        { name: "Full Coaching", includes: ["Tutto Coaching Allenamento", "Calcolo macro preciso su misura", "Dieta ON/OFF a 4 momenti della giornata", "Lista sostituzioni alimenti ed esercizi automatica", "Protocollo di integrazione d'élite", "Supporto WhatsApp dedicato 24/7"],
                      excludes: [] },
@@ -211,15 +211,15 @@ export const translations = {
       autoRenew: (d) => `Automatic renewal on ${d}`,
       subscribed: "Subscription active",
       current: "Current plan",
-      freeCta: "Back to Free", oneTimeCta: "Buy now", switchCta: "Switch to this plan",
+      freeCta: "Back to Free", freeCtaSignup: "Sign up for free", oneTimeCta: "Buy now", switchCta: "Subscribe now",
       billingMonthly: "Monthly", billingAnnual: "Annual · 2 months free",
     },
     plans: {
-      free:        { name: "FREE", includes: ["Self-guided free-form diary: diet, loads, supplements, steps and sleep"],
+      free:        { name: "FREE", includes: ["Self-guided free-form diary: training, diet, supplements, steps and sleep, plus fitness news and the wiki"],
                      excludes: ["No real coach tracking your progress", "No custom training plan or diet", "No advanced historical charts", "No biomechanical guidance on exercises"] },
       performance: { name: "PERFORMANCE PACK", includes: ["Everything in Free", "Advanced 2D historical charts: Sleep, Steps, HRV, Apple Health style", "Biomechanical guidance on every exercise: how to perform it, what to avoid", "Real-time micronutrient analysis (Sodium, Potassium, Iron, Calcium, Magnesium)"],
-                     excludes: ["No plan built by me personally", "No weekly check-in with a real coach", "No direct WhatsApp support"] },
-      scheda:      { name: "CUSTOM PLAN", includes: ["Custom training plan built by me personally", "2 weeks of follow-up included", "Video review of your execution"],
+                     excludes: ["No personalized training plan from the coach", "No weekly check-in with a real coach", "No direct WhatsApp support"] },
+      scheda:      { name: "CUSTOM PLAN", includes: ["Custom training plan, built by the coach around your goals and level", "2 weeks of follow-up included", "Video review of your execution"],
                      excludes: ["Not a subscription: you're on your own after 2 weeks", "No ongoing plan updates", "No nutrition plan included"] },
       training:    { name: "TRAINING-ONLY COACHING", includes: ["Continuously updated custom plan", "Video review of your execution", "Weekly check-in", "Direct 24/7 support on WhatsApp"],
                      excludes: ["No nutrition plan included", "No supplementation protocol"] },
@@ -299,15 +299,15 @@ export const translations = {
       autoRenew: (d) => `Renovación automática el ${d}`,
       subscribed: "Suscripción activa",
       current: "Plan actual",
-      freeCta: "Volver al Gratis", oneTimeCta: "Comprar ahora", switchCta: "Cambiar a este plan",
+      freeCta: "Volver al Gratis", freeCtaSignup: "Regístrate gratis", oneTimeCta: "Comprar ahora", switchCta: "Suscribirse ahora",
       billingMonthly: "Mensual", billingAnnual: "Anual · 2 meses gratis",
     },
     plans: {
-      free:        { name: "GRATIS", includes: ["Diario libre autogestionado: dieta, cargas, suplementación, pasos y sueño"],
+      free:        { name: "GRATIS", includes: ["Diario libre autogestionado: entrenamiento, dieta, suplementación, pasos y sueño, además de novedades de fitness y la wiki"],
                      excludes: ["Sin coach real que siga tu progreso", "Sin plan de entrenamiento o dieta personalizado", "Sin gráficos históricos avanzados", "Sin guía biomecánica de los ejercicios"] },
       performance: { name: "PACK RENDIMIENTO", includes: ["Todo lo del plan Gratis", "Gráficos históricos 2D avanzados: Sueño, Pasos, VFC, estilo Apple Salud", "Guía biomecánica de cada ejercicio: cómo ejecutarlo, qué evitar", "Análisis en tiempo real de micronutrientes (Sodio, Potasio, Hierro, Calcio, Magnesio)"],
-                     excludes: ["Sin plan hecho por mí personalmente", "Sin check semanal con un coach real", "Sin soporte directo por WhatsApp"] },
-      scheda:      { name: "PLAN PERSONALIZADO", includes: ["Plan de entrenamiento personalizado hecho por mí", "2 semanas de seguimiento incluidas", "Revisión en video de tu ejecución"],
+                     excludes: ["Sin plan de entrenamiento personalizado por el coach", "Sin check semanal con un coach real", "Sin soporte directo por WhatsApp"] },
+      scheda:      { name: "PLAN PERSONALIZADO", includes: ["Plan de entrenamiento a medida, elaborado por el coach según tus objetivos y nivel", "2 semanas de seguimiento incluidas", "Revisión en video de tu ejecución"],
                      excludes: ["No es una suscripción: tras las 2 semanas quedas por tu cuenta", "Sin actualizaciones continuas del plan", "Sin plan de alimentación incluido"] },
       training:    { name: "COACHING SOLO ENTRENAMIENTO", includes: ["Plan a medida actualizado de forma continua", "Revisión en video de tu ejecución", "Check semanal", "Soporte directo 24/7 por WhatsApp"],
                      excludes: ["Sin plan de alimentación incluido", "Sin protocolo de suplementación"] },
@@ -387,15 +387,15 @@ export const translations = {
       autoRenew: (d) => `Renouvellement automatique le ${d}`,
       subscribed: "Abonnement actif",
       current: "Plan actuel",
-      freeCta: "Retour au Gratuit", oneTimeCta: "Acheter maintenant", switchCta: "Passer à ce plan",
+      freeCta: "Retour au Gratuit", freeCtaSignup: "Inscris-toi gratuitement", oneTimeCta: "Acheter maintenant", switchCta: "S'abonner maintenant",
       billingMonthly: "Mensuel", billingAnnual: "Annuel · 2 mois offerts",
     },
     plans: {
-      free:        { name: "GRATUIT", includes: ["Journal libre autogéré : alimentation, charges, compléments, pas et sommeil"],
+      free:        { name: "GRATUIT", includes: ["Journal libre autogéré : entraînement, alimentation, compléments, pas et sommeil, ainsi que les actualités fitness et le wiki"],
                      excludes: ["Aucun coach réel ne suit tes progrès", "Aucun programme ou régime personnalisé", "Aucun graphique historique avancé", "Aucune guide biomécanique des exercices"] },
       performance: { name: "PACK PERFORMANCE", includes: ["Tout le plan Gratuit", "Graphiques historiques 2D avancés : Sommeil, Pas, VFC, façon Apple Santé", "Guide biomécanique de chaque exercice : comment l'exécuter, ce qu'il faut éviter", "Analyse en temps réel des micronutriments (Sodium, Potassium, Fer, Calcium, Magnésium)"],
-                     excludes: ["Aucun programme fait par moi personnellement", "Aucun bilan hebdomadaire avec un coach réel", "Aucun support direct via WhatsApp"] },
-      scheda:      { name: "PROGRAMME SUR MESURE", includes: ["Programme d'entraînement personnalisé fait par moi", "2 semaines de suivi incluses", "Revue vidéo de ton exécution"],
+                     excludes: ["Aucun programme personnalisé par le coach", "Aucun bilan hebdomadaire avec un coach réel", "Aucun support direct via WhatsApp"] },
+      scheda:      { name: "PROGRAMME SUR MESURE", includes: ["Programme d'entraînement sur mesure, conçu par le coach selon tes objectifs et ton niveau", "2 semaines de suivi incluses", "Revue vidéo de ton exécution"],
                      excludes: ["Ce n'est pas un abonnement : tu es livré à toi-même après 2 semaines", "Aucune mise à jour continue du programme", "Aucun régime alimentaire inclus"] },
       training:    { name: "COACHING ENTRAÎNEMENT SEUL", includes: ["Programme sur mesure mis à jour en continu", "Revue vidéo de ton exécution", "Bilan hebdomadaire", "Support direct 24/7 via WhatsApp"],
                      excludes: ["Aucun régime alimentaire inclus", "Aucun protocole de complémentation"] },
@@ -1494,7 +1494,7 @@ function Toggle({ on, onClick, label, desc }) {
    letterale richiesto dal committente, non tradotto dal motore i18n).
    Se isOwner e plan.id === 'full', mostra "👑 PROPRIETARIO / OWNER" al posto
    del bottone: sblocco nativo, nessun redirect a Stripe. */
-export function PlanCard({ plan, active, accent, accentText, gender, dark, t, onChangePlan, isOwner }) {
+export function PlanCard({ plan, active, accent, accentText, gender, dark, t, onChangePlan, isOwner, signupContext }) {
   const copy = t.plans[plan.id];
   const period = t.periods[plan.billing];
   const ownerOverride = isOwner && plan.id === "full";
@@ -1520,8 +1520,9 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
         </span>
       )}
       <div className="flex items-baseline justify-between gap-3 mb-2 mt-1.5">
-        <span style={{ color: "var(--ink)", fontSize: "1.02rem", fontWeight: 700, letterSpacing: "-0.01em" }}>
-          {plan.emoji} {copy.name}
+        <span className="flex items-baseline gap-1.5" style={{ fontSize: "1.02rem", fontWeight: 700, letterSpacing: "-0.01em" }}>
+          {plan.emoji}
+          <GradientText gender={gender}>{copy.name}</GradientText>
         </span>
         <GradientText gender={gender} className="shrink-0" style={{ fontWeight: 800, fontSize: "1.05rem" }}>
           {plan.price} €<span style={{ fontWeight: 500, fontSize: "0.68rem" }}> {period}</span>
@@ -1529,19 +1530,21 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
       </div>
       <ul className="space-y-1 mb-1">
         {copy.includes.map((f) => (
-          <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "var(--ink-3)" }}>
-            <Check size={13} className="shrink-0 mt-0.5" style={{ color: accent }} /> {f}
+          <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "#10B981", fontWeight: 500 }}>
+            <Check size={13} className="shrink-0 mt-0.5" style={{ color: "#10B981" }} /> {f}
           </li>
         ))}
       </ul>
       {/* Confronto esplicito con quello che MANCA rispetto al piano sopra —
           non solo cosa include, anche cosa non include: crea il contrasto
-          che spinge verso il piano più caro (voce esplicita del coach). */}
+          che spinge verso il piano più caro (voce esplicita del coach).
+          Rosso invece del semplice grigio spento di prima: un "no" deve
+          leggersi a colpo d'occhio come tale, non solo come testo attenuato. */}
       {copy.excludes?.length > 0 && (
         <ul className="space-y-1 mb-3">
           {copy.excludes.map((f) => (
-            <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "var(--ink-soft)", opacity: 0.75 }}>
-              <X size={13} className="shrink-0 mt-0.5" style={{ color: "var(--ink-soft)" }} /> {f}
+            <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "#DC2626", opacity: 0.85 }}>
+              <X size={13} className="shrink-0 mt-0.5" style={{ color: "#DC2626" }} /> {f}
             </li>
           ))}
         </ul>
@@ -1561,7 +1564,8 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
           style={plan.highlight
             ? { backgroundColor: accent, color: "#111111", fontWeight: 700 }
             : { border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
-          {plan.billing === "none" ? t.plan.freeCta : plan.billing === "one_time" ? t.plan.oneTimeCta : t.plan.switchCta}
+          {plan.billing === "none" ? (signupContext ? t.plan.freeCtaSignup : t.plan.freeCta)
+            : plan.billing === "one_time" ? t.plan.oneTimeCta : t.plan.switchCta}
         </button>
       )}
     </div>
