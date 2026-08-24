@@ -92,6 +92,13 @@ export function DesignSystem() {
         --ink:       #1A1A1A;   /* primari */
         --ink-2:     #8E8E93;   /* secondari */
         --ink-3:     #52525B;   /* paragrafi lunghi */
+        /* BUG PRESO: --ink-soft era definita SOLO dentro .coach-root (pannello
+           coach), ma usata anche in pagine cliente (piani Stripe, onboarding,
+           Home) — var(--ink-soft) lì non risolveva a nulla, quindi il colore
+           ereditava il nero di default del browser: testo nero su sfondo
+           scuro, illeggibile. Stessi valori del pannello coach, qui a livello
+           app-wide così ogni pagina cliente la eredita correttamente. */
+        --ink-soft:  #A1A1AA;   /* terziari/disattivi, ancora più tenue di --ink-2 */
 
         /* fascia superiore e inferiore */
         --bar:       rgba(255,255,255,0.88);
@@ -116,6 +123,7 @@ export function DesignSystem() {
         --ink:       #FAFAFA;   /* primari */
         --ink-2:     #A1A1AA;   /* secondari */
         --ink-3:     #E4E4E7;   /* paragrafi lunghi */
+        --ink-soft:  #71717A;   /* terziari/disattivi, ancora più tenue di --ink-2 */
 
         --bar:       rgba(9,9,11,0.88);
         --bar-line:  rgba(255,255,255,0.09);
