@@ -3,11 +3,12 @@ import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp,
   Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
   Trash2, ArrowLeft, Wallet, Server, X, ShieldCheck, Check,
-  BarChart3, FileText, AlertTriangle,
+  BarChart3, FileText, AlertTriangle, GripVertical,
 } from "lucide-react";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
+import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS, matchSuppMoment } from "./05_HomeDashboard.jsx";
 
 /* ============================================================================
@@ -1848,6 +1849,12 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   const day = week.workout[selDay];
   const setDay = (updater) => onChange({ ...week, workout: week.workout.map((d, i) => (i === selDay ? updater(d) : d)) });
   const toggleRest = () => setDay((d) => (d ? null : { label: "Nuova sessione", exercises: [] }));
+  // Drag-to-reorder (stesso hook/pattern di DayEditor in 05_HomeDashboard.jsx,
+  // vedi useDragReorder.js): l'ordine dell'array locale È l'ordine mostrato,
+  // saveWeekWorkout scrive quell'ordine in workout_logs.sort_order al salvataggio
+  // — mai un riordino solo visivo che si perde al prossimo caricamento.
+  const reorderEx = (fromIdx, toIdx) => setDay((d) => ({ ...d, exercises: moveItem(d.exercises, fromIdx, toIdx) }));
+  const reorder = useDragReorder({ length: day?.exercises?.length ?? 0, onReorder: reorderEx });
   const updateEx = (i, field, value) => setDay((d) => ({
     ...d,
     exercises: d.exercises.map((e, j) => (j === i ? { ...e, [field]: field === "sets" ? Math.max(1, Math.min(8, Number(value) || 1)) : field === "rest" ? Math.max(0, Number(value) || 0) : value } : e)),
@@ -2006,8 +2013,11 @@ function WeekWorkoutEditor({ week, onChange, client }) {
 
           <div className="space-y-2.5 mb-3">
             {day.exercises.map((ex, i) => (
-              <div key={ex.id} className="t-inner px-3 py-3">
+              <div key={ex.id} ref={reorder.setRowRef(i)} style={{ ...reorder.rowStyle(i) }} className="t-inner px-3 py-3">
                 <div className="flex items-center gap-2 flex-wrap mb-2">
+                  <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0" style={{ ...reorder.handleProps(i).style, color: "var(--ink-tertiary)" }}>
+                    <GripVertical size={15} />
+                  </span>
                   {ex.custom ? (
                     // BUG PRESO: autoFocus qui scattava per OGNI esercizio "libero" della
                     // giornata a ogni apertura dell'editor (non solo per uno appena
