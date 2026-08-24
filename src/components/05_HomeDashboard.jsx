@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, fetchCoachSettings } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -1476,7 +1476,7 @@ const DAY_JOURNEY_COPY = {
 /* Chiuso per il resto della giornata (non per sempre): riappare il giorno
    dopo con un consiglio diverso — mai un banner fisso che l'atleta impara a
    ignorare, ma nemmeno sparito per il resto dei 14 giorni al primo tap. */
-function DayJourneyCard({ joinedAt, welcomeVideoUrl }) {
+function DayJourneyCard({ joinedAt }) {
   const [dismissedDay, setDismissedDay] = useState(() => {
     try { return Number(localStorage.getItem("perform_journey_dismissed_day")) || 0; } catch { return 0; }
   });
@@ -1502,12 +1502,6 @@ function DayJourneyCard({ joinedAt, welcomeVideoUrl }) {
         </button>
       </div>
       <p className="text-sm" style={{ color: "var(--ink)", lineHeight: 1.5 }}>{tip}</p>
-      {dayNumber <= 2 && welcomeVideoUrl && (
-        <a href={welcomeVideoUrl} target="_blank" rel="noreferrer"
-           className="inline-flex items-center gap-1.5 mt-2.5 text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-          🎬 Guarda il video di benvenuto del coach
-        </a>
-      )}
     </div>
   );
 }
@@ -2193,14 +2187,6 @@ export function HomeDashboard({
       .catch((err) => console.error("PERFORM: errore lettura data iscrizione", err));
     return () => { cancelled = true; };
   }, [supabase, userId]);
-  const [welcomeVideoUrl, setWelcomeVideoUrl] = useState(null);
-  useEffect(() => {
-    if (!supabase || !userId) return;
-    fetchCoachSettings(supabase)
-      .then((s) => setWelcomeVideoUrl(s.welcomeVideoUrl))
-      .catch((err) => console.error("PERFORM: errore lettura impostazioni coach", err));
-  }, [supabase, userId]);
-
   // Alimentazione: "I tuoi target" ora è un pannello compatto in cima alla
   // pagina, non più un tab tra Diario Libero e Sostituzioni — chiuso di
   // default, si espande solo quando il cliente vuole davvero modificarli.
@@ -2751,7 +2737,7 @@ export function HomeDashboard({
             </p>
           </div>
         )}
-        <DayJourneyCard joinedAt={joinedAt} welcomeVideoUrl={welcomeVideoUrl} />
+        <DayJourneyCard joinedAt={joinedAt} />
         <ReadinessCard readiness={readiness} />
 
         {/* "Vai in vacanza / chiedi riposo forzato" vive ora nel Profilo
