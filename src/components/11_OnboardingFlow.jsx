@@ -35,7 +35,7 @@ import { Loader2 } from "lucide-react";
 import { DesignSystem } from "./04_AppShell.jsx";
 import { STRIPE_PLANS, translations, GradientText, PlanCard } from "./08_ClientProfileView.jsx";
 import { GlobalStyle as CoachGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./09_CoachDashboard.jsx";
-import { saveAnamnesis } from "../lib/coachingData.js";
+import { saveAnamnesis, resolveReferralCode, setReferredBy } from "../lib/coachingData.js";
 
 // UI id (quello di STRIPE_PLANS, condiviso con SettingsDrawer) -> valore reale
 // accettato dal check constraint di profiles.plan (SCHEMA_v14).
@@ -75,6 +75,27 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [answers, setAnswers] = useState({});
+
+  // §08 memo "Verso l'élite" — programma referral: applicato PRIMA di
+  // scegliere il piano (indipendente dal piano, funziona sia per Free sia
+  // per i piani a pagamento che completano l'onboarding solo dopo il
+  // ritorno da Stripe) — un solo update su profiles.referred_by, mai legato
+  // al flusso di pagamento.
+  const [referralCode, setReferralCode] = useState("");
+  const [referralStatus, setReferralStatus] = useState("idle"); // idle | applying | applied | invalid | error
+  const applyReferralCode = async () => {
+    if (!referralCode.trim()) return;
+    setReferralStatus("applying");
+    try {
+      const referrerId = await resolveReferralCode(supabase, referralCode);
+      if (!referrerId || referrerId === userId) { setReferralStatus("invalid"); return; }
+      await setReferredBy(supabase, userId, referrerId);
+      setReferralStatus("applied");
+    } catch (err) {
+      console.error("PERFORM: errore applicazione codice invito", err);
+      setReferralStatus("error");
+    }
+  };
 
   useEffect(() => {
     if (!isResumedPerformancePack) return undefined;
@@ -241,6 +262,23 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
             Puoi sempre cambiare piano più avanti dalle Impostazioni. Se scegli uno dei piani
             seguiti da un coach, subito dopo ti chiedo di compilare la tua anamnesi.
           </p>
+        </div>
+
+        <div className="rounded-2xl px-4 py-3.5 mb-5" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)" }}>
+          <p className="text-xs mb-2" style={{ color: "var(--ink-2)", fontWeight: 600 }}>Hai un codice invito? (facoltativo)</p>
+          <div className="flex items-center gap-2">
+            <input type="text" value={referralCode}
+              onChange={(e) => { setReferralCode(e.target.value.toUpperCase()); setReferralStatus("idle"); }}
+              placeholder="Es. AB3D9F2K" maxLength={8} disabled={referralStatus === "applied"}
+              className="input flex-1 px-3 py-2 text-sm font-data" style={{ letterSpacing: "0.06em" }} />
+            <button onClick={applyReferralCode} disabled={referralStatus === "applying" || referralStatus === "applied" || !referralCode.trim()}
+              className="rounded-full px-4 py-2 text-xs shrink-0"
+              style={{ backgroundColor: referralStatus === "applied" ? "#059669" : "var(--ink)", color: "var(--page)", fontWeight: 700, opacity: referralStatus === "applying" ? 0.7 : 1 }}>
+              {referralStatus === "applied" ? "✓ Applicato" : referralStatus === "applying" ? "…" : "Applica"}
+            </button>
+          </div>
+          {referralStatus === "invalid" && <p className="text-xs mt-1.5" style={{ color: "#DC2626" }}>Codice non valido — controlla di averlo scritto giusto.</p>}
+          {referralStatus === "error" && <p className="text-xs mt-1.5" style={{ color: "#DC2626" }}>Non sono riuscito ad applicarlo — riprova.</p>}
         </div>
 
         {error && (

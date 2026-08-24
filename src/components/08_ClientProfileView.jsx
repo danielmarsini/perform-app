@@ -38,7 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
@@ -1504,6 +1504,61 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
   );
 }
 
+/* §08 memo "Verso l'élite" — Il business dietro l'app: programma referral.
+   Un codice invito personale, condivisibile con un tap — il coach vede chi
+   ha portato chi (fetchReferrals) e applica il premio a mano (whitelist di
+   un mese), mai un'automazione Stripe che richiederebbe nuovi prezzi non
+   disponibili in questo ambiente. */
+function ReferralCodeCard({ supabase, userId }) {
+  const [code, setCode] = useState(null); // null = non ancora caricato
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let cancelled = false;
+    ensureReferralCode(supabase, userId)
+      .then((c) => { if (!cancelled) setCode(c); })
+      .catch((err) => { console.error("PERFORM: errore lettura codice invito", err); if (!cancelled) setError("Non sono riuscito a caricare il tuo codice invito."); });
+    return () => { cancelled = true; };
+  }, [supabase, userId]);
+
+  const copyCode = async () => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("PERFORM: errore copia codice invito", err);
+    }
+  };
+
+  if (!supabase || !userId) return null;
+
+  return (
+    <div className="card mb-4">
+      <p className="label mb-1">🎁 Invita un amico</p>
+      <p className="meta mb-3" style={{ fontSize: "0.72rem" }}>
+        Condividi il tuo codice: se un amico si iscrive con questo codice, entrambi potete ricevere un mese in
+        regalo — chiedi al coach una volta che si è iscritto.
+      </p>
+      {error && <p className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</p>}
+      {code && (
+        <div className="flex items-center gap-2">
+          <p className="flex-1 rounded-xl px-3.5 py-2.5 text-center font-data" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", letterSpacing: "0.1em", fontWeight: 700, color: "var(--ink)" }}>
+            {code}
+          </p>
+          <button onClick={copyCode} className="rounded-full px-4 py-2.5 text-xs shrink-0"
+            style={{ backgroundColor: copied ? "#059669" : "var(--surface-2)", border: "1px solid var(--line)", color: copied ? "#FFFFFF" : "var(--ink)", fontWeight: 700 }}>
+            {copied ? "✓ Copiato" : "Copia"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SettingsDrawer({
   open, onClose, dark, accent, accentText, gender, lang, onChangeLang,
   currentPlan, planRenewsOn, accountEmail,
@@ -1825,6 +1880,8 @@ export function SettingsDrawer({
                 )}
                 <p className="meta mt-2.5 leading-relaxed" style={{ fontSize: "0.72rem" }}>{t.plan.billingNote}</p>
               </div>
+
+              <ReferralCodeCard supabase={supabase} userId={userId} />
 
               <p className="label mb-3">{t.plan.chooseTitle}</p>
               {checkoutError && (

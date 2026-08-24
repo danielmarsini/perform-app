@@ -1891,6 +1891,73 @@ export async function clearWhitelist(supabase, clientId) {
   if (error) throw error;
 }
 
+// §08 memo "Verso l'élite" — Il business dietro l'app: programma referral.
+// Codice a 8 caratteri da un alfabeto senza ambiguità (niente 0/O/1/I): si
+// legge a voce e si scrive senza errori, quanto basta per non collidere
+// (32^8 combinazioni) senza essere lungo da condividere.
+const REFERRAL_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function generateReferralCode() {
+  let code = "";
+  for (let i = 0; i < 8; i++) code += REFERRAL_CODE_CHARS[Math.floor(Math.random() * REFERRAL_CODE_CHARS.length)];
+  return code;
+}
+
+// Legge il codice invito del profilo, generandone uno nuovo al primo
+// accesso se non esiste ancora (utenti già iscritti prima di questa
+// funzionalità). Riprova su collisione (23505 = violazione unique) fino a
+// 5 volte — praticamente mai necessario con 8 caratteri da un alfabeto di
+// 32, ma mai un crash se succede davvero.
+export async function ensureReferralCode(supabase, userId) {
+  const { data, error } = await supabase.from("profiles").select("referral_code").eq("id", userId).maybeSingle();
+  if (error) throw error;
+  if (data?.referral_code) return data.referral_code;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateReferralCode();
+    const { error: updErr } = await supabase.from("profiles").update({ referral_code: code }).eq("id", userId);
+    if (!updErr) return code;
+    if (updErr.code !== "23505") throw updErr;
+  }
+  throw new Error("Non sono riuscito a generare un codice invito univoco — riprova.");
+}
+
+// Risolve un codice invito nell'id del proprietario tramite la funzione
+// SQL security definer (SCHEMA_v63) — mai una query diretta su profiles
+// filtrata per referral_code, che con le RLS standard ("solo la tua riga")
+// non troverebbe comunque nulla per l'id di un altro utente.
+export async function resolveReferralCode(supabase, code) {
+  if (!code?.trim()) return null;
+  const { data, error } = await supabase.rpc("resolve_referral_code", { code: code.trim() });
+  if (error) throw error;
+  return data || null;
+}
+
+export async function setReferredBy(supabase, userId, referrerId) {
+  const { error } = await supabase.from("profiles").update({ referred_by: referrerId }).eq("id", userId);
+  if (error) throw error;
+}
+
+// Per il coach: chi ha invitato chi, con il piano attuale del cliente
+// invitato — decide se e quando applicare il premio (whitelistClient, un
+// mese sul piano che già ha) manualmente, mai un premio automatico non
+// rivisto: un referral non convertito non deve costare un mese gratis.
+export async function fetchReferrals(supabase) {
+  const { data, error } = await supabase.from("profiles")
+    .select("id, nickname, full_name, plan, created_at, referred_by")
+    .not("referred_by", "is", null)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  const referrerIds = [...new Set(data.map((r) => r.referred_by))];
+  const { data: referrers, error: refErr } = referrerIds.length
+    ? await supabase.from("profiles").select("id, nickname, full_name").in("id", referrerIds)
+    : { data: [], error: null };
+  if (refErr) throw refErr;
+  const referrerById = new Map((referrers ?? []).map((r) => [r.id, r.nickname || r.full_name || "Atleta"]));
+  return data.map((r) => ({
+    id: r.id, name: r.nickname || r.full_name || "Atleta", plan: r.plan, joinedAt: r.created_at,
+    referrerName: referrerById.get(r.referred_by) || "—",
+  }));
+}
+
 // Rinomina un cliente (Hub Rete & Accessi) — semplice update diretto, stessa
 // tabella/permessi già usati da activateClient qui sopra. Non tocca email
 // (quella vive in auth.users, cambiarla richiederebbe una verifica separata,
