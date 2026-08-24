@@ -178,6 +178,7 @@ import {
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage, fetchAttentionSignals,
+  fetchCoachSettings, saveWelcomeVideoUrl,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -4391,6 +4392,67 @@ function AttentionQueue({ onOpen }) {
   );
 }
 
+/* §05 memo "Verso l'élite" — I primi 14 giorni: un video di benvenuto
+   registrato UNA volta dal coach (SCHEMA_v62, coach_settings — singleton,
+   non per-cliente), mostrato ad ogni nuovo iscritto nei primi due giorni.
+   Un semplice URL (stesso pattern già in uso per exercise_library.video_url,
+   SCHEMA_v61), non un upload — chiuso per default: è un'impostazione che si
+   tocca una volta ogni tanto, non ogni giorno. */
+function WelcomeVideoSetting() {
+  const { supabase, isRealMode } = useContext(CoachDataContext);
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!isRealMode || !open) return;
+    fetchCoachSettings(supabase)
+      .then((s) => setUrl(s.welcomeVideoUrl || ""))
+      .catch((err) => console.error("PERFORM: errore lettura impostazioni coach", err));
+  }, [isRealMode, open, supabase]);
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await saveWelcomeVideoUrl(supabase, url);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error("PERFORM: errore salvataggio video di benvenuto", err);
+      setError("Non sono riuscito a salvare — riprova.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!isRealMode) return null;
+
+  return (
+    <div className="c-card mb-4">
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between">
+        <span className="text-sm font-bold" style={{ color: "var(--ink)" }}>🎬 Video di benvenuto</span>
+        {open ? <ChevronUp size={16} style={{ color: "var(--ink-tertiary)" }} /> : <ChevronDown size={16} style={{ color: "var(--ink-tertiary)" }} />}
+      </button>
+      {open && (
+        <div className="mt-3">
+          <p className="c-muted text-xs mb-2">Link (YouTube, Loom, Vimeo…) mostrato a ogni nuovo iscritto nei primi due giorni.</p>
+          <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…"
+            className="w-full text-sm rounded-lg px-3 py-2 mb-2" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line-strong)", color: "var(--ink)" }} />
+          {error && <p className="text-xs mb-2" style={{ color: "#B91C1C" }}>{error}</p>}
+          <button onClick={save} disabled={busy}
+            className="rounded-full px-4 py-2 text-xs font-bold"
+            style={{ backgroundColor: saved ? "#059669" : "#111111", color: "#FFFFFF", opacity: busy ? 0.7 : 1 }}>
+            {saved ? "✓ Salvato" : busy ? "Salvo…" : "Salva"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* -------------------------------- CATALOGO ---------------------------------- */
 function RosterView({ onOpen }) {
   const { clients: CLIENTS } = useContext(CoachDataContext);
@@ -4402,6 +4464,7 @@ function RosterView({ onOpen }) {
   return (
     <div>
       <AttentionQueue onOpen={onOpen} />
+      <WelcomeVideoSetting />
       <div className="grid grid-cols-3 gap-1.5 mb-4">
         {DEPTS.map((d) => {
           const n = CLIENTS.filter((c) => deptOf(c) === d.id).length;

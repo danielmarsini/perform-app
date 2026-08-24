@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, fetchCoachSettings } from "../lib/coachingData.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
 import { playSound } from "../lib/sounds.js";
@@ -1418,6 +1418,69 @@ function MesocicloBadge({ mesociclo, week, weeks }) {
 }
 
 /* ============================================================================
+   PRIMI 14 GIORNI (§05 memo "Verso l'élite") — un nuovo iscritto entrava
+   nell'app intera, tutta insieme, il primo giorno: nessun percorso che lo
+   accompagnasse a scoprirla con calma, a differenza delle app che
+   trattengono davvero (che dosano). Un consiglio breve e diverso ogni
+   giorno per le prime due settimane, mai un tutorial lungo da leggere —
+   deve stare in 2 righe su un telefono. */
+const DAY_JOURNEY_COPY = {
+  1: "Benvenuto in PERFORM! Oggi esplora l'app con calma: guarda la scheda assegnata e registra il primo pasto.",
+  2: "Registra sonno e passi di stanotte: è da lì che parte il cerchio Recupero.",
+  3: "Prova la Guida all'esecuzione su un esercizio della tua scheda: aiuta a capire la tecnica corretta.",
+  4: "Qualcosa nella scheda non torna? Scrivi al coach in chat — è lì apposta.",
+  5: "Ogni giorno registrato conta per lo streak, anche solo un pasto segnato.",
+  6: "Domani è il settimo giorno: preparati al primo check settimanale.",
+  7: "Prima settimana completata! Registra il tuo primo check: peso e sensazioni.",
+  8: "Seconda settimana: prova a seguire i target macro con un po' più di precisione.",
+  9: "Dai un'occhiata al grafico Volume settimanale in Allenamento: mostra dove stai lavorando di più.",
+  10: "Motivazione e fatica raccontano più di quanto pensi — vale la pena registrarle ogni giorno.",
+  11: "Mancano pochi giorni ai 14: la costanza conta più della perfezione.",
+  12: "Hai un piano coaching? In Integrazione trovi il protocollo assegnato dal coach.",
+  13: "Ultimo giorno prima del traguardo dei 14: guarda quanta strada hai fatto da qui.",
+  14: "14 giorni! Da qui in poi è questione di costanza: il percorso vero comincia adesso.",
+};
+
+/* Chiuso per il resto della giornata (non per sempre): riappare il giorno
+   dopo con un consiglio diverso — mai un banner fisso che l'atleta impara a
+   ignorare, ma nemmeno sparito per il resto dei 14 giorni al primo tap. */
+function DayJourneyCard({ joinedAt, welcomeVideoUrl }) {
+  const [dismissedDay, setDismissedDay] = useState(() => {
+    try { return Number(localStorage.getItem("perform_journey_dismissed_day")) || 0; } catch { return 0; }
+  });
+  if (!joinedAt) return null;
+  const dayNumber = Math.floor((Date.now() - new Date(joinedAt).getTime()) / 86400000) + 1;
+  if (dayNumber < 1 || dayNumber > 14 || dayNumber === dismissedDay) return null;
+  const tip = DAY_JOURNEY_COPY[dayNumber];
+  if (!tip) return null;
+
+  const dismiss = () => {
+    setDismissedDay(dayNumber);
+    try { localStorage.setItem("perform_journey_dismissed_day", String(dayNumber)); } catch { /* privacy mode: niente di grave, riapparirà */ }
+  };
+
+  return (
+    <div className="card mb-4" style={{ padding: "16px 20px" }}>
+      <div className="flex items-start justify-between gap-3 mb-1">
+        <p className="text-xs font-data" style={{ fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--gold, #C5A059)" }}>
+          Giorno {dayNumber} di 14
+        </p>
+        <button onClick={dismiss} aria-label="Chiudi per oggi" style={{ color: "var(--ink-2)" }}>
+          <X size={15} />
+        </button>
+      </div>
+      <p className="text-sm" style={{ color: "var(--ink)", lineHeight: 1.5 }}>{tip}</p>
+      {dayNumber <= 2 && welcomeVideoUrl && (
+        <a href={welcomeVideoUrl} target="_blank" rel="noreferrer"
+           className="inline-flex items-center gap-1.5 mt-2.5 text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+          🎬 Guarda il video di benvenuto del coach
+        </a>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================================
    PUNTEGGIO DI PRONTEZZA — card compatta subito sotto il banner principale:
    un solo numero azionabile invece di 4 dati sparsi da interpretare da soli
    (vedi computeReadinessScore più sopra). Sparisce del tutto se non c'è
@@ -2083,6 +2146,28 @@ export function HomeDashboard({
     return () => { cancelled = true; };
   }, [supabase, userId]);
 
+  // §05 memo "Verso l'élite" — I primi 14 giorni: un nuovo iscritto entrava
+  // nell'app intera, tutta insieme, il primo giorno, senza nessun percorso
+  // che lo accompagnasse. joinedAt (profiles.created_at, mai letto finora
+  // in questo file) serve solo a calcolare in che giorno del percorso è —
+  // non un secondo profilo, un solo campo in lettura.
+  const [joinedAt, setJoinedAt] = useState(null);
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let cancelled = false;
+    supabase.from("profiles").select("created_at").eq("id", userId).maybeSingle()
+      .then(({ data, error }) => { if (error) throw error; if (!cancelled) setJoinedAt(data?.created_at || null); })
+      .catch((err) => console.error("PERFORM: errore lettura data iscrizione", err));
+    return () => { cancelled = true; };
+  }, [supabase, userId]);
+  const [welcomeVideoUrl, setWelcomeVideoUrl] = useState(null);
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    fetchCoachSettings(supabase)
+      .then((s) => setWelcomeVideoUrl(s.welcomeVideoUrl))
+      .catch((err) => console.error("PERFORM: errore lettura impostazioni coach", err));
+  }, [supabase, userId]);
+
   // Alimentazione: "I tuoi target" ora è un pannello compatto in cima alla
   // pagina, non più un tab tra Diario Libero e Sostituzioni — chiuso di
   // default, si espande solo quando il cliente vuole davvero modificarli.
@@ -2624,6 +2709,7 @@ export function HomeDashboard({
           </div>
         </div>
 
+        <DayJourneyCard joinedAt={joinedAt} welcomeVideoUrl={welcomeVideoUrl} />
         <ReadinessCard readiness={readiness} />
 
         {/* "Vai in vacanza / chiedi riposo forzato" vive ora nel Profilo
