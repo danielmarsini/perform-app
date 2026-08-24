@@ -189,7 +189,7 @@ import {
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage, fetchAttentionSignals,
-  fetchCoachSettings, saveWelcomeVideoUrl, fetchReferrals,
+  fetchReferrals,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -1795,6 +1795,7 @@ function AccessControlTable() {
         Ordinato per ultimo accesso (più recente prima), TUTTI gli iscritti. Clicca un utente per rinominare,
         copiare i dati, dare la whitelist o gestire l'account.
       </p>
+      <ReferralsPanel />
       <div className="relative mb-4">
         <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: "var(--ink-tertiary)" }} />
         <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cerca per nome o email…"
@@ -4462,67 +4463,6 @@ function AttentionQueue({ onOpen }) {
   );
 }
 
-/* §05 memo "Verso l'élite" — I primi 14 giorni: un video di benvenuto
-   registrato UNA volta dal coach (SCHEMA_v62, coach_settings — singleton,
-   non per-cliente), mostrato ad ogni nuovo iscritto nei primi due giorni.
-   Un semplice URL (stesso pattern già in uso per exercise_library.video_url,
-   SCHEMA_v61), non un upload — chiuso per default: è un'impostazione che si
-   tocca una volta ogni tanto, non ogni giorno. */
-function WelcomeVideoSetting() {
-  const { supabase, isRealMode } = useContext(CoachDataContext);
-  const [open, setOpen] = useState(false);
-  const [url, setUrl] = useState("");
-  const [saved, setSaved] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!isRealMode || !open) return;
-    fetchCoachSettings(supabase)
-      .then((s) => setUrl(s.welcomeVideoUrl || ""))
-      .catch((err) => console.error("PERFORM: errore lettura impostazioni coach", err));
-  }, [isRealMode, open, supabase]);
-
-  const save = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      await saveWelcomeVideoUrl(supabase, url);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error("PERFORM: errore salvataggio video di benvenuto", err);
-      setError("Non sono riuscito a salvare — riprova.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!isRealMode) return null;
-
-  return (
-    <div className="c-card mb-4">
-      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between">
-        <span className="text-sm font-bold" style={{ color: "var(--ink)" }}>🎬 Video di benvenuto</span>
-        {open ? <ChevronUp size={16} style={{ color: "var(--ink-tertiary)" }} /> : <ChevronDown size={16} style={{ color: "var(--ink-tertiary)" }} />}
-      </button>
-      {open && (
-        <div className="mt-3">
-          <p className="c-muted text-xs mb-2">Link (YouTube, Loom, Vimeo…) mostrato a ogni nuovo iscritto nei primi due giorni.</p>
-          <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…"
-            className="w-full text-sm rounded-lg px-3 py-2 mb-2" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line-strong)", color: "var(--ink)" }} />
-          {error && <p className="text-xs mb-2" style={{ color: "#B91C1C" }}>{error}</p>}
-          <button onClick={save} disabled={busy}
-            className="rounded-full px-4 py-2 text-xs font-bold"
-            style={{ backgroundColor: saved ? "#059669" : "#111111", color: "#FFFFFF", opacity: busy ? 0.7 : 1 }}>
-            {saved ? "✓ Salvato" : busy ? "Salvo…" : "Salva"}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* §08 memo "Verso l'élite" — Il business dietro l'app: chi ha invitato chi,
    così il coach sa a chi applicare il premio (whitelist di un mese, dallo
    Hub Rete & Accessi) — mai automatico: un referral non ancora convertito
@@ -4553,14 +4493,29 @@ function ReferralsPanel() {
           {error && <p className="text-xs" style={{ color: "#B91C1C" }}>{error}</p>}
           {rows === null && <p className="c-muted text-xs">Carico…</p>}
           {rows?.length === 0 && <p className="c-muted text-xs">Nessun cliente arrivato tramite invito, per ora.</p>}
-          {rows?.map((r) => (
-            <div key={r.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line-strong)" }}>
-              <span className="min-w-0">
-                <span className="block text-sm font-bold truncate" style={{ color: "var(--ink)" }}>{r.name}</span>
-                <span className="block text-xs truncate" style={{ color: "var(--ink-tertiary)" }}>invitato da {r.referrerName} · piano {r.plan}</span>
-              </span>
-            </div>
-          ))}
+          {rows?.map((r) => {
+            // Contrassegna chi si è convertito a un piano a pagamento (mai
+            // "free" — non ha ancora dato nulla al referral, il premio è
+            // ancora prematuro): è il segnale al coach di ANDARE a regalare
+            // il mese di premium, non solo "chi ha usato un codice invito".
+            const converted = r.plan && r.plan !== "free";
+            return (
+              <div key={r.id} className="flex items-center justify-between rounded-lg px-3 py-2 gap-2"
+                style={{ backgroundColor: "var(--surface)", border: converted ? "1px solid #10B981" : "1px solid var(--line-strong)" }}>
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold truncate" style={{ color: "var(--ink)" }}>{r.name}</span>
+                  <span className="block text-xs truncate" style={{ color: "var(--ink-tertiary)" }}>invitato da {r.referrerName} · piano {r.plan}</span>
+                </span>
+                {converted ? (
+                  <span className="shrink-0 text-xs font-bold rounded-full px-2.5 py-1" style={{ backgroundColor: "rgba(16,185,129,0.12)", color: "#059669" }}>
+                    🎁 Da premiare
+                  </span>
+                ) : (
+                  <span className="shrink-0 c-muted text-xs">ancora Free</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -4578,8 +4533,6 @@ function RosterView({ onOpen }) {
   return (
     <div>
       <AttentionQueue onOpen={onOpen} />
-      <WelcomeVideoSetting />
-      <ReferralsPanel />
       <div className="grid grid-cols-3 gap-1.5 mb-4">
         {DEPTS.map((d) => {
           const n = CLIENTS.filter((c) => deptOf(c) === d.id).length;
