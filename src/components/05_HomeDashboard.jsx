@@ -21,7 +21,7 @@ import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
-  Loader2, AlertTriangle, Mic, MicOff,
+  Loader2, AlertTriangle, Mic, MicOff, MessageCircle,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
@@ -731,11 +731,7 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
 
   return (
     <div className="card mb-4">
-      <p className="label mb-1">Matrice dei Volumi</p>
-      <p className="h1 mb-1">Stimolo settimanale reale</p>
-      <p className="body mb-4">
-        Ricalcolata a ogni esercizio inserito: serie dirette al 100% (barra piena), serie sui distretti sinergici al 50% (barra chiara).
-      </p>
+      <p className="h1 mb-4">Volume settimanale per gruppo muscolare</p>
 
       {userPlan === "free" ? (
         <>
@@ -754,9 +750,14 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
       ) : involved.length === 0 ? (
         <p className="meta">Aggiungi esercizi alla settimana per vedere la matrice popolarsi.</p>
       ) : (
-        <div className="space-y-2.5">
-          {involved.map((m) => <VolumeBar key={m} muscle={m} direct={volume[m].direct} indirect={volume[m].indirect} accent={accent} />)}
-        </div>
+        <>
+          <div className="space-y-2.5">
+            {involved.map((m) => <VolumeBar key={m} muscle={m} direct={volume[m].direct} indirect={volume[m].indirect} accent={accent} />)}
+          </div>
+          <p className="meta mt-3" style={{ fontSize: "0.68rem" }}>
+            Barra piena = serie dirette · barra chiara = stimolo indiretto (50% delle serie sui distretti sinergici)
+          </p>
+        </>
       )}
     </div>
   );
@@ -968,7 +969,16 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   // pct === null → nulla da misurare questa settimana (es. niente assegnato):
   // stato neutro esplicito, non un 0% (allarme) né un 100% (falso completo).
   const isNeutral = pct == null;
-  const color = isNeutral ? "var(--ink-2)" : complianceColor(pct);
+  const { h: ringH, s: ringS, l: ringL } = complianceHsl(pct ?? 0);
+  const color = isNeutral ? "var(--ink-2)" : `hsl(${ringH.toFixed(0)}, ${ringS.toFixed(0)}%, ${ringL.toFixed(0)}%)`;
+  // BUG PRESO: il riflesso lucido era bianco puro in mix-blend-mode
+  // "overlay" — su alcuni motori di rendering quel blend non si applica
+  // come atteso e restava visibile solo il bianco/grigio traslucido puro,
+  // letto dall'utente come "una righetta grigia" estranea al colore reale
+  // dell'anello. Ora è una tinta PIÙ CHIARA della STESSA tonalità (stesso
+  // h/s, solo lightness più alta) disegnata a piena opacità: sempre e
+  // solo il colore vero dell'anello che si illumina, mai un grigio a sé.
+  const sheenColor = `hsl(${ringH.toFixed(0)}, ${Math.max(45, ringS - 8).toFixed(0)}%, ${Math.min(94, ringL + 34).toFixed(0)}%)`;
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
   // BUG PRESO (4 giri di correzione): ogni versione precedente del
   // "bagliore" usava un filter:drop-shadow, che per costruzione proietta
@@ -991,16 +1001,16 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
         )}
         {/* Riflesso lucido che gira lungo tutto l'anello (non solo la parte
             piena) — stesso principio della barra XP (.xp-bar-shine) ma qui
-            sull'arco: i colori a semaforo restano identici, si aggiunge solo
-            un bagliore bianco in movimento in blend "overlay" (si illumina
-            SOPRA il colore esistente senza sostituirlo). --ring-c passa la
-            circonferenza esatta di QUESTA istanza al keyframe condiviso,
-            che così funziona a qualunque size/stroke venga passato. */}
+            sull'arco: SEMPRE la stessa tonalità del colore reale, solo più
+            chiara (sheenColor) — mai un elemento bianco/grigio scollegato.
+            --ring-c passa la circonferenza esatta di QUESTA istanza al
+            keyframe condiviso, che così funziona a qualunque size/stroke
+            venga passato. */}
         {!isNeutral && (
-          <circle className="ring-sheen-sweep" cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.9)"
-                  strokeWidth={Math.max(2, stroke * 0.5)} strokeLinecap="round"
-                  strokeDasharray={`${c * 0.08} ${c * 0.92}`} transform={`rotate(-90 ${cx} ${cy})`}
-                  style={{ mixBlendMode: "overlay", "--ring-c": c }} />
+          <circle className="ring-sheen-sweep" cx={cx} cy={cy} r={r} fill="none" stroke={sheenColor}
+                  strokeWidth={Math.max(2.5, stroke * 0.62)} strokeLinecap="round"
+                  strokeDasharray={`${c * 0.1} ${c * 0.9}`} transform={`rotate(-90 ${cx} ${cy})`}
+                  style={{ "--ring-c": c, filter: "drop-shadow(0 0 2px rgba(255,255,255,0.35))" }} />
         )}
         {isNeutral && (
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
@@ -1917,7 +1927,7 @@ export function HomeDashboard({
   targetOn, targetOff, isTrainingDay, onToggleTrainingDay,
   onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday,
   onApplyReschedule, onDismissReschedule,
-  onUpgrade, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
+  onUpgrade, onOpenChat, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
   userPlan, // 'free' | 'performance_pack' | 'scheda_personalizzata' | 'training' | 'full_coaching' — letta da Supabase
   microAddon, // profiles.micro_addon — componente aggiuntivo micronutrienti per Scheda/Training, attivato dal coach
   stressLevel, onSetStressLevel, nightWakeups, onSetNightWakeups, morningEnergy, onSetMorningEnergy,
@@ -2700,6 +2710,7 @@ export function HomeDashboard({
                         userPlan={userPlan}
                         gender={profile.gender}
                         onUpgrade={onUpgrade}
+                        onOpenChat={onOpenChat}
                         onCoachSync={onCoachSync}
                       />
                     ))}
@@ -4013,49 +4024,24 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
    priorità, calcolatore dischi.
    ------------------------------------------------------------------------- */
 
-/* Spiegazione generica di esecuzione quando l'esercizio non ha un how-to
-   dedicato: pattern di movimento riconosciuto dal nome. */
-function exerciseHowTo(name) {
-  const exact = EXERCISE_BIOMECH[name] || EXERCISE_BIOMECH[(name || "").trim()];
-  if (exact) return exact.howTo;
-  const s = (name || "").toLowerCase();
-  if (/panca|croci|dip/.test(s))
-    return "Scapole retratte e addotte, piedi ben piantati, discesa controllata fino a sfiorare il petto, spinta esplosiva mantenendo i polsi in linea con gli avambracci.";
-  if (/squat|pressa|affond|leg/.test(s))
-    return "Piedi alla larghezza delle spalle, core in tensione, scendi mantenendo il peso su tutto il piede fino alla profondità target, risali spingendo il pavimento via da te.";
-  if (/stacco|rdl|hip/.test(s))
-    return "Schiena neutra per tutto il movimento, bilanciere vicino alle tibie, spingi i fianchi indietro nella fase eccentrica e stringi i glutei in cima.";
-  if (/rematore|trazioni|lat|pulley/.test(s))
-    return "Parti da una scapola allungata, tira portando il gomito indietro e vicino al fianco, evita di usare lo slancio della schiena.";
-  if (/lento|military|alzate|deltoide/.test(s))
-    return "Core stabile, evita di inarcare troppo la lombare, controlla la fase di discesa tanto quanto quella di spinta.";
-  if (/curl|french|push down/.test(s))
-    return "Gomiti fermi lungo i fianchi per tutto il movimento, contrazione piena in cima, discesa controllata senza slanci.";
-  return "Esegui il movimento con tecnica controllata, RIR nel range indicato e range di movimento completo, senza compensare con altre articolazioni.";
+/* Guida di esecuzione: SOLO un match esatto sul nome (EXERCISE_BIOMECH,
+   sotto) o la guida scritta dal coach (ex.howTo/avoid, SCHEMA_v61) — mai
+   più un indovinello per parole chiave nel nome (es. "panca"/"curl"/
+   "squat"...). Quel pattern-matching, su un esercizio inserito a mano dal
+   coach o dal cliente con un nome che casualmente conteneva una di quelle
+   parole, restituiva spesso una spiegazione sbagliata (es. un nome con
+   "panca" dentro riceveva sempre la spiegazione della panca piana, anche
+   se l'esercizio non c'entrava). Meglio nessuna guida che una guida
+   sicura di sé ma sbagliata: ExerciseCard mostra un avviso discreto
+   quando manca, invece di indovinare. */
+function exactExerciseBiomech(name) {
+  return EXERCISE_BIOMECH[name] || EXERCISE_BIOMECH[(name || "").trim()] || null;
 }
+function exerciseHowTo(name) { return exactExerciseBiomech(name)?.howTo || null; }
+function exerciseAvoid(name) { return exactExerciseBiomech(name)?.avoid || null; }
 
 /* Verde Oro: evidenzia i carichi record per dare motivazione visiva prima della serie. */
 const RECORD_GOLD_GREEN = "#8CA832";
-
-/* Errori critici da evitare, riconosciuti dal pattern di movimento del nome. */
-function exerciseAvoid(name) {
-  const exact = EXERCISE_BIOMECH[name] || EXERCISE_BIOMECH[(name || "").trim()];
-  if (exact) return exact.avoid;
-  const s = (name || "").toLowerCase();
-  if (/panca|croci|dip/.test(s))
-    return "Non staccare i glutei dalla panca, non far rimbalzare il bilanciere sul petto, non iperestendere le spalle nella fase bassa.";
-  if (/squat|pressa|affond|leg/.test(s))
-    return "Non far collassare le ginocchia verso l'interno, non sollevare i talloni da terra, non arrotondare la lombare in buca.";
-  if (/stacco|rdl|hip/.test(s))
-    return "Non arrotondare la schiena per raggiungere il pavimento, non allontanare il bilanciere dalle tibie, non iperestendere la lombare in cima.";
-  if (/rematore|trazioni|lat|pulley/.test(s))
-    return "Non usare lo slancio per portare su il peso, non accorciare il range di movimento, non anticipare le spalle in avanti.";
-  if (/lento|military|alzate|deltoide/.test(s))
-    return "Non inarcare eccessivamente la lombare per spingere, non far salire le spalle verso le orecchie, non usare slancio delle gambe.";
-  if (/curl|french|push down/.test(s))
-    return "Non muovere i gomiti in avanti o indietro, non oscillare il busto, non bloccare in estensione completa con carichi elevati.";
-  return "Non sacrificare il range di movimento per aggiungere carico, non compensare con altre articolazioni, non ignorare un dolore articolare acuto.";
-}
 
 /* Navigazione cronologica dei carichi: disponibile per TUTTI i piani. Riusa
    gli array "history" già presenti su ogni esercizio (una voce = una settimana
@@ -4223,10 +4209,9 @@ function NutritionCalendarStrip({ weekPlan, selectedIso, onSelectIso, accent, lo
   );
 }
 
-function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, gender, onUpgrade, onCoachSync }) {
+function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, gender, onUpgrade, onOpenChat, onCoachSync }) {
   const [plates, setPlates] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [videoUrl, setVideoUrl] = useState(null);
   // Le righe già precompilate da workout_sets (vedi hydration nel wrapper)
   // partono spuntate — altrimenti riaprendo l'app le serie già registrate
   // apparirebbero non completate anche se i dati sono già salvati davvero.
@@ -4240,6 +4225,17 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   // ogni serie (prima 8, seconda 12). Vedi parseRepsTarget (coachingData.js).
   const repsTargets = useMemo(() => parseRepsTarget(ex.reps, ex.sets), [ex.reps, ex.sets]);
   const hasPerSetTargets = ex.reps?.includes("/");
+  // Guida: SOLO quella scritta dal coach (ex.howTo/avoid, libreria condivisa)
+  // o un match esatto sul nome (exerciseHowTo/exerciseAvoid) — mai un
+  // indovinello. hasGuide === false è uno stato legittimo (esercizio non
+  // ancora documentato), non un errore da nascondere con un fallback.
+  const howTo = ex.howTo || exerciseHowTo(ex.name);
+  const avoid = ex.avoid || exerciseAvoid(ex.name);
+  const hasGuide = Boolean(howTo);
+  // Chat col coach: riservata a chi ha davvero un coach dietro (Scheda
+  // Personalizzata, Coaching Allenamento, Full Coaching) — stessa
+  // condizione di REAL_COACHING_PLANS in App.jsx.
+  const hasCoachChat = userPlan === "scheda_personalizzata" || userPlan === "training" || userPlan === "full_coaching";
 
   /* Storico: supporta sia il vecchio formato (array di kg) sia quello nuovo
      {kg, reps}, per ricordare il carico E le reps dell'ultima volta identica. */
@@ -4257,14 +4253,6 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
 
   const syncToCoach = (payload) =>
     onCoachSync && onCoachSync({ type: "workout", exercise: ex.name, exerciseId: ex.id, ...payload });
-
-  const handleVideoUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setVideoUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(file); });
-      syncToCoach({ kind: "video-upload", fileName: file.name });
-    }
-  };
 
   /* Smart Rest Timer: alla spunta di completamento di una serie parte in automatico
      il conto alla rovescia tarato sul recupero previsto; al termine, feedback aptico. */
@@ -4433,76 +4421,63 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
         </div>
       )}
 
-      {/* Guida esercizi: bottone esca visibile a TUTTI (Free, Paid, Coaching) */}
+      {/* Guida esecuzione: bottone discreto, visibile a tutti (Free, Paid,
+          Coaching) — il contenuto dietro cambia per piano. Titolo piccolo e
+          sobrio, non più a tutto maiuscolo con emoji vistose. */}
       <div className="mt-3">
         <button onClick={() => setGuideOpen((v) => !v)}
-                className="w-full flex items-center justify-between rounded-2xl px-4 py-3 transition-all duration-300"
+                className="w-full flex items-center justify-between rounded-2xl px-3.5 py-2.5 transition-all duration-300"
                 style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-          <span className="text-sm flex items-center gap-2" style={{ color: "var(--ink)", fontWeight: 600 }}>
-            🔍 GUIDA BIOMECCANICA ED ESECUZIONE IMPECCABILE
-            {userPlan === "full_coaching" && (
-              <span className="rounded-full px-2 py-0.5" style={{ background: "linear-gradient(135deg, #D4AF37, #AA7C11)",
-                      color: "#FFFFFF", fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.02em" }}>
-                👑 DIRECT
-              </span>
-            )}
+          <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+            <Search size={13} style={{ color: "var(--ink-2)" }} />
+            Guida all'esecuzione
           </span>
-          {guideOpen ? <ChevronUp size={15} style={{ color: "var(--ink-2)" }} /> : <ChevronDown size={15} style={{ color: "var(--ink-2)" }} />}
+          {guideOpen ? <ChevronUp size={14} style={{ color: "var(--ink-2)" }} /> : <ChevronDown size={14} style={{ color: "var(--ink-2)" }} />}
         </button>
 
         {guideOpen && userPlan === "free" && (
           <div className="spring-in mt-2">
             <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
-              title="🔒 CONTENUTO EXCLUSIVE"
-              text="Questa esecuzione è protetta dai nostri algoritmi biomeccanici. Passa al Performance Pack (€5/mese) o al Full Coaching per sbloccare le istruzioni da manuale clinico e l'assistente PERFORM AI per settare le macchine ed eseguire l'esercizio alla perfezione senza infortuni!" />
+              title="Contenuto riservato agli abbonati"
+              text="La guida biomeccanica di ogni esercizio (come eseguirlo, cosa evitare, ed eventuale video del coach) è inclusa dal Performance Pack in su. Con Scheda Personalizzata, Coaching Allenamento o Full Coaching hai anche una chat privata diretta col coach per farti correggere." />
           </div>
         )}
 
         {guideOpen && userPlan !== "free" && (
           <div className="spring-in inner p-4 mt-2 space-y-4">
-              <div>
-                <p className="label mb-1.5" style={{ color: "#10B981" }}>🟢 COME SI ESEGUE</p>
-                <p className="body text-sm">{ex.howTo || exerciseHowTo(ex.name)}</p>
-              </div>
-              <div>
-                <p className="label mb-1.5" style={{ color: "#DC2626" }}>🔴 COSA EVITARE</p>
-                <p className="body text-sm">{ex.avoid || exerciseAvoid(ex.name)}</p>
-              </div>
-
-              <PerformAIChatBox exerciseName={ex.name} accent={accent} />
-
-              {userPlan === "full_coaching" && (
-                <div>
-                  <div className="rounded-2xl px-4 py-3 mb-2 text-center"
-                       style={{ background: "linear-gradient(135deg, #D4AF37, #AA7C11)" }}>
-                    <span style={{ color: "#FFFFFF", fontWeight: 800, fontSize: "0.78rem", letterSpacing: "0.01em" }}>
-                      👑 ASSISTENZA DIRECT WhatsApp
-                    </span>
+              {hasGuide ? (
+                <>
+                  <div>
+                    <p className="label mb-1.5" style={{ color: "#10B981" }}>🟢 COME SI ESEGUE</p>
+                    <p className="body text-sm">{howTo}</p>
                   </div>
-                  <p className="meta mb-2" style={{ fontSize: "0.68rem" }}>
-                    Invia il video della tua esecuzione: correzione a occhio clinico a Tempo Zero da parte del
-                    Coach Daniel Marsini.
-                  </p>
-                  <a href={`https://wa.me/390000000000?text=${encodeURIComponent(`Ciao Coach, ti invio il video della mia esecuzione di ${ex.name} per la correzione.`)}`}
-                     target="_blank" rel="noopener noreferrer"
-                     className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full mb-3"
-                     style={{ backgroundColor: "#25D366", color: "#FFFFFF", fontWeight: 700 }}>
-                    Apri WhatsApp e invia al Coach
-                  </a>
-                  <label className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full cursor-pointer transition-transform active:scale-[0.98]"
-                         style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
-                    <Camera size={15} style={{ color: "#FFFFFF" }} />
-                    {videoUrl ? "Sostituisci video" : "Carica video dall'anteprima"}
-                    <input type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
-                  </label>
-                  {videoUrl && (
-                    <video src={videoUrl} controls className="w-full rounded-xl mt-3" style={{ maxHeight: 220 }} />
+                  {avoid && (
+                    <div>
+                      <p className="label mb-1.5" style={{ color: "#DC2626" }}>🔴 COSA EVITARE</p>
+                      <p className="body text-sm">{avoid}</p>
+                    </div>
                   )}
-                  <p className="meta mt-2" style={{ fontSize: "0.62rem" }}>
-                    Il video resta visibile solo in questa sessione di anteprima: nell'app reale partirebbe
-                    l'invio diretto al coach.
-                  </p>
-                </div>
+                  {ex.videoUrl && (
+                    <div>
+                      <p className="label mb-1.5">🎥 VIDEO DEL COACH</p>
+                      <video src={ex.videoUrl} controls className="w-full rounded-xl" style={{ maxHeight: 220 }} />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="meta text-sm" style={{ lineHeight: 1.5 }}>
+                  Il coach non ha ancora scritto la guida per questo esercizio specifico
+                  {hasCoachChat ? " — chiedigli pure direttamente in chat." : "."}
+                </p>
+              )}
+
+              {hasCoachChat && (
+                <button onClick={onOpenChat} disabled={!onOpenChat}
+                        className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full transition-transform active:scale-[0.98]"
+                        style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 700 }}>
+                  <MessageCircle size={15} style={{ color: "#FFFFFF" }} />
+                  Chat con il coach
+                </button>
               )}
           </div>
         )}
@@ -4512,56 +4487,6 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   );
 }
 
-/* Mini chat simulata: sblocca dritte, impostazioni macchine e info in tempo
-   reale sull'esercizio, dal Performance Pack in su. */
-function PerformAIChatBox({ exerciseName, accent }) {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-
-  const send = () => {
-    const q = input.trim();
-    if (!q) return;
-    const reply = `Su ${exerciseName}: controlla il setup (altezza sedile/leve), tieni la fase eccentrica lenta e ` +
-      `il core stabile. Chiedi pure altri dettagli su angolazioni, prese o alternative se qualcosa non ti torna.`;
-    setMessages((m) => [...m, { role: "user", text: q }, { role: "ai", text: reply }]);
-    setInput("");
-  };
-
-  return (
-    <div>
-      <p className="label mb-1.5">💬 CHIEDI A PERFORM AI</p>
-      {messages.length === 0 && (
-        <p className="meta mb-2" style={{ fontSize: "0.72rem" }}>
-          Dritte, impostazioni delle macchine o qualunque dubbio in tempo reale su questo esercizio.
-        </p>
-      )}
-      {messages.length > 0 && (
-        <div className="space-y-2 mb-2" style={{ maxHeight: 180, overflowY: "auto" }}>
-          {messages.map((m, i) => (
-            <div key={i} style={{ textAlign: m.role === "user" ? "right" : "left" }}>
-              <span className="inline-block rounded-2xl px-3 py-2 text-xs" style={{
-                backgroundColor: m.role === "user" ? accent : "var(--surface)",
-                color: m.role === "user" ? "#FFFFFF" : "var(--ink)",
-                maxWidth: "85%", border: m.role === "user" ? "none" : "1px solid var(--line)" }}>
-                {m.text}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <input value={input} onChange={(e) => setInput(e.target.value)}
-               onKeyDown={(e) => { if (e.key === "Enter") send(); }}
-               placeholder="Scrivi la tua domanda…" className="input flex-1 min-w-0 px-3 py-2.5 text-sm"
-               aria-label="Chiedi a PERFORM AI" />
-        <button onClick={send} aria-label="Invia" className="shrink-0 rounded-xl px-4 flex items-center justify-center"
-                style={{ backgroundColor: "#111111" }}>
-          <ChevronRight size={16} style={{ color: "#FFFFFF" }} />
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /* ---------------------------------------------------------------------------
    Allenamento FREE: routine libera, esercizi a scelta, Lun-Dom, multi-settimana.
@@ -4889,6 +4814,16 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
               );
             })}
           </div>
+
+          {/* Servizio guida+chat col coach: qui, non dentro ogni singolo
+              esercizio (il piano Free non ha ExerciseCard/guida per
+              esercizio, costruisce la scheda da solo) — un solo invito
+              discreto, professionale, sopra la Matrice dei Volumi. Solo per
+              Free: Performance Pack lo vede già incluso nel proprio piano. */}
+          {userPlan === "free" && (
+            <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
+              text="Dal Performance Pack in su hai anche la guida biomeccanica di ogni esercizio (come eseguirlo, cosa evitare); con un piano di coaching hai in più una chat privata diretta col coach per farti correggere." />
+          )}
 
           <div className="mt-4">
             <VolumeMatrixCard weekDays={weeks[activeWeek]} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} libOverride={exerciseLib} />
@@ -9679,6 +9614,8 @@ export default function HomePreview({
   microAddon: microAddonProp, // profiles.micro_addon reale — componente aggiuntivo micronutrienti per Scheda/Training
   supabase: supabaseProp,  // se passato insieme a userId, sostituisce scheda/target finti con quelli reali assegnati dal coach
   userId,
+  onUpgrade: onUpgradeProp,   // apre le impostazioni/abbonamento (App.jsx) — no-op in preview isolata
+  onOpenChat: onOpenChatProp, // passa al tab Chat (App.jsx) — no-op in preview isolata
 } = {}) {
   // Controlled/uncontrolled ibrido: se App.jsx passa le prop, questo componente
   // segue lo stato condiviso (tema/genere/piano); altrimenti resta autonomo
@@ -9827,6 +9764,19 @@ export default function HomePreview({
         if (!cancelled) setAssignedWeek(Array(7).fill(null));
       });
     return () => { cancelled = true; };
+  }, [supabaseProp, userId]);
+
+  // Guida biomeccanica per esercizio (SCHEMA_v61): libreria condivisa,
+  // scritta dal coach una sola volta per esercizio — letta qui una volta
+  // sola e incrociata per nome con gli esercizi assegnati (sotto, dove
+  // viene costruito `exercises`), invece di indovinarla dal nome con
+  // exerciseHowTo/exerciseAvoid (la causa della guida sbagliata sugli
+  // esercizi inseriti manualmente, non presenti in quel elenco fisso).
+  const [homeExerciseLib, setHomeExerciseLib] = useState(null);
+  useEffect(() => {
+    if (!supabaseProp || !userId) return;
+    fetchExerciseLibrary(supabaseProp).then(setHomeExerciseLib)
+      .catch((err) => console.error("PERFORM: errore lettura libreria esercizi (guida)", err));
   }, [supabaseProp, userId]);
 
   // Sonno/passi reali (daily_metrics): un'unica fetch su una finestra di
@@ -10049,7 +9999,17 @@ export default function HomePreview({
   // striscia calendario per qualunque altro giorno cliccato (CalendarDayReadOnlyView
   // legge weekPlan[isoWeekdayOf(date)] allo stesso modo).
   const todayWeekdayIdx = isoWeekdayOf(new Date());
-  const exercises = isRealMode ? (weekPlan[todayWeekdayIdx]?.exercises ?? []) : demoExercises;
+  const exercisesRaw = isRealMode ? (weekPlan[todayWeekdayIdx]?.exercises ?? []) : demoExercises;
+  // Guida coach (howTo/avoid/videoUrl) incrociata per nome esatto — un
+  // esercizio non ancora documentato dal coach resta senza guida invece di
+  // mostrarne una sbagliata: gestito da ExerciseCard (nessuna sezione
+  // guida se ex.howTo è assente).
+  const exercises = isRealMode && homeExerciseLib
+    ? exercisesRaw.map((ex) => {
+        const entry = homeExerciseLib[ex.name];
+        return entry ? { ...ex, howTo: entry.howTo || ex.howTo, avoid: entry.avoid || ex.avoid, videoUrl: entry.videoUrl || ex.videoUrl } : ex;
+      })
+    : exercisesRaw;
 
   // ON/OFF alimentazione sincronizzato con la scheda vera: giorno assegnato
   // dal coach (weekPlan[oggi] non null) = ON, riposo (null) = OFF. Prima era
@@ -10323,7 +10283,8 @@ export default function HomePreview({
           onOpenScanner={() => {}} onAddCustomFood={addCustomFood}
           onCopyYesterday={() => {}}
           onApplyReschedule={() => {}} onDismissReschedule={() => {}}
-          onUpgrade={() => {}}
+          onUpgrade={onUpgradeProp || (() => {})}
+          onOpenChat={onOpenChatProp || (() => {})}
         />
       </main>
     </div>

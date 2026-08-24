@@ -426,6 +426,8 @@ export default function App() {
               microAddon={!!profile?.micro_addon}
               supabase={supabase}
               userId={session.user.id}
+              onUpgrade={() => setSettingsOpen(true)}
+              onOpenChat={() => setTab("chat")}
               profileOverride={{
                 name: profile?.full_name || session.user.user_metadata?.full_name || "Atleta",
                 // BUG PRESO: leggeva session.user.user_metadata?.nickname (mai
