@@ -3,6 +3,27 @@
    ----------------------------------------------------------------------------
    Nessuna query qui indovina nomi di colonne: ogni campo corrisponde esattamente
    a quanto definito in nutrition_targets, workout_logs, profiles.
+   ----------------------------------------------------------------------------
+   CONVENZIONE — OGNI NUOVO PULSANTE "AZIONE" (§03 memo "Verso l'élite",
+   Fiducia attraverso la correttezza): questa sessione ha già trovato e
+   corretto più volte lo stesso difetto — un pulsante che sembrava aver
+   salvato ma non aveva scritto nulla su Supabase (spunte integratori che
+   sparivano, "copia i pasti di ieri" che non copiava, onUpgrade/onOpenChat
+   collegati a un no-op). Per un servizio a pagamento su dati di salute,
+   "il mio dato è stato salvato davvero?" non può mai restare un dubbio.
+   Ogni funzione qui sotto che scrive (insert/update/upsert/delete) e ogni
+   pulsante che la chiama deve seguire le stesse 3 regole:
+     1. UI ottimistica: lo stato locale si aggiorna SUBITO al tocco, mai
+        un giro di attesa prima di vedere l'effetto.
+     2. Conferma reale: la funzione fa await sulla vera scrittura Supabase
+        e propaga l'errore (throw), mai un successo silenzioso finto.
+     3. Stato di errore visibile: il chiamante ha SEMPRE un catch che
+        mostra un messaggio all'utente E riporta lo stato locale a quello
+        precedente se la scrittura è fallita — mai un pulsante che resta
+        "spuntato" mentre il database dice il contrario.
+   Esempi già conformi da cui copiare il pattern: ChatThread.jsx (invio
+   messaggio), SupplementsPlanLocked (05_HomeDashboard.jsx, spunta
+   integratore). Mai aggiungere un pulsante "azione" senza tutte e 3.
    ========================================================================== */
 
 const MUSCLE_TARGETS = [
@@ -299,6 +320,23 @@ export async function fetchNutritionLogsForDate(supabase, userId, dateISO) {
     .eq("user_id", userId)
     .eq("date", dateISO)
     .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Storico completo del diario alimentare in un intervallo di date — a
+// differenza di fetchNutritionLogsForDate (un solo giorno), serve
+// all'esportazione dati del cliente (§03 "Fiducia attraverso la
+// correttezza": può portarsi via tutto quello che ha registrato, non solo
+// profilo e consensi).
+export async function fetchAllNutritionLogsForExport(supabase, userId, fromISO, toISO) {
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .select("date, meal_slot, name, grams, kcal, protein, carbs, fat")
+    .eq("user_id", userId)
+    .gte("date", fromISO)
+    .lte("date", toISO)
+    .order("date", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }
