@@ -26,6 +26,7 @@ import {
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, fetchCoachSettings } from "../lib/coachingData.js";
+import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { haptic } from "../lib/haptics.js";
 import { playSound } from "../lib/sounds.js";
@@ -2073,6 +2074,7 @@ export function HomeDashboard({
   onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday,
   onApplyReschedule, onDismissReschedule,
   onUpgrade, onOpenChat, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
+  pendingSyncCount,
   userPlan, // 'free' | 'performance_pack' | 'scheda_personalizzata' | 'training' | 'full_coaching' — letta da Supabase
   microAddon, // profiles.micro_addon — componente aggiuntivo micronutrienti per Scheda/Training, attivato dal coach
   stressLevel, onSetStressLevel, nightWakeups, onSetNightWakeups, morningEnergy, onSetMorningEnergy,
@@ -2709,6 +2711,15 @@ export function HomeDashboard({
           </div>
         </div>
 
+        {!!pendingSyncCount && (
+          <div className="flex items-center gap-2 rounded-xl px-3.5 py-2.5 mb-4"
+               style={{ backgroundColor: "rgba(240,160,32,0.1)", border: "1px solid rgba(240,160,32,0.35)" }}>
+            <Loader2 size={14} className="animate-spin" style={{ color: "#B45309", flexShrink: 0 }} />
+            <p className="text-xs" style={{ color: "#B45309", fontWeight: 600 }}>
+              {pendingSyncCount === 1 ? "1 serie in attesa di rete" : `${pendingSyncCount} serie in attesa di rete`} — si sincronizza da sola appena torna la connessione.
+            </p>
+          </div>
+        )}
         <DayJourneyCard joinedAt={joinedAt} welcomeVideoUrl={welcomeVideoUrl} />
         <ReadinessCard readiness={readiness} />
 
@@ -10171,6 +10182,40 @@ export default function HomePreview({
      nessun evento, lo streak si azzera. */
   const [coachFeed, setCoachFeed] = useState([]);
   const [lastActivityDate, setLastActivityDate] = useState(() => toLocalISODate());
+
+  // §07 memo "Verso l'élite" (Mai perdere una serie): wifi di sala pesi
+  // scarso, la serie appena registrata deve arrivare comunque. Se
+  // logWorkoutSet fallisce (rete assente, non un errore di validazione —
+  // ma mettiamo in coda comunque: ripetere la stessa scrittura idempotente
+  // qualche volta in più non fa danno) viene messa in coda offline
+  // (IndexedDB, vedi lib/offlineQueue.js) e riprovata da sola quando la
+  // rete torna. flushQueue gira al mount, quando la rete torna (`online`)
+  // e quando la scheda ridiventa visibile — mai il Background Sync API del
+  // Service Worker, che Safari/iOS (il target primario di questa app) non
+  // supporta affatto.
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const flushQueue = useCallback(() => {
+    if (!supabaseProp) return;
+    flushOfflineQueue({
+      "workout-set": (payload) => logWorkoutSet(supabaseProp, payload.exerciseId, payload.userId, payload.setNumber, {
+        repsCompleted: payload.repsCompleted, loadKg: payload.loadKg, rir: payload.rir,
+      }),
+    })
+      .then(() => getPendingWrites())
+      .then((rows) => setPendingSyncCount(rows.length))
+      .catch((err) => console.error("PERFORM: errore sincronizzazione coda offline", err));
+  }, [supabaseProp]);
+  useEffect(() => {
+    flushQueue();
+    const onVisible = () => { if (document.visibilityState === "visible") flushQueue(); };
+    window.addEventListener("online", flushQueue);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("online", flushQueue);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [flushQueue]);
+
   const pushCoachSync = (evt) => {
     setCoachFeed((f) => [...f.slice(-99), { ...evt, at: new Date().toISOString() }]);
     setLastActivityDate(toLocalISODate());
@@ -10181,11 +10226,18 @@ export default function HomePreview({
     // riassunto rapido su workout_logs (ultima serie + stato "done").
     if (isRealMode && evt.type === "workout" && evt.kind === "set-completed" && evt.exerciseId && evt.row) {
       const { kg, reps, rir } = evt.row;
-      logWorkoutSet(supabaseProp, evt.exerciseId, userId, evt.rowIndex + 1, {
+      const payload = {
+        exerciseId: evt.exerciseId, userId, setNumber: evt.rowIndex + 1,
         repsCompleted: reps !== "" ? Number(reps) : null,
         loadKg: kg !== "" ? Number(kg) : null,
         rir: rir !== "" ? Number(rir) : null,
-      }).catch((err) => console.error("PERFORM: errore salvataggio workout_sets", err));
+      };
+      logWorkoutSet(supabaseProp, payload.exerciseId, payload.userId, payload.setNumber, {
+        repsCompleted: payload.repsCompleted, loadKg: payload.loadKg, rir: payload.rir,
+      }).catch((err) => {
+        console.error("PERFORM: errore salvataggio workout_sets, la metto in coda per riprovare quando torna la rete", err);
+        enqueueWrite("workout-set", payload).then(() => setPendingSyncCount((n) => n + 1));
+      });
     }
   };
   const simulateInactivity = () => {
@@ -10526,6 +10578,7 @@ export default function HomePreview({
           caffeineMg={caffeineMg} onSetCaffeineMg={setCaffeineMg}
           caffeineTime={caffeineTime} onSetCaffeineTime={setCaffeineTime}
           onCoachSync={pushCoachSync} lastCoachSync={coachFeed[coachFeed.length - 1]} coachSyncCount={coachFeed.length}
+          pendingSyncCount={pendingSyncCount}
           coachFeed={coachFeed}
           onSimulateInactivity={simulateInactivity} onResetActivityToday={resetActivityToday}
           onAddFood={(slot, item) => {
