@@ -120,6 +120,7 @@ export const translations = {
       subscribed: "Abbonamento attivo",
       current: "Piano attuale",
       freeCta: "Torna al Free", oneTimeCta: "Acquista ora", switchCta: "Passa a questo piano",
+      billingMonthly: "Mensile", billingAnnual: "Annuale · 2 mesi gratis",
     },
     plans: {
       free:        { name: "Free", includes: ["Diario libero autogestito: dieta, carichi, integrazione, passi e sonno"],
@@ -133,7 +134,7 @@ export const translations = {
       full:        { name: "Full Coaching", includes: ["Tutto Coaching Allenamento", "Calcolo macro preciso su misura", "Dieta ON/OFF a 4 momenti della giornata", "Lista sostituzioni alimenti ed esercizi automatica", "Protocollo di integrazione d'élite", "Supporto WhatsApp dedicato 24/7"],
                      excludes: [] },
     },
-    periods: { none: "", recurring: "/mese", one_time: "una tantum" },
+    periods: { none: "", recurring: "/mese", one_time: "una tantum", annual: "/anno" },
     privacy: {
       title: "Privacy e trattamento dati",
       genericBody: "PERFORM tratta i tuoi dati personali — profilo, nickname, passi, sonno, diario di macro e idratazione — con crittografia sul database e sui bucket di archiviazione, in conformità al Regolamento UE 2016/679 (GDPR). I dati non vengono mai ceduti, venduti o condivisi con terzi per finalità commerciali: sono usati esclusivamente per farti tracciare i tuoi progressi e, se hai un piano a coaching, per farli leggere al tuo coach. Questa informativa vale per ogni account, a prescindere dal piano attivo.",
@@ -211,6 +212,7 @@ export const translations = {
       subscribed: "Subscription active",
       current: "Current plan",
       freeCta: "Back to Free", oneTimeCta: "Buy now", switchCta: "Switch to this plan",
+      billingMonthly: "Monthly", billingAnnual: "Annual · 2 months free",
     },
     plans: {
       free:        { name: "FREE", includes: ["Self-guided free-form diary: diet, loads, supplements, steps and sleep"],
@@ -224,7 +226,7 @@ export const translations = {
       full:        { name: "FULL SUPREME COACHING", includes: ["Everything in Training-Only Coaching", "Precise macro calculation", "4-window ON/OFF diet cycling", "Automatic food & exercise substitution list", "Elite supplementation protocol", "Dedicated 24/7 WhatsApp support"],
                      excludes: [] },
     },
-    periods: { none: "", recurring: "/mo", one_time: "one-time" },
+    periods: { none: "", recurring: "/mo", one_time: "one-time", annual: "/yr" },
     privacy: {
       title: "Privacy and data handling",
       genericBody: "Your profile data, Nickname, steps, sleep, and daily macros/hydration log are stored encrypted and securely on PERFORM so you can track your progress. No data is shared or sold to third parties.",
@@ -298,6 +300,7 @@ export const translations = {
       subscribed: "Suscripción activa",
       current: "Plan actual",
       freeCta: "Volver al Gratis", oneTimeCta: "Comprar ahora", switchCta: "Cambiar a este plan",
+      billingMonthly: "Mensual", billingAnnual: "Anual · 2 meses gratis",
     },
     plans: {
       free:        { name: "GRATIS", includes: ["Diario libre autogestionado: dieta, cargas, suplementación, pasos y sueño"],
@@ -311,7 +314,7 @@ export const translations = {
       full:        { name: "FULL COACHING SUPREMO", includes: ["Todo el Coaching Solo Entrenamiento", "Cálculo preciso de macros", "Dieta ON/OFF en 4 momentos del día", "Lista automática de sustituciones de alimentos y ejercicios", "Protocolo de suplementación de élite", "Soporte WhatsApp dedicado 24/7"],
                      excludes: [] },
     },
-    periods: { none: "", recurring: "/mes", one_time: "pago único" },
+    periods: { none: "", recurring: "/mes", one_time: "pago único", annual: "/año" },
     privacy: {
       title: "Privacidad y tratamiento de datos",
       genericBody: "Los datos de tu perfil, el Nickname, los pasos, el sueño y el diario diario de macros e hidratación se almacenan de forma cifrada y segura en PERFORM para que puedas seguir tu progreso. Ningún dato se cede ni se vende a terceros.",
@@ -385,6 +388,7 @@ export const translations = {
       subscribed: "Abonnement actif",
       current: "Plan actuel",
       freeCta: "Retour au Gratuit", oneTimeCta: "Acheter maintenant", switchCta: "Passer à ce plan",
+      billingMonthly: "Mensuel", billingAnnual: "Annuel · 2 mois offerts",
     },
     plans: {
       free:        { name: "GRATUIT", includes: ["Journal libre autogéré : alimentation, charges, compléments, pas et sommeil"],
@@ -398,7 +402,7 @@ export const translations = {
       full:        { name: "FULL COACHING SUPRÊME", includes: ["Tout le Coaching Entraînement Seul", "Calcul précis des macros", "Régime ON/OFF à 4 moments de la journée", "Liste automatique de substitutions aliments et exercices", "Protocole de complémentation d'élite", "Support WhatsApp dédié 24/7"],
                      excludes: [] },
     },
-    periods: { none: "", recurring: "/mois", one_time: "paiement unique" },
+    periods: { none: "", recurring: "/mois", one_time: "paiement unique", annual: "/an" },
     privacy: {
       title: "Confidentialité et traitement des données",
       genericBody: "Les données de ton profil, ton Pseudo, tes pas, ton sommeil et ton journal quotidien de macros et d'hydratation sont archivés de façon cryptée et sécurisée sur PERFORM pour te permettre de suivre tes progrès. Aucune donnée n'est cédée ou vendue à des tiers.",
@@ -1425,11 +1429,46 @@ export const OWNER_EMAIL = "danielmarsini@coach.com";
    currentPlan arriva da Supabase: tabella `subscriptions`, colonna `plan_id`. */
 export const STRIPE_PLANS = [
   { id: "free",        emoji: "🆓", price: 0,  billing: "none",      priceId: null },
-  { id: "performance", emoji: "⚡", price: 5,  billing: "recurring", priceId: "price_1U53wlFifatHRNX6tkJAV4ni" },
+  { id: "performance", emoji: "⚡", price: 5,  billing: "recurring", priceId: "price_1U53wlFifatHRNX6tkJAV4ni", annualPriceId: null },
   { id: "scheda",      emoji: "🏋️", price: 40, billing: "one_time",  priceId: "price_1U53w5FifatHRNX6KFotJfnc" },
-  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_1U53vHFifatHRNX6O2Y6fT5n" },
-  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_1U53tlFifatHRNX6fVb5k9HC", highlight: true, recommended: true },
+  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_1U53vHFifatHRNX6O2Y6fT5n", annualPriceId: null },
+  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_1U53tlFifatHRNX6fVb5k9HC", annualPriceId: null, highlight: true, recommended: true },
 ];
+
+/* Piani annuali: 2 mesi gratis rispetto al mensile (~17% di sconto), scelta
+   esplicita del coach — MAI un importo calcolato diversamente altrove, per
+   non rischiare due sconti diversi mostrati in punti diversi dell'app.
+   annualPriceId parte a null: finché il coach non crea i Price ID reali sul
+   dashboard Stripe (uno per ciascun piano ricorrente, importo mensile × 10,
+   ricorrenza annuale) il toggle Mensile/Annuale resta nascosto — mai un
+   pulsante "passa a questo piano" che punta a un prezzo che non esiste. */
+export const ANNUAL_MONTHS = 10;
+export const hasAnnualPricing = STRIPE_PLANS.some((p) => p.annualPriceId);
+
+export function withBillingCycle(plans, cycle) {
+  if (cycle !== "annual") return plans;
+  return plans.map((p) => (p.billing !== "recurring" || !p.annualPriceId) ? p : {
+    ...p, price: p.price * ANNUAL_MONTHS, billing: "annual", priceId: p.annualPriceId,
+  });
+}
+
+/* Toggle Mensile/Annuale — stesso linguaggio visivo degli altri segmented
+   control dell'app (es. i tab Pesi/Cardio/Wiki in Allenamento). */
+export function BillingCycleToggle({ cycle, onChange, accent, t }) {
+  return (
+    <div className="grid grid-cols-2 gap-1.5 mb-4 p-1 rounded-full" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+      {["monthly", "annual"].map((c) => (
+        <button key={c} onClick={() => onChange(c)}
+          className="rounded-full py-2 text-xs transition-all duration-200"
+          style={cycle === c
+            ? { backgroundColor: accent, color: "#111111", fontWeight: 700 }
+            : { color: "var(--ink-2)", fontWeight: 600 }}>
+          {c === "monthly" ? t.plan.billingMonthly : t.plan.billingAnnual}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Toggle({ on, onClick, label, desc }) {
   return (
@@ -1773,6 +1812,7 @@ export function SettingsDrawer({
   // già preso e risolto una volta in ClassificaView, non ripeterlo qui.
   const [checkoutBusyId, setCheckoutBusyId] = useState(null);
   const [checkoutError, setCheckoutError] = useState("");
+  const [billingCycle, setBillingCycle] = useState("monthly"); // 'monthly' | 'annual'
 
   if (!open) return null;
 
@@ -1914,7 +1954,10 @@ export function SettingsDrawer({
                   {checkoutError}
                 </p>
               )}
-              {STRIPE_PLANS.map((p) => (
+              {hasAnnualPricing && (
+                <BillingCycleToggle cycle={billingCycle} onChange={setBillingCycle} accent={accent} t={t} />
+              )}
+              {withBillingCycle(STRIPE_PLANS, billingCycle).map((p) => (
                 <PlanCard key={p.id} plan={p} active={p.id === activePlan.id}
                           accent={accent} accentText={accentText} gender={gender} dark={dark} t={t}
                           onChangePlan={checkoutBusyId ? () => {} : startStripeCheckout} isOwner={isOwner} />

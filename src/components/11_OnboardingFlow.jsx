@@ -33,7 +33,7 @@ import React, { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 
 import { DesignSystem } from "./04_AppShell.jsx";
-import { STRIPE_PLANS, translations, GradientText, PlanCard } from "./08_ClientProfileView.jsx";
+import { STRIPE_PLANS, translations, GradientText, PlanCard, hasAnnualPricing, withBillingCycle, BillingCycleToggle } from "./08_ClientProfileView.jsx";
 import { GlobalStyle as CoachGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./09_CoachDashboard.jsx";
 import { saveAnamnesis, resolveReferralCode, setReferredBy } from "../lib/coachingData.js";
 
@@ -75,6 +75,7 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [answers, setAnswers] = useState({});
+  const [billingCycle, setBillingCycle] = useState("monthly"); // 'monthly' | 'annual'
 
   // §08 memo "Verso l'élite" — programma referral: applicato PRIMA di
   // scegliere il piano (indipendente dal piano, funziona sia per Free sia
@@ -287,7 +288,11 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
           </p>
         )}
 
-        {STRIPE_PLANS.map((plan) => (
+        {hasAnnualPricing && (
+          <BillingCycleToggle cycle={billingCycle} onChange={setBillingCycle} accent={accent || "#C5A059"} t={t} />
+        )}
+
+        {withBillingCycle(STRIPE_PLANS, billingCycle).map((plan) => (
           <PlanCard
             key={plan.id}
             plan={plan}
