@@ -460,12 +460,17 @@ export async function computeNutritionCompliance(supabase, userId) {
 export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDateISO) {
   const { data, error } = await supabase
     .from("workout_logs")
-    .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only")
+    .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only, sort_order")
     .eq("user_id", userId)
     .gte("date", fromDateISO)
     .lte("date", toDateISO)
     .order("date", { ascending: true })
-    .order("created_at", { ascending: true }); // ordine di inserimento del coach dentro lo stesso giorno
+    // sort_order (SCHEMA_v65): stesso ordine scelto dal coach col
+    // drag-to-reorder in WeekWorkoutEditor — il cliente deve vedere gli
+    // esercizi nell'ordine in cui il coach li ha organizzati, non in quello
+    // in cui sono stati inseriti nel database.
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }
@@ -955,11 +960,15 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
   const dates = weekDatesFrom(weekStartDateISO);
   const { data, error } = await supabase
     .from("workout_logs")
-    .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, intensity_technique")
+    .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, intensity_technique, sort_order")
     .eq("user_id", userId)
     .in("date", dates)
     .order("date", { ascending: true })
-    .order("created_at", { ascending: true }); // ordine di inserimento del coach dentro lo stesso giorno
+    // sort_order (SCHEMA_v65): l'ordine scelto dal coach col drag-to-reorder,
+    // NON l'ordine di inserimento — created_at resta come fallback per righe
+    // scritte prima della migrazione, nel caso non fossero ancora backfillate.
+    .order("sort_order", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
   if (error) throw error;
 
   const byDate = new Map();
@@ -1046,7 +1055,11 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
       if (deleteError) throw deleteError;
     }
 
-    for (const ex of newExercises) {
+    for (const [exIdx, ex] of newExercises.entries()) {
+      // sort_order = posizione nell'array locale: il coach può trascinare per
+      // riordinare (drag-to-reorder, vedi WeekWorkoutEditor/useDragReorder),
+      // e QUELL'ordine è quello che si salva — mai dedotto da created_at,
+      // che non cambia quando si sposta una riga già esistente.
       const prescriptiveFields = {
         exercise_name: ex.name,
         split_label: day.label || null,
@@ -1057,6 +1070,7 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
         rest_seconds: ex.rest ?? null,
         rir_target: ex.rirTarget || null,
         intensity_technique: ex.technique || null,
+        sort_order: exIdx,
       };
       if (existingIds.has(ex.id)) {
         const { error: updateError } = await supabase.from("workout_logs").update(prescriptiveFields).eq("id", ex.id);
