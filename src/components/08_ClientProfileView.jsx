@@ -38,7 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
 import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
@@ -1586,6 +1586,95 @@ export function SettingsDrawer({
     }
   };
 
+  // Esportazione CSV dello storico REALE (non solo profilo/consensi come il
+  // JSON qui sopra): check settimanali/mensili, sonno+passi+wellness
+  // giornaliero, diario alimentare, serie di allenamento svolte — tutto
+  // quello che il cliente ha davvero registrato. Un file per tipo di dato
+  // (colonne troppo diverse per un unico foglio), scaricati tutti dallo
+  // stesso pulsante: segnale di fiducia concreto per un servizio a
+  // pagamento — "il mio dato è mio, posso portarmelo via", non solo un
+  // riassunto del profilo.
+  const [csvExportBusy, setCsvExportBusy] = useState(false);
+  const [csvExportError, setCsvExportError] = useState("");
+  const exportCsv = (filename, rows, columns) => {
+    const esc = (v) => {
+      if (v == null) return "";
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [columns.map((c) => c.label).join(",")]
+      .concat(rows.map((r) => columns.map((c) => esc(c.get(r))).join(",")));
+    // BOM: senza, Excel su Windows non riconosce l'UTF-8 e mostra gli
+    // accenti italiani (perché, così, più tardi...) come caratteri corrotti.
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+  const downloadFullHistoryCsv = async () => {
+    if (!isRealMode) return;
+    setCsvExportBusy(true);
+    setCsvExportError("");
+    try {
+      const profileRow = await fetchProfileDetails(supabase, userId);
+      const sinceISO = profileRow?.created_at ? profileRow.created_at.slice(0, 10) : "2020-01-01";
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const [checkins, metrics, nutrition, sets] = await Promise.all([
+        fetchCheckins(supabase, userId, 5000),
+        fetchDailyMetricsRange(supabase, userId, sinceISO, todayISO),
+        fetchAllNutritionLogsForExport(supabase, userId, sinceISO, todayISO),
+        fetchClientSetHistory(supabase, userId, sinceISO, todayISO),
+      ]);
+
+      exportCsv(`perform-checkin-${todayISO}.csv`, checkins, [
+        { label: "Data", get: (r) => r.date },
+        { label: "Peso (kg)", get: (r) => r.weight },
+        { label: "Vita (cm)", get: (r) => r.waist },
+        { label: "Torace (cm)", get: (r) => r.chest },
+        { label: "Braccio (cm)", get: (r) => r.arm },
+        { label: "Coscia (cm)", get: (r) => r.thigh },
+        { label: "Dolori (1-10)", get: (r) => r.pain },
+        { label: "Stress (1-10)", get: (r) => r.stress },
+        { label: "Digestione (1-10)", get: (r) => r.digestion },
+        { label: "Qualità sonno (1-10)", get: (r) => r.sleep_quality },
+      ]);
+      exportCsv(`perform-recupero-${todayISO}.csv`, metrics, [
+        { label: "Data", get: (r) => r.date },
+        { label: "Sonno (h)", get: (r) => r.sleep_hours },
+        { label: "Passi", get: (r) => r.steps },
+        { label: "Digestione (1-10)", get: (r) => r.digestion },
+        { label: "Motivazione (1-10)", get: (r) => r.motivation },
+        { label: "Fatica (1-10)", get: (r) => r.fatigue },
+      ]);
+      exportCsv(`perform-alimentazione-${todayISO}.csv`, nutrition, [
+        { label: "Data", get: (r) => r.date },
+        { label: "Pasto", get: (r) => r.meal_slot },
+        { label: "Alimento", get: (r) => r.name },
+        { label: "Grammi", get: (r) => r.grams },
+        { label: "Kcal", get: (r) => r.kcal },
+        { label: "Proteine (g)", get: (r) => r.protein },
+        { label: "Carboidrati (g)", get: (r) => r.carbs },
+        { label: "Grassi (g)", get: (r) => r.fat },
+      ]);
+      exportCsv(`perform-allenamento-${todayISO}.csv`, sets, [
+        { label: "Data", get: (r) => r.workout_logs?.date },
+        { label: "Esercizio", get: (r) => r.workout_logs?.exercise_name },
+        { label: "Distretto", get: (r) => r.workout_logs?.muscle_target },
+        { label: "Serie n.", get: (r) => r.set_number },
+        { label: "Ripetizioni", get: (r) => r.reps_completed },
+        { label: "Carico (kg)", get: (r) => r.load_kg },
+        { label: "RIR", get: (r) => r.rir },
+      ]);
+    } catch (err) {
+      console.error("PERFORM: errore esportazione CSV storico completo", err);
+      setCsvExportError("Non sono riuscito a esportare lo storico completo — riprova.");
+    } finally {
+      setCsvExportBusy(false);
+    }
+  };
+
   const togglePush = async () => {
     setPushState("busy");
     if (pushState === "on") {
@@ -1793,6 +1882,22 @@ export function SettingsDrawer({
                     className="w-full rounded-2xl px-4 py-3 text-sm flex items-center justify-center gap-2"
                     style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
                     <FileText size={15} /> {downloadBusy ? t.privacy.downloadBusy : t.privacy.downloadBtn}
+                  </button>
+                </div>
+              )}
+
+              {isRealMode && (
+                <div className="card mb-3">
+                  <p className="label mb-1">Esporta il tuo storico completo</p>
+                  <p className="meta mb-3" style={{ fontSize: "0.7rem" }}>
+                    Check, sonno e passi, diario alimentare, serie di allenamento svolte — tutto quello che hai
+                    registrato, in 4 file CSV apribili con qualsiasi foglio di calcolo.
+                  </p>
+                  {csvExportError && <p className="text-xs mb-2" style={{ color: "#DC2626" }}>{csvExportError}</p>}
+                  <button onClick={downloadFullHistoryCsv} disabled={csvExportBusy}
+                    className="w-full rounded-2xl px-4 py-3 text-sm flex items-center justify-center gap-2"
+                    style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
+                    <FileText size={15} /> {csvExportBusy ? "Preparo i file…" : "Esporta storico completo (CSV)"}
                   </button>
                 </div>
               )}
