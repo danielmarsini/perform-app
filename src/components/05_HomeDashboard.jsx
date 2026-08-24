@@ -844,19 +844,22 @@ export function MacroRow({ values }) {
 export function Window3D({ icon: Icon, label, sub, accent, floatClass, onClick, locked, onLocked }) {
   return (
     <button onClick={locked ? onLocked : onClick}
-            className="card card-tap relative w-full text-left overflow-hidden"
+            className="card card-tap relative w-full text-left overflow-hidden flex items-center gap-3.5"
+            style={{ padding: "1.1rem 1.25rem" }}
             aria-disabled={locked}>
-      <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 ${floatClass}`}
+      <div className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center ${floatClass}`}
            style={{ background: "radial-gradient(circle at 32% 28%, #3A3A3A 0%, #111111 62%)",
                     boxShadow: `0 8px 18px rgba(0,0,0,0.28), inset 0 2px 3px rgba(255,255,255,0.18),
                                 inset 0 -3px 6px rgba(0,0,0,0.55)` }}>
-        <Icon size={24} style={{ color: accent, filter: "drop-shadow(0 2px 2px rgba(0,0,0,0.5))" }} />
+        <Icon size={21} style={{ color: accent, filter: "drop-shadow(0 2px 2px rgba(0,0,0,0.5))" }} />
       </div>
-      <p className="h2 flex items-center justify-between">
-        {label}
-        <ChevronRight size={17} style={{ color: "var(--ink-2)" }} />
-      </p>
-      {sub && <p className="meta mt-1">{sub}</p>}
+      <div className="min-w-0 flex-1">
+        <p className="h2 flex items-center justify-between">
+          {label}
+          <ChevronRight size={17} style={{ color: "var(--ink-2)" }} />
+        </p>
+        {sub && <p className="meta mt-0.5">{sub}</p>}
+      </div>
 
       {locked && (
         <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center"
@@ -985,6 +988,19 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
           <circle className="ring-glow-pulse" cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
                   strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
                   style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease" }} />
+        )}
+        {/* Riflesso lucido che gira lungo tutto l'anello (non solo la parte
+            piena) — stesso principio della barra XP (.xp-bar-shine) ma qui
+            sull'arco: i colori a semaforo restano identici, si aggiunge solo
+            un bagliore bianco in movimento in blend "overlay" (si illumina
+            SOPRA il colore esistente senza sostituirlo). --ring-c passa la
+            circonferenza esatta di QUESTA istanza al keyframe condiviso,
+            che così funziona a qualunque size/stroke venga passato. */}
+        {!isNeutral && (
+          <circle className="ring-sheen-sweep" cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.9)"
+                  strokeWidth={Math.max(2, stroke * 0.5)} strokeLinecap="round"
+                  strokeDasharray={`${c * 0.08} ${c * 0.92}`} transform={`rotate(-90 ${cx} ${cy})`}
+                  style={{ mixBlendMode: "overlay", "--ring-c": c }} />
         )}
         {isNeutral && (
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
@@ -2407,26 +2423,46 @@ export function HomeDashboard({
         {/* banner unico: saluto, gamification, mesociclo, cerchi, livello e XP — niente più card separate */}
         <div className="gradient-border rounded-2xl px-5 py-5 mb-4" style={{ backgroundColor: "var(--surface)" }}>
           <div className="min-w-0" style={{ position: "relative", zIndex: 1 }}>
-            <p className="greeting-text" style={{ color: "var(--ink)", fontSize: "1.55rem", fontWeight: 700, letterSpacing: "-0.01em", lineHeight: 1.15 }}>
-              <span className="greeting-emoji">{greeting.icon}</span> {greeting.text} {firstName}
-            </p>
+            {/* Gradiente condiviso oro/rosa (stessi --title-a/b/c del
+                title-shine) applicato al fuocherello: definito una sola
+                volta, invisibile di suo (0x0), referenziato via url(#...). */}
+            <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true">
+              <defs>
+                <linearGradient id="flameShineGrad" x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="objectBoundingBox">
+                  <stop offset="0%" style={{ stopColor: "var(--title-a)" }} />
+                  <stop offset="50%" style={{ stopColor: "var(--title-b)" }} />
+                  <stop offset="100%" style={{ stopColor: "var(--title-c)" }} />
+                  <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="3.5s" repeatCount="indefinite" />
+                </linearGradient>
+              </defs>
+            </svg>
+
+            <div className="flex items-start justify-between gap-3">
+              <p className="greeting-text min-w-0" style={{ fontSize: "1.55rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
+                <span className="greeting-emoji">{greeting.icon}</span>{" "}
+                <span className="title-shine">{greeting.text} {firstName}</span>
+              </p>
+
+              {/* Streak: fuoco + numero, oro/rosa lucido come il titolo di
+                  livello, niente più riquadro attorno — solo il numero,
+                  tocca per aprire la spiegazione (e "Congela streak di
+                  oggi" dentro, StreakInfoModal). */}
+              <button onClick={() => setStreakInfoOpen(true)}
+                      className="inline-flex items-center gap-1.5 shrink-0"
+                      style={{ background: "none" }}
+                      aria-label="Streak: tocca per i dettagli">
+                <Flame size={32} className={streak >= 15 ? "flame-3" : streak >= 8 ? "flame-2" : "flame-1"}
+                       fill="url(#flameShineGrad)" stroke="url(#flameShineGrad)" strokeWidth={1.3}
+                       style={{ filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.4)) drop-shadow(0 0 9px rgba(212,175,55,0.5))" }} />
+                <span className="title-shine" style={{ fontSize: "1.7rem", fontWeight: 800 }}>{streak}</span>
+              </button>
+            </div>
+
             <p className="meta mt-1" style={{ fontSize: "0.72rem" }}>
               {day.dayNumber != null
                 ? `Giorno ${day.dayNumber} del percorso · ${WEEK_DAYS[day.weekday]}`
                 : new Date().toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "long" })}
             </p>
-
-            {/* Streak: solo fuoco + numero, grande — il significato (e
-                "Congela streak di oggi") si scopre toccandolo, non è più
-                scritto per esteso qui accanto: Home più pulita. */}
-            <button onClick={() => setStreakInfoOpen(true)}
-                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 mt-3"
-                    style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}
-                    aria-label="Streak: tocca per i dettagli">
-              <Flame size={20} className={streak >= 15 ? "flame-3" : streak >= 8 ? "flame-2" : streak >= 4 ? "flame-1" : ""}
-                     style={{ color: accent }} fill={accent} strokeWidth={1.4} />
-              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--ink)" }}>{streak}</span>
-            </button>
 
             {day.mesociclo != null && (
               <div className="mt-3">
@@ -2568,8 +2604,10 @@ export function HomeDashboard({
           </div>
         )}
 
-        {/* le macro-finestre */}
-        <div className="grid grid-cols-1 gap-4">
+        {/* le macro-finestre: gap ridotto (2.5 invece di 4) — icona ora a
+            fianco del titolo invece che sopra, le 4 card sono più compatte
+            e più vicine fra loro, come richiesto. */}
+        <div className="grid grid-cols-1 gap-2.5">
           <Window3D icon={Dumbbell} label="Allenamento" accent={accent} floatClass="icon-float-1"
             sub={day.isTraining ? day.sessionLabel : "Giorno di riposo"}
             onClick={() => setScreen("workout")} />
@@ -10115,6 +10153,13 @@ export default function HomePreview({
           50%{filter:brightness(1.28) saturate(1.2)}
         }
         @media (prefers-reduced-motion: reduce){.ring-glow-pulse{animation:none}}
+        /* Riflesso lucido che percorre l'intero anello (blend "overlay": si
+           accende SOPRA il colore a semaforo esistente, non lo sostituisce)
+           — --ring-c (impostata inline per istanza) rende il loop perfetto
+           qualunque sia la dimensione del cerchio. */
+        .ring-sheen-sweep{animation:ringSheenSweep 3s linear infinite}
+        @keyframes ringSheenSweep{from{stroke-dashoffset:0}to{stroke-dashoffset:calc(-1 * var(--ring-c))}}
+        @media (prefers-reduced-motion: reduce){.ring-sheen-sweep{animation:none}}
         /* toast XP: entra dal basso appena sopra la barra di navigazione,
            resta ben visibile, poi si dissolve da sola lentamente (non un
            taglio netto) — testo lucido oro/rosa (title-shine), non più un
