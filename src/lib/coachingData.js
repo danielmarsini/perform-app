@@ -2017,6 +2017,24 @@ export async function learnCustomFood(supabase, food, userId) {
   if (error && error.code !== "23505") console.error("PERFORM: errore salvataggio alimento nel catalogo condiviso", error); // 23505 = già esiste, atteso e ok
 }
 
+// Dovere di cura (§09 memo "Verso l'élite"): se il dolore riportato nel
+// check resta alto per più registrazioni consecutive, il coach ha diritto a
+// saperlo subito invece di doverlo notare da solo scorrendo lo storico —
+// protegge il cliente (un dolore ignorato può diventare un infortunio) e la
+// pratica professionale del coach. "Alto" = 7+ su 10 (stessa scala 1-10 di
+// checkins.pain), "consecutivo" = gli ULTIMI check REGISTRATI (non un
+// intervallo di calendario fisso): un cliente che salta settimane non deve
+// né sfuggire alla segnalazione né essere segnalato per errore su dati
+// vecchi che non sono più "consecutivi" a niente.
+export function detectPersistentPain(historyNewestFirst, { threshold = 7, minConsecutive = 3 } = {}) {
+  const painOf = (h) => (h.dolori ?? h.pain);
+  const withPain = (historyNewestFirst || []).filter((h) => painOf(h) != null);
+  const recent = withPain.slice(0, minConsecutive);
+  if (recent.length < minConsecutive) return null;
+  if (!recent.every((h) => painOf(h) >= threshold)) return null;
+  return { consecutiveChecks: minConsecutive, lastPain: painOf(recent[0]), threshold };
+}
+
 // Punteggio di ricomposizione: legge peso e vita (non "un numero" arbitrario
 // — un'etichetta onesta derivata da due delta reali già misurati) per capire
 // se sta succedendo dimagrimento, bulk o vera ricomposizione (peso stabile/su,
