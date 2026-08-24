@@ -88,6 +88,8 @@ export const translations = {
       subEmpty: "Nessun check ancora",
       weightTrend: "Andamento del peso",
       deltaPrefix: "Dal primo check:", deltaSuffix: "si aggiorna ogni lunedì con il check",
+      overSpan: (span) => `in ${span}`,
+      maLegend: "linea piena = dato registrato · tratteggiata = media mobile (ultime 3 registrazioni)",
       photoGallery: "Galleria foto personali · Fronte · Lato · Retro",
       compareTitle: "Confronto mensile",
       compareHint: "Una foto al mese, dal giorno dell'iscrizione: scegli due mesi da confrontare.",
@@ -454,6 +456,36 @@ export function GradientText({ children, gender, className, style }) {
   );
 }
 
+// Distanza in giorni fra due date ISO — usata SOLO per dichiarare l'arco
+// temporale del delta mostrato sotto il grafico (es. "in 6 settimane"): un
+// numero senza il periodo a cui si riferisce si presta a essere letto come
+// più significativo di quanto sia davvero.
+function daysBetweenIso(a, b) {
+  if (!a || !b) return null;
+  const d = Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}T00:00:00`)) / 86400000);
+  return d > 0 ? d : null;
+}
+function formatTimespanIt(days) {
+  if (days == null) return null;
+  if (days < 14) return `${days} giorn${days === 1 ? "o" : "i"}`;
+  if (days < 60) return `${Math.round(days / 7)} settimane`;
+  if (days < 730) return `${Math.round(days / 30)} mesi`;
+  return `${(days / 365).toFixed(1)} anni`;
+}
+// Media mobile sulle ultime fino a 3 registrazioni — non una finestra a
+// calendario fisso (7/14gg): i check reali arrivano a cadenza irregolare
+// (settimanale o più rara), quindi una finestra sulle REGISTRAZIONI stesse
+// resta corretta a qualunque cadenza, mentre una a giorni fissi spesso
+// coinciderebbe con un solo punto e non smusserebbe nulla. Serve a
+// distinguere il trend reale da un singolo giorno anomalo (es. ritenzione
+// idrica) — i punti grezzi restano comunque visibili sotto, mai nascosti.
+function trailingMovingAverage(vals, window = 3) {
+  return vals.map((_, i) => {
+    const slice = vals.slice(Math.max(0, i - window + 1), i + 1);
+    return slice.reduce((s, v) => s + v, 0) / slice.length;
+  });
+}
+
 export function WeightChart({ points, accent, t }) {
   if (!points || points.length < 2) {
     return <p className="meta text-sm">{t.noWeightData}</p>;
@@ -472,6 +504,10 @@ export function WeightChart({ points, accent, t }) {
   const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(p.kg)}`).join(" ");
   const area = `${path} L${x(points.length - 1)},${H - pad} L${pad},${H - pad} Z`;
   const delta = +(vals[vals.length - 1] - vals[0]).toFixed(1);
+  const span = t.overSpan ? formatTimespanIt(daysBetweenIso(points[0].date, points[points.length - 1].date)) : null;
+
+  const maVals = points.length >= 3 ? trailingMovingAverage(vals) : null;
+  const maPath = maVals ? points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(maVals[i])}`).join(" ") : null;
 
   return (
     <>
@@ -485,6 +521,10 @@ export function WeightChart({ points, accent, t }) {
         <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="var(--line)" />
         <path d={area} fill="url(#wfill)" />
         <path d={path} fill="none" stroke={accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        {maPath && (
+          <path d={maPath} fill="none" stroke="var(--ink-2)" strokeWidth="1.6" strokeDasharray="4 3"
+                strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        )}
         {points.map((p, i) => (
           <g key={i}>
             <circle cx={x(i)} cy={y(p.kg)} r="3.4" fill="var(--surface)" stroke={accent} strokeWidth="2" />
@@ -503,8 +543,10 @@ export function WeightChart({ points, accent, t }) {
         {t.deltaPrefix}{" "}
         <span style={{ color: "var(--ink)", fontWeight: 700 }}>
           {delta > 0 ? "+" : ""}{delta} kg
-        </span>{" "}· {t.deltaSuffix}
+        </span>{" "}
+        {span && t.overSpan ? `${t.overSpan(span)} · ` : "· "}{t.deltaSuffix}
       </p>
+      {maPath && t.maLegend && <p className="meta mt-0.5" style={{ fontSize: "0.62rem", opacity: 0.75 }}>{t.maLegend}</p>}
     </>
   );
 }
@@ -1914,14 +1956,17 @@ export default function ClientProfileViewPreview({
   const accent = gender === "F" ? "#E5C1CD" : "#D4AF37";
   const accentText = gender === "F" ? "#9D6666" : "#8C6E33";
 
+  // Date sintetiche (7gg di distanza l'una dall'altra, fino ad oggi) solo
+  // per far vedere in anteprima isolata il testo "in N giorni" — in
+  // modalità reale la data è quella vera del check (c.date).
   const demoWeightPoints = [
     { label: "C1", kg: 89.6 }, { label: "C2", kg: 89.1 }, { label: "C3", kg: 88.7 },
     { label: "C4", kg: 88.2 }, { label: "C5", kg: 87.9 }, { label: "C6", kg: 87.4 },
-  ];
+  ].map((p, i, arr) => ({ ...p, date: new Date(Date.now() - (arr.length - 1 - i) * 7 * 86400000).toISOString().slice(0, 10) }));
   const weightPoints = isRealMode
     ? (realCheckins ?? [])
         .filter((c) => c.weight != null)
-        .map((c) => ({ label: c.date.slice(5).replace("-", "/"), kg: Number(c.weight) }))
+        .map((c) => ({ label: c.date.slice(5).replace("-", "/"), kg: Number(c.weight), date: c.date }))
     : demoWeightPoints;
 
   // Circonferenze: confronto ogni volta che il cliente le registra, così
@@ -1932,7 +1977,7 @@ export default function ClientProfileViewPreview({
   const demoCircPoints = [
     { label: "C1", waist: 84, thigh: 58, arm: 37 }, { label: "C2", waist: 83.4, thigh: 58.1, arm: 37.2 },
     { label: "C3", waist: 82.9, thigh: 58.3, arm: 37.3 }, { label: "C4", waist: 82.3, thigh: 58.5, arm: 37.5 },
-  ];
+  ].map((p, i, arr) => ({ ...p, date: new Date(Date.now() - (arr.length - 1 - i) * 30 * 86400000).toISOString().slice(0, 10) }));
   const circPoints = isRealMode
     ? (realCheckins ?? [])
         .filter((c) => c.waist != null || c.thigh != null || c.arm != null)
@@ -1941,6 +1986,7 @@ export default function ClientProfileViewPreview({
           waist: c.waist != null ? Number(c.waist) : null,
           thigh: c.thigh != null ? Number(c.thigh) : null,
           arm: c.arm != null ? Number(c.arm) : null,
+          date: c.date,
         }))
     : demoCircPoints;
   // Foto reali: realCheckins porta i PATH dello storage privato
