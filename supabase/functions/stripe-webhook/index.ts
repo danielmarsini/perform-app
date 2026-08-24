@@ -79,7 +79,28 @@ Deno.serve(async (req) => {
         // declassato da expire-whitelists solo perché il coach lo aveva
         // whitelistato prima che iniziasse a pagare per davvero.
         const update: Record<string, unknown> = { plan: planDb, stripe_customer_id: session.customer, whitelisted_until: null };
-        if (COACHING_PLANS.has(planDb)) update.client_status = "active";
+        if (COACHING_PLANS.has(planDb)) {
+          update.client_status = "active";
+          // Bug preso in produzione: un utente che aveva GIÀ completato
+          // l'onboarding (es. era Free, o passa da un piano coaching a un
+          // altro) e poi paga un piano a coaching da Impostazioni > Cambia
+          // piano non tornava mai a vedere l'anamnesi — il gate in App.jsx
+          // scatta solo su onboarding_completed=false, e quel flag resta
+          // true per sempre una volta impostato la prima volta. Qui, solo se
+          // non esiste ancora un'anamnesi salvata per questo utente,
+          // riportiamo onboarding_completed a false: al redirect da Stripe
+          // (?checkout=success) l'utente rientra dritto nel gate, che con
+          // initialPlan già aggiornato salta subito alla schermata anamnesi
+          // (vedi resumedPlanId in OnboardingFlow) invece che alla Home.
+          // Chi ha già un'anamnesi (sta solo cambiando piano tra due coaching)
+          // non viene mai ri-interrotto.
+          const { data: existingAnam } = await admin
+            .from("anamnesis_responses")
+            .select("user_id")
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (!existingAnam) update.onboarding_completed = false;
+        }
         const { error } = await admin.from("profiles").update(update).eq("id", userId);
         if (error) console.error("PERFORM: errore aggiornamento profilo dopo pagamento", error);
       } else {
