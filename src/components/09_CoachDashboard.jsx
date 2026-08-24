@@ -178,7 +178,7 @@ import {
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage, fetchAttentionSignals,
-  fetchCoachSettings, saveWelcomeVideoUrl,
+  fetchCoachSettings, saveWelcomeVideoUrl, fetchReferrals,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -4453,6 +4453,50 @@ function WelcomeVideoSetting() {
   );
 }
 
+/* §08 memo "Verso l'élite" — Il business dietro l'app: chi ha invitato chi,
+   così il coach sa a chi applicare il premio (whitelist di un mese, dallo
+   Hub Rete & Accessi) — mai automatico: un referral non ancora convertito
+   in un piano pagante non deve costare un mese gratis da solo. */
+function ReferralsPanel() {
+  const { supabase, isRealMode } = useContext(CoachDataContext);
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!isRealMode || !open || rows !== null) return;
+    fetchReferrals(supabase)
+      .then(setRows)
+      .catch((err) => { console.error("PERFORM: errore lettura referral", err); setError("Non sono riuscito a caricare i referral."); setRows([]); });
+  }, [isRealMode, open, rows, supabase]);
+
+  if (!isRealMode) return null;
+
+  return (
+    <div className="c-card mb-4">
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between">
+        <span className="text-sm font-bold" style={{ color: "var(--ink)" }}>🎁 Referral</span>
+        {open ? <ChevronUp size={16} style={{ color: "var(--ink-tertiary)" }} /> : <ChevronDown size={16} style={{ color: "var(--ink-tertiary)" }} />}
+      </button>
+      {open && (
+        <div className="mt-3 space-y-2">
+          {error && <p className="text-xs" style={{ color: "#B91C1C" }}>{error}</p>}
+          {rows === null && <p className="c-muted text-xs">Carico…</p>}
+          {rows?.length === 0 && <p className="c-muted text-xs">Nessun cliente arrivato tramite invito, per ora.</p>}
+          {rows?.map((r) => (
+            <div key={r.id} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line-strong)" }}>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold truncate" style={{ color: "var(--ink)" }}>{r.name}</span>
+                <span className="block text-xs truncate" style={{ color: "var(--ink-tertiary)" }}>invitato da {r.referrerName} · piano {r.plan}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* -------------------------------- CATALOGO ---------------------------------- */
 function RosterView({ onOpen }) {
   const { clients: CLIENTS } = useContext(CoachDataContext);
@@ -4465,6 +4509,7 @@ function RosterView({ onOpen }) {
     <div>
       <AttentionQueue onOpen={onOpen} />
       <WelcomeVideoSetting />
+      <ReferralsPanel />
       <div className="grid grid-cols-3 gap-1.5 mb-4">
         {DEPTS.map((d) => {
           const n = CLIENTS.filter((c) => deptOf(c) === d.id).length;
