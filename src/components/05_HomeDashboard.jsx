@@ -2621,15 +2621,15 @@ export function HomeDashboard({
           <Window3D icon={Salad} label="Alimentazione" accent={accent} floatClass="icon-float-2"
             sub={`${remaining.kcal} kcal rimanenti`}
             onClick={() => setScreen("nutrition")} />
+          <Window3D icon={Pill} label="Integrazione" accent={accent} floatClass="icon-float-2"
+            sub={access.pro ? "Piano del coach attivo" : "Diario libero + wiki scientifica"}
+            onClick={() => setScreen("supplements")} />
           <Window3D icon={BedDouble} label="Recupero e Attività" accent={accent} floatClass="icon-float-3"
             sub={access.recovery
               ? (sleep.hours ? `${sleep.hours.toFixed(1)}h dormite · ${Number(steps || 0).toLocaleString("it-IT")} passi` : "Registra la notte")
               : ""}
             locked={!access.recovery} onLocked={onUpgrade}
             onClick={() => setScreen("recovery")} />
-          <Window3D icon={Pill} label="Integrazione e Timing" accent={accent} floatClass="icon-float-2"
-            sub={access.pro ? "Piano del coach attivo" : "Diario libero + wiki scientifica"}
-            onClick={() => setScreen("supplements")} />
         </div>
       </div>
     );
@@ -2911,7 +2911,7 @@ export function HomeDashboard({
     return (
       <div className="spring-in">
         <XpToastBanner toast={xpToast} />
-        {back("Integrazione e Timing")}
+        {back("Integrazione")}
         <SupplementsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
                            isPro={userPlan === "full_coaching"} isPaid={!!access.paid} isTrainingDay={isTrainingDay}
                            onUpgrade={onUpgrade} onCoachSync={onCoachSync} onXpEarned={fireXpToast}
