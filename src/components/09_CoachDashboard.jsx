@@ -184,7 +184,7 @@ import {
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
   fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutTemplateToClients,
-  xpToLevelInfo, whitelistClient, clearWhitelist,
+  xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
@@ -3401,6 +3401,26 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
     }
   };
 
+  // "Smetti di gestire" (richiesto esplicitamente): serve per gli account di
+  // test che il coach ha creato per provare l'app e ora vuole togliere dalla
+  // gestione attiva senza eliminarli — restano l'account, torna solo il
+  // piano a uno autogestito (free/premium) e il cliente esce dal reparto
+  // Attivi. Scegliere il piano di destinazione È già la conferma (stessa
+  // convenzione di CoachingPlanPicker sopra): niente doppio tap aggiuntivo.
+  const [unmanaging, setUnmanaging] = useState(false);
+  const [unmanageBusy, setUnmanageBusy] = useState(false);
+  const doUnmanage = async (targetPlan) => {
+    setUnmanageBusy(true);
+    try {
+      await unmanageClient(supabase, client.id, targetPlan);
+      reloadRoster?.();
+      onBack(); // il cliente non è più nel reparto corrente: torna al catalogo
+    } catch (err) {
+      console.error("PERFORM: errore nello smettere di gestire il cliente", err);
+      setUnmanageBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
@@ -3421,13 +3441,35 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
           </button>
         </div>
         {isRealMode && (
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap items-start gap-2">
             {changingPlan ? (
               <CoachingPlanPicker onPick={changePlan} busy={planBusy} onCancel={() => setChangingPlan(false)} />
             ) : (
               <button onClick={() => setChangingPlan(true)} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium">
                 Cambia abbonamento
               </button>
+            )}
+            {client.clientStatus === "active" && (
+              unmanaging ? (
+                <div className="flex flex-col gap-1.5">
+                  <p className="c-muted text-xs">Torna a un piano autogestito:</p>
+                  <p className="c-muted text-xs" style={{ fontSize: "0.65rem" }}>Non annulla un eventuale abbonamento Stripe reale — solo per account senza pagamento vero (test/whitelist).</p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <button type="button" onClick={() => doUnmanage("free")} disabled={unmanageBusy}
+                      className="c-ghost px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">Free</button>
+                    <button type="button" onClick={() => doUnmanage("performance_pack")} disabled={unmanageBusy}
+                      className="c-ghost px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">Performance Pack</button>
+                  </div>
+                  <button type="button" onClick={() => setUnmanaging(false)} disabled={unmanageBusy} className="text-xs self-start" style={{ color: "var(--ink-soft)" }}>
+                    Annulla
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setUnmanaging(true)} className="px-3 py-2 rounded-lg text-xs font-medium"
+                  style={{ border: "1px solid #FCA5A5", color: "#DC2626" }}>
+                  Smetti di gestire
+                </button>
+              )
             )}
           </div>
         )}
