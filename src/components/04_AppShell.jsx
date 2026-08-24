@@ -779,9 +779,19 @@ export function AppShell({
   useEffect(() => {
     const measure = () => {
       const h = document.getElementById("app-header")?.offsetHeight;
-      const b = document.getElementById("app-bottomnav")?.offsetHeight;
+      // BUG PRESO: usare offsetHeight della pillola misurava solo la sua
+      // altezza, non lo spazio che occupa davvero da fondo schermo — la
+      // pillola è "fixed" con un margine sotto di sé (16px + safe-area
+      // inset, vedi BottomBar) che offsetHeight non vede. Risultato: la
+      // Chat riservava meno spazio del dovuto e la barra di invio finiva
+      // nascosta sotto la pillola flottante. getBoundingClientRect() dà
+      // invece la distanza reale fra il bordo superiore della pillola e il
+      // fondo del viewport, margine incluso — sempre esatta.
+      const navEl = document.getElementById("app-bottomnav");
       if (h) setHeaderH(h);
-      if (b) setBottomNavH(b);
+      // +12px: un piccolo margine di respiro fra la barra di invio e la
+      // pillola, non incollate bordo a bordo.
+      if (navEl) setBottomNavH(window.innerHeight - navEl.getBoundingClientRect().top + 12);
     };
     measure();
     window.addEventListener("resize", measure);
@@ -811,9 +821,13 @@ export function AppShell({
             // altre tab: è una schermata fissa e rigida, incastrata esatta
             // tra header e pillola di navigazione — solo i messaggi al suo
             // interno scorrono, mai la pagina intera (era il pop-up
-            // centrato "poco professionale" segnalato). Sfondo leggermente
-            // trasparente nero: si intravedono le forme colorate animate
-            // sotto.
+            // centrato "poco professionale" segnalato). Niente più un
+            // riquadro nero semi-trasparente sopra: lo sfondo vivo animato
+            // (LiveBackground, z-index:0) resta la base, esattamente come
+            // in tutte le altre tab — sono la lista conversazioni e le
+            // bolle dei messaggi (ognuna già --surface/--surface-2 pieno)
+            // a restare leggibili sopra di esso, non un velo scuro uniforme
+            // che spezzava la continuità visiva col resto dell'app.
             return (
               <div key={key} className={key === activeTab ? "spring-in" : undefined}
                    style={isChat
@@ -821,7 +835,7 @@ export function AppShell({
                          top: headerH, bottom: bottomNavH, left: 0, right: 0, zIndex: 20 }
                      : { display: key === activeTab ? "block" : "none", minHeight: "calc(100vh - 230px)" }}>
                 {isChat ? (
-                  <div className="max-w-2xl mx-auto h-full" style={{ backgroundColor: "rgba(9,9,11,0.55)" }}>
+                  <div className="max-w-2xl mx-auto h-full">
                     {screens[key] ?? fallback[key]}
                   </div>
                 ) : (screens[key] ?? fallback[key])}
