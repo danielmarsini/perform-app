@@ -4403,9 +4403,15 @@ function CheckDetail({ client }) {
    troppo tempo), non per ordine alfabetico o reparto — il coach la vede
    SUBITO, prima ancora di scegliere un reparto. Fetch dedicato con due sole
    query totali (fetchAttentionSignals), mai una per cliente. */
+// Soglia "allenamento scarso": stessa convenzione già usata da
+// STATUS_META/computeStatus per il pallino "Rischio abbandono" (adherence
+// < 70 = rosso) — non un nuovo numero inventato qui.
+const LOW_TRAINING_PCT = 70;
+
 function AttentionQueue({ onOpen }) {
   const { clients: CLIENTS, supabase, isRealMode } = useContext(CoachDataContext);
   const [signals, setSignals] = useState(null); // null = non ancora caricato
+  const [trainingPct, setTrainingPct] = useState(null); // Map<clientId, pct|null>
 
   const coachedIds = useMemo(
     () => CLIENTS.filter((c) => REAL_COACHING_PLANS.has(c.plan) && deptOf(c) !== null).map((c) => c.id),
@@ -4422,22 +4428,44 @@ function AttentionQueue({ onOpen }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRealMode, supabase, coachedIds.join(",")]);
 
-  if (!isRealMode || !signals) return null;
+  // Richiesta esplicita: la coda va ordinata per percentuale del cerchio
+  // Allenamento (peggiore in cima), non più solo per tipo di segnale — così
+  // il coach vede prima chi si sta allenando meno, anche se non ha ancora
+  // un dolore segnalato o un messaggio senza risposta. Riusa
+  // computeTrainingCompliance (stessa funzione del cerchio in ClientDetail,
+  // mai una seconda formula scritta a mano che potrebbe disallinearsi).
+  useEffect(() => {
+    if (!isRealMode || coachedIds.length === 0) { setTrainingPct(null); return; }
+    let cancelled = false;
+    Promise.all(coachedIds.map((id) =>
+      computeTrainingCompliance(supabase, id)
+        .then((r) => [id, r.pct])
+        .catch((err) => { console.error("PERFORM: errore calcolo % allenamento per coda attenzione", id, err); return [id, null]; })
+    )).then((entries) => { if (!cancelled) setTrainingPct(new Map(entries)); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRealMode, supabase, coachedIds.join(",")]);
 
-  const REASON_RANK = { pain: 0, unanswered: 1, missedCheck: 2 };
+  if (!isRealMode || !signals || !trainingPct) return null;
+
   const flagged = CLIENTS
     .filter((c) => coachedIds.includes(c.id))
     .map((c) => {
       const s = signals.get(c.id);
-      if (!s) return null;
+      const pct = trainingPct.get(c.id) ?? null;
       let reason = null;
-      if (s.painFlag) reason = { kind: "pain", label: `Dolore alto per ${s.painFlag.consecutiveChecks} check (${s.painFlag.lastPain}/10)` };
-      else if (s.unanswered) reason = { kind: "unanswered", label: `Messaggio senza risposta da ${Math.floor(s.hoursSinceClientMsg)}h` };
-      else if (s.missedCheck) reason = { kind: "missedCheck", label: `Nessun check da ${s.daysSinceCheck} giorni` };
-      return reason ? { client: c, reason } : null;
+      if (s?.painFlag) reason = { kind: "pain", label: `Dolore alto per ${s.painFlag.consecutiveChecks} check (${s.painFlag.lastPain}/10)` };
+      else if (s?.unanswered) reason = { kind: "unanswered", label: `Messaggio senza risposta da ${Math.floor(s.hoursSinceClientMsg)}h` };
+      else if (s?.missedCheck) reason = { kind: "missedCheck", label: `Nessun check da ${s.daysSinceCheck} giorni` };
+      else if (pct != null && pct < LOW_TRAINING_PCT) reason = { kind: "lowTraining", label: `Allenamento al ${pct}%` };
+      if (!reason) return null;
+      // Nessun dato di allenamento affatto (pct null) è trattato come 0: un
+      // cliente che non ha mai registrato nulla merita attenzione almeno
+      // quanto uno che si allena poco, non va spinto in fondo alla coda.
+      return { client: c, reason, pct: pct ?? 0 };
     })
     .filter(Boolean)
-    .sort((a, b) => REASON_RANK[a.reason.kind] - REASON_RANK[b.reason.kind]);
+    .sort((a, b) => a.pct - b.pct);
 
   if (flagged.length === 0) return null;
 
