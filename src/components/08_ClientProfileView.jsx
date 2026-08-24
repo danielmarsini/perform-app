@@ -454,65 +454,6 @@ export function GradientText({ children, gender, className, style }) {
   );
 }
 
-export function veteranBadge(joinedAt) {
-  if (!joinedAt) return null;
-  const d = new Date(joinedAt);
-  const months = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44));
-  if (months >= 24) return { text: `VETERANO · dal ${d.getFullYear()}`, icon: "🏆" };
-  if (months >= 12) return { text: `ATLETA ÉLITE · ${Math.floor(months / 12)} anno`, icon: "🥇" };
-  if (months >= 3)  return { text: `${months} mesi`, icon: "⭐" };
-  return { text: "NUOVO ISCRITTO", icon: "🌱" };
-}
-
-export function VeteranBadge({ joinedAt }) {
-  const b = veteranBadge(joinedAt);
-  if (!b) return null;
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full"
-      style={{ padding: "4px 10px", fontSize: "0.7rem", fontWeight: 600,
-        background: "var(--surface-2)", color: "var(--ink-2)", border: "1px solid var(--line)" }}>
-      {b.icon} {b.text}
-    </span>
-  );
-}
-
-/* Scala di titoli PERFORM — calcolata sui punti XP reali dell'atleta
-   (Supabase: colonna `xp_total`, aggiornata dal trigger di gamification).
-   Soglie: 0–999 Recruit · 1.000–2.999 Hardworker · 3.000–6.999 Iron Mind ·
-   7.000–14.999 Bio-Hacker · 15.000+ Livello Élite. */
-export function xpTierBadge(xp) {
-  const v = xp || 0;
-  if (v >= 15000) return { label: "LIVELLO ÉLITE", icon: "🏆", tier: 4 };
-  if (v >= 7000)  return { label: "BIO-HACKER",     icon: "🧬", tier: 3 };
-  if (v >= 3000)  return { label: "IRON MIND",      icon: "🧠", tier: 2 };
-  if (v >= 1000)  return { label: "HARDWORKER",     icon: "💪", tier: 1 };
-  return         { label: "RECRUIT", sub: "Nuovo Iscritto", icon: "🌱", tier: 0 };
-}
-
-const RECRUIT_SUB = { it: "Nuovo Iscritto", en: "New Member", es: "Nuevo Miembro", fr: "Nouveau Membre" };
-
-export function EliteXpBadge({ xp, accent, lang }) {
-  const b = xpTierBadge(xp);
-  const metal = b.tier >= 3;
-  return (
-    <span className="inline-flex items-center gap-2 rounded-full"
-      style={{
-        padding: "8px 15px", fontSize: "0.78rem", fontWeight: 700, letterSpacing: "0.01em",
-        background: metal
-          ? `linear-gradient(120deg, ${accent} 0%, #FFFFFF 46%, ${accent} 100%)`
-          : `${accent}1A`,
-        color: metal ? "#111111" : accent,
-        boxShadow: metal ? `0 4px 16px ${accent}55` : "none",
-        border: metal ? "none" : `1px solid ${accent}40`,
-      }}>
-      <span aria-hidden="true">{b.icon}</span>
-      <span>
-        {b.label}{b.tier === 0 ? ` (${RECRUIT_SUB[lang] || RECRUIT_SUB.it})` : ""}: {(xp || 0).toLocaleString("it-IT")} XP
-      </span>
-    </span>
-  );
-}
-
 export function WeightChart({ points, accent, t }) {
   if (!points || points.length < 2) {
     return <p className="meta text-sm">{t.noWeightData}</p>;
@@ -521,11 +462,13 @@ export function WeightChart({ points, accent, t }) {
   const vals = points.map((p) => p.kg);
   const min = Math.min(...vals) - 0.6, max = Math.max(...vals) + 0.6;
   const x = (i) => pad + (i * (W - pad * 2)) / (points.length - 1);
-  // Asse invertito rispetto a un grafico "letterale": il peso che scende
-  // (il caso normale per chi è in dimagrimento/ricomposizione, la stragrande
-  // maggioranza qui) deve leggersi come un progresso che sale a destra, non
-  // come un calo che scende — kg più basso → punto più in alto sul grafico.
-  const y = (v) => pad + ((v - min) / (max - min || 1)) * (H - pad * 1.8);
+  // Asse standard (come CircumferenceChart sotto): valore più alto → punto
+  // più in alto. PRIMA leggeva un calo di peso come "punto che sale" (una
+  // lettura implicita che il dimagrimento sia sempre l'obiettivo) — un
+  // grafico imparziale deve mostrare l'andamento reale dei numeri, senza
+  // decidere lui cosa sia "progresso" per un cliente che magari sta
+  // deliberatamente aumentando di peso (bulk).
+  const y = (v) => H - pad - ((v - min) / (max - min || 1)) * (H - pad * 1.8);
   const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(p.kg)}`).join(" ");
   const area = `${path} L${x(points.length - 1)},${H - pad} L${pad},${H - pad} Z`;
   const delta = +(vals[vals.length - 1] - vals[0]).toFixed(1);
@@ -558,7 +501,7 @@ export function WeightChart({ points, accent, t }) {
       </svg>
       <p className="meta font-data mt-1.5" style={{ fontSize: "0.7rem" }}>
         {t.deltaPrefix}{" "}
-        <span style={{ color: delta === 0 ? "var(--ink-2)" : delta < 0 ? "#10B981" : "#B45309", fontWeight: 700 }}>
+        <span style={{ color: "var(--ink)", fontWeight: 700 }}>
           {delta > 0 ? "+" : ""}{delta} kg
         </span>{" "}· {t.deltaSuffix}
       </p>
@@ -623,7 +566,7 @@ export function CircumferenceChart({ points, accent }) {
           return (
             <p key={s.key} className="meta font-data" style={{ fontSize: "0.68rem" }}>
               {s.label}:{" "}
-              <span style={{ color: delta === 0 ? "var(--ink-2)" : delta < 0 ? "#10B981" : "#B45309", fontWeight: 700 }}>
+              <span style={{ color: "var(--ink)", fontWeight: 700 }}>
                 {delta > 0 ? "+" : ""}{delta} cm
               </span>
             </p>
@@ -1101,6 +1044,14 @@ export function ClientProfileView({
   const [err, setErr] = useState("");
   const isRealMode = Boolean(supabase && userId);
   useEffect(() => { setNick(profile.nickname || ""); setBio(profile.bio || ""); setAvatar(profile.avatar || null); }, [profile.nickname, profile.bio, profile.avatar]);
+  // BUG PRESO: l'intestazione del Profilo usava una scala di titoli tutta
+  // sua (xpTierBadge: RECRUIT/HARDWORKER/IRON MIND/...) invece della stessa
+  // scala di livelli usata ovunque nel resto dell'app (xpToLevelInfo/
+  // LEVEL_TIERS, Home+pannello coach) — un cliente a 0 XP vedeva "RECRUIT
+  // (Nuovo Iscritto)" qui E "NUOVO ISCRITTO" ancora nel badge veterano
+  // subito accanto, due volte la stessa cosa con due nomi diversi da
+  // nessun'altra parte dell'app. Ora una sola fonte di verità.
+  const levelInfo = xpToLevelInfo(xp || 0);
   // Entrambe le sezioni partono chiuse: pagina profilo pulita, l'atleta apre
   // solo quella che gli interessa in quel momento (Section è già un banner
   // chiudibile — tap per espandere/richiudere, un accordion: mai due aperte
@@ -1240,17 +1191,7 @@ export function ClientProfileView({
                 <GradientText gender={gender} style={{ fontSize: "1.3rem", fontWeight: 800, letterSpacing: "-0.01em" }}>
                   {profile.nickname || "—"}
                 </GradientText>
-                <p className="meta mt-0.5" style={{ fontSize: "0.78rem" }}>{profile.name}</p>
-                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                  <EliteXpBadge xp={xp} accent={accentText} lang={lang} />
-                  <VeteranBadge joinedAt={profile.joined_at} />
-                </div>
-                {profile.bio && <p className="body mt-3" style={{ fontSize: "0.87rem" }}>{profile.bio}</p>}
-                <button onClick={() => setEditing(true)}
-                  className="mt-3 inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs"
-                  style={{ border: `1px solid ${accentText}`, color: accentText, fontWeight: 600 }}>
-                  <Pencil size={12} /> {t.editProfile}
-                </button>
+                {profile.bio && <p className="body mt-2" style={{ fontSize: "0.87rem", lineHeight: 1.5 }}>{profile.bio}</p>}
               </>
             ) : (
               <>
@@ -1283,8 +1224,12 @@ export function ClientProfileView({
           </div>
         </div>
 
+        {/* Livello: il titolo leggibile (es. "Principiante 3", stessa scala
+            di Home/pannello coach) al posto del solo numero grezzo — è
+            questo, non un numero isolato, il "livello" che il resto
+            dell'app mostra al cliente. */}
         <div className="grid grid-cols-2 gap-2 mt-5">
-          {[[t.stats.level, level], [t.stats.xp, xp.toLocaleString()]].map(([k, v]) => (
+          {[[t.stats.level, levelInfo.title], [t.stats.xp, xp.toLocaleString()]].map(([k, v]) => (
             <div key={k} className="inner px-2 py-2.5 text-center">
               <p className="label" style={{ fontSize: "0.52rem" }}>{k}</p>
               <GradientText gender={gender} className="block mt-0.5" style={{ fontSize: "0.95rem", fontWeight: 800 }}>
@@ -1293,6 +1238,18 @@ export function ClientProfileView({
             </div>
           ))}
         </div>
+
+        {/* "Modifica profilo" in fondo a tutto il resto (avatar, nickname,
+            bio, livello, XP) — piccola e grigia, non più una pill colorata
+            in primo piano: è un'azione secondaria, non il punto focale
+            della schermata. */}
+        {!editing && (
+          <button onClick={() => setEditing(true)}
+            className="mt-4 inline-flex items-center gap-1 text-xs mx-auto transition-opacity active:opacity-60"
+            style={{ color: "var(--ink-2)", fontWeight: 500 }}>
+            <Pencil size={11} /> {t.editProfile}
+          </button>
+        )}
       </div>
       </div>
 
@@ -1338,7 +1295,6 @@ export function ClientProfileView({
 
         <p className="label mt-6 mb-2">Confronto circonferenze</p>
         <CircumferenceChart points={circPoints} accent={accent} />
-        <RecompositionBadge weightPoints={weightPoints} circPoints={circPoints} />
 
         {wellnessPoints && (
           <>
@@ -1367,10 +1323,11 @@ export function ClientProfileView({
       </Section>
 
       {/* Pausa (vacanza/riposo forzato): in fondo a tutta la pagina, sotto
-          ogni altra sezione — solo per chi ha un vero coach dietro (Scheda
-          Personalizzata/Coaching Allenamento/Full Coaching), un Free/Premium
-          autogestito non ha nessuno a cui "avvisare" di una pausa. */}
-      {supabase && userId && ["scheda", "training", "full"].includes(plan) && (
+          ogni altra sezione — solo Coaching Allenamento/Full Coaching (non
+          Scheda Personalizzata: è un piano-modello una tantum, non una
+          programmazione continuativa da "mettere in pausa"; un Free/Premium
+          autogestito non ha nessuno a cui "avvisare" di una pausa). */}
+      {supabase && userId && ["training", "full"].includes(plan) && (
         <div className="mb-4">
           <PauseSection supabase={supabase} userId={userId} accent={accent} accentText={accentText} />
         </div>
@@ -1884,7 +1841,7 @@ export default function ClientProfileViewPreview({
   onOpenSettings: onOpenSettingsProp,   // se passato, l'Impostazioni globali di App.jsx sostituisce il drawer locale
   profileOverride,        // { name, nickname, email, joined_at } dalla sessione reale
   ownerEmail,
-  supabase, userId,       // solo per XP/livello reale + data di iscrizione reale (VeteranBadge)
+  supabase, userId,       // solo per XP/livello reale
 } = {}) {
   const isControlled = genderProp !== undefined;
   const [dark, setDark] = useState(darkProp ?? false);

@@ -16,7 +16,7 @@
    Dipende dai token CSS del File 4 (AppShell / DesignSystem).
    ========================================================================== */
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback, useId } from "react";
 import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
@@ -971,46 +971,43 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   const isNeutral = pct == null;
   const { h: ringH, s: ringS, l: ringL } = complianceHsl(pct ?? 0);
   const color = isNeutral ? "var(--ink-2)" : `hsl(${ringH.toFixed(0)}, ${ringS.toFixed(0)}%, ${ringL.toFixed(0)}%)`;
-  // BUG PRESO: il riflesso lucido era bianco puro in mix-blend-mode
-  // "overlay" — su alcuni motori di rendering quel blend non si applica
-  // come atteso e restava visibile solo il bianco/grigio traslucido puro,
-  // letto dall'utente come "una righetta grigia" estranea al colore reale
-  // dell'anello. Ora è una tinta PIÙ CHIARA della STESSA tonalità (stesso
-  // h/s, solo lightness più alta) disegnata a piena opacità: sempre e
-  // solo il colore vero dell'anello che si illumina, mai un grigio a sé.
-  const sheenColor = `hsl(${ringH.toFixed(0)}, ${Math.max(45, ringS - 8).toFixed(0)}%, ${Math.min(94, ringL + 34).toFixed(0)}%)`;
+  // BUG PRESO (due tentativi prima di questo): un cerchio SEPARATO in tinta
+  // chiara che gira lungo TUTTO l'anello (parte piena + parte vuota) veniva
+  // letto come "una righetta grigia" — sia perché passava anche sopra il
+  // tratto vuoto, sia perché una tinta troppo schiarita della stessa
+  // tonalità finisce comunque per apparire desaturata/grigiastra su schermo
+  // piccolo. Fix vero: niente elemento separato — il gradiente lucido è lo
+  // STROKE STESSO dell'arco colorato (stessa tecnica di .xp-bar-shine, ma
+  // via <linearGradient> perché gli SVG non supportano background-position
+  // sullo stroke). Essendo lo stesso path con lo stesso strokeDasharray/
+  // strokeDashoffset già usato per fermare l'arco a pct%, la brillantezza
+  // finisce ESATTAMENTE dove finisce il colore — non un pixel oltre.
+  const gradId = useId();
+  const loL = Math.max(0, ringL - 14);
+  const hiL = Math.min(97, ringL + 30);
+  const hiS = Math.max(30, ringS - 12);
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
-  // BUG PRESO (4 giri di correzione): ogni versione precedente del
-  // "bagliore" usava un filter:drop-shadow, che per costruzione proietta
-  // luce FUORI dal contorno dell'arco — sull'<svg> (che clippa di default
-  // tutto ciò che esce dal suo viewBox) quel bagliore risultava tagliato
-  // di netto sui 4 lati, leggendosi come un "quadrato" intorno al cerchio.
-  // Tolto il drop-shadow: il pulsare ora è solo brightness()/saturate() —
-  // modula i pixel del tratto stesso (più vivido/più tenue), non aggiunge
-  // nulla al di fuori del contorno del cerchio, quindi niente più da
-  // clippare o far vedere come un alone estraneo.
   const filledLen = c * (Math.max(0, Math.min(100, pct ?? 0)) / 100);
   return (
     <div className="relative shrink-0 ring-breathe" style={{ width: size, height: size }}>
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={stroke} />
         {!isNeutral && (
-          <circle className="ring-glow-pulse" cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round"
-                  strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
-                  style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1), stroke 0.4s ease" }} />
-        )}
-        {/* Riflesso lucido che gira lungo tutto l'anello (non solo la parte
-            piena) — stesso principio della barra XP (.xp-bar-shine) ma qui
-            sull'arco: SEMPRE la stessa tonalità del colore reale, solo più
-            chiara (sheenColor) — mai un elemento bianco/grigio scollegato.
-            --ring-c passa la circonferenza esatta di QUESTA istanza al
-            keyframe condiviso, che così funziona a qualunque size/stroke
-            venga passato. */}
-        {!isNeutral && (
-          <circle className="ring-sheen-sweep" cx={cx} cy={cy} r={r} fill="none" stroke={sheenColor}
-                  strokeWidth={Math.max(2.5, stroke * 0.62)} strokeLinecap="round"
-                  strokeDasharray={`${c * 0.1} ${c * 0.9}`} transform={`rotate(-90 ${cx} ${cy})`}
-                  style={{ "--ring-c": c, filter: "drop-shadow(0 0 2px rgba(255,255,255,0.35))" }} />
+          <>
+            <defs>
+              <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="objectBoundingBox">
+                <stop offset="0%" stopColor={`hsl(${ringH.toFixed(0)}, ${ringS.toFixed(0)}%, ${loL.toFixed(0)}%)`} />
+                <stop offset="35%" stopColor={color} />
+                <stop offset="50%" stopColor={`hsl(${ringH.toFixed(0)}, ${hiS.toFixed(0)}%, ${hiL.toFixed(0)}%)`} />
+                <stop offset="65%" stopColor={color} />
+                <stop offset="100%" stopColor={`hsl(${ringH.toFixed(0)}, ${ringS.toFixed(0)}%, ${loL.toFixed(0)}%)`} />
+                <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="2.6s" repeatCount="indefinite" />
+              </linearGradient>
+            </defs>
+            <circle className="ring-glow-pulse" cx={cx} cy={cy} r={r} fill="none" stroke={`url(#${gradId})`} strokeWidth={stroke} strokeLinecap="round"
+                    strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
+                    style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(.22,1,.36,1)" }} />
+          </>
         )}
         {isNeutral && (
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
@@ -1735,8 +1732,8 @@ export function PauseSection({ supabase, userId, accent, accentText }) {
         </div>
       ) : (
         <button onClick={() => setShowModal(true)}
-                className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-3 mb-4 text-sm transition-transform active:scale-[0.98] btn-3d"
-                style={{ backgroundColor: "var(--surface-2)", border: `1.5px solid ${accent}`, color: "var(--ink)", fontWeight: 700 }}>
+                className="flex items-center gap-1.5 mb-4 text-xs transition-opacity active:opacity-60"
+                style={{ color: "var(--ink-2)", fontWeight: 600 }}>
           🏖️ Vai in vacanza o chiedi un riposo forzato
         </button>
       )}
@@ -2716,20 +2713,30 @@ export function HomeDashboard({
                     ))}
                   </div>
                 )}
+                {/* "Come è andata oggi?" sopra il grafico del volume — prima
+                    era condiviso e finiva sempre DOPO qualunque volume
+                    (anche quello interno a FreeWorkoutBuilder), qui invece
+                    precede il grafico di questo stesso piano di coaching. */}
+                {day.isTraining && !selectedCalendarIso && (
+                  <WorkoutFeedbackCard motivation={motivation} fatigue={fatigue}
+                    onMotivationChange={setMotivation} onFatigueChange={setFatigue} accentText={accentText} />
+                )}
                 <div className="mt-4">
                   <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} />
                 </div>
               </>
             ) : (
-              <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
-                                   day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
-                                   supabase={supabase} userId={userId} />
-            )}
-            {/* Disponibile a TUTTI i piani (PRO e FREE), non solo a fine giorno
-                di oggi (mai su un giorno passato aperto dal calendario). */}
-            {day.isTraining && !selectedCalendarIso && (
-              <WorkoutFeedbackCard motivation={motivation} fatigue={fatigue}
-                onMotivationChange={setMotivation} onFatigueChange={setFatigue} accentText={accentText} />
+              <>
+                <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
+                                     day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
+                                     supabase={supabase} userId={userId} />
+                {/* Disponibile a TUTTI i piani, non solo a fine giorno di
+                    oggi (mai su un giorno passato aperto dal calendario). */}
+                {day.isTraining && !selectedCalendarIso && (
+                  <WorkoutFeedbackCard motivation={motivation} fatigue={fatigue}
+                    onMotivationChange={setMotivation} onFatigueChange={setFatigue} accentText={accentText} />
+                )}
+              </>
             )}
           </div>
         )}
@@ -7622,7 +7629,19 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
         setRealRows([]); setRealTaken(new Set());
       });
   }, [isRealMode, supabase, userId]);
-  useEffect(() => { loadReal(); }, [loadReal]);
+  // BUG PRESO: stesso identico difetto di SupplementsPlanLocked (sopra) —
+  // "preso oggi" restava quello di ieri finché l'app non veniva ricaricata
+  // del tutto, perché la fetch girava solo al mount. todayIso, ricontrollato
+  // ogni minuto, forza un refetch reale appena cambia il giorno.
+  const [todayIso, setTodayIso] = useState(() => toLocalISODate());
+  useEffect(() => {
+    const id = setInterval(() => setTodayIso((prev) => {
+      const now = toLocalISODate();
+      return prev !== now ? now : prev;
+    }), 60000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => { loadReal(); }, [loadReal, todayIso]);
 
   // Momenti personalizzati creati in questa sessione ma ancora senza nessun
   // integratore: un momento vuoto non ha nessuna riga da salvare (niente da
@@ -9340,6 +9359,23 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
   // (supplement_intake, SCHEMA_v54): caricato una volta all'apertura,
   // aggiornato in ottimistico al tap con rollback se la scrittura fallisce.
   const [takenIds, setTakenIds] = useState(null); // null = non ancora caricato (solo isRealMode)
+  // BUG PRESO: la fetch girava una sola volta al mount — con AppShell che
+  // tiene ogni tab montato per sempre (display:none, mai un vero unmount),
+  // un utente che apre l'app un giorno, la lascia in background e la
+  // riapre il giorno dopo SENZA un reload completo continuava a vedere
+  // takenIds di IERI (lo stato React non si aggiornava mai da solo). La
+  // scrittura era già corretta (setSupplementTaken usa sempre la data di
+  // oggi), il problema era solo in lettura: todayIso, ricontrollato ogni
+  // minuto, rientra nelle dipendenze e forza un refetch reale appena
+  // cambia il giorno di calendario.
+  const [todayIso, setTodayIso] = useState(() => toLocalISODate());
+  useEffect(() => {
+    const id = setInterval(() => setTodayIso((prev) => {
+      const now = toLocalISODate();
+      return prev !== now ? now : prev;
+    }), 60000);
+    return () => clearInterval(id);
+  }, []);
   useEffect(() => {
     if (!isRealMode) return;
     let cancelled = false;
@@ -9350,7 +9386,7 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
         if (!cancelled) setTakenIds(new Set());
       });
     return () => { cancelled = true; };
-  }, [isRealMode, supabase, userId]);
+  }, [isRealMode, supabase, userId, todayIso]);
 
   // Protocollo reale (prescribed_supplements), raggruppato per `moment` come
   // l'ha scritto il coach — testo libero, non i 4 SUPP_MOMENTS fissi della
@@ -9957,6 +9993,36 @@ export default function HomePreview({
   };
   const allFoods = useMemo(() => [...F, ...sharedFoods], [sharedFoods]);
 
+  // BUG PRESO: "Copia i pasti di ieri" era onCopyYesterday={() => {}} — un
+  // no-op, esattamente come onUpgrade prima di questa stessa sessione di
+  // fix. Ora legge davvero il diario di ieri (nutrition_logs) e reinserisce
+  // ogni voce su OGGI, sia sullo stato locale (per vederli subito) sia su
+  // Supabase (addNutritionLogItem, stessa funzione già usata per un
+  // alimento aggiunto a mano).
+  const copyYesterdayMeals = async () => {
+    if (!supabaseProp || !userId) return;
+    const y = new Date(); y.setDate(y.getDate() - 1);
+    try {
+      const rows = await fetchNutritionLogsForDate(supabaseProp, userId, toLocalISODate(y));
+      if (rows.length === 0) return;
+      const todayIso = toLocalISODate();
+      const saved = await Promise.all(rows.map((r) =>
+        addNutritionLogItem(supabaseProp, userId, todayIso, r.meal_slot,
+          { name: r.name, grams: r.grams, kcal: r.kcal, p: r.protein, c: r.carbs, f: r.fat })
+      ));
+      setMeals((m) => {
+        const next = { ...m };
+        saved.forEach((s) => {
+          const item = { id: s.id, name: s.name, grams: s.grams, kcal: s.kcal, p: s.protein, c: s.carbs, f: s.fat };
+          next[s.meal_slot] = [...(next[s.meal_slot] || []), item];
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error("PERFORM: errore copia pasti di ieri", err);
+    }
+  };
+
   const accent = gender === "F" ? (dark ? "#D4A5A5" : "#9D6666") : (dark ? "#C5A059" : "#8C6E33");
   const accentSoft = gender === "F" ? "rgba(212,165,165,0.5)" : "rgba(197,160,89,0.5)";
   const accentText = gender === "F" ? "#9D6666" : "#8C6E33";
@@ -10113,13 +10179,6 @@ export default function HomePreview({
           50%{filter:brightness(1.28) saturate(1.2)}
         }
         @media (prefers-reduced-motion: reduce){.ring-glow-pulse{animation:none}}
-        /* Riflesso lucido che percorre l'intero anello (blend "overlay": si
-           accende SOPRA il colore a semaforo esistente, non lo sostituisce)
-           — --ring-c (impostata inline per istanza) rende il loop perfetto
-           qualunque sia la dimensione del cerchio. */
-        .ring-sheen-sweep{animation:ringSheenSweep 3s linear infinite}
-        @keyframes ringSheenSweep{from{stroke-dashoffset:0}to{stroke-dashoffset:calc(-1 * var(--ring-c))}}
-        @media (prefers-reduced-motion: reduce){.ring-sheen-sweep{animation:none}}
         /* toast XP: entra dal basso appena sopra la barra di navigazione,
            resta ben visibile, poi si dissolve da sola lentamente (non un
            taglio netto) — testo lucido oro/rosa (title-shine), non più un
@@ -10281,7 +10340,7 @@ export default function HomePreview({
             });
           }}
           onOpenScanner={() => {}} onAddCustomFood={addCustomFood}
-          onCopyYesterday={() => {}}
+          onCopyYesterday={copyYesterdayMeals}
           onApplyReschedule={() => {}} onDismissReschedule={() => {}}
           onUpgrade={onUpgradeProp || (() => {})}
           onOpenChat={onOpenChatProp || (() => {})}

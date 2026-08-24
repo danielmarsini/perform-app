@@ -1654,9 +1654,13 @@ export async function saveCheckin(supabase, userId, checkin) {
 }
 
 // Cronologia check reali di un cliente, dal più vecchio al più recente (come
-// si aspetta WeightChart) — limite alto perché l'Archivio Check mostra
-// l'intero trend, non solo le ultime settimane.
-export async function fetchCheckins(supabase, userId, limit = 60) {
+// si aspetta WeightChart). L'Archivio Check deve mostrare il trend dei dati
+// FIN DALL'INIZIO del percorso, non solo una finestra recente — con check
+// settimanali anche solo 60 righe (il vecchio limite) tagliavano fuori la
+// storia oltre ~14 mesi per un cliente di lunga data. 1000 copre qualunque
+// storico reale (anche 15+ anni di check settimanali) restando comunque un
+// limite esplicito, mai una query davvero illimitata.
+export async function fetchCheckins(supabase, userId, limit = 1000) {
   const { data, error } = await supabase
     .from("checkins")
     .select("date, weight, waist, chest, arm, thigh, pain, stress, digestion, sleep_quality, cycle_phase, has_photos, photo_front_url, photo_side_url, photo_back_url")
