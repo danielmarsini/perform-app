@@ -410,12 +410,10 @@ export default function App() {
       <AppShell
         gender={gender}
         dark={dark}
-        userLabel={session.user.user_metadata?.full_name || session.user.email}
         userEmail={session.user.email || ""}
         hasChat={hasCoachChat}
         tab={tab}
         onTabChange={setTab}
-        onOpenSettings={() => setSettingsOpen(true)}
         screens={{
           home: (
             <HomeScreen
