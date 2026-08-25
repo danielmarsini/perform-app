@@ -14,8 +14,8 @@
        genere e scadenza (useUserPlan, fallback locale).
      · userPlan === "free"  → la chat resta visibile ma sfocata (Glassmorphism),
        input disabilitato, e sopra compare un lucchetto satinato con l'invito
-       ad attivare il Performance Pack (€5/mese).
-     · userPlan !== "free" (Performance Pack o superiore) → chat interattiva
+       ad attivare il Premium (€5/mese).
+     · userPlan !== "free" (Premium o superiore) → chat interattiva
        identica a prima, nessun blocco.
      · Il blocco si applica SOLO dove la chat esisterebbe comunque (News/Tips):
        sotto Avvisi Team non c'è paywall perché non c'è proprio chat, a
@@ -601,7 +601,7 @@ function AIChatPaywall({ accent }) {
           <Lock size={20} strokeWidth={1.8} />
         </div>
         <p className="ai-chat-locked-text">
-          🔒 Chat Assistente AI bloccata. Passa al <strong>Performance Pack (€5/mese)</strong> per sbloccare l'Intelligenza
+          🔒 Chat Assistente AI bloccata. Passa al <strong>Premium (€5/mese)</strong> per sbloccare l'Intelligenza
           Artificiale, fare domande profonde a PERFORM AI e sviscerare la scienza di ogni studio senza fake news.
         </p>
       </div>
@@ -1332,7 +1332,7 @@ export default function NewsTipsViewPreview() {
                   color: plan === "free" ? (dark ? "#09090B" : "#FFFFFF") : "#111111",
                   fontFamily: "system-ui, sans-serif", fontWeight: 700,
                 }}>
-          {plan === "free" ? "🔒 Piano: Free" : "✓ Performance Pack"}
+          {plan === "free" ? "🔒 Piano: Free" : "✓ Premium"}
         </button>
       </div>
 

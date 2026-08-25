@@ -264,6 +264,12 @@ export default function App() {
   const [tab, setTab] = useState(() => localStorage.getItem("perform_last_tab") || "home");
   useEffect(() => { localStorage.setItem("perform_last_tab", tab); }, [tab]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // "piano" quando l'apertura arriva da un CTA di upgrade (onUpgrade sotto):
+  // apre il drawer dritto sulla tab abbonamento invece che su "Aspetto",
+  // richiesta esplicita dopo che il click su "sblocca" portava a un menu
+  // generico invece che alla pagina degli abbonamenti.
+  const [settingsInitialTab, setSettingsInitialTab] = useState(undefined);
+  const openUpgradeSettings = () => { setSettingsInitialTab("piano"); setSettingsOpen(true); };
 
   // --- Bootstrap sessione Supabase --------------------------------------------
   useEffect(() => {
@@ -454,7 +460,7 @@ export default function App() {
         userEmail={session.user.email || ""}
         tab={tab}
         onTabChange={setTab}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => { setSettingsInitialTab(undefined); setSettingsOpen(true); }}
         screens={{
           home: (
             <HomeScreen
@@ -466,7 +472,7 @@ export default function App() {
               schedaAddonChatUntil={profile?.scheda_addon_chat_until || null}
               supabase={supabase}
               userId={session.user.id}
-              onUpgrade={() => setSettingsOpen(true)}
+              onUpgrade={openUpgradeSettings}
               onOpenChat={() => setTab("chat")}
               profileOverride={{
                 name: profile?.full_name || session.user.user_metadata?.full_name || "Atleta",
@@ -500,7 +506,7 @@ export default function App() {
               lang={lang}
               onChangeLang={setLang}
               userPlan={userPlan}
-              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenSettings={() => { setSettingsInitialTab(undefined); setSettingsOpen(true); }}
               ownerEmail={COACH_EMAIL}
               supabase={supabase}
               userId={session.user.id}
@@ -523,7 +529,7 @@ export default function App() {
             ? <CoachChatInboxScreen supabase={supabase} coachId={session.user.id} accent={accent} gender={gender} />
             : (hasCoachChat
                 ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} gender={gender} />
-                : <LockedChatScreen accent={accent} onUpgrade={() => setSettingsOpen(true)} />),
+                : <LockedChatScreen accent={accent} onUpgrade={openUpgradeSettings} />),
         }}
       />
       </Suspense>
@@ -538,6 +544,7 @@ export default function App() {
       <div className="app-root" data-theme={dark ? "dark" : "light"}>
         <SettingsDrawer
           open={settingsOpen}
+          initialTab={settingsInitialTab}
           onClose={() => setSettingsOpen(false)}
           dark={dark}
           accent={accent}

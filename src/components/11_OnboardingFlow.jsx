@@ -15,7 +15,7 @@
         del pagamento. Al ritorno da Stripe (App.jsx, redirect su
         ?checkout=success) questo componente rimonta con initialPlan già
         aggiornato e riprende da dove serve (anamnesi per i piani coaching,
-        chiusura diretta per Performance Pack).
+        chiusura diretta per Premium).
      2. Anamnesi → SOLO se il piano scelto è a coaching (scheda/training/full):
         le stesse 56 domande del pannello coach (ANAM_QUESTIONS/AnamAreaSection,
         esportate da 09_CoachDashboard.jsx), compilate stavolta dall'atleta
@@ -25,7 +25,7 @@
         è dichiaratamente un placeholder demo ("3/3 caricate"), non va
         mostrata a un atleta reale come se fosse già stato fatto un upload.
 
-   Free e Performance Pack non richiedono anamnesi (sono piani autogestiti,
+   Free e Premium non richiedono anamnesi (sono piani autogestiti,
    nessun coach li assegna): dopo la scelta si entra subito in Home.
    ========================================================================== */
 
@@ -163,14 +163,14 @@ function AppIntroTutorial({ gender, dark, onFinish }) {
 // fargli rifare la scelta e perdere quello che aveva già iniziato a scrivere.
 export default function OnboardingFlow({ supabase, userId, gender = "M", dark = true, lang = "it", accent, initialPlan, resumedAddonPlanId, onComplete }) {
   const resumedPlanId = DB_TO_UI_PLAN[initialPlan];
-  // Performance Pack è pagato ma non a coaching: tornando da Stripe con
+  // Premium è pagato ma non a coaching: tornando da Stripe con
   // initialPlan già confermato dal webhook non va in anamnesi (non richiesta,
   // vedi nota in testa al file), ma l'onboarding va comunque chiuso — lo fa
   // l'effect subito sotto, "step" resta 'plan' solo per il breve istante in
   // cui quell'effect gira (isFinishingPack copre quel caso a schermo).
   // resumedAddonPlanId ha sempre precedenza: un Premium che ha appena
   // comprato l'add-on Scheda Personalizzata ha initialPlan="performance_pack"
-  // invariato (non è mai stato "di nuovo" un pagamento Performance Pack) —
+  // invariato (non è mai stato "di nuovo" un pagamento Premium) —
   // senza questo controllo lo scorciatoia qui sotto chiuderebbe l'onboarding
   // senza fargli mai compilare l'anamnesi richiesta dall'add-on.
   const isResumedPerformancePack = initialPlan === "performance_pack" && !resumedAddonPlanId;
@@ -218,7 +218,7 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
     supabase.from("profiles").update({ onboarding_completed: true }).eq("id", userId)
       .then(({ error: doneError }) => {
         if (cancelled) return;
-        if (doneError) { console.error("PERFORM: errore chiusura onboarding Performance Pack", doneError); return; }
+        if (doneError) { console.error("PERFORM: errore chiusura onboarding Premium", doneError); return; }
         onComplete({ plan: initialPlan });
       });
     return () => { cancelled = true; };

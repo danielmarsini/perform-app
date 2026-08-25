@@ -1988,7 +1988,7 @@ export async function fetchClientRoster(supabase) {
 }
 
 // Piani assegnabili dal coach tramite "Prendi in gestione" / "Cambia
-// abbonamento": solo i tre a coaching reale (Free e Performance Pack restano
+// abbonamento": solo i tre a coaching reale (Free e Premium restano
 // scelte autogestite del cliente, mai imposte dal coach da qui).
 const COACHING_PLANS = ["scheda_personalizzata", "training", "full"];
 
