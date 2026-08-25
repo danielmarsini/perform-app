@@ -11,8 +11,40 @@
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "";
 
+// iOS Safari (anche Chrome/Firefox su iOS, che sono comunque WebKit sotto)
+// espone PushManager SOLO se la pagina gira come PWA installata sulla
+// schermata Home — in una normale scheda Safari, window.PushManager non
+// esiste affatto, quindi qualunque tentativo di abbonarsi fallisce in
+// silenzio, senza mai arrivare al prompt di permesso del sistema. È una
+// restrizione della piattaforma (da iOS 16.4), non un bug risolvibile lato
+// codice: l'unica soluzione reale è guidare l'utente ad "Aggiungi alla
+// schermata Home" e riaprire l'app da lì.
+function isIosWebkit() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isIosDevice = /iPad|iPhone|iPod/.test(ua) || (ua.includes("Macintosh") && typeof document !== "undefined" && "ontouchend" in document);
+  return isIosDevice && /WebKit/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+}
+
+export function isRunningAsInstalledApp() {
+  if (typeof window === "undefined") return false;
+  return Boolean(window.matchMedia?.("(display-mode: standalone)")?.matches) || window.navigator?.standalone === true;
+}
+
+// Diagnosi più precisa di "perché non funziona" rispetto a un booleano
+// unico — serve a mostrare all'utente il motivo reale (e come risolverlo)
+// invece di un generico "non supportato" che su iPhone lascia pensare a un
+// bug dell'app quando in realtà manca solo l'installazione come PWA.
+export function pushUnsupportedReason() {
+  if (typeof window === "undefined") return "browser";
+  if (isIosWebkit() && !isRunningAsInstalledApp()) return "ios-not-installed";
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "browser";
+  if (!VAPID_PUBLIC_KEY) return "no-vapid";
+  return null;
+}
+
 export function isPushSupported() {
-  return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && Boolean(VAPID_PUBLIC_KEY);
+  return pushUnsupportedReason() === null;
 }
 
 // Il browser vuole la chiave VAPID come Uint8Array (base64url → binario),
