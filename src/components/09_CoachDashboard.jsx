@@ -2690,13 +2690,27 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const [workoutError, setWorkoutError] = useState("");
   const [workoutSaved, setWorkoutSaved] = useState(false);
 
+  // Autosave (richiesta esplicita): uscire un attimo dall'app mentre si
+  // modifica la scheda (per controllare notifiche altrove) e rientrare non
+  // deve più far perdere le modifiche non ancora salvate col pulsante
+  // esplicito — vedi autosaveTimerRef più sotto. skipNextAutosaveRef evita
+  // che il primissimo popolamento di realWorkout (dati appena letti dal DB
+  // al mount o al cambio settimana/cliente, non ancora una modifica del
+  // coach) faccia scattare un autosalvataggio spurio.
+  const skipNextAutosaveRef = useRef(true);
+  const autosaveTimerRef = useRef(null);
+  const [autosavedAt, setAutosavedAt] = useState(null);
+
   useEffect(() => {
     if (!isRealMode) return undefined;
     let cancelled = false;
+    skipNextAutosaveRef.current = true;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     setRealWorkout(null);
     setWorkoutLoading(true);
     setWorkoutError("");
     setWorkoutSaved(false);
+    setAutosavedAt(null);
     fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name])
       .then((data) => { if (!cancelled) setRealWorkout(data); })
       .catch((err) => {
@@ -2724,22 +2738,26 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     }
   };
 
+  // resolveDays: stesso passaggio "i nomi in libreria prendono il distretto
+  // dalla libreria collettiva" usato sia dal salvataggio manuale sia
+  // dall'autosalvataggio — un'unica versione, mai due percorsi che
+  // potrebbero disallinearsi.
+  const resolveDays = (days) => days.map((day) => day && {
+    ...day,
+    exercises: day.exercises.map((ex) => ({
+      ...ex,
+      muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name, exerciseLib),
+      synergists: ex.custom ? ex.synergists : [],
+    })),
+  });
+
   const saveWorkout = async () => {
     if (!isRealMode || !realWorkout) return;
     setWorkoutBusy(true);
     setWorkoutError("");
+    if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
     try {
-      // I nomi in libreria (custom === false) prendono il distretto dalla
-      // libreria collettiva reale (mappato ai nomi reali del DB): il coach
-      // non deve sceglierlo a mano per quelli, solo per gli esercizi liberi.
-      const resolved = realWorkout.map((day) => day && {
-        ...day,
-        exercises: day.exercises.map((ex) => ({
-          ...ex,
-          muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name, exerciseLib),
-          synergists: ex.custom ? ex.synergists : [],
-        })),
-      });
+      const resolved = resolveDays(realWorkout);
       await saveWeekWorkout(supabase, client.id, weekStartISO, resolved);
       // BUG PRESO: prima si faceva setRealWorkout(resolved), cioè si teneva in
       // stato locale la STESSA copia appena inviata al salvataggio — inclusi
@@ -2756,6 +2774,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       // vero dal DB dopo ogni salvataggio, l'editor ha SEMPRE gli id reali e
       // l'ordine mostrato è garantito identico a quello che il cliente vede.
       const fresh = await fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name]);
+      skipNextAutosaveRef.current = true; // il refetch qui sopra rientra come "dato appena caricato", non una modifica nuova del coach
       setRealWorkout(fresh);
       setWorkoutSaved(true);
       setTimeout(() => setWorkoutSaved(false), 2500);
@@ -2770,6 +2789,39 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       setWorkoutBusy(false);
     }
   };
+
+  // Autosave vero e proprio (richiesta esplicita, §"non salva quello che ho
+  // scritto se esco un attimo dall'app"): 2.5s dopo l'ultima modifica scrive
+  // silenziosamente su Supabase, SENZA il toast "✓ Allenamento salvato" e
+  // SENZA notificare il cliente ad ogni battitura (notifyClientPlanChange
+  // resta riservato al salvataggio esplicito) — serve solo a non perdere
+  // lavoro, non a sostituire il pulsante "Salva modifiche" come conferma
+  // intenzionale. Se il coach clicca "Salva" prima che scatti, il timer
+  // viene cancellato (vedi saveWorkout sopra) per non scrivere due volte.
+  useEffect(() => {
+    if (!isRealMode || !realWorkout) return undefined;
+    if (skipNextAutosaveRef.current) { skipNextAutosaveRef.current = false; return undefined; }
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      const resolved = resolveDays(realWorkout);
+      saveWeekWorkout(supabase, client.id, weekStartISO, resolved)
+        // STESSO motivo del refetch in saveWorkout qui sopra: un esercizio
+        // appena aggiunto ha ancora un id finto (uid() locale) finché non si
+        // rilegge lo stato vero dal DB. Senza questo refetch, l'autosave
+        // successivo tratterebbe quell'id finto come "non più esistente" e
+        // cancellerebbe/ricreerebbe la riga reale ad ogni ciclo — la stessa
+        // causa già trovata e corretta per il salvataggio manuale.
+        .then(() => fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name]))
+        .then((fresh) => {
+          skipNextAutosaveRef.current = true; // il refetch è "dato appena caricato", non una nuova modifica
+          setRealWorkout(fresh);
+          setAutosavedAt(Date.now());
+        })
+        .catch((err) => console.error("PERFORM: errore autosalvataggio allenamento", err));
+    }, 2500);
+    return () => { if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realWorkout]);
 
   // --- INTEGRATORI REALI --------------------------------------------------
   // BUG PRESO: l'editor partiva SEMPRE da makeDefaultWeek (sezioni finte
@@ -3045,6 +3097,11 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
                 {workoutSaved && (
                   <p className="spring-in font-data text-xs font-semibold px-3 py-1.5 rounded-md inline-block mt-3" style={{ backgroundColor: "#ECFDF5", border: "1px solid #A7F3D0", color: "#047857" }}>
                     ✓ Allenamento salvato
+                  </p>
+                )}
+                {!workoutSaved && autosavedAt && (
+                  <p className="c-muted text-[11px] mt-2">
+                    Bozza salvata automaticamente — puoi uscire dall'app senza perdere le modifiche.
                   </p>
                 )}
               </div>
