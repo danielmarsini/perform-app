@@ -412,7 +412,7 @@ function FeedCard({ item, channel, isLatest, gender, accent, liked, likeCount, s
       )}
 
       <GradientTitle tag="h2" gender={gender}
-                      style={{ fontSize: "1.36rem", fontWeight: 700, lineHeight: 1.3, letterSpacing: "-0.012em", marginBottom: "0.7rem" }}>
+                      style={{ fontSize: "1.05rem", fontWeight: 700, lineHeight: 1.32, letterSpacing: "-0.01em", marginBottom: "0.6rem" }}>
         {item.title}
       </GradientTitle>
 
@@ -640,7 +640,7 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
           )}
 
           <GradientTitle tag="h1" gender={gender}
-                          style={{ fontSize: "1.9rem", fontWeight: 700, lineHeight: 1.22, letterSpacing: "-0.015em", marginBottom: "1.4rem" }}>
+                          style={{ fontSize: "1.5rem", fontWeight: 700, lineHeight: 1.26, letterSpacing: "-0.012em", marginBottom: "1.2rem" }}>
             {item.title}
           </GradientTitle>
 
