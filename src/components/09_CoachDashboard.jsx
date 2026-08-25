@@ -2668,6 +2668,17 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const [section, setSection] = useState("allenamento");
   const [cloned, setCloned] = useState(false);
 
+  // Richiesta esplicita: chi ha solo "Coaching Allenamento" o "Scheda
+  // Personalizzata" (piani training-only, senza dieta/integratori inclusi
+  // nel servizio) non deve vedere il coach modificare alimentazione o
+  // integrazione nell'editor — quella parte resta libero arbitrio del
+  // cliente (si imposta macro/integratori da sé lato suo). "full" (Full
+  // Coaching Supremo) include tutto e mantiene le 3 sezioni.
+  const trainingOnlyPlan = client.plan === "training" || client.plan === "scheda_personalizzata";
+  useEffect(() => {
+    if (trainingOnlyPlan && section !== "allenamento") setSection("allenamento");
+  }, [trainingOnlyPlan, client.id, section]);
+
   // Template di allenamento riutilizzabili (SCHEMA_v59): salvare la settimana
   // corrente con un nome, e applicarla in un click a uno o più altri
   // clienti (azioni bulk) — a differenza di "Clona Settimana", che resta
@@ -3007,11 +3018,14 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   // mesociclo, clona settimana). Gli integratori restano un protocollo
   // per la settimana corrente, niente timeline sotto.
   const showWeekManager = section === "allenamento" || section === "dieta";
+  const sectionTabs = trainingOnlyPlan
+    ? [["allenamento", "Allenamento", Dumbbell]]
+    : [["allenamento", "Allenamento", Dumbbell], ["dieta", "Alimentazione", Salad], ["integratori", "Integratori", Pill]];
 
   return (
     <div>
-      <div className="grid grid-cols-3 gap-1.5 mb-5">
-        {[["allenamento", "Allenamento", Dumbbell], ["dieta", "Alimentazione", Salad], ["integratori", "Integratori", Pill]].map(([id, lab, Ico]) => {
+      <div className="grid gap-1.5 mb-5" style={{ gridTemplateColumns: `repeat(${sectionTabs.length}, 1fr)` }}>
+        {sectionTabs.map(([id, lab, Ico]) => {
           const on = section === id;
           return (
             <button key={id} onClick={() => setSection(id)} className="rounded-xl px-2 py-3 flex flex-col items-center gap-1.5"
