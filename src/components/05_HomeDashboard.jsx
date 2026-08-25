@@ -22,7 +22,7 @@ import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
-  Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check,
+  Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check, Navigation,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchExerciseSetHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
@@ -3425,11 +3425,9 @@ export function HomeDashboard({
    la distanza, niente dati finti — vuoto finché il cliente non registra
    davvero un'attività (stesso principio già applicato a sonno/passi).
    ========================================================================== */
-// BUG PRESO: "Canottaggio/Vogatore" mischiava in una sola voce la voga
-// all'aperto (che ha senso tracciare col GPS, si muove nello spazio) e il
-// vogatore da palestra (fermo, GPS inutile, ma con SPM/passo /500m — le
-// metriche che chi voga davvero guarda). Separati: canottaggio resta
-// all'aperto, "Vogatore" è ora un macchinario a sé con i suoi campi.
+// "Canottaggio" (voga all'aperto) rimosso su richiesta esplicita: restava
+// "Vogatore" da palestra (fermo, GPS inutile, ma con SPM/passo /500m — le
+// metriche che chi voga davvero guarda) come unico macchinario a sé.
 //
 // group: "outdoor" (GPS reale possibile, vedi GPS_CAPABLE/LOOP_ROUTE_CAPABLE
 // sotto) o "machine" (fermo, mai GPS — la sezione mostra invece i campi di
@@ -3440,7 +3438,6 @@ const CARDIO_ACTIVITIES = [
   { id: "corsa", label: "Corsa", icon: "🏃", group: "outdoor" },
   { id: "camminata", label: "Camminata", icon: "🚶", group: "outdoor" },
   { id: "bici", label: "Bici", icon: "🚴", group: "outdoor" },
-  { id: "canottaggio", label: "Canottaggio", icon: "🚣", group: "outdoor" },
   { id: "nuoto", label: "Nuoto", icon: "🏊" },
   { id: "tapis_roulant", label: "Tapis Roulant", icon: "🏃‍♂️", group: "machine" },
   { id: "cyclette", label: "Cyclette", icon: "🚲", group: "machine" },
@@ -3454,11 +3451,7 @@ const CARDIO_ACTIVITY_GROUPS = [
   { id: "machine", label: "In palestra" },
   { id: null, label: "Altro" },
 ];
-// Canottaggio resta GPS-capace (si muove davvero nello spazio, sull'acqua)
-// ma senza le strade da seguire di corsa/camminata/bici — LOOP_ROUTE_CAPABLE
-// è il sottoinsieme più stretto per cui ha senso chiedere a Mapbox un
-// percorso su strada.
-const GPS_CAPABLE = new Set(["corsa", "camminata", "bici", "canottaggio"]);
+const GPS_CAPABLE = new Set(["corsa", "camminata", "bici"]);
 const LOOP_ROUTE_CAPABLE = new Set(["corsa", "camminata", "bici"]);
 
 // Metriche reali per macchinario, non un form generico uguale per tutti:
@@ -3510,16 +3503,46 @@ function haversineKm(a, b) {
   return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-/* Mappa del percorso — Leaflet + tile OpenStreetMap, caricati SOLO qui
-   (import dinamico) quando una mappa serve davvero. `live=true` ricentra
-   la vista sull'ultimo punto ad ogni aggiornamento (tracciamento in
-   corso); `live=false` inquadra l'intero percorso una volta sola (storico). */
-function RouteMap({ points, live, accent, height = 220, guidePoints }) {
+// Icona del puntino "sei qui": prima del via mostra anche la direzione del
+// telefono (bussola, vedi useDeviceHeading in GpsTrackerModal) ruotando la
+// freccia — girando solo il telefono, senza muoversi, si capisce già verso
+// dove si punta. headingDeg null (bussola non disponibile/non ancora
+// concessa) mostra lo stesso puntino ma senza freccia orientata.
+function meMarkerIcon(L, headingDeg) {
+  const arrow = headingDeg == null ? "" :
+    `<div style="position:absolute;inset:-7px;display:flex;align-items:center;justify-content:center;
+                 transform:rotate(${headingDeg}deg);transition:transform 0.12s linear;">
+       <svg width="13" height="13" viewBox="0 0 24 24" style="transform:translateY(-13px)">
+         <path d="M12 2 L18 20 L12 15.5 L6 20 Z" fill="#2563EB" />
+       </svg>
+     </div>`;
+  return L.divIcon({
+    className: "",
+    html: `<div style="position:relative;width:18px;height:18px;">
+             <div style="width:18px;height:18px;border-radius:50%;background:#2563EB;border:3px solid #FFFFFF;
+                         box-shadow:0 1px 4px rgba(0,0,0,0.35);"></div>
+             ${arrow}
+           </div>`,
+    iconSize: [18, 18], iconAnchor: [9, 9],
+  });
+}
+
+/* Mappa del percorso — Leaflet + tile CARTO Positron (base OpenStreetMap,
+   stile pulito e leggero pensato apposta per disegnarci sopra dati, molto
+   più curato dei tile grezzi osm.org di prima), caricati SOLO qui (import
+   dinamico) quando una mappa serve davvero. `live=true` ricentra la vista
+   sull'ultimo punto ad ogni aggiornamento (tracciamento in corso);
+   `live=false` inquadra l'intero percorso una volta sola (storico).
+   `previewPoint`/`headingDeg`: posizione e direzione del telefono PRIMA di
+   premere Inizia — richiesta esplicita, prima la mappa restava vuota/su
+   Milano finché non si avviava davvero il tracciamento. */
+function RouteMap({ points, live, accent, height = 220, guidePoints, previewPoint, headingDeg }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polylineRef = useRef(null);
   const guideLineRef = useRef(null); // percorso ad anello suggerito, tratteggiato, solo guida visiva
   const markerRef = useRef(null); // puntino blu della posizione attuale, solo live
+  const previewMarkerRef = useRef(null); // puntino "sei qui" PRIMA del via, con freccia bussola
   const leafletRef = useRef(null);
   const [ready, setReady] = useState(false);
 
@@ -3528,12 +3551,18 @@ function RouteMap({ points, live, accent, height = 220, guidePoints }) {
     import("leaflet").then((L) => {
       if (cancelled || !containerRef.current || mapRef.current) return;
       leafletRef.current = L;
-      const map = L.map(containerRef.current, { zoomControl: live, attributionControl: true, dragging: true, scrollWheelZoom: false });
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>',
-        maxZoom: 19,
+      // attributionControl:false + controllo minimale con prefix:false: il
+      // credito "Leaflet" (facoltativo, solo auto-promozione della libreria)
+      // sparisce, resta solo quello legalmente dovuto ai fornitori dei tile
+      // (OpenStreetMap/CARTO) — non l'ingombrante "Leaflet | © OpenStreetMap"
+      // di prima, richiesta esplicita.
+      const map = L.map(containerRef.current, { zoomControl: live, attributionControl: false, dragging: true, scrollWheelZoom: false });
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> © <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>',
+        maxZoom: 20, subdomains: "abcd",
       }).addTo(map);
-      const start = points?.[0] || { lat: 45.4642, lng: 9.19 }; // Milano come centro neutro se non c'è ancora un punto
+      L.control.attribution({ prefix: false, position: "bottomright" }).addTo(map);
+      const start = points?.[0] || previewPoint || { lat: 45.4642, lng: 9.19 }; // Milano come centro neutro se non c'è ancora un punto vero
       map.setView([start.lat, start.lng], live ? 17 : 15);
       polylineRef.current = L.polyline([], { color: accent, weight: 5, opacity: 0.95, lineJoin: "round", lineCap: "round" }).addTo(map);
       guideLineRef.current = L.polyline([], { color: accent, weight: 3, opacity: 0.55, dashArray: "2, 10", lineCap: "round" }).addTo(map);
@@ -3548,7 +3577,7 @@ function RouteMap({ points, live, accent, height = 220, guidePoints }) {
       // Se il tracciamento è già live e la fotocamera GPS non ha ancora
       // dato un punto, prova comunque a centrare sulla posizione vera
       // dell'utente invece di restare fermi su Milano.
-      if (live && !points?.length && navigator.geolocation) {
+      if (live && !points?.length && !previewPoint && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => { if (!cancelled) map.setView([pos.coords.latitude, pos.coords.longitude], 17); },
           () => {}, { maximumAge: 10000, timeout: 5000 }
@@ -3581,11 +3610,34 @@ function RouteMap({ points, live, accent, height = 220, guidePoints }) {
       } else {
         markerRef.current.setLatLng(lastLatLng);
       }
+      // Il tracciamento vero è iniziato: il puntino "sei qui" pre-via non
+      // serve più, il marker live sopra prende il suo posto.
+      if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
       mapRef.current.panTo(lastLatLng);
     } else {
       mapRef.current.fitBounds(latlngs, { padding: [24, 24] });
     }
   }, [ready, points, live]);
+
+  // Puntino "sei qui" + freccia bussola, SOLO prima che il tracciamento
+  // abbia già i suoi punti veri (altrimenti l'effetto sopra ha già la
+  // priorità e lo rimuove).
+  useEffect(() => {
+    if (!ready || !mapRef.current || points?.length) return;
+    const L = leafletRef.current;
+    if (!previewPoint) {
+      if (previewMarkerRef.current) { previewMarkerRef.current.remove(); previewMarkerRef.current = null; }
+      return;
+    }
+    const latlng = [previewPoint.lat, previewPoint.lng];
+    if (!previewMarkerRef.current) {
+      previewMarkerRef.current = L.marker(latlng, { icon: meMarkerIcon(L, headingDeg), zIndexOffset: 500 }).addTo(mapRef.current);
+      mapRef.current.setView(latlng, 16);
+    } else {
+      previewMarkerRef.current.setLatLng(latlng);
+      previewMarkerRef.current.setIcon(meMarkerIcon(L, headingDeg));
+    }
+  }, [ready, previewPoint, headingDeg, points]);
 
   // Percorso ad anello suggerito (Premium/Coaching, vedi generateLoopRoute):
   // tratteggiato, sotto al percorso reale — resta visibile come guida anche
@@ -3627,6 +3679,60 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
   const [generatingRoute, setGeneratingRoute] = useState(false);
   const [routeGenError, setRouteGenError] = useState("");
   const [customKm, setCustomKm] = useState("");
+
+  // Posizione + direzione del telefono PRIMA di premere Inizia — richiesta
+  // esplicita: prima la mappa restava vuota (o centrata su Milano) finché
+  // non si avviava davvero il tracciamento, ora si vede subito dove ci si
+  // trova e, girando il telefono, verso dove si punta.
+  const [previewPos, setPreviewPos] = useState(null);
+  const [headingDeg, setHeadingDeg] = useState(null);
+  const [compassNeedsTap, setCompassNeedsTap] = useState(false); // iOS 13+: la bussola parte solo dopo un gesto esplicito dell'utente
+
+  useEffect(() => {
+    if (tracking || !navigator.geolocation) return undefined;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => setPreviewPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {}, // silenzioso: niente preview se il permesso non c'è ancora, il vero errore arriva comunque al tap su Inizia
+      { enableHighAccuracy: false, maximumAge: 15000, timeout: 10000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [tracking]);
+
+  useEffect(() => {
+    if (typeof DeviceOrientationEvent === "undefined") return undefined;
+    // iOS Safari: webkitCompassHeading è già assoluto (0 = Nord, orario) —
+    // il modo più affidabile, nessuna calibrazione richiesta lato nostro.
+    // Altrove (Android/Chrome): alpha gira in senso opposto e non è
+    // garantito assoluto rispetto al Nord — event.absolute===true è la
+    // condizione che lo rende utilizzabile, altrimenti si scarta (meglio
+    // nessuna freccia che una freccia sbagliata).
+    const onOrientation = (e) => {
+      if (typeof e.webkitCompassHeading === "number") setHeadingDeg(e.webkitCompassHeading);
+      else if (e.absolute && e.alpha != null) setHeadingDeg((360 - e.alpha) % 360);
+    };
+    // iOS 13+ richiede un permesso esplicito concesso da un gesto utente
+    // (un semplice addEventListener non basta, gli eventi non arriverebbero
+    // mai): se l'API esiste, si mostra un pulsante dedicato invece di
+    // richiederlo silenziosamente al mount (fallirebbe sempre).
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      setCompassNeedsTap(true);
+      return undefined;
+    }
+    window.addEventListener("deviceorientation", onOrientation);
+    return () => window.removeEventListener("deviceorientation", onOrientation);
+  }, []);
+
+  const enableCompass = () => {
+    DeviceOrientationEvent.requestPermission().then((state) => {
+      if (state !== "granted") return;
+      setCompassNeedsTap(false);
+      const onOrientation = (e) => {
+        if (typeof e.webkitCompassHeading === "number") setHeadingDeg(e.webkitCompassHeading);
+        else if (e.absolute && e.alpha != null) setHeadingDeg((360 - e.alpha) % 360);
+      };
+      window.addEventListener("deviceorientation", onOrientation);
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     if (!tracking) return undefined;
@@ -3688,8 +3794,8 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
     // a Mapbox Map Matching a fine sessione (mai in diretta: costerebbe una
     // richiesta ad ogni punto) allinea l'intero tracciato alla rete stradale
     // reale prima di mostrarlo/salvarlo. Se fallisce o l'attività non ha
-    // strade (nuoto/canottaggio), resta il percorso grezzo — mai un dato
-    // inventato al posto di quello vero.
+    // strade, resta il percorso grezzo — mai un dato inventato al posto di
+    // quello vero.
     setPoints((currentPoints) => {
       if (currentPoints.length > 1 && isMapboxConfigured()) {
         setSnapping(true);
@@ -3801,13 +3907,24 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
         </div>
 
         <div className="px-5 relative" data-no-swipe="true">
-          <RouteMap points={points} live accent={accent} height={260} guidePoints={suggestedRoute?.points} />
+          <RouteMap points={points} live accent={accent} height={260} guidePoints={suggestedRoute?.points}
+            previewPoint={!tracking ? previewPos : null} headingDeg={headingDeg} />
           {snapping && (
             <div className="absolute inset-x-5 top-3 rounded-full px-3.5 py-2 flex items-center gap-2"
               style={{ backgroundColor: "rgba(17,17,17,0.85)", backdropFilter: "blur(6px)" }}>
               <Loader2 size={13} className="animate-spin" style={{ color: "#FFFFFF" }} />
               <span style={{ color: "#FFFFFF", fontSize: "0.72rem", fontWeight: 600 }}>Allineo il percorso alle strade reali…</span>
             </div>
+          )}
+          {/* iOS 13+ non concede mai l'accesso alla bussola senza un tap
+              esplicito dell'utente — un pulsante discreto sopra la mappa,
+              non un popup invadente al mount. */}
+          {!tracking && compassNeedsTap && (
+            <button onClick={enableCompass} type="button"
+              className="absolute left-5 top-3 rounded-full px-3 py-1.5 flex items-center gap-1.5 text-xs"
+              style={{ backgroundColor: "rgba(17,17,17,0.85)", backdropFilter: "blur(6px)", color: "#FFFFFF", fontWeight: 600 }}>
+              <Navigation size={12} /> Attiva bussola
+            </button>
           )}
         </div>
 
@@ -4089,11 +4206,17 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
 
       {GPS_CAPABLE.has(activityType) && (
         <>
+          {/* BUG PRESO: usava var(--title-a)/var(--title-b) — le due tinte PIÙ
+              CHIARE del gradiente a 3 tappe di title-shine (pensato per testo
+              su sfondo scuro, non per uno sfondo pieno con testo bianco sopra)
+              — risultato un oro/rosa lavato, testo poco leggibile. `accent`
+              (già passato a questo componente) è lo stesso colore pieno
+              lucido usato per ogni altra CTA primaria dell'app. */}
           <button onClick={() => setGpsOpen(true)} type="button"
             className="w-full flex items-center justify-center gap-2.5 rounded-2xl px-4 py-4 text-sm mt-3 mb-3 btn-3d transition-transform active:scale-[0.98]"
             style={{
-              backgroundImage: "linear-gradient(120deg, var(--title-a), var(--title-b))",
-              color: "#FFFFFF", fontWeight: 800, boxShadow: "0 10px 24px -8px rgba(0,0,0,0.35)",
+              backgroundColor: accent,
+              color: "#FFFFFF", fontWeight: 800, boxShadow: `0 10px 24px -8px ${accent}88`,
             }}>
             <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.22)" }}>
               <Route size={16} />
