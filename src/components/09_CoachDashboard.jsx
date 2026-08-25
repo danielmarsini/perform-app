@@ -2685,7 +2685,22 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         })),
       });
       await saveWeekWorkout(supabase, client.id, weekStartISO, resolved);
-      setRealWorkout(resolved);
+      // BUG PRESO: prima si faceva setRealWorkout(resolved), cioè si teneva in
+      // stato locale la STESSA copia appena inviata al salvataggio — inclusi
+      // gli id finti (uid() lato client) di ogni esercizio appena aggiunto con
+      // "+ Esercizio". saveWeekWorkout non restituisce l'id reale assegnato da
+      // Supabase all'insert, quindi quell'esercizio restava con un id che non
+      // corrispondeva a NESSUNA riga nel database. Al salvataggio SUCCESSIVO
+      // (anche solo per un rinomina o un cambio serie altrove nella stessa
+      // giornata), quell'id finto non risultava tra gli existingIds letti dal
+      // DB: la riga vera veniva cancellata (con CASCADE su workout_sets, le
+      // serie già registrate dall'atleta per quell'esercizio) e ricreata da
+      // capo con un nuovo id — da qui l'ordine che sembrava "resettarsi" o
+      // sganciarsi da quanto visto nell'editor. Rileggendo sempre lo stato
+      // vero dal DB dopo ogni salvataggio, l'editor ha SEMPRE gli id reali e
+      // l'ordine mostrato è garantito identico a quello che il cliente vede.
+      const fresh = await fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name]);
+      setRealWorkout(fresh);
       setWorkoutSaved(true);
       setTimeout(() => setWorkoutSaved(false), 2500);
       notifyClientPlanChange(supabase, client.id, {
