@@ -77,17 +77,24 @@ Deno.serve(async (req) => {
         // Scheda Personalizzata (SCHEMA_v68): add-on SOPRA il piano base, mai
         // una sostituzione — profiles.plan resta quello che era (Free o
         // Premium), niente whitelisted_until azzerato (non è un pagamento
-        // che riguarda quel piano). Chat 2 settimane, programma 8 settimane:
-        // date esatte da oggi, indipendenti da qualunque altra colonna.
+        // che riguarda quel piano). Chat: 2 settimane fisse da oggi.
+        // Programma: NON una stima fissa a 8 settimane — al momento
+        // dell'acquisto il coach non ha ancora costruito nulla, quindi si
+        // parte dalla stessa finestra della chat (2 settimane, un margine
+        // ragionevole per iniziare) e da qui in poi si allunga da sola man
+        // mano che il coach assegna davvero settimane di allenamento
+        // (saveWeekWorkout in coachingData.js estende scheda_addon_program_
+        // until fino alla fine dell'ultima settimana assegnata) — la scheda
+        // resta "attiva" esattamente finché il coach l'ha davvero costruita,
+        // non un numero indovinato in anticipo.
         if (planDb === "scheda_personalizzata") {
           const now = new Date();
           const chatUntil = new Date(now); chatUntil.setDate(chatUntil.getDate() + 14);
-          const programUntil = new Date(now); programUntil.setDate(programUntil.getDate() + 56);
           const update: Record<string, unknown> = {
             stripe_customer_id: session.customer,
             client_status: "active",
             scheda_addon_chat_until: chatUntil.toISOString(),
-            scheda_addon_program_until: programUntil.toISOString(),
+            scheda_addon_program_until: chatUntil.toISOString(),
           };
           const { data: existingAnam } = await admin
             .from("anamnesis_responses")

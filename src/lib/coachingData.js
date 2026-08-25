@@ -1121,6 +1121,26 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
       }
     }
   }
+
+  // Add-on Scheda Personalizzata (SCHEMA_v68): la scheda resta "attiva"
+  // esattamente finché il coach l'ha davvero costruita, non una stima fissa
+  // indovinata all'acquisto — ogni volta che questa settimana ha almeno un
+  // esercizio assegnato, scheda_addon_program_until si allunga (mai si
+  // accorcia) fino alla fine di QUESTA settimana, se più avanti di quanto
+  // già impostato. Nessun effetto su chi non ha questo add-on attivo
+  // (scheda_addon_program_until resta null per loro).
+  const weekHasExercises = workoutArray.some((day) => (day?.exercises?.length ?? 0) > 0);
+  if (weekHasExercises) {
+    const { data: profile } = await supabase.from("profiles").select("scheda_addon_program_until").eq("id", userId).maybeSingle();
+    if (profile?.scheda_addon_program_until) {
+      const weekEnd = new Date(`${dates[6]}T23:59:59`);
+      if (weekEnd > new Date(profile.scheda_addon_program_until)) {
+        const { error: extendError } = await supabase.from("profiles")
+          .update({ scheda_addon_program_until: weekEnd.toISOString() }).eq("id", userId);
+        if (extendError) console.error("PERFORM: errore estensione scheda_addon_program_until", extendError);
+      }
+    }
+  }
 }
 
 // Clona una settimana di allenamento su un'altra: legge le righe della
