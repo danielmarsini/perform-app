@@ -3109,7 +3109,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       )}
       {applyTemplateOpen && (
         <ApplyTemplateModal templates={templates} clients={CLIENTS} currentClientId={client.id}
-          weekLabel={weekRangeLabel(selOffset)} targetWeekStartISO={weekStartISO} supabase={supabase}
+          startOffset={selOffset} supabase={supabase}
           onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates} />
       )}
       {libraryManagerOpen && (
@@ -3222,12 +3222,26 @@ function SaveTemplateModal({ days, coachId, supabase, onClose, onSaved }) {
 
 /* Applica un template a uno o più clienti insieme (azioni bulk) — stessa
    settimana selezionata nell'editor da cui è stato aperto. */
-function ApplyTemplateModal({ templates, clients, currentClientId, weekLabel, targetWeekStartISO, supabase, onClose, onDeleted }) {
+function ApplyTemplateModal({ templates, clients, currentClientId, startOffset, supabase, onClose, onDeleted }) {
   const [templateId, setTemplateId] = useState(templates[0]?.id || "");
   const [selectedIds, setSelectedIds] = useState(() => new Set([currentClientId]));
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null); // { ok, failed }
+  const [result, setResult] = useState(null); // { ok, failed, weekCount }
   const [err, setErr] = useState("");
+
+  // Richiesta esplicita: dire "questa scheda vale dalla settimana X alla Y
+  // comprese" invece di clonare settimana per settimana (percepito scomodo
+  // e poco chiaro) — offset settimana rispetto a oggi, stesso sistema già
+  // usato da "Clona Settimana"/il pallino calendario, mai una data libera
+  // che potrebbe cadere fuori da un lunedì. Non si può scegliere una
+  // settimana precedente a quella da cui si è aperto "Applica template",
+  // né oltre il limite di 12 settimane in avanti (stesso limite di
+  // "Clona Settimana").
+  const [fromOffset, setFromOffset] = useState(startOffset);
+  const [toOffset, setToOffset] = useState(startOffset);
+  const offsetOptions = [];
+  for (let o = startOffset; o <= MAX_FORWARD_WEEKS; o++) offsetOptions.push(o);
+  const weekCount = toOffset - fromOffset + 1;
 
   const toggleClient = (id) => setSelectedIds((s) => {
     const next = new Set(s);
@@ -3237,12 +3251,14 @@ function ApplyTemplateModal({ templates, clients, currentClientId, weekLabel, ta
 
   const apply = async () => {
     const template = templates.find((t) => t.id === templateId);
-    if (!template || selectedIds.size === 0) return;
+    if (!template || selectedIds.size === 0 || weekCount < 1) return;
     setBusy(true);
     setErr("");
     try {
-      const outcome = await applyWorkoutTemplateToClients(supabase, template.days, [...selectedIds], targetWeekStartISO);
-      setResult(outcome);
+      const weekISOs = [];
+      for (let o = fromOffset; o <= toOffset; o++) weekISOs.push(weekKeyForOffset(o));
+      const outcome = await applyWorkoutTemplateToClients(supabase, template.days, [...selectedIds], weekISOs);
+      setResult({ ...outcome, weekCount });
     } catch (e) {
       console.error("PERFORM: errore applicazione template", e);
       setErr("Non sono riuscito ad applicare il template.");
@@ -3267,7 +3283,42 @@ function ApplyTemplateModal({ templates, clients, currentClientId, weekLabel, ta
       <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
         <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
           <p className="c-heading font-display font-bold mb-1">Applica template</p>
-          <p className="c-muted text-xs mb-4">Settimana di destinazione: {weekLabel}</p>
+          <p className="c-muted text-xs mb-3">
+            Vale dalla settimana selezionata a quella scelta, comprese — non serve più clonare settimana per settimana.
+          </p>
+          <div className="flex items-center gap-2 mb-4">
+            <label className="flex-1">
+              <span className="c-label block mb-1">Da settimana</span>
+              <select value={fromOffset}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setFromOffset(v);
+                  if (v > toOffset) setToOffset(v);
+                }}
+                className="t-input w-full text-sm rounded-md px-2.5 py-2">
+                {offsetOptions.map((o) => (
+                  <option key={o} value={o}>{weekRangeLabel(o)}{o === 0 ? " · oggi" : ""}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex-1">
+              <span className="c-label block mb-1">A settimana</span>
+              <select value={toOffset}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setToOffset(v);
+                  if (v < fromOffset) setFromOffset(v);
+                }}
+                className="t-input w-full text-sm rounded-md px-2.5 py-2">
+                {offsetOptions.map((o) => (
+                  <option key={o} value={o}>{weekRangeLabel(o)}{o === 0 ? " · oggi" : ""}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="c-muted text-[11px] mb-4">
+            {weekCount === 1 ? "1 settimana" : `${weekCount} settimane`} — stessa scheda ripetuta identica su ognuna.
+          </p>
 
           <p className="c-label mb-2">Template</p>
           <div className="space-y-1.5 mb-4">
@@ -3299,7 +3350,7 @@ function ApplyTemplateModal({ templates, clients, currentClientId, weekLabel, ta
           {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
           {result && (
             <p className="text-xs mb-3 font-semibold" style={{ color: result.failed.length ? "#F0A020" : "#047857" }}>
-              Applicato a {result.ok.length} client{result.ok.length === 1 ? "e" : "i"}{result.failed.length ? `, fallito per ${result.failed.length}` : ""}.
+              Applicato a {result.ok.length} client{result.ok.length === 1 ? "e" : "i"} per {result.weekCount === 1 ? "1 settimana" : `${result.weekCount} settimane`}{result.failed.length ? `, fallito per ${result.failed.length}` : ""}.
             </p>
           )}
 
