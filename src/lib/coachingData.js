@@ -1425,12 +1425,20 @@ export async function deleteWorkoutTemplate(supabase, templateId) {
 // il chiamante può mostrare quanti sono andati a buon fine anche se qualcuno
 // fallisce (es. un permesso mancante su un singolo cliente non deve bloccare
 // gli altri).
+// Richiesta esplicita: poter dire "questa scheda vale dalla settimana X alla
+// Y comprese" invece di clonare settimana per settimana (percepito scomodo/
+// poco chiaro) — targetWeekStartISO ora accetta anche un ARRAY di date (una
+// per settimana del range): scrive la STESSA scheda su ciascuna. Una singola
+// stringa resta valida (comportamento precedente, un solo target).
 export async function applyWorkoutTemplateToClients(supabase, days, clientIds, targetWeekStartISO) {
+  const weeks = Array.isArray(targetWeekStartISO) ? targetWeekStartISO : [targetWeekStartISO];
   const ok = [];
   const failed = [];
   for (const clientId of clientIds) {
     try {
-      await saveWeekWorkout(supabase, clientId, targetWeekStartISO, days);
+      for (const weekISO of weeks) {
+        await saveWeekWorkout(supabase, clientId, weekISO, days);
+      }
       ok.push(clientId);
     } catch (err) {
       console.error(`PERFORM: errore applicazione template al cliente ${clientId}`, err);
