@@ -882,18 +882,6 @@ export async function fetchExerciseRecords(supabase, userId) {
     .sort((a, b) => b.sessions.length - a.sessions.length); // più storico prima
 }
 
-// Preferiti dei Traguardi: array di exercise_name su profiles, letto/scritto
-// come xp_total/current_streak — stesso self-update già in uso altrove.
-export async function fetchFavoriteExercises(supabase, userId) {
-  const { data, error } = await supabase.from("profiles").select("favorite_exercises").eq("id", userId).maybeSingle();
-  if (error) throw error;
-  return data?.favorite_exercises ?? [];
-}
-export async function saveFavoriteExercises(supabase, userId, exerciseIds) {
-  const { error } = await supabase.from("profiles").update({ favorite_exercises: exerciseIds }).eq("id", userId);
-  if (error) throw error;
-}
-
 /* ---------------------------------------------------------------------------
    SCRITTURA — lato cliente (compilare la scheda assegnata)
    ------------------------------------------------------------------------- */
@@ -1117,29 +1105,6 @@ export async function assignNutritionTarget(supabase, {
     kcal, protein, carbs, fat,
     effective_from: effectiveFrom || toLocalISODate(),
     set_by: coachId,
-  });
-  if (error) throw error;
-}
-
-export async function assignWorkoutExercise(supabase, {
-  clientId, date, splitLabel, exerciseName, muscleTarget, setsCount, repsTarget, restSeconds, rirTarget, intensityTechnique,
-}) {
-  if (!MUSCLE_TARGETS.includes(muscleTarget)) {
-    throw new Error(`muscle_target non valido: "${muscleTarget}". Valori ammessi: ${MUSCLE_TARGETS.join(", ")}`);
-  }
-  const { error } = await supabase.from("workout_logs").insert({
-    user_id: clientId,
-    date,
-    split_label: splitLabel,
-    exercise_name: exerciseName,
-    muscle_target: muscleTarget,
-    sets_count: setsCount,
-    reps_target: repsTarget || null,
-    rest_seconds: restSeconds ?? null,
-    rir_target: rirTarget || null,
-    intensity_technique: intensityTechnique || null,
-    status: "missed",       // diventa 'done' quando il cliente compila la sessione
-    is_read_only: true,     // è una prescrizione del coach, non un log libero del cliente
   });
   if (error) throw error;
 }
@@ -1448,17 +1413,6 @@ export async function applyWorkoutTemplateToClients(supabase, days, clientIds, t
   return { ok, failed };
 }
 
-// Elenco clienti per il selettore nel pannello coach.
-export async function fetchClientList(supabase) {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, nickname, gender, xp_total, current_streak")
-    .eq("role", "user")
-    .order("nickname", { ascending: true });
-  if (error) throw error;
-  return data ?? [];
-}
-
 /* ---------------------------------------------------------------------------
    XP / LIVELLI / STREAK — formula unica reale
    ---------------------------------------------------------------------------
@@ -1470,9 +1424,9 @@ export async function fetchClientList(supabase) {
    falsificabile e disallineabile da un doppio salvataggio) — stesso principio
    delle formule di aderenza (computeTrainingCompliance e affini). Il
    risultato viene comunque scritto in cache su profiles.xp_total/
-   current_streak (letti altrove: fetchClientList, fetchClientRoster, roster
-   coach) così la classifica globale può leggerli con una sola query invece
-   di ricalcolare la formula per ogni atleta. */
+   current_streak (letti altrove: fetchClientRoster, roster coach) così la
+   classifica globale può leggerli con una sola query invece di ricalcolare
+   la formula per ogni atleta. */
 // Livelli INFINITI (non più un tetto fisso a 5): la soglia XP di ogni
 // livello RADDOPPIA rispetto all'incremento precedente — stessa identica
 // progressione già in uso prima (1000/3000/7000/15000, incrementi
@@ -1822,37 +1776,6 @@ export async function fetchClientPauses(supabase, userId, limit = 10) {
     .limit(limit);
   if (error) throw error;
   return data ?? [];
-}
-
-// Etichette mesociclo (nome + fase bulk/cut/mantenimento/scarico) per un
-// intervallo di settimane di un cliente — usato per colorare/etichettare la
-// striscia di pallini settimana nella timeline del coach. Ritorna una mappa
-// { "YYYY-MM-DD": { name, phase } } indicizzata sul lunedì di ciascuna
-// settimana, così il chiamante fa solo un lookup per offset.
-export async function fetchMesocycleWeeksRange(supabase, userId, fromDateISO, toDateISO) {
-  const { data, error } = await supabase
-    .from("mesocycle_weeks")
-    .select("week_start, mesocycle_name, phase")
-    .eq("user_id", userId)
-    .gte("week_start", fromDateISO)
-    .lte("week_start", toDateISO);
-  if (error) throw error;
-  const map = {};
-  for (const row of data ?? []) map[row.week_start] = { name: row.mesocycle_name, phase: row.phase };
-  return map;
-}
-
-// Il coach imposta/aggiorna nome e fase di UNA settimana specifica. name/phase
-// null cancella quel campo (non la riga: una settimana senza fase ma con nome
-// resta comunque utile in vista).
-export async function saveMesocycleWeek(supabase, userId, weekStartISO, { name, phase }) {
-  const { error } = await supabase
-    .from("mesocycle_weeks")
-    .upsert(
-      { user_id: userId, week_start: weekStartISO, mesocycle_name: name || null, phase: phase || null, updated_at: new Date().toISOString() },
-      { onConflict: "user_id,week_start" }
-    );
-  if (error) throw error;
 }
 
 // Push immediato al cliente quando il coach salva una modifica reale al suo
@@ -2735,33 +2658,6 @@ export async function deleteTechniqueVideo(supabase, videoId, videoPath) {
   await supabase.storage.from("technique-videos").remove([videoPath]).catch((err) => {
     console.error("PERFORM: errore rimozione file video tecnica dallo storage", err);
   });
-}
-
-// Quanti video di UN cliente aspettano ancora un commento del coach — per il
-// pallino "da rivedere" prima ancora di aprire il tab, stesso principio di
-// fetchUnreadChatCount.
-export async function fetchPendingTechniqueVideoCount(supabase, clientId) {
-  const { count, error } = await supabase
-    .from("technique_videos")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId)
-    .is("coach_comment", null);
-  if (error) throw error;
-  return count ?? 0;
-}
-
-// Conteggio messaggi non letti di UNA conversazione, dal punto di vista di
-// chi legge (readerId) — per un pallino "nuovo messaggio" sul tab Chat prima
-// ancora di aprirlo, sia lato coach sia lato cliente.
-export async function fetchUnreadChatCount(supabase, clientId, readerId) {
-  const { count, error } = await supabase
-    .from("chat_messages")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", clientId)
-    .is("read_at", null)
-    .neq("sender_id", readerId);
-  if (error) throw error;
-  return count ?? 0;
 }
 
 // Guida interattiva PERFORM (SCHEMA_v70): mostrata UNA volta sola per nuovo

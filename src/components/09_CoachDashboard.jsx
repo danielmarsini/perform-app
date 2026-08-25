@@ -3616,7 +3616,6 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
   const status = computeStatus(client);
   const meta = STATUS_META[status];
   const [tab, setTab] = useState(initialTab);
-  const isPaidCoaching = REAL_COACHING_PLANS.has(client.plan);
   // Anamnesi non è più un tab tra gli altri: si legge la prima volta che si
   // conosce il cliente e poi solo saltuariamente per ristrutturare i
   // programmi futuri, non ogni giorno come dati/editor — resta quindi

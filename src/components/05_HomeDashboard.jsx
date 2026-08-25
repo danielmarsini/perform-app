@@ -4222,7 +4222,6 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
   const [hiitRestSec, setHiitRestSec] = useState("");
   const [machineValues, setMachineValues] = useState({}); // { [fieldKey]: string }
 
-  const activityMeta = CARDIO_ACTIVITIES.find((a) => a.id === activityType);
   const machineFields = MACHINE_FIELDS[activityType] || null;
 
   const resetForm = () => {
@@ -5615,7 +5614,6 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
   }, [query, searchableNames]);
 
   const trimmed = query.trim();
-  const isKnown = searchableNames.some((n) => n.toLowerCase() === trimmed.toLowerCase());
   // BUG PRESO: prima indovinava il distretto con un regex sul nome (spesso
   // sbagliato, "Generico" invisibile al grafico) — ora chiede sempre
   // un'assegnazione manuale per un nome che non è già nella libreria
@@ -7858,7 +7856,10 @@ function SubsPanel({ foods, accent, accentSoft, accentText }) {
 
   const gramsNum = Number(grams) || 0;
   const target = source && gramsNum > 0 ? computeFoodAt(source, gramsNum) : null;
-  const results = source && gramsNum > 0 ? findSubstitutes(source, gramsNum, foods) : [];
+  const results = useMemo(
+    () => (source && gramsNum > 0 ? findSubstitutes(source, gramsNum, foods) : []),
+    [source, gramsNum, foods]
+  );
 
   return (
     <div className="spring-in">
