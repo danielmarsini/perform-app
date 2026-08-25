@@ -41,7 +41,7 @@ import {
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
-import { isPushSupported, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
+import { isPushSupported, pushUnsupportedReason, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -103,12 +103,8 @@ export const translations = {
     },
     darkModeOnyx: "Dark Mode Onyx",
     notif: {
-      title: "Reminder push",
-      meals: "Pasti", mealsDesc: "Un promemoria se un pasto resta vuoto oltre l'orario abituale.",
-      steps: "Passi", stepsDesc: "Avviso serale se sei sotto la soglia giornaliera.",
-      sleep: "Sonno", sleepDesc: "Promemoria per registrare l'orario di addormentamento.",
-      motivation: "Pop-up motivazionali", motivationDesc: "Messaggi sui record e nelle settimane difficili.",
-      footer: "Le notifiche non sostituiscono il tuo giudizio: se una ti dà fastidio, spegnila.",
+      title: "Notifiche push",
+      footer: "Le notifiche non sostituiscono il tuo giudizio: se ti dà fastidio, spegnila.",
     },
     plan: {
       activeTitle: "Piano attivo", chooseTitle: "Seleziona il tuo Piano PERFORM",
@@ -195,12 +191,8 @@ export const translations = {
     },
     darkModeOnyx: "Dark Mode Onyx",
     notif: {
-      title: "Push reminders",
-      meals: "Meals", mealsDesc: "A reminder if a meal stays empty past the usual time.",
-      steps: "Steps", stepsDesc: "Evening alert if you're below the daily threshold.",
-      sleep: "Sleep", sleepDesc: "Reminder to log your bedtime.",
-      motivation: "Motivational pop-ups", motivationDesc: "Messages about records and tough weeks.",
-      footer: "Notifications don't replace your judgment: if one bothers you, turn it off.",
+      title: "Push notifications",
+      footer: "Notifications don't replace your judgment: if it bothers you, turn it off.",
     },
     plan: {
       activeTitle: "Active plan", chooseTitle: "Choose your PERFORM Plan",
@@ -283,12 +275,8 @@ export const translations = {
     },
     darkModeOnyx: "Dark Mode Onyx",
     notif: {
-      title: "Recordatorios push",
-      meals: "Comidas", mealsDesc: "Un aviso si una comida queda vacía más allá del horario habitual.",
-      steps: "Pasos", stepsDesc: "Aviso nocturno si estás por debajo del umbral diario.",
-      sleep: "Sueño", sleepDesc: "Recordatorio para registrar la hora de dormir.",
-      motivation: "Pop-ups motivacionales", motivationDesc: "Mensajes sobre récords y semanas difíciles.",
-      footer: "Las notificaciones no sustituyen tu criterio: si una te molesta, apágala.",
+      title: "Notificaciones push",
+      footer: "Las notificaciones no sustituyen tu criterio: si te molesta, apágala.",
     },
     plan: {
       activeTitle: "Plan activo", chooseTitle: "Elige tu Plan PERFORM",
@@ -371,12 +359,8 @@ export const translations = {
     },
     darkModeOnyx: "Dark Mode Onyx",
     notif: {
-      title: "Rappels push",
-      meals: "Repas", mealsDesc: "Un rappel si un repas reste vide au-delà de l'heure habituelle.",
-      steps: "Pas", stepsDesc: "Alerte du soir si tu es sous le seuil quotidien.",
-      sleep: "Sommeil", sleepDesc: "Rappel pour enregistrer l'heure du coucher.",
-      motivation: "Pop-up motivationnels", motivationDesc: "Messages sur les records et les semaines difficiles.",
-      footer: "Les notifications ne remplacent pas ton jugement : si l'une te dérange, désactive-la.",
+      title: "Notifications push",
+      footer: "Les notifications ne remplacent pas ton jugement : si ça te dérange, désactive-la.",
     },
     plan: {
       activeTitle: "Abonnement actif", chooseTitle: "Choisis ton Plan PERFORM",
@@ -1630,9 +1614,8 @@ function ReferralCodeCard({ supabase, userId }) {
 export function SettingsDrawer({
   open, onClose, dark, accent, accentText, gender, lang, onChangeLang,
   currentPlan, planRenewsOn, accountEmail,
-  notifications, onToggleNotification,
   onOpenBillingPortal, onChangePlan, onDeleteAccount, onLogout,
-  supabase, userId,   // solo per il toggle reale "Promemoria streak (push)"
+  supabase, userId,   // anche per il toggle reale "Notifiche push"
 }) {
   const t = translations[lang] || translations.it;
   const [tab, setTab] = useState("aspetto");
@@ -1644,9 +1627,10 @@ export function SettingsDrawer({
   // Service Worker di QUESTO dispositivo — una riga su push_subscriptions
   // potrebbe esistere per un altro device.
   const [pushState, setPushState] = useState("checking"); // checking | on | off | unsupported | busy
+  const [pushReason, setPushReason] = useState(null); // motivo quando unsupported: "ios-not-installed" | "browser" | "no-vapid"
   useEffect(() => {
     if (!open || !isRealMode) return;
-    if (!isPushSupported()) { setPushState("unsupported"); return; }
+    if (!isPushSupported()) { setPushReason(pushUnsupportedReason()); setPushState("unsupported"); return; }
     let cancelled = false;
     getBrowserPushSubscription().then((sub) => { if (!cancelled) setPushState(sub ? "on" : "off"); });
     return () => { cancelled = true; };
@@ -1892,29 +1876,23 @@ export function SettingsDrawer({
           {/* ---------------- NOTIFICHE ---------------- */}
           {tab === "notifiche" && (
             <div className="spring-in">
+              <p className="label mb-3">{t.notif.title}</p>
               {isRealMode && (
-                <div className="card mb-4">
+                <div className="card mb-3">
                   <Toggle
                     on={pushState === "on"}
                     onClick={pushState === "busy" || pushState === "checking" || pushState === "unsupported" ? undefined : togglePush}
-                    label="Promemoria streak (push)"
+                    label="Promemoria streak"
                     desc={
                       pushState === "unsupported"
-                        ? "Non supportato su questo browser/dispositivo."
-                        : "Un avviso in serata se rischi di perdere lo streak di oggi — mai più di uno al giorno."
+                        ? (pushReason === "ios-not-installed"
+                            ? "Su iPhone le notifiche funzionano solo per l'app installata: tocca Condividi (icona con la freccia) nella barra di Safari, poi \"Aggiungi a Home\" e riapri PERFORM da quell'icona per attivarle."
+                            : "Non supportato su questo browser/dispositivo.")
+                        : "Un avviso in serata se rischi di perdere lo streak di oggi — mai più di uno al giorno, e chiede il permesso al sistema operativo la prima volta."
                     }
                   />
                 </div>
               )}
-              <p className="label mb-3">{t.notif.title}</p>
-              <Toggle on={notifications.meals} onClick={() => onToggleNotification("meals")}
-                label={t.notif.meals} desc={t.notif.mealsDesc} />
-              <Toggle on={notifications.steps} onClick={() => onToggleNotification("steps")}
-                label={t.notif.steps} desc={t.notif.stepsDesc} />
-              <Toggle on={notifications.sleep} onClick={() => onToggleNotification("sleep")}
-                label={t.notif.sleep} desc={t.notif.sleepDesc} />
-              <Toggle on={notifications.motivation} onClick={() => onToggleNotification("motivation")}
-                label={t.notif.motivation} desc={t.notif.motivationDesc} />
               <p className="meta mt-3 leading-relaxed" style={{ fontSize: "0.75rem" }}>{t.notif.footer}</p>
             </div>
           )}
@@ -2131,7 +2109,6 @@ export default function ClientProfileViewPreview({
   useEffect(() => { if (darkProp !== undefined) setDark(darkProp); }, [darkProp]);
   useEffect(() => { if (genderProp !== undefined) setGender(genderProp); }, [genderProp]);
   useEffect(() => { if (langProp !== undefined) setLang(langProp); }, [langProp]);
-  const [notif, setNotif] = useState({ meals: true, steps: true, sleep: true, motivation: true });
   const [profile, setProfile] = useState({
     name: "Marco Bianchi", nickname: "IronWolf",
     bio: "Panca e pazienza. Obiettivo: 100 kg per 5 entro l'estate.",
@@ -2409,8 +2386,6 @@ export default function ClientProfileViewPreview({
           accent={accent} accentText={accentText} gender={gender} lang={lang} onChangeLang={setLang}
           currentPlan={plan} planRenewsOn="2026-09-01"
           accountEmail={owner ? OWNER_EMAIL : profile.email}
-          notifications={notif}
-          onToggleNotification={(k) => setNotif((n) => ({ ...n, [k]: !n[k] }))}
           supabase={supabase} userId={userId}
           onOpenBillingPortal={() => {}}
           onChangePlan={(id) => setPlan(id)}

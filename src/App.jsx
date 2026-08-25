@@ -240,9 +240,6 @@ export default function App() {
   const [tab, setTab] = useState(() => localStorage.getItem("perform_last_tab") || "home");
   useEffect(() => { localStorage.setItem("perform_last_tab", tab); }, [tab]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [notifications, setNotifications] = useState({
-    meals: true, steps: true, sleep: true, motivation: true,
-  });
 
   // --- Bootstrap sessione Supabase --------------------------------------------
   useEffect(() => {
@@ -505,8 +502,6 @@ export default function App() {
           currentPlan={stripePlanId}
           planRenewsOn="2026-09-01"
           accountEmail={session.user.email || ""}
-          notifications={notifications}
-          onToggleNotification={(k) => setNotifications((n) => ({ ...n, [k]: !n[k] }))}
           supabase={supabase}
           userId={session.user.id}
           onOpenBillingPortal={async () => {
