@@ -626,11 +626,11 @@ function LockedChartOverlay({ gender, onUpgrade, title, text }) {
           {title || "🔒 SBLOCCA IL LABORATORIO ANALITICO"}
         </p>
         <p className="body mb-4" style={{ fontSize: "0.8rem", maxWidth: 300 }}>
-          {text || "Passa al Performance Pack (€5/mese) per analizzare i tuoi grafici storici stile Apple Salute e monitorare il recupero del Sistema Nervoso."}
+          {text || "Passa al Premium (€5/mese) per analizzare i tuoi grafici storici stile Apple Salute e monitorare il recupero del Sistema Nervoso."}
         </p>
         <button onClick={onUpgrade} className="rounded-full px-5 py-2.5 text-sm transition-transform active:scale-95 btn-3d"
                 style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
-          Scopri il Performance Pack →
+          Scopri il Premium →
         </button>
       </div>
     </div>
@@ -700,9 +700,9 @@ function MicroBar({ id, value, target, accent }) {
 }
 
 /* Griglia dei 5 micronutrienti — sblocco a 3 livelli:
-   · FREE → bloccata, upgrade a Performance Pack.
+   · FREE → bloccata, upgrade a Premium.
    · Full Coaching → sbloccata sempre, inclusa nel piano.
-   · Performance Pack → sbloccata sempre (invariato, è il piano che vende
+   · Premium → sbloccata sempre (invariato, è il piano che vende
      proprio i grafici avanzati).
    · Scheda Personalizzata / Solo Allenamento Coaching → NON inclusa: è un
      componente aggiuntivo a pagamento separato (micro_addon su profiles,
@@ -715,7 +715,7 @@ function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, accent, w
         <p className="label mb-2">Micronutrienti · target giornaliero</p>
         <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
           title="🔒 SBLOCCA IL LABORATORIO CHIMICO CELLULARE"
-          text="Passa al Performance Pack (€5/mese) per sbloccare l'analisi in tempo reale di Sodio, Potassio, Ferro, Calcio e Magnesio. Monitora le tue carenze croniche ed ottieni i consigli AI per prevenire crampi, ritenzione idrica sotto la pelle e svuotamento muscolare in palestra." />
+          text="Passa al Premium (€5/mese) per sbloccare l'analisi in tempo reale di Sodio, Potassio, Ferro, Calcio e Magnesio. Monitora le tue carenze croniche ed ottieni i consigli AI per prevenire crampi, ritenzione idrica sotto la pelle e svuotamento muscolare in palestra." />
       </div>
     );
   }
@@ -829,7 +829,7 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
           </div>
           <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
             title="🔒 SBLOCCA LA PLANCIA ANALITICA DEI VOLUMI"
-            text="Passa al Performance Pack (€5/mese) per vedere l'istogramma dinamico in tempo reale dello stimolo settimanale sui 15 distretti muscolari." />
+            text="Passa al Premium (€5/mese) per vedere l'istogramma dinamico in tempo reale dello stimolo settimanale sui 15 distretti muscolari." />
         </>
       ) : involved.length === 0 ? (
         <p className="meta">Aggiungi esercizi alla settimana per vedere la matrice popolarsi.</p>
@@ -2210,7 +2210,7 @@ export function HomeDashboard({
      apertura dell'app finché l'atleta non lo compila almeno con peso e
      sensazioni (dolori/stress/digestione/sonno), skippabile per quella
      sessione ma non "per sempre": solo per chi ha davvero un coach
-     (access.pro), MAI per free/Performance Pack, che registrano i propri
+     (access.pro), MAI per free/Premium, che registrano i propri
      dati quando vogliono dal Profilo ("Registra un check", sempre
      disponibile a tutti).
      Circonferenze e foto sono state spostate su cadenza MENSILE (non più
@@ -3024,7 +3024,7 @@ export function HomeDashboard({
             ) : (
               <LockedChartOverlay gender={profile.gender} onUpgrade={onUpgrade}
                 title="🔒 SBLOCCA LA SCIENZA DIETRO IL TUO ALLENAMENTO"
-                text="Volume, intensità, RIR, sovraccarico progressivo, deload: capisci il PERCHÉ dietro ogni serie che fai, non solo il cosa. Dal Performance Pack (€5/mese) in su hai accesso completo, ricercabile, sempre aggiornato." />
+                text="Volume, intensità, RIR, sovraccarico progressivo, deload: capisci il PERCHÉ dietro ogni serie che fai, non solo il cosa. Dal Premium (€5/mese) in su hai accesso completo, ricercabile, sempre aggiornato." />
             )}
           </div>
         )}
@@ -3035,7 +3035,7 @@ export function HomeDashboard({
   /* ------------------------------ ALIMENTAZIONE ------------------------- */
   if (screen === "nutrition") {
     // Full Coaching: dieta tipo/target la fissa il coach. Tutti gli altri
-    // piani (FREE, Performance Pack, Scheda Personalizzata, Solo Allenamento
+    // piani (FREE, Premium, Scheda Personalizzata, Solo Allenamento
     // Coaching) se li calcolano/impostano da soli — vedi NutritionTargetsPanel.
     const targetIsCoachSet = userPlan === "full_coaching";
     return (
@@ -3852,7 +3852,7 @@ function GpsTrackerModal({ accent, onClose, onSaved, supabase, userId, subsAcces
               <button onClick={onUpgrade} type="button"
                 className="w-full flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm mb-5"
                 style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
-                <Lock size={13} /> Percorsi ad anello suggeriti — dal Performance Pack
+                <Lock size={13} /> Percorsi ad anello suggeriti — dal Premium
               </button>
             )
           )}
@@ -4794,7 +4794,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
           <div className="spring-in mt-2">
             <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
               title="Contenuto riservato agli abbonati"
-              text="La guida biomeccanica di ogni esercizio (come eseguirlo, cosa evitare, ed eventuale video del coach) è inclusa dal Performance Pack in su. Con Scheda Personalizzata, Coaching Allenamento o Full Coaching hai anche una chat privata diretta col coach per farti correggere." />
+              text="La guida biomeccanica di ogni esercizio (come eseguirlo, cosa evitare, ed eventuale video del coach) è inclusa dal Premium in su. Con Scheda Personalizzata, Coaching Allenamento o Full Coaching hai anche una chat privata diretta col coach per farti correggere." />
           </div>
         )}
 
@@ -4997,7 +4997,7 @@ function makeExercise(name, sets, reps, targetMuscle) {
 }
 
 // BUG PRESO (segnalato): la routine costruita qui (giorni/esercizi/serie di
-// "La Mia Routine", piano Free/Performance Pack autogestito) non veniva MAI
+// "La Mia Routine", piano Free/Premium autogestito) non veniva MAI
 // scritta da nessuna parte — solo stato React locale. Un reload qualunque
 // (l'app riavviata, il tab ucciso in background da Android per liberare
 // RAM, un crash imprevisto catturato da ErrorBoundary più in alto)
@@ -5236,10 +5236,10 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
               esercizio (il piano Free non ha ExerciseCard/guida per
               esercizio, costruisce la scheda da solo) — un solo invito
               discreto, professionale, sopra la Matrice dei Volumi. Solo per
-              Free: Performance Pack lo vede già incluso nel proprio piano. */}
+              Free: Premium lo vede già incluso nel proprio piano. */}
           {userPlan === "free" && (
             <UpsellFooter accent={accent} accentSoft={accentSoft} accentText={accentText} onUpgrade={onUpgrade}
-              text="Dal Performance Pack in su hai anche la guida biomeccanica di ogni esercizio (come eseguirlo, cosa evitare); con un piano di coaching hai in più una chat privata diretta col coach per farti correggere." />
+              text="Dal Premium in su hai anche la guida biomeccanica di ogni esercizio (come eseguirlo, cosa evitare); con un piano di coaching hai in più una chat privata diretta col coach per farti correggere." />
           )}
 
           <div className="mt-4">
@@ -6872,7 +6872,7 @@ function NutritionTabs({
   // qui accanto: i target vivono ora in cima alla schermata Alimentazione
   // (fuori da questi tab, sempre visibili e modificabili da lì — vedi
   // screen === "nutrition"), così non serve cercarli in un tab separato.
-  // Sostituzioni solo Performance Pack/Full Coaching (subsAccess, più
+  // Sostituzioni solo Premium/Full Coaching (subsAccess, più
   // stretto di "qualunque piano a pagamento") — ma il bottone resta sempre
   // visibile (vedi tab === "subs" sotto), il contenuto è bloccato con una
   // spiegazione accattivante invece di sparire. Dieta Tipo, scritta dal
@@ -7388,7 +7388,7 @@ function NutritionTabs({
         </div>
       )}
 
-      {/* ---------------- SOSTITUZIONI (Performance Pack/Full Coaching —
+      {/* ---------------- SOSTITUZIONI (Premium/Full Coaching —
           bottone sempre visibile, contenuto bloccato altrove) ---------------- */}
       {tab === "subs" && (
         <div className="spring-in">
@@ -7398,7 +7398,7 @@ function NutritionTabs({
           ) : (
             <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
               title="🔒 NON PIÙ BLOCCATO DA UN ALIMENTO CHE NON HAI"
-              text="Finito il pollo, niente riso in casa, un ristorante senza quel piatto? Le Sostituzioni trovano al volo l'alimento equivalente per macro nel tuo stesso catalogo — il piano resta in target senza rifare i calcoli a mano. Incluso dal Performance Pack (€5/mese) in su." />
+              text="Finito il pollo, niente riso in casa, un ristorante senza quel piatto? Le Sostituzioni trovano al volo l'alimento equivalente per macro nel tuo stesso catalogo — il piano resta in target senza rifare i calcoli a mano. Incluso dal Premium (€5/mese) in su." />
           )}
         </div>
       )}
@@ -7412,7 +7412,7 @@ function NutritionTabs({
           ) : (
             <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
               title="🔒 SBLOCCA LA SCIENZA DIETRO LA TUA DIETA"
-              text="Deficit e surplus calorico, timing delle proteine, micronutrienti: capisci il PERCHÉ dietro ogni target che segui, non solo il numero. Dal Performance Pack (€5/mese) in su hai accesso completo, ricercabile, sempre aggiornato." />
+              text="Deficit e surplus calorico, timing delle proteine, micronutrienti: capisci il PERCHÉ dietro ogni target che segui, non solo il numero. Dal Premium (€5/mese) in su hai accesso completo, ricercabile, sempre aggiornato." />
           )}
         </div>
       )}

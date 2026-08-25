@@ -262,7 +262,7 @@ const DEPTS = [
 ];
 // I 3 reparti sono SOLO per rapporti di coaching reale (chi ha pagato
 // scheda/training/full) — non per chiunque sia semplicemente registrato con
-// piano Free o Performance Pack: quelli vivono solo in Hub Utenti,
+// piano Free o Premium: quelli vivono solo in Hub Utenti,
 // mai qui. BUG PRESO: prima ogni riga con un profiles.role reale (cioè
 // SEMPRE, per qualunque account vero) finiva in "In attesa" perché
 // clientStatus non era mai null grazie al fallback "registered" di
@@ -279,7 +279,7 @@ function deptOf(c) {
   if (c.billingStatus === "payment_failed") return "expired"; // solo dati demo, mai popolato dal roster reale
   if (c.status === "pending_approval" || c.status === "new" || c.status === "requires_renewal") return "pending"; // solo dati demo
   if (REAL_COACHING_PLANS.has(c.plan)) return "pending"; // ha pagato un piano coaching, aspetta la presa in gestione
-  return null; // Free/Performance Pack: non fa parte di questo roster
+  return null; // Free/Premium: non fa parte di questo roster
 }
 
 /* ============================================================================
@@ -4518,7 +4518,7 @@ function RosterView({ onOpen }) {
    💰 BLOCCO AMMINISTRATIVO E CONTABILE — MRR, proiezione annua, storico
    transazioni Stripe.
    Listino reale definitivo (da 07_ClientProfile.jsx, revisione 2, la più
-   recente sul progetto): FREE €0, Performance Pack €5/mese, Scheda
+   recente sul progetto): FREE €0, Premium €5/mese, Scheda
    Personalizzata €40 una tantum, Solo Allenamento Coaching €50/mese, Full
    Coaching Supremo €60/mese. Non ho inventato questi prezzi: sono lo stesso
    listino a 5 piani già approvato in quella chat — coincide esattamente coi
@@ -4531,7 +4531,7 @@ function RosterView({ onOpen }) {
    evento payment_intent.succeeded / invoice.paid / charge.failed. */
 const PLAN_PRICING = {
   free: { label: "FREE", price: 0, billing: "none" },
-  performance: { label: "Performance Pack", price: 5, billing: "recurring" },
+  performance: { label: "Premium", price: 5, billing: "recurring" },
   scheda: { label: "Scheda Personalizzata", price: 40, billing: "one_time" },
   training: { label: "Solo Allenamento Coaching", price: 50, billing: "recurring" },
   full: { label: "Full Coaching Supremo", price: 60, billing: "recurring" },

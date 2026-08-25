@@ -1637,9 +1637,16 @@ export function SettingsDrawer({
   currentPlan, planRenewsOn, accountEmail,
   onOpenBillingPortal, onChangePlan, onDeleteAccount, onLogout,
   supabase, userId,   // anche per il toggle reale "Notifiche push"
+  initialTab,         // "piano" quando si arriva da un CTA di upgrade (LockedChartOverlay ecc.):
+                       // prima apriva sempre su "Aspetto" e l'utente doveva trovare da solo la
+                       // tab piano — un click su "sblocca" deve portare dritto lì, non a un menu generico.
 }) {
   const t = translations[lang] || translations.it;
-  const [tab, setTab] = useState("aspetto");
+  const [tab, setTab] = useState(initialTab || "aspetto");
+  // Riapplicato ad ogni apertura (non solo al mount): il drawer resta montato
+  // tra un'apertura e l'altra, quindi senza questo useEffect una volta aperto
+  // su "piano" resterebbe lì anche alla prossima apertura da rotella normale.
+  useEffect(() => { if (open) setTab(initialTab || "aspetto"); }, [open, initialTab]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const isRealMode = Boolean(supabase && userId);
 
