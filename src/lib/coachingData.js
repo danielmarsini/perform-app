@@ -115,12 +115,17 @@ async function fetchExerciseLibrary(supabase) {
 
 // on conflict do nothing: una voce già presente non va mai sovrascritta da
 // un secondo inserimento — il primo che l'ha definita resta quello valido.
+// BUG PRESO: l'errore veniva solo loggato in console, mai propagato — il
+// chiamante marcava "salvato" comunque anche quando la scrittura falliva
+// davvero (es. SCHEMA_v61 non ancora eseguito su questo progetto), dando
+// un falso successo. Ora rilancia, come richiesto dalla convenzione in
+// cima a questo file (§03 "Fiducia attraverso la correttezza").
 async function learnExercise(supabase, name, direct, indirect, userId) {
   if (!name?.trim() || !direct?.length) return;
   const { error } = await supabase.from("exercise_library")
     .insert({ name: name.trim(), direct, indirect: indirect || [], created_by: userId || null })
     .select().maybeSingle();
-  if (error && error.code !== "23505") console.error("PERFORM: errore salvataggio esercizio in libreria", error); // 23505 = già esiste, atteso e ok
+  if (error && error.code !== "23505") throw error; // 23505 = già esiste, atteso e ok
 }
 
 // SCHEMA_v61: a differenza di learnExercise (insert-only, mai sovrascrive),
@@ -131,6 +136,20 @@ async function learnExercise(supabase, name, direct, indirect, userId) {
 // se chi chiama è davvero il coach: un cliente che invocasse questa
 // funzione otterrebbe comunque un errore di permessi, questo controllo qui
 // è solo per non tentare la chiamata da una UI che non dovrebbe esporla.
+// BUG PRESO: l'errore veniva solo loggato in console, mai propagato — il
+// coach vedeva sempre "✓ Salvato in libreria" (saveExerciseToLib in
+// 09_CoachDashboard.jsx marcava il salvataggio riuscito a prescindere,
+// perché la promise non falliva mai) anche quando la scrittura falliva
+// davvero — es. SCHEMA_v61 non ancora eseguito su questo progetto (colonne
+// how_to/avoid/video_url mancanti, o RLS/grant "exercise_library_update"
+// assenti). L'esercizio spariva così dalla libreria condivisa al prossimo
+// caricamento, mai un errore vero comunicato — esattamente il sintomo
+// segnalato ("non lo salva"). Ora rilancia sempre un errore reale, tranne
+// per 42703 ("undefined column" = SCHEMA_v61 non ancora eseguito): in quel
+// caso ripiega su un upsert senza le colonne guida, così muscoli
+// target/sinergici — la parte che serve SUBITO per il grafico volumi e per
+// riassegnare l'esercizio ad altri clienti — si salvano comunque, mentre la
+// guida testuale resta rimandata a dopo la migrazione.
 async function saveExerciseGuide(supabase, name, direct, indirect, { howTo, avoid, videoUrl }, coachId) {
   if (!name?.trim() || !direct?.length) return;
   const { error } = await supabase.from("exercise_library")
@@ -138,7 +157,14 @@ async function saveExerciseGuide(supabase, name, direct, indirect, { howTo, avoi
       how_to: howTo || null, avoid: avoid || null, video_url: videoUrl || null,
       created_by: coachId || null }, { onConflict: "name" })
     .select().maybeSingle();
-  if (error) console.error("PERFORM: errore salvataggio guida esercizio", error);
+  if (error?.code === "42703") {
+    const fallback = await supabase.from("exercise_library")
+      .upsert({ name: name.trim(), direct, indirect: indirect || [], created_by: coachId || null }, { onConflict: "name" })
+      .select().maybeSingle();
+    if (fallback.error) throw fallback.error;
+    return;
+  }
+  if (error) throw error;
 }
 
 // Serie dirette 100% + serie sui sinergici 50%, per gruppo muscolare —
