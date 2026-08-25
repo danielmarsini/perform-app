@@ -2609,3 +2609,14 @@ export async function fetchUnreadChatCount(supabase, clientId, readerId) {
   if (error) throw error;
   return count ?? 0;
 }
+
+// Guida interattiva PERFORM (SCHEMA_v70): mostrata UNA volta sola per nuovo
+// iscritto, subito dopo l'onboarding — sostituisce il vecchio banner
+// "Giorno 1 di 14". Stesso pattern minimale di onboarding_completed, un
+// solo booleano scritto quando l'utente la finisce o la salta (mai
+// ripresentata dopo, mai un "ricordamelo più tardi" — chi la salta ha
+// scelto di saltarla).
+export async function markGuideTourCompleted(supabase, userId) {
+  const { error } = await supabase.from("profiles").update({ guide_tour_completed: true }).eq("id", userId);
+  if (error) throw error;
+}

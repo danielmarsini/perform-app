@@ -22,11 +22,11 @@ import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
-  Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check, Navigation,
+  Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check, Navigation, Trophy,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchExerciseSetHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -1485,59 +1485,184 @@ function MesocicloBadge({ mesociclo, week, weeks }) {
 }
 
 /* ============================================================================
-   PRIMI 14 GIORNI (§05 memo "Verso l'élite") — un nuovo iscritto entrava
-   nell'app intera, tutta insieme, il primo giorno: nessun percorso che lo
-   accompagnasse a scoprirla con calma, a differenza delle app che
-   trattengono davvero (che dosano). Un consiglio breve e diverso ogni
-   giorno per le prime due settimane, mai un tutorial lungo da leggere —
-   deve stare in 2 righe su un telefono. */
-const DAY_JOURNEY_COPY = {
-  1: "Benvenuto in PERFORM! Oggi esplora l'app con calma: guarda la scheda assegnata e registra il primo pasto.",
-  2: "Registra sonno e passi di stanotte: è da lì che parte il cerchio Recupero.",
-  3: "Prova la Guida all'esecuzione su un esercizio della tua scheda: aiuta a capire la tecnica corretta.",
-  4: "Qualcosa nella scheda non torna? Scrivi al coach in chat — è lì apposta.",
-  5: "Ogni giorno registrato conta per lo streak, anche solo un pasto segnato.",
-  6: "Domani è il settimo giorno: preparati al primo check settimanale.",
-  7: "Prima settimana completata! Registra il tuo primo check: peso e sensazioni.",
-  8: "Seconda settimana: prova a seguire i target macro con un po' più di precisione.",
-  9: "Dai un'occhiata al grafico Volume settimanale in Allenamento: mostra dove stai lavorando di più.",
-  10: "Motivazione e fatica raccontano più di quanto pensi — vale la pena registrarle ogni giorno.",
-  11: "Mancano pochi giorni ai 14: la costanza conta più della perfezione.",
-  12: "Hai un piano coaching? In Integrazione trovi il protocollo assegnato dal coach.",
-  13: "Ultimo giorno prima del traguardo dei 14: guarda quanta strada hai fatto da qui.",
-  14: "14 giorni! Da qui in poi è questione di costanza: il percorso vero comincia adesso.",
+   GUIDA INTERATTIVA PERFORM — sostituisce il vecchio banner "Giorno 1 di 14"
+   (richiesta esplicita: "toglilo, fai una guida interattiva vera"). Mostrata
+   UNA sola volta, subito dopo l'onboarding: una piccola sequenza di schermate
+   stile bot, diversa per ognuno dei 5 piani, che spiega le funzioni
+   principali dell'app e dove trovarle — pensata per stare nei primi 5-10
+   minuti, non un tutorial lungo da leggere. Stessa identità visiva
+   dell'AppIntroTutorial di 11_OnboardingFlow.jsx (icona in cerchio
+   sfumato, kicker, title-shine, corpo breve) invece di un secondo stile
+   inventato da zero — chi l'ha già vista una volta la riconosce.
+   ========================================================================== */
+const GUIDE_BOT_ICON = MessageCircle;
+
+// Contenuto specifico per piano: ognuno vede SOLO le funzioni che ha
+// davvero (Free non ha una chat col coach da mostrare, Full Coaching ha
+// dieta ON/OFF e sostituzioni automatiche che Free non vede mai). L'ultimo
+// step di ogni sequenza è sempre la chiusura/CTA, con testo diverso a
+// seconda che ci sia già un upsell sensato da proporre o no.
+const GUIDE_TOUR_STEPS = {
+  free: [
+    { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
+      body: "In 2 minuti ti mostro le funzioni principali di PERFORM: dove sono, a cosa servono e cosa farci. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Allenamento, Alimentazione e Recupero: ognuno è una percentuale calcolata sui tuoi ultimi giorni reali. Toccane uno per vedere il dettaglio — non sono solo un numero, spiegano il perché." },
+    { icon: Dumbbell, kicker: "Allenamento", title: "Costruisci la tua routine libera.",
+      body: "In \"La Mia Routine\" scegli tu gli esercizi giorno per giorno. Segna carico e reps mentre alleni: si salva da sola, niente da confermare." },
+    { icon: Salad, kicker: "Alimentazione", title: "Diario libero e target personalizzabile.",
+      body: "Registra i pasti nel Diario Libero e imposta tu il tuo target calorico/macro in cima alla pagina — puoi cambiarlo quando vuoi." },
+    { icon: BedDouble, kicker: "Recupero & Integrazione", title: "Sonno, passi e integratori.",
+      body: "Registrali ogni giorno: alimentano il cerchio Recupero e ti aiutano a capire quando serve rallentare." },
+    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei li trovi nel tuo Profilo — tocca la barra XP in Home per vedere quanto manca al prossimo." },
+    { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
+      body: "Con un piano a pagamento sblocchi grafici storici avanzati, la guida biomeccanica di ogni esercizio e — dalla Scheda Personalizzata in su — un coach vero che segue i tuoi progressi. Vedi gli abbonamenti quando vuoi, dalle Impostazioni." },
+  ],
+  performance_pack: [
+    { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
+      body: "In 2 minuti ti mostro le funzioni principali di PERFORM Premium: dove sono, a cosa servono e cosa farci. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Allenamento, Alimentazione e Recupero: ognuno è una percentuale calcolata sui tuoi ultimi giorni reali. Toccane uno per vedere il dettaglio." },
+    { icon: Dumbbell, kicker: "Allenamento", title: "Routine libera + guida a ogni esercizio.",
+      body: "Costruisci la tua scheda in \"La Mia Routine\": per ogni esercizio hai anche la guida biomeccanica (come eseguirlo, cosa evitare) e la Wiki Allenamento con i principi scientifici dietro un piano che funziona." },
+    { icon: Salad, kicker: "Alimentazione", title: "Diario, sostituzioni e micronutrienti.",
+      body: "Oltre al Diario Libero, le Sostituzioni trovano al volo l'alimento equivalente per macro se ti manca qualcosa, e l'analisi in tempo reale di Sodio/Potassio/Ferro/Calcio/Magnesio ti segnala le carenze croniche." },
+    { icon: History, kicker: "Recupero", title: "Grafici storici stile Apple Salute.",
+      body: "Sonno, passi, HRV — l'andamento nel tempo, non solo il numero di oggi. Li trovi nella sezione Recupero." },
+    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei li trovi nel tuo Profilo." },
+    { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
+      body: "Se vuoi una scheda costruita su misura da un coach vero, con follow-up diretto, dalla Scheda Personalizzata in su hai anche quello. Vedi gli abbonamenti quando vuoi, dalle Impostazioni." },
+  ],
+  scheda_personalizzata: [
+    { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
+      body: "In pochi minuti ti mostro come sfruttare al meglio la tua Scheda Personalizzata. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Allenamento, Alimentazione e Recupero: percentuali calcolate sui tuoi ultimi giorni reali. Toccane uno per il dettaglio." },
+    { icon: Dumbbell, kicker: "Allenamento", title: "La scheda costruita dal coach è qui.",
+      body: "In Allenamento trovi gli esercizi assegnati sui tuoi obiettivi reali — non una scheda generica. Segna carico e reps mentre alleni: si salva da sola." },
+    { icon: MessageCircle, kicker: "Chat privata", title: "Il coach è a un messaggio di distanza.",
+      body: "Per le prime settimane hai una chat privata diretta col coach (terzo pulsante in basso): usala per dubbi su esecuzione, dolori o qualsiasi cosa nella scheda non torni." },
+    { icon: Salad, kicker: "Alimentazione & Integrazione", title: "Restano autogestite, come nel Diario Libero.",
+      body: "Diario pasti e integratori li registri tu — se in futuro vuoi anche il piano alimentare costruito dal coach, lo trovi tra gli abbonamenti a coaching completo." },
+    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei nel tuo Profilo." },
+    { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
+      body: "Buon lavoro — il coach legge davvero quello che registri per calibrare i tuoi prossimi allenamenti." },
+  ],
+  training: [
+    { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
+      body: "In pochi minuti ti mostro come sfruttare al meglio il tuo Coaching Allenamento. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Allenamento, Alimentazione e Recupero: percentuali calcolate sui tuoi ultimi giorni reali. Toccane uno per il dettaglio." },
+    { icon: Dumbbell, kicker: "Allenamento", title: "Scheda aggiornata in continuo, mai statica.",
+      body: "Il coach la fa evolvere settimana dopo settimana sui tuoi progressi reali. Segna carico e reps mentre alleni, e guarda il grafico Volume settimanale per capire dove stai lavorando di più." },
+    { icon: MessageCircle, kicker: "Chat privata", title: "Il coach è sempre a un messaggio di distanza.",
+      body: "Chat diretta (terzo pulsante in basso), attiva per tutta la durata dell'abbonamento — usala per dubbi su esecuzione, dolori o qualunque correzione." },
+    { icon: CheckCircle2, kicker: "Check settimanale", title: "Peso e sensazioni, ogni settimana.",
+      body: "Compilalo quando te lo propone l'app: è quello che il coach legge per capire se serve scaricare, spingere di più, o cambiare rotta." },
+    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei nel tuo Profilo." },
+    { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
+      body: "Hai un coach vero che segue i tuoi progressi passo passo — più registri con costanza, più preciso può essere il suo lavoro." },
+  ],
+  full_coaching: [
+    { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
+      body: "In pochi minuti ti mostro come sfruttare al meglio il tuo Full Coaching. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Allenamento, Alimentazione e Recupero: percentuali calcolate sui tuoi ultimi giorni reali. Toccane uno per il dettaglio." },
+    { icon: Dumbbell, kicker: "Allenamento", title: "Scheda aggiornata in continuo, mai statica.",
+      body: "Il coach la fa evolvere settimana dopo settimana sui tuoi progressi reali. Segna carico e reps mentre alleni." },
+    { icon: Salad, kicker: "Alimentazione", title: "Dieta calcolata su misura, ON/OFF.",
+      body: "Il coach imposta un target diverso per i giorni di allenamento e di riposo. Se ti manca un alimento, le Sostituzioni trovano al volo l'equivalente per macro — il piano resta in target senza rifare i calcoli a mano." },
+    { icon: Pill, kicker: "Integrazione", title: "Protocollo assegnato dal coach.",
+      body: "In Integrazione trovi cosa prendere, quando e perché — spuntalo ogni giorno, il coach lo vede." },
+    { icon: MessageCircle, kicker: "Chat privata", title: "Il coach è sempre a un messaggio di distanza.",
+      body: "Chat diretta (terzo pulsante in basso) e check settimanale (peso e sensazioni): è così che il coach calibra ogni cosa sui tuoi progressi reali, non su un piano scritto una volta e dimenticato." },
+    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei nel tuo Profilo." },
+    { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
+      body: "Hai tutto il necessario e un coach vero che segue ogni aspetto del tuo percorso — più registri con costanza, più preciso può essere il suo lavoro." },
+  ],
 };
 
-/* Chiuso per il resto della giornata (non per sempre): riappare il giorno
-   dopo con un consiglio diverso — mai un banner fisso che l'atleta impara a
-   ignorare, ma nemmeno sparito per il resto dei 14 giorni al primo tap. */
-function DayJourneyCard({ joinedAt }) {
-  const [dismissedDay, setDismissedDay] = useState(() => {
-    try { return Number(localStorage.getItem("perform_journey_dismissed_day")) || 0; } catch { return 0; }
-  });
-  if (!joinedAt) return null;
-  const dayNumber = Math.floor((Date.now() - new Date(joinedAt).getTime()) / 86400000) + 1;
-  if (dayNumber < 1 || dayNumber > 14 || dayNumber === dismissedDay) return null;
-  const tip = DAY_JOURNEY_COPY[dayNumber];
-  if (!tip) return null;
-
-  const dismiss = () => {
-    setDismissedDay(dayNumber);
-    try { localStorage.setItem("perform_journey_dismissed_day", String(dayNumber)); } catch { /* privacy mode: niente di grave, riapparirà */ }
-  };
+/* Stessa identità visiva di AppIntroTutorial (11_OnboardingFlow.jsx): icona
+   in cerchio sfumato, kicker, title-shine, corpo breve, dots di
+   avanzamento — qui a schermo intero sopra il resto della Home, mostrata
+   una sola volta (guide_tour_completed, SCHEMA_v70) subito dopo
+   l'onboarding. onFinish marca il flag sia al completamento sia al salto:
+   chi salta ha scelto di saltare, non va ripresentata al prossimo accesso. */
+function PerformGuideTour({ plan, gender, onFinish }) {
+  const steps = GUIDE_TOUR_STEPS[plan] || GUIDE_TOUR_STEPS.free;
+  const [step, setStep] = useState(0);
+  const last = step === steps.length - 1;
+  const s = steps[step];
+  const Icon = s.icon;
+  const isFemale = gender === "F";
+  const accentColor = isFemale ? "#D4A5A5" : "#C5A059";
 
   return (
-    <div className="card mb-4" style={{ padding: "16px 20px" }}>
-      <div className="flex items-start justify-between gap-3 mb-1">
-        <p className="text-xs font-data" style={{ fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--gold, #C5A059)" }}>
-          Giorno {dayNumber} di 14
-        </p>
-        <button onClick={dismiss} aria-label="Chiudi per oggi" style={{ color: "var(--ink-2)" }}>
-          <X size={15} />
-        </button>
+    <Portal>
+      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "var(--page)" }}>
+        <div className="flex justify-end px-5 pt-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)" }}>
+          <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+            Salta la guida
+          </button>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" style={{ maxWidth: 480, margin: "0 auto" }}>
+          <div key={step} className="spring-in">
+            <div className="mx-auto mb-6 rounded-full flex items-center justify-center"
+                 style={{
+                   width: 84, height: 84,
+                   background: isFemale
+                     ? "linear-gradient(135deg, rgba(212,165,165,0.22), rgba(212,165,165,0.06))"
+                     : "linear-gradient(135deg, rgba(197,160,89,0.22), rgba(197,160,89,0.06))",
+                   border: `1px solid ${isFemale ? "rgba(212,165,165,0.4)" : "rgba(197,160,89,0.4)"}`,
+                   boxShadow: `0 0 40px ${isFemale ? "rgba(212,165,165,0.25)" : "rgba(197,160,89,0.25)"}`,
+                 }}>
+              <Icon size={34} style={{ color: accentColor }} />
+            </div>
+
+            <p className="font-data mb-3" style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-2)" }}>
+              {s.kicker}
+            </p>
+            <p className="title-shine" style={{ fontSize: "1.5rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
+              {s.title}
+            </p>
+            <p className="mt-4 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
+              {s.body}
+            </p>
+          </div>
+        </div>
+
+        <div className="px-6 pb-10" style={{ maxWidth: 480, width: "100%", margin: "0 auto" }}>
+          <div className="flex items-center justify-center gap-2 mb-6">
+            {steps.map((_, i) => (
+              <button key={i} onClick={() => setStep(i)} aria-label={`Vai allo step ${i + 1}`}
+                className="rounded-full transition-all duration-300"
+                style={{ width: i === step ? 22 : 7, height: 7,
+                         backgroundColor: i === step ? accentColor : "var(--line)" }} />
+            ))}
+          </div>
+          <div className="flex gap-2.5">
+            {step > 0 && (
+              <button onClick={() => setStep((v) => v - 1)}
+                className="rounded-full px-5 py-3.5 text-sm"
+                style={{ border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
+                Indietro
+              </button>
+            )}
+            <button onClick={() => (last ? onFinish() : setStep((v) => v + 1))}
+              className="flex-1 rounded-full px-4 py-3.5 text-sm flex items-center justify-center gap-1.5 btn-3d"
+              style={{ backgroundColor: accentColor, color: "#111111", fontWeight: 700 }}>
+              {last ? "Ho capito, si parte!" : "Avanti"} <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
       </div>
-      <p className="text-sm" style={{ color: "var(--ink)", lineHeight: 1.5 }}>{tip}</p>
-    </div>
+    </Portal>
   );
 }
 
@@ -2174,20 +2299,23 @@ export function HomeDashboard({
     return () => { cancelled = true; };
   }, [supabase, userId]);
 
-  // §05 memo "Verso l'élite" — I primi 14 giorni: un nuovo iscritto entrava
-  // nell'app intera, tutta insieme, il primo giorno, senza nessun percorso
-  // che lo accompagnasse. joinedAt (profiles.created_at, mai letto finora
-  // in questo file) serve solo a calcolare in che giorno del percorso è —
-  // non un secondo profilo, un solo campo in lettura.
-  const [joinedAt, setJoinedAt] = useState(null);
+  // Guida interattiva PERFORM (SCHEMA_v70): mostrata una sola volta, subito
+  // dopo l'onboarding — sostituisce il vecchio banner "Giorno 1 di 14" a
+  // percorso fisso. null finché non è stata letta (niente lampo del tour
+  // che appare e sparisce mentre si aspetta la risposta reale).
+  const [guideTourSeen, setGuideTourSeen] = useState(null);
   useEffect(() => {
     if (!supabase || !userId) return;
     let cancelled = false;
-    supabase.from("profiles").select("created_at").eq("id", userId).maybeSingle()
-      .then(({ data, error }) => { if (error) throw error; if (!cancelled) setJoinedAt(data?.created_at || null); })
-      .catch((err) => console.error("PERFORM: errore lettura data iscrizione", err));
+    supabase.from("profiles").select("guide_tour_completed").eq("id", userId).maybeSingle()
+      .then(({ data, error }) => { if (error) throw error; if (!cancelled) setGuideTourSeen(Boolean(data?.guide_tour_completed)); })
+      .catch((err) => console.error("PERFORM: errore lettura stato guida interattiva", err));
     return () => { cancelled = true; };
   }, [supabase, userId]);
+  const finishGuideTour = () => {
+    setGuideTourSeen(true); // ottimistico: mai far ricomparire il tour per un errore di rete transitorio
+    markGuideTourCompleted(supabase, userId).catch((err) => console.error("PERFORM: errore salvataggio guida interattiva completata", err));
+  };
   // Alimentazione: "I tuoi target" ora è un pannello compatto in cima alla
   // pagina, non più un tab tra Diario Libero e Sostituzioni — chiuso di
   // default, si espande solo quando il cliente vuole davvero modificarli.
@@ -2621,8 +2749,16 @@ export function HomeDashboard({
 
   /* Check settimanale: occupa tutta la schermata (non un vero blocco di
      navigazione: skippabile per questa sessione, vedi onSkip), finché
-     l'atleta non lo compila almeno con peso e sensazioni. */
-  if (showWeeklyCheck) {
+     l'atleta non lo compila almeno con peso e sensazioni.
+     guideTourSeen === true (non solo "!== false"): un nuovo iscritto a un
+     piano coaching può ritrovarsi con ENTRAMBI showWeeklyCheck e la guida
+     interattiva veri al primo accesso — la guida ha sempre la priorità,
+     chiedere di compilare un check prima ancora di sapere cos'è l'app
+     sarebbe fuori sequenza. In modalità demo (isRealMode false, dove
+     guideTourSeen resta sempre null perché non c'è nessun profilo reale da
+     leggere) questa condizione non cambia nulla: la guida non è mai gated
+     lì, e il comportamento della preview resta quello di sempre. */
+  if (showWeeklyCheck && (!isRealMode || guideTourSeen === true)) {
     return (
       <WeeklyCheckModal
         accent={accent} accentText={accentText} accentSoft={accentSoft} gender={profile.gender}
@@ -2743,7 +2879,9 @@ export function HomeDashboard({
             </p>
           </div>
         )}
-        <DayJourneyCard joinedAt={joinedAt} />
+        {isRealMode && guideTourSeen === false && (
+          <PerformGuideTour plan={userPlan} gender={profile.gender} onFinish={finishGuideTour} />
+        )}
 
         {/* La prontezza di oggi non è più una card separata qui: vive dentro
             il popup del cerchio Recupero (CompliancePopup, tocca il cerchio
