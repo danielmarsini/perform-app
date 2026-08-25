@@ -1853,9 +1853,32 @@ function AccessControlTable() {
 function WeekWorkoutEditor({ week, onChange, client }) {
   const { supabase, coachId, isRealMode, exerciseLib, reloadExerciseLib } = useContext(CoachDataContext);
   // EX_NAMES ora viene dalla libreria collettiva reale (SCHEMA_v39), non più
-  // una lista fissa di ~19 esercizi — ordinata alfabeticamente, cresce da
-  // sola ogni volta che un esercizio custom viene salvato in libreria.
+  // una lista fissa di ~19 esercizi — cresce da sola ogni volta che un
+  // esercizio custom viene salvato in libreria. Ordinata alfabeticamente:
+  // resta così solo per gli usi "un nome qualunque valido" (EX_NAMES[0] come
+  // esercizio di default), il menu a tendina vero usa EX_NAMES_BY_MUSCLE.
   const EX_NAMES = useMemo(() => Object.keys(exerciseLib).sort((a, b) => a.localeCompare(b, "it")), [exerciseLib]);
+  // Richiesta esplicita: la lista esercizi va ordinata per gruppo muscolare
+  // principale coinvolto, non alfabetica — un elenco di 100+ esercizi
+  // alfabetici mescola petto/schiena/gambe senza nessun criterio utile
+  // mentre si costruisce una scheda. Raggruppa per exerciseLib[name].direct[0]
+  // (il muscolo diretto, stesso campo scritto da saveExerciseToLib/
+  // "Salva in libreria"), nell'ordine di MUSCLES (coachingData.js — lo
+  // stesso ordine già usato dal grafico Volume settimanale), alfabetico
+  // dentro ogni gruppo. Un esercizio senza muscolo assegnato (non dovrebbe
+  // succedere per righe scritte da questa stessa app, ma un dato importato
+  // a mano potrebbe non averlo) finisce in "Altro" invece di sparire.
+  const EX_NAMES_BY_MUSCLE = useMemo(() => {
+    const groups = new Map(MUSCLES.map((m) => [m, []]));
+    groups.set("Altro", []);
+    Object.keys(exerciseLib).forEach((name) => {
+      const muscle = exerciseLib[name]?.direct?.[0];
+      const key = muscle && groups.has(muscle) ? muscle : "Altro";
+      groups.get(key).push(name);
+    });
+    groups.forEach((arr) => arr.sort((a, b) => a.localeCompare(b, "it")));
+    return [...groups.entries()].filter(([, arr]) => arr.length > 0);
+  }, [exerciseLib]);
   const [selDay, setSelDay] = useState(0);
   const day = week.workout[selDay];
   const setDay = (updater) => onChange({ ...week, workout: week.workout.map((d, i) => (i === selDay ? updater(d) : d)) });
@@ -1929,6 +1952,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   };
   const volume = useMemo(() => computeVolume(week.workout, exerciseLib), [week.workout, exerciseLib]);
   const [savedToLib, setSavedToLib] = useState({}); // { exId: true } — feedback visivo dopo "Salva in libreria"
+  const [saveLibError, setSaveLibError] = useState({}); // { exId: messaggio } — errore reale, mai un "salvato" finto
   // Guida biomeccanica per esercizio (SCHEMA_v61): bozza locale per
   // esercizio, {exId: {howTo, avoid, videoUrl}} — scritta insieme ai
   // muscoli target nello stesso "Salva in libreria", mai più indovinata
@@ -1937,15 +1961,28 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   const [guideDrafts, setGuideDrafts] = useState({});
   const updateGuideDraft = (exId, field, value) =>
     setGuideDrafts((d) => ({ ...d, [exId]: { ...d[exId], [field]: value } }));
+  // BUG PRESO: prima non c'era nessun try/catch — saveExerciseGuide non
+  // rilanciava mai un errore reale (solo console.error), quindi questa
+  // funzione marcava SEMPRE "✓ Salvato in libreria" anche quando la
+  // scrittura falliva davvero (RLS, colonne mancanti). L'esercizio spariva
+  // dalla libreria condivisa al prossimo caricamento senza che il coach
+  // avesse modo di saperlo. Ora un fallimento reale mostra un errore
+  // visibile invece di un falso successo.
   const saveExerciseToLib = async (ex) => {
     if (!isRealMode || !ex.name?.trim() || !ex.muscleTarget) return;
+    setSaveLibError((s) => ({ ...s, [ex.id]: "" }));
     const direct = [DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget];
     const indirect = (ex.synergists || []).map((m) => DB_MUSCLE_TO_CHART[m] || m);
     const guide = guideDrafts[ex.id] || {};
-    await saveExerciseGuide(supabase, ex.name.trim(), direct, indirect,
-      { howTo: guide.howTo, avoid: guide.avoid, videoUrl: guide.videoUrl }, coachId);
-    reloadExerciseLib();
-    setSavedToLib((s) => ({ ...s, [ex.id]: true }));
+    try {
+      await saveExerciseGuide(supabase, ex.name.trim(), direct, indirect,
+        { howTo: guide.howTo, avoid: guide.avoid, videoUrl: guide.videoUrl }, coachId);
+      reloadExerciseLib();
+      setSavedToLib((s) => ({ ...s, [ex.id]: true }));
+    } catch (err) {
+      console.error("PERFORM: errore salvataggio esercizio in libreria", err);
+      setSaveLibError((s) => ({ ...s, [ex.id]: err?.message || "Non sono riuscito a salvare l'esercizio in libreria." }));
+    }
   };
   // Un esercizio custom SENZA distretto scelto è l'unico caso davvero escluso
   // dal grafico volumi ora — con un distretto impostato (+ eventuali
@@ -2040,7 +2077,11 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                       className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[180px]" />
                   ) : (
                     <select value={ex.name} onChange={(e) => updateEx(i, "name", e.target.value)} className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[180px]">
-                      {EX_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
+                      {EX_NAMES_BY_MUSCLE.map(([muscle, names]) => (
+                        <optgroup key={muscle} label={muscle}>
+                          {names.map((n) => <option key={n} value={n}>{n}</option>)}
+                        </optgroup>
+                      ))}
                     </select>
                   )}
                   <button onClick={() => toggleCustom(i)} className="c-ghost px-2.5 py-1.5 rounded-md text-[11px] font-data uppercase shrink-0" title="Esercizio personalizzato">
@@ -2155,9 +2196,13 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                               className="c-ghost px-2.5 py-1.5 rounded-md text-[11px] font-data uppercase mt-2 flex items-center gap-1">
                         {savedToLib[ex.id] ? "✓ Salvato in libreria" : "💾 Salva in libreria"}
                       </button>
-                      <p className="c-muted text-[10px] mt-1">
-                        Salvalo dopo aver scelto i muscoli: la prossima volta compare già nel menu, per qualunque cliente — mai più da riscrivere.
-                      </p>
+                      {saveLibError[ex.id] ? (
+                        <p className="text-[10px] mt-1" style={{ color: "#B91C1C" }}>{saveLibError[ex.id]}</p>
+                      ) : (
+                        <p className="c-muted text-[10px] mt-1">
+                          Salvalo dopo aver scelto i muscoli: la prossima volta compare già nel menu, per qualunque cliente — mai più da riscrivere.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

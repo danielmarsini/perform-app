@@ -847,24 +847,6 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
   );
 }
 
-/* Dischi per lato su bilanciere olimpico da 20 kg */
-export function platesFor(target) {
-  const bar = 20;
-  let side = (Number(target) - bar) / 2;
-  if (!isFinite(side) || side < 0) return { ok: false, plates: [], left: 0 };
-  const avail = [25, 20, 15, 10, 5, 2.5, 1.25];
-  const plates = [];
-  avail.forEach((p) => {
-    while (side >= p - 0.001) { plates.push(p); side = +(side - p).toFixed(3); }
-  });
-  return { ok: side < 0.001, plates, left: +side.toFixed(2) };
-}
-
-export const PLATE_COLOR = {
-  25: "#DC2626", 20: "#2563EB", 15: "#F0A020",
-  10: "#16A34A", 5: "#FFFFFF", 2.5: "#111111", 1.25: "#8E8E93",
-};
-
 /* Auto-split: ricolloca la seduta saltata dove il volume resta invariato e
    resta almeno un giorno di recupero tra sedute sugli stessi distretti. */
 export function proposeReschedule(week, missedIdx, todayIdx, musclesOf) {
@@ -4559,7 +4541,7 @@ function CardioSection({ supabase, userId, accent, subsAccess, onUpgrade }) {
 
 /* ---------------------------------------------------------------------------
    Card dell'esercizio: serie indipendenti, recupero per serie, badge di
-   priorità, calcolatore dischi.
+   priorità.
    ------------------------------------------------------------------------- */
 
 /* Guida di esecuzione: SOLO un match esatto sul nome (EXERCISE_BIOMECH,
@@ -4816,7 +4798,6 @@ function PastSessionCard({ session, supabase, userId }) {
 }
 
 function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId }) {
-  const [plates, setPlates] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [timer, setTimer] = useState(null); // { total, remaining } in secondi
@@ -4851,7 +4832,6 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const lastSession = ex.setHistory && ex.setHistory.length > 0 ? ex.setHistory[0] : null;
   const lastSessionSets = lastSession ? lastSession.sets.filter((s) => s.kg != null && s.kg > 0) : [];
 
-  const pl = platesFor(peak);
   const complete = (r) => r.kg !== "" && r.reps !== "";
   const curIdx = rows.findIndex((r) => !complete(r));
   const restIdx = curIdx === -1 ? rows.length - 1 : curIdx;
@@ -5012,37 +4992,6 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
           <button onClick={() => setTimer(null)} className="shrink-0 label" style={{ fontSize: "0.6rem" }}>
             salta
           </button>
-        </div>
-      )}
-
-      {/* calcolatore dischi */}
-      {peak >= 20 && (
-        <div className="mt-3">
-          <button onClick={() => setPlates((v) => !v)} className="label flex items-center gap-1.5">
-            Dischi per {peak} kg {plates ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-          </button>
-          {plates && (
-            <div className="spring-in inner px-4 py-3 mt-2">
-              <p className="meta mb-2" style={{ fontSize: "0.65rem" }}>Bilanciere 20 kg · dischi per lato</p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="px-2 py-1 rounded text-xs"
-                      style={{ backgroundColor: "var(--surface)",
-                               border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>bar 20</span>
-                {pl.plates.map((p, k) => (
-                  <span key={k} className="px-2.5 py-1.5 rounded-full text-xs"
-                        style={{ backgroundColor: PLATE_COLOR[p],
-                                 color: p === 5 || p === 1.25 ? "#111111" : "#FFFFFF",
-                                 border: p === 5 ? "1px solid var(--line)" : "none",
-                                 fontWeight: 700 }}>{p}</span>
-                ))}
-              </div>
-              {!pl.ok && (
-                <p className="mt-2 text-xs" style={{ color: "#B45309", fontWeight: 600 }}>
-                  Restano {pl.left} kg per lato: carico non componibile con i dischi standard.
-                </p>
-              )}
-            </div>
-          )}
         </div>
       )}
 
@@ -5532,14 +5481,25 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
   const [setsVal, setSetsVal] = useState("3");
   const [reps, setReps] = useState("8-10");
 
+  // Richiesta esplicita: gli esercizi particolari già classificati dal coach
+  // (muscoli diretti/sinergici già assegnati "col suo occhio da
+  // professionista") devono comparire anche qui mentre l'utente digita, non
+  // solo nella lista statica EXERCISE_LIBRARY — altrimenti un Premium che
+  // non conosce a memoria il nome esatto non lo trova mai, e finisce a
+  // riclassificare da zero un esercizio già pronto in libreria condivisa.
+  const searchableNames = useMemo(() => {
+    const merged = new Set([...EXERCISE_LIBRARY, ...Object.keys(exerciseLib || {})]);
+    return [...merged].sort((a, b) => a.localeCompare(b, "it"));
+  }, [exerciseLib]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return EXERCISE_LIBRARY.slice(0, 8);
-    return EXERCISE_LIBRARY.filter((n) => n.toLowerCase().includes(q)).slice(0, 8);
-  }, [query]);
+    if (!q) return searchableNames.slice(0, 8);
+    return searchableNames.filter((n) => n.toLowerCase().includes(q)).slice(0, 8);
+  }, [query, searchableNames]);
 
   const trimmed = query.trim();
-  const isKnown = EXERCISE_LIBRARY.some((n) => n.toLowerCase() === trimmed.toLowerCase());
+  const isKnown = searchableNames.some((n) => n.toLowerCase() === trimmed.toLowerCase());
   // BUG PRESO: prima indovinava il distretto con un regex sul nome (spesso
   // sbagliato, "Generico" invisibile al grafico) — ora chiede sempre
   // un'assegnazione manuale per un nome che non è già nella libreria
