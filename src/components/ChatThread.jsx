@@ -207,6 +207,11 @@ export default function ChatThread({ supabase, clientId, meId, accent, emptyText
   // dei titoli di livello (oro/rosa cangiante) MA definito qui in modo
   // autosufficiente (nessuna variabile CSS ereditata da un antenato): la
   // stessa fragilità aveva già causato in passato il banner XP illeggibile.
+  // BUG PRESO (2): la bolla dietro il testo era quasi trasparente
+  // (rgba(127,127,127,0.08)) — sullo sfondo animato oro/arancione della
+  // chat (AppShell), il testo oro cangiante finiva su un fondo anch'esso
+  // dorato, illeggibile. Bolla ora scura e ben opaca (rgba(0,0,0,0.62)),
+  // sempre nero indipendentemente dal tema o dallo sfondo dietro.
   const shineClass = gender === "F" ? "chat-shine-pink" : "chat-shine-gold";
 
   return (
@@ -243,7 +248,7 @@ export default function ChatThread({ supabase, clientId, meId, accent, emptyText
                   </>
                 ) : (
                   <div className="rounded-2xl px-3.5 py-2.5"
-                       style={mine ? { backgroundColor: "rgba(127,127,127,0.08)" } : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+                       style={mine ? { backgroundColor: "rgba(0,0,0,0.62)" } : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
                     {bodyEl}
                   </div>
                 )}
