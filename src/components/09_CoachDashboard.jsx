@@ -189,7 +189,7 @@ import {
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
-  detectPersistentPain, sendChatMessage, fetchAttentionSignals,
+  detectPersistentPain, sendChatMessage,
   fetchReferrals,
 } from "../lib/coachingData.js";
 
@@ -4412,100 +4412,6 @@ function CheckDetail({ client }) {
   );
 }
 
-/* §02 memo "Verso l'élite" — La leva del coach: "clicco su chi mi viene in
-   mente" smette di funzionare con più clienti. Coda ordinata per urgenza
-   reale (dolore persistente > messaggio senza risposta > check saltato da
-   troppo tempo), non per ordine alfabetico o reparto — il coach la vede
-   SUBITO, prima ancora di scegliere un reparto. Fetch dedicato con due sole
-   query totali (fetchAttentionSignals), mai una per cliente. */
-// Soglia "allenamento scarso": stessa convenzione già usata da
-// STATUS_META/computeStatus per il pallino "Rischio abbandono" (adherence
-// < 70 = rosso) — non un nuovo numero inventato qui.
-const LOW_TRAINING_PCT = 70;
-
-function AttentionQueue({ onOpen }) {
-  const { clients: CLIENTS, supabase, isRealMode } = useContext(CoachDataContext);
-  const [signals, setSignals] = useState(null); // null = non ancora caricato
-  const [trainingPct, setTrainingPct] = useState(null); // Map<clientId, pct|null>
-
-  const coachedIds = useMemo(
-    () => CLIENTS.filter((c) => REAL_COACHING_PLANS.has(c.plan) && deptOf(c) !== null).map((c) => c.id),
-    [CLIENTS]
-  );
-
-  useEffect(() => {
-    if (!isRealMode || coachedIds.length === 0) { setSignals(null); return; }
-    let cancelled = false;
-    fetchAttentionSignals(supabase, coachedIds)
-      .then((m) => { if (!cancelled) setSignals(m); })
-      .catch((err) => { console.error("PERFORM: errore lettura segnali attenzione", err); if (!cancelled) setSignals(new Map()); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRealMode, supabase, coachedIds.join(",")]);
-
-  // Richiesta esplicita: la coda va ordinata per percentuale del cerchio
-  // Allenamento (peggiore in cima), non più solo per tipo di segnale — così
-  // il coach vede prima chi si sta allenando meno, anche se non ha ancora
-  // un dolore segnalato o un messaggio senza risposta. Riusa
-  // computeTrainingCompliance (stessa funzione del cerchio in ClientDetail,
-  // mai una seconda formula scritta a mano che potrebbe disallinearsi).
-  useEffect(() => {
-    if (!isRealMode || coachedIds.length === 0) { setTrainingPct(null); return; }
-    let cancelled = false;
-    Promise.all(coachedIds.map((id) =>
-      computeTrainingCompliance(supabase, id)
-        .then((r) => [id, r.pct])
-        .catch((err) => { console.error("PERFORM: errore calcolo % allenamento per coda attenzione", id, err); return [id, null]; })
-    )).then((entries) => { if (!cancelled) setTrainingPct(new Map(entries)); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRealMode, supabase, coachedIds.join(",")]);
-
-  if (!isRealMode || !signals || !trainingPct) return null;
-
-  const flagged = CLIENTS
-    .filter((c) => coachedIds.includes(c.id))
-    .map((c) => {
-      const s = signals.get(c.id);
-      const pct = trainingPct.get(c.id) ?? null;
-      let reason = null;
-      if (s?.painFlag) reason = { kind: "pain", label: `Dolore alto per ${s.painFlag.consecutiveChecks} check (${s.painFlag.lastPain}/10)` };
-      else if (s?.unanswered) reason = { kind: "unanswered", label: `Messaggio senza risposta da ${Math.floor(s.hoursSinceClientMsg)}h` };
-      else if (s?.missedCheck) reason = { kind: "missedCheck", label: `Nessun check da ${s.daysSinceCheck} giorni` };
-      else if (pct != null && pct < LOW_TRAINING_PCT) reason = { kind: "lowTraining", label: `Allenamento al ${pct}%` };
-      if (!reason) return null;
-      // Nessun dato di allenamento affatto (pct null) è trattato come 0: un
-      // cliente che non ha mai registrato nulla merita attenzione almeno
-      // quanto uno che si allena poco, non va spinto in fondo alla coda.
-      return { client: c, reason, pct: pct ?? 0 };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.pct - b.pct);
-
-  if (flagged.length === 0) return null;
-
-  return (
-    <div className="c-card mb-4" style={{ backgroundColor: "#FFFBEB", border: "1px solid #FDE68A" }}>
-      <p className="font-display font-bold text-sm mb-2" style={{ color: "#92400E" }}>
-        ⚡ Richiede attenzione ({flagged.length})
-      </p>
-      <div className="space-y-1.5">
-        {flagged.map(({ client, reason }) => (
-          <button key={client.id} onClick={() => onOpen(client.id)}
-            className="w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left"
-            style={{ backgroundColor: "#FFFFFF", border: "1px solid #FDE68A" }}>
-            <span className="min-w-0">
-              <span className="block text-sm font-bold truncate" style={{ color: "#111111" }}>{client.name}</span>
-              <span className="block text-xs truncate" style={{ color: reason.kind === "pain" ? "#B91C1C" : "#92400E" }}>{reason.label}</span>
-            </span>
-            <ChevronRight size={15} style={{ color: "#92400E", flexShrink: 0 }} />
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /* §08 memo "Verso l'élite" — Il business dietro l'app: chi ha invitato chi,
    così il coach sa a chi applicare il premio (whitelist di un mese, dallo
    Hub Rete & Accessi) — mai automatico: un referral non ancora convertito
@@ -4575,7 +4481,6 @@ function RosterView({ onOpen }) {
 
   return (
     <div>
-      <AttentionQueue onOpen={onOpen} />
       <div className="grid grid-cols-3 gap-1.5 mb-4">
         {DEPTS.map((d) => {
           const n = CLIENTS.filter((c) => deptOf(c) === d.id).length;
