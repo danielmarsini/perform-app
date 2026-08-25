@@ -8367,7 +8367,7 @@ function SupplementDetailModal({ supplement, accent, onClose }) {
             </div>
           )}
           {(w.pros?.length > 0 || w.cons?.length > 0) && (
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="space-y-2 mb-3">
               {w.pros?.length > 0 && (
                 <div className="rounded-xl p-3" style={{ backgroundColor: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)" }}>
                   <p className="label mb-1.5" style={{ color: "#10B981", fontSize: "0.6rem" }}>Pro</p>
@@ -9563,7 +9563,7 @@ function WikiDetailModal({ entry, accent, onClose }) {
             </div>
           )}
           {(entry.pros?.length || entry.cons?.length) && (
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="space-y-2 mb-3">
               {entry.pros?.length > 0 && (
                 <div className="rounded-xl p-3" style={{ backgroundColor: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)" }}>
                   <p className="label mb-1.5" style={{ color: "#10B981", fontSize: "0.6rem" }}>Pro</p>
