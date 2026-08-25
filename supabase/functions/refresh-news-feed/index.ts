@@ -62,20 +62,44 @@ async function translateToItalian(title, abstract) {
 // vuole che Tips dica "cosa fare in pratica", non "cosa dice lo studio".
 // Resta ancorato SOLO ai risultati reali dell'abstract, esplicitamente
 // vietato aggiungere consigli non supportati dal testo.
+//
+// Richiesta esplicita del coach: il titolo deve sempre iniziare con una
+// delle 4 forme azionabili sotto — chi scorre il feed capisce SUBITO se
+// il consiglio gli serve, senza dover aprire l'articolo. body resta la
+// versione breve per la card nel feed; body_extended è un'elaborazione
+// GENUINAMENTE più lunga (passi concreti, errori comuni, quando si
+// applica), non una copia di body — prima capitava che i due campi
+// coincidessero, rendendo "Approfondisci" inutile (mostrava lo stesso
+// identico testo, solo con un font più grande).
 async function craftPracticalTip(title, abstract) {
   const msg = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 900,
+    max_tokens: 1400,
     messages: [{
       role: "user",
-      content: `Trasforma questo studio scientifico in un consiglio pratico per chi si allena e segue un percorso fitness. Scrivi in italiano, tono diretto e concreto, spiegando COSA FARE in pratica — basandoti SOLO sui risultati reali riportati nell'abstract, senza aggiungere consigli, numeri o affermazioni non presenti nel testo originale. Rispondi SOLO con un oggetto JSON valido, nessun altro testo, con esattamente questi due campi:\n{"title": "un titolo breve e diretto per il consiglio pratico, non il titolo dello studio", "body": "2-4 frasi che spiegano cosa fare in pratica, basate sui risultati reali dello studio"}\n\nTitolo studio originale:\n${title}\n\nAbstract originale:\n${abstract}`,
+      content: `Trasforma questo studio scientifico in un consiglio pratico per chi si allena e segue un percorso fitness. Scrivi in italiano, tono diretto e concreto, spiegando COSA FARE in pratica — basandoti SOLO sui risultati reali riportati nell'abstract, senza aggiungere consigli, numeri o affermazioni non presenti nel testo originale.
+
+Il titolo DEVE iniziare con una di queste 4 forme (scegli quella più naturale per questo consiglio, poi completa con l'argomento specifico):
+- "Come fare [azione]" — es. "Come fare il riscaldamento prima dello squat"
+- "Come non fare [azione]" — es. "Come non fare la fase eccentrica in panca"
+- "Cosa fare quando [situazione]" — es. "Cosa fare quando il sonno scende sotto le 6 ore"
+- "Cosa non fare quando [situazione]" — es. "Cosa non fare quando aumenti il carico"
+
+Rispondi SOLO con un oggetto JSON valido, nessun altro testo, con esattamente questi campi:
+{"title": "il titolo nel formato richiesto sopra", "body": "2-3 frasi, la versione breve per l'anteprima nel feed", "body_extended": ["primo paragrafo: cosa fare in pratica, passo dopo passo", "secondo paragrafo: l'errore più comune da evitare o quando il consiglio si applica davvero, sempre ancorato ai risultati dello studio"]}
+
+Titolo studio originale:
+${title}
+
+Abstract originale:
+${abstract}`,
     }],
   });
   const text = msg.content?.[0]?.type === "text" ? msg.content[0].text : "";
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("risposta consiglio pratico senza JSON");
   const parsed = JSON.parse(match[0]);
-  if (!parsed.title || !parsed.body) throw new Error("consiglio pratico incompleto");
+  if (!parsed.title || !parsed.body || !parsed.body_extended?.length) throw new Error("consiglio pratico incompleto");
   return parsed;
 }
 
@@ -123,6 +147,16 @@ const TIPS_TOPICS = [
   { query: "hydration fluid intake practical guidelines exercise performance", eyebrow: "Idratazione" },
   { query: "recovery strategies between training sessions practical", eyebrow: "Recupero pratico" },
   { query: "deload training practical recommendations overtraining prevention", eyebrow: "Recupero pratico" },
+  // Aggiunti per coprire i dubbi più discussi online (forum, Reddit,
+  // TikTok fitness) mantenendo comunque solo fonti scientifiche reali da
+  // PubMed dietro ogni consiglio — mai uno spunto preso direttamente da un
+  // social senza uno studio verificabile a supporto.
+  { query: "training plateau strength progression practical strategies", eyebrow: "Progressione" },
+  { query: "spot reduction fat loss myth localized", eyebrow: "Miti da sfatare" },
+  { query: "rest day necessity muscle recovery training frequency", eyebrow: "Programmazione" },
+  { query: "minimum effective dose resistance training volume", eyebrow: "Programmazione" },
+  { query: "common exercise form errors squat deadlift injury", eyebrow: "Tecnica esecutiva" },
+  { query: "muscle soreness DOMS myth performance indicator", eyebrow: "Miti da sfatare" },
 ];
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -261,10 +295,13 @@ Deno.serve(async (req) => {
   }
 
   // Tips: riformulazione in consiglio pratico attuabile, sempre ancorata
-  // ai risultati reali dello studio.
+  // ai risultati reali dello studio. bodyExtended arriva da body_extended
+  // (2 paragrafi genuinamente più approfonditi di body, non una copia —
+  // vedi craftPracticalTip) così "Approfondisci" mostra davvero qualcosa
+  // in più della card nel feed.
   async function tipsTransform(article) {
     const tip = await craftPracticalTip(article.title, article.abstract);
-    return { title: tip.title, body: tip.body, bodyExtended: [tip.body] };
+    return { title: tip.title, body: tip.body, bodyExtended: tip.body_extended };
   }
 
   async function publishChannel(channel, topics, transform) {
