@@ -13,13 +13,12 @@ export function isMapboxConfigured() {
   return Boolean(MAPBOX_TOKEN);
 }
 
-// Corsa/camminata/altro → a piedi; bici → in bici; nuoto/canottaggio non
-// hanno "strade" da seguire, la mappatura resta null apposta (si salta lo
-// snap, il percorso grezzo dei punti GPS resta l'unico dato onesto per
-// un'attività in acqua).
+// Corsa/camminata/altro → a piedi; bici → in bici; nuoto non ha "strade" da
+// seguire, la mappatura resta null apposta (si salta lo snap, il percorso
+// grezzo dei punti GPS resta l'unico dato onesto per un'attività in acqua).
 export function mapboxProfileFor(activityId) {
   if (activityId === "bici") return "cycling";
-  if (activityId === "nuoto" || activityId === "canottaggio") return null;
+  if (activityId === "nuoto") return null;
   return "walking";
 }
 
