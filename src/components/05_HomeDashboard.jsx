@@ -2674,7 +2674,7 @@ export function HomeDashboard({
       .then((r) => { if (!cancelled) setRealRecoveryCompliance(r); })
       .catch((err) => {
         console.error("PERFORM: errore calcolo cerchio Recupero", err);
-        if (!cancelled) setRealRecoveryCompliance({ status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0 });
+        if (!cancelled) setRealRecoveryCompliance({ status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0, windowDays: 0 });
       });
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId]);
@@ -2682,6 +2682,7 @@ export function HomeDashboard({
   const recoveryBasePct = isRealMode ? (realRecoveryCompliance?.pct ?? null) : recoveryPctComputed;
   const recoveryPct = recoveryOverride ?? blendRecoveryWithReadiness(recoveryBasePct, readiness);
   const recoveryTrackedDays = isRealMode ? (realRecoveryCompliance?.trackedDays ?? 0) : recoverySleep7.filter((h) => h > 0).length;
+  const recoveryWindowDays = isRealMode ? (realRecoveryCompliance?.windowDays ?? 0) : 7;
 
   const progressionLabel = { positive: "In crescita", negative: "In calo", neutral: "Stabile" };
 
@@ -2690,8 +2691,8 @@ export function HomeDashboard({
       id: "train", label: "Allenamento", icon: Dumbbell, pct: trainPct,
       details: isRealMode
         ? [
-            { label: "Completamento ultime 7 sessioni", value: realTrainCompliance?.completionPct != null ? `${realTrainCompliance.completionPct}%` : "…" },
-            { label: "Progressione carichi vs 7 sessioni prima", value: realTrainCompliance ? progressionLabel[realTrainCompliance.progression] : "…" },
+            { label: "Completamento sessioni recenti", value: realTrainCompliance?.completionPct != null ? `${realTrainCompliance.completionPct}%` : "…" },
+            { label: "Progressione carichi vs sessioni precedenti", value: realTrainCompliance ? progressionLabel[realTrainCompliance.progression] : "…" },
           ]
         : [
             { label: "Serie completate oggi", value: day.isTraining ? `${todayCompletedSets} / ${todayExpectedSets}` : "Riposo" },
@@ -2704,7 +2705,7 @@ export function HomeDashboard({
       details: isRealMode
         ? [
             { label: "Kcal oggi", value: `${consumed.kcal} / ${target.kcal}` },
-            { label: "Giorni valutati (7g)", value: `${realNutritionCompliance?.daysScored ?? 0} / 7` },
+            { label: "Giorni valutati", value: `${realNutritionCompliance?.daysScored ?? 0}` },
           ]
         : [
             { label: "Precisione oggi vs target", value: `${nutriPctToday}%` },
@@ -2716,9 +2717,9 @@ export function HomeDashboard({
       id: "recovery", label: "Recupero", icon: BedDouble, pct: recoveryPct,
       details: isRealMode
         ? [
-            { label: "Sonno medio (7g)", value: realRecoveryCompliance?.sleepAvg != null ? `${realRecoveryCompliance.sleepAvg} h` : "…" },
-            { label: "Passi medi (7g)", value: realRecoveryCompliance?.stepsAvg != null ? realRecoveryCompliance.stepsAvg.toLocaleString("it-IT") : "…" },
-            { label: "Giorni tracciati", value: `${recoveryTrackedDays} / 7` },
+            { label: "Sonno medio", value: realRecoveryCompliance?.sleepAvg != null ? `${realRecoveryCompliance.sleepAvg} h` : "…" },
+            { label: "Passi medi", value: realRecoveryCompliance?.stepsAvg != null ? realRecoveryCompliance.stepsAvg.toLocaleString("it-IT") : "…" },
+            { label: "Giorni tracciati", value: `${recoveryTrackedDays} / ${recoveryWindowDays}` },
           ]
         : [
             { label: "Sonno medio (7g)", value: `${(recoverySleep7.reduce((a, b) => a + b, 0) / 7).toFixed(1)} h` },

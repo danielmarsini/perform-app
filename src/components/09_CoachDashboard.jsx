@@ -3723,7 +3723,7 @@ function BioritmiGrafici({ client }) {
       .then((r) => { if (!cancelled) setRecoveryCompliance(r); })
       .catch((err) => {
         console.error("PERFORM: errore calcolo cerchio Recupero", err);
-        if (!cancelled) setRecoveryCompliance({ status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0 });
+        if (!cancelled) setRecoveryCompliance({ status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0, windowDays: 0 });
       });
     return () => { cancelled = true; };
   }, [isRealMode, supabase, client.id]);
@@ -3781,10 +3781,10 @@ function BioritmiGrafici({ client }) {
 
       {openRing === "recupero" && (
         <div className="c-card">
-          <p className="c-heading font-display font-bold mb-1">Recupero — ultimi 7 giorni</p>
-          <p className="c-muted text-xs mb-3">Sonno e passi medi registrati dall'atleta, stessa finestra usata per il cerchio.</p>
+          <p className="c-heading font-display font-bold mb-1">Recupero — ultimi giorni reali</p>
+          <p className="c-muted text-xs mb-3">Sonno e passi medi registrati dall'atleta, stessa finestra usata per il cerchio (max 7 giorni, mai prima dell'iscrizione, oggi escluso).</p>
           {!isRealMode || recoveryCompliance?.trackedDays === 0 || recoveryCompliance?.sleepAvg == null ? (
-            <p className="c-muted text-sm">{isRealMode ? "Nessun dato di sonno/passi registrato in questa settimana." : "Disponibile in modalità reale."}</p>
+            <p className="c-muted text-sm">{isRealMode ? "Nessun dato di sonno/passi registrato in questa finestra." : "Disponibile in modalità reale."}</p>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               <div className="t-inner px-3 py-3 text-center">
