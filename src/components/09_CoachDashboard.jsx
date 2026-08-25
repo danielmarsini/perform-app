@@ -2645,7 +2645,12 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       .then((data) => { if (!cancelled) setRealWorkout(data); })
       .catch((err) => {
         console.error("PERFORM: errore caricamento allenamento reale", err);
-        if (!cancelled) setWorkoutError("Non sono riuscito a caricare l'allenamento di questa settimana.");
+        // Il dettaglio tecnico (err.message) resta visibile in coda al
+        // messaggio invece di sparire solo nella console — un coach non ha
+        // gli strumenti sviluppatore aperti, e senza questo dettaglio un
+        // bug come "colonna mancante dopo una migrazione non ancora
+        // eseguita" è impossibile da segnalare con precisione.
+        if (!cancelled) setWorkoutError(`Non sono riuscito a caricare l'allenamento di questa settimana.${err?.message ? ` (${err.message})` : ""}`);
       })
       .finally(() => { if (!cancelled) setWorkoutLoading(false); });
     return () => { cancelled = true; };
