@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, Suspense, lazy } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Lock } from "lucide-react";
 
 import { supabase, makeAuth, AuthScreen } from "./components/03_AuthView.jsx";
 import { AppShell, COACH_EMAIL, accentFor, SplashScreen } from "./components/04_AppShell.jsx";
@@ -183,6 +183,30 @@ const CoachDashboard = lazy(() => import("./components/09_CoachDashboard.jsx"));
 // sfondo giusto del tema, MAI un flash bianco con la scritta "Caricamento…"
 // al centro — è la stessa categoria di schermata di caricamento invadente
 // già tolta altrove nell'app su richiesta esplicita.
+// Tab Chat sempre visibile (vedi nota in 04_AppShell.jsx): chi non ha un
+// piano a coaching la trova comunque nel menu, non sparisce — qui dentro
+// vede il perché e come sbloccarla, invece di essere rimbalzato in
+// silenzio su Home come succedeva prima.
+function LockedChatScreen({ accent, onUpgrade }) {
+  return (
+    <div className="card text-center py-12">
+      <span className="inline-flex items-center justify-center rounded-full mb-4"
+            style={{ width: 56, height: 56, backgroundColor: accent + "22" }}>
+        <Lock size={24} style={{ color: accent }} />
+      </span>
+      <p className="h1 mb-2">Un coach vero, non un algoritmo</p>
+      <p className="body max-w-xs mx-auto mb-6">
+        Scrivi direttamente a me: correggo la tua tecnica da un video, aggiusto il piano quando qualcosa non torna,
+        rispondo ai tuoi dubbi prima che diventino un problema. Inclusa da Scheda Personalizzata in su.
+      </p>
+      <button onClick={onUpgrade} className="rounded-full px-5 py-3 text-sm"
+              style={{ backgroundColor: accent, color: "#111111", fontWeight: 600 }}>
+        Vedi i piani
+      </button>
+    </div>
+  );
+}
+
 function ScreenFallback({ dark, minHeight = "50vh" }) {
   return (
     <div style={{ minHeight, display: "flex", alignItems: "center", justifyContent: "center",
@@ -428,7 +452,6 @@ export default function App() {
         gender={gender}
         dark={dark}
         userEmail={session.user.email || ""}
-        hasChat={hasCoachChat}
         tab={tab}
         onTabChange={setTab}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -498,7 +521,9 @@ export default function App() {
           // conversazioni, non la ChatScreen dell'atleta.
           chat: isCoach
             ? <CoachChatInboxScreen supabase={supabase} coachId={session.user.id} accent={accent} gender={gender} />
-            : (hasCoachChat ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} gender={gender} /> : null),
+            : (hasCoachChat
+                ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} gender={gender} />
+                : <LockedChatScreen accent={accent} onUpgrade={() => setSettingsOpen(true)} />),
         }}
       />
       </Suspense>
