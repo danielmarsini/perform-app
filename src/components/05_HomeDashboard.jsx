@@ -3020,8 +3020,9 @@ export function HomeDashboard({
                 intro="Volume, intensità, frequenza e sovraccarico progressivo non sono concetti nati in sala pesi: sono i principi con cui il corpo umano si adatta a qualsiasi sforzo ripetuto — servono a mantenere la massa muscolare e la densità ossea con l'età (prevenzione di sarcopenia e cadute), a costruire la base atletica in qualunque sport, a riabilitarsi dopo un infortunio, e più in generale a restare funzionali nella vita di tutti i giorni. La sala pesi è semplicemente il contesto più controllato e misurabile per applicarli: pro, un ambiente prevedibile dove ogni variabile (carico, serie, recupero) si programma e si verifica; contro, richiede attrezzatura e costanza, e un piano tarato solo sull'estetica può trascurare mobilità e pattern di movimento utili fuori dalla palestra."
                 searchPlaceholder="Cerca un argomento (es. volume, RIR, deload...)" />
             ) : (
-              <LockedPanel onUpgrade={onUpgrade} accent={accent}
-                text="La Wiki Allenamento è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
+              <LockedChartOverlay gender={profile.gender} onUpgrade={onUpgrade}
+                title="🔒 SBLOCCA LA SCIENZA DIETRO IL TUO ALLENAMENTO"
+                text="Volume, intensità, RIR, sovraccarico progressivo, deload: capisci il PERCHÉ dietro ogni serie che fai, non solo il cosa. Dal Performance Pack (€5/mese) in su hai accesso completo, ricercabile, sempre aggiornato." />
             )}
           </div>
         )}
@@ -6777,7 +6778,9 @@ function NutritionTabs({
   // (fuori da questi tab, sempre visibili e modificabili da lì — vedi
   // screen === "nutrition"), così non serve cercarli in un tab separato.
   // Sostituzioni solo Performance Pack/Full Coaching (subsAccess, più
-  // stretto di "qualunque piano a pagamento"); Dieta Tipo, scritta dal
+  // stretto di "qualunque piano a pagamento") — ma il bottone resta sempre
+  // visibile (vedi tab === "subs" sotto), il contenuto è bloccato con una
+  // spiegazione accattivante invece di sparire. Dieta Tipo, scritta dal
   // coach, solo Full Coaching (fullAccess).
   // BUG PRESO: il coach panel non ha (ancora) nessun modo di scrivere una
   // dieta tipo pasto-per-pasto — solo macro/calorie (nutrition_targets) — ma
@@ -6787,7 +6790,11 @@ function NutritionTabs({
   // una dieta tipo assegnata; resta visibile solo nell'anteprima demo.
   const visibleTabs = pastDayMode ? [["diary", "Diario Libero"]] : [
     ["diary", "Diario Libero"],
-    ...(subsAccess ? [["subs", "Sostituzioni"]] : []),
+    // Sostituzioni: bottone sempre visibile anche a chi non ha ancora il
+    // piano giusto (come Wiki qui sotto) — il contenuto resta bloccato con
+    // una spiegazione accattivante invece di sparire, per invogliare
+    // all'upgrade invece di nascondere che la funzione esiste.
+    ["subs", "Sostituzioni"],
     ...(fullAccess && !isRealMode ? [["plan", "Dieta Tipo"]] : []),
     // Wiki Alimentazione: bottone sempre visibile qui in alto (come Wiki
     // Allenamento tra i 3 di Allenamento Pesi/Cardio/Wiki) invece di stare
@@ -7286,12 +7293,18 @@ function NutritionTabs({
         </div>
       )}
 
-      {/* ---------------- SOSTITUZIONI (Premium/Scheda Personalizzata e
-          superiori, tab nascosto sotto — vedi visibleTabs sopra) ---------------- */}
-      {tab === "subs" && subsAccess && (
+      {/* ---------------- SOSTITUZIONI (Performance Pack/Full Coaching —
+          bottone sempre visibile, contenuto bloccato altrove) ---------------- */}
+      {tab === "subs" && (
         <div className="spring-in">
-          <SubsPanel foods={foods} accent={accent} accentSoft={accentSoft}
-                     accentText={accentText} />
+          {subsAccess ? (
+            <SubsPanel foods={foods} accent={accent} accentSoft={accentSoft}
+                       accentText={accentText} />
+          ) : (
+            <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
+              title="🔒 NON PIÙ BLOCCATO DA UN ALIMENTO CHE NON HAI"
+              text="Finito il pollo, niente riso in casa, un ristorante senza quel piatto? Le Sostituzioni trovano al volo l'alimento equivalente per macro nel tuo stesso catalogo — il piano resta in target senza rifare i calcoli a mano. Incluso dal Performance Pack (€5/mese) in su." />
+          )}
         </div>
       )}
 
@@ -7302,8 +7315,9 @@ function NutritionTabs({
               intro="Proteine, deficit/surplus calorico e micronutrienti contano per chiunque, non solo per chi si allena: energia quotidiana, funzione immunitaria, lucidità mentale, salute ossea e longevità dipendono dalla stessa base nutrizionale. In un percorso in sala pesi questi principi vengono applicati con più precisione — si pesano gli alimenti, si calcola un target di macro, si programmano fasi di surplus o deficit — perché servono risultati misurabili in tempi definiti: pro, un controllo molto più fine su composizione corporea e performance; contro, richiede tracking costante e, se vissuto in modo ossessivo, può peggiorare il rapporto con il cibo invece di migliorarlo — per la sola salute generale bastano abitudini molto più semplici."
               searchPlaceholder="Cerca un argomento (es. proteine, deficit, digiuno...)" />
           ) : (
-            <LockedPanel onUpgrade={onUpgrade} accent={accent}
-              text="La Wiki Alimentazione è disponibile dagli abbonamenti a pagamento, a partire da 5€/mese: capisci il perché dietro ogni scelta del tuo piano." />
+            <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
+              title="🔒 SBLOCCA LA SCIENZA DIETRO LA TUA DIETA"
+              text="Deficit e surplus calorico, timing delle proteine, micronutrienti: capisci il PERCHÉ dietro ogni target che segui, non solo il numero. Dal Performance Pack (€5/mese) in su hai accesso completo, ricercabile, sempre aggiornato." />
           )}
         </div>
       )}

@@ -483,9 +483,11 @@ export function SplashScreen({ dark }) {
 
    Il pulsante "Coach Panel" NON è mai una delle quattro tab standard:
    viene aggiunto in coda solo se `isCoach` è true. Il pulsante "Chat" si
-   inserisce invece a metà, subito dopo News, solo se `hasChat` è true
-   (piano a coaching reale). Per un atleta Free/Premium senza coach,
-   `tabs` ha sempre e solo i 4 elementi standard.
+   inserisce invece a metà, subito dopo News, SEMPRE visibile — anche a chi
+   non ha ancora un piano a coaching: aprirlo senza accesso mostra una
+   schermata bloccata con una spiegazione accattivante (screens.chat in
+   App.jsx) invece di far sparire il pulsante, per invogliare all'upgrade
+   invece di nascondere che la funzione esiste.
    ========================================================================== */
 
 export const TABS = [
@@ -624,14 +626,14 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
   );
 }
 
-export function BottomBar({ active, onSelect, accent, dark, isCoach = false, hasChat = false }) {
+export function BottomBar({ active, onSelect, accent, dark, isCoach = false }) {
   const [burst, setBurst] = useState(null);
   const idle = dark ? "#71717A" : "#A1A1AA";
 
-  // Chat va subito dopo News (non in fondo): Home, News, [Chat], Classifica,
-  // Profilo, [Coach Panel] — l'ordine di TABS resta fisso, la si inserisce
-  // a indice 2 solo quando sbloccata.
-  const tabs = [...TABS.slice(0, 2), ...(hasChat ? [CHAT_TAB] : []), ...TABS.slice(2), ...(isCoach ? [COACH_TAB] : [])];
+  // Chat va subito dopo News (non in fondo): Home, News, Chat, Classifica,
+  // Profilo, [Coach Panel] — sempre presente, anche senza un piano a
+  // coaching (vedi nota in testa al file).
+  const tabs = [...TABS.slice(0, 2), CHAT_TAB, ...TABS.slice(2), ...(isCoach ? [COACH_TAB] : [])];
 
   const pick = (id) => {
     setBurst(id);
@@ -724,7 +726,6 @@ export function AppShell({
   gender = "M",
   dark = true,
   userEmail = "",        // usata SOLO per determinare l'accesso al Coach Panel
-  hasChat = false,       // piano a coaching reale: sblocca il pulsante Chat (dopo News)
   tab,
   onTabChange,
   onOpenSettings,
@@ -741,8 +742,7 @@ export function AppShell({
      solo visiva. */
   useEffect(() => {
     if (tab === "coach" && !isCoach && onTabChange) onTabChange("home");
-    if (tab === "chat" && !hasChat && onTabChange) onTabChange("home");
-  }, [tab, isCoach, hasChat, onTabChange]);
+  }, [tab, isCoach, onTabChange]);
 
   const fallback = {
     home:    <Placeholder tab="home" />,
@@ -753,7 +753,7 @@ export function AppShell({
     coach:   <CoachPanelPlaceholder />,
   };
 
-  const activeTab = (tab === "coach" && !isCoach) || (tab === "chat" && !hasChat) ? "home" : tab;
+  const activeTab = tab === "coach" && !isCoach ? "home" : tab;
 
   // BUG PRESO: <div key={activeTab}> qui sotto forzava React a SMONTARE e
   // rimontare da zero l'intera schermata a OGNI cambio tab (Home/News/
@@ -852,7 +852,7 @@ export function AppShell({
           })}
         </main>
 
-        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} hasChat={hasChat} />
+        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} />
       </div>
     </div>
   );
