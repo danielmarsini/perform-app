@@ -32,7 +32,7 @@
 import React, { useState, useEffect } from "react";
 import { Loader2, Dumbbell, ShieldCheck, BarChart3, Trophy, ChevronRight } from "lucide-react";
 
-import { DesignSystem } from "./04_AppShell.jsx";
+import { DesignSystem, LiveBackground } from "./04_AppShell.jsx";
 import { STRIPE_PLANS, translations, GradientText, PlanCard, hasAnnualPricing, withBillingCycle, BillingCycleToggle } from "./08_ClientProfileView.jsx";
 import { GlobalStyle as CoachGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./09_CoachDashboard.jsx";
 import { saveAnamnesis, resolveReferralCode, recordReferralSignup } from "../lib/coachingData.js";
@@ -97,57 +97,57 @@ function AppIntroTutorial({ gender, dark, onFinish }) {
 
   return (
     <div className="app-root min-h-screen flex flex-col" data-theme={dark ? "dark" : "light"}
-         style={{
-           backgroundColor: "var(--page)",
-           backgroundImage: `radial-gradient(circle at 50% 0%, ${gender === "F" ? "rgba(212,165,165,0.16)" : "rgba(197,160,89,0.16)"} 0%, transparent 60%)`,
-         }}>
+         style={{ backgroundColor: "var(--page)" }}>
       <DesignSystem />
-      <div className="flex justify-end px-5 pt-5">
-        <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-          Salta introduzione
-        </button>
-      </div>
+      <LiveBackground gender={gender} dark={dark} />
+      <div style={{ position: "relative", zIndex: 1 }} className="min-h-screen flex flex-col">
+        <div className="flex justify-end px-5 pt-5">
+          <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+            Salta introduzione
+          </button>
+        </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" style={{ maxWidth: 480, margin: "0 auto" }}>
-        <div key={slide} className="spring-in">
-          <div className="mx-auto mb-6 rounded-full flex items-center justify-center"
-               style={{
-                 width: 84, height: 84,
-                 background: gender === "F"
-                   ? "linear-gradient(135deg, rgba(212,165,165,0.22), rgba(212,165,165,0.06))"
-                   : "linear-gradient(135deg, rgba(197,160,89,0.22), rgba(197,160,89,0.06))",
-                 border: `1px solid ${gender === "F" ? "rgba(212,165,165,0.4)" : "rgba(197,160,89,0.4)"}`,
-                 boxShadow: `0 0 40px ${gender === "F" ? "rgba(212,165,165,0.25)" : "rgba(197,160,89,0.25)"}`,
-               }}>
-            <Icon size={34} style={{ color: gender === "F" ? "#D4A5A5" : "#C5A059" }} />
+        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" style={{ maxWidth: 480, margin: "0 auto" }}>
+          <div key={slide} className="spring-in">
+            <div className="mx-auto mb-6 rounded-full flex items-center justify-center"
+                 style={{
+                   width: 84, height: 84,
+                   background: gender === "F"
+                     ? "linear-gradient(135deg, rgba(212,165,165,0.22), rgba(212,165,165,0.06))"
+                     : "linear-gradient(135deg, rgba(197,160,89,0.22), rgba(197,160,89,0.06))",
+                   border: `1px solid ${gender === "F" ? "rgba(212,165,165,0.4)" : "rgba(197,160,89,0.4)"}`,
+                   boxShadow: `0 0 40px ${gender === "F" ? "rgba(212,165,165,0.25)" : "rgba(197,160,89,0.25)"}`,
+                 }}>
+              <Icon size={34} style={{ color: gender === "F" ? "#D4A5A5" : "#C5A059" }} />
+            </div>
+
+            <p className="font-data mb-3" style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-2)" }}>
+              {s.kicker}
+            </p>
+            <GradientText gender={gender} style={{ fontSize: "1.7rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2, display: "block" }}>
+              {s.title}
+            </GradientText>
+            <p className="mt-4 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
+              {s.body}
+            </p>
           </div>
-
-          <p className="font-data mb-3" style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-2)" }}>
-            {s.kicker}
-          </p>
-          <GradientText gender={gender} style={{ fontSize: "1.7rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2, display: "block" }}>
-            {s.title}
-          </GradientText>
-          <p className="mt-4 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
-            {s.body}
-          </p>
         </div>
-      </div>
 
-      <div className="px-6 pb-10" style={{ maxWidth: 480, width: "100%", margin: "0 auto" }}>
-        <div className="flex items-center justify-center gap-2 mb-6">
-          {INTRO_SLIDES.map((_, i) => (
-            <button key={i} onClick={() => setSlide(i)} aria-label={`Vai alla schermata ${i + 1}`}
-              className="rounded-full transition-all duration-300"
-              style={{ width: i === slide ? 22 : 7, height: 7,
-                       backgroundColor: i === slide ? (gender === "F" ? "#D4A5A5" : "#C5A059") : "var(--line)" }} />
-          ))}
+        <div className="px-6 pb-10" style={{ maxWidth: 480, width: "100%", margin: "0 auto" }}>
+          <div className="flex items-center justify-center gap-2 mb-6">
+            {INTRO_SLIDES.map((_, i) => (
+              <button key={i} onClick={() => setSlide(i)} aria-label={`Vai alla schermata ${i + 1}`}
+                className="rounded-full transition-all duration-300"
+                style={{ width: i === slide ? 22 : 7, height: 7,
+                         backgroundColor: i === slide ? (gender === "F" ? "#D4A5A5" : "#C5A059") : "var(--line)" }} />
+            ))}
+          </div>
+          <button onClick={() => (last ? onFinish() : setSlide((v) => v + 1))}
+            className="w-full rounded-full px-4 py-3.5 text-sm flex items-center justify-center gap-1.5 btn-3d"
+            style={{ backgroundColor: gender === "F" ? "#D4A5A5" : "#C5A059", color: "#111111", fontWeight: 700 }}>
+            {last ? "Scegli il tuo piano" : "Avanti"} <ChevronRight size={16} />
+          </button>
         </div>
-        <button onClick={() => (last ? onFinish() : setSlide((v) => v + 1))}
-          className="w-full rounded-full px-4 py-3.5 text-sm flex items-center justify-center gap-1.5 btn-3d"
-          style={{ backgroundColor: gender === "F" ? "#D4A5A5" : "#C5A059", color: "#111111", fontWeight: 700 }}>
-          {last ? "Scegli il tuo piano" : "Avanti"} <ChevronRight size={16} />
-        </button>
       </div>
     </div>
   );
@@ -372,7 +372,8 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
   return (
     <div className="app-root min-h-screen" data-theme={dark ? "dark" : "light"} style={{ backgroundColor: "var(--page)" }}>
       <DesignSystem />
-      <main className="max-w-2xl mx-auto px-4 py-10 pb-24">
+      <LiveBackground gender={gender} dark={dark} />
+      <main className="max-w-2xl mx-auto px-4 py-10 pb-24" style={{ position: "relative", zIndex: 1 }}>
         <div className="text-center mb-8">
           <GradientText gender={gender} style={{ fontSize: "1.5rem", fontWeight: 800, letterSpacing: "-0.01em" }}>
             {t.plan.chooseTitle}

@@ -1516,22 +1516,24 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
           {plan.price} €<span style={{ fontWeight: 500, fontSize: "0.68rem" }}> {period}</span>
         </GradientText>
       </div>
+      {/* Icona colorata (verde/rosso), testo SEMPRE pulito in var(--ink):
+          troppo colore sul testo affianco rendeva la card confusa e "vendeva
+          male" (voce esplicita del coach) — il check/la X bastano da soli a
+          comunicare incluso/escluso, il testo resta leggibile e sobrio. */}
       <ul className="space-y-1 mb-1">
         {copy.includes.map((f) => (
-          <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "#10B981", fontWeight: 500 }}>
+          <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
             <Check size={13} className="shrink-0 mt-0.5" style={{ color: "#10B981" }} /> {f}
           </li>
         ))}
       </ul>
       {/* Confronto esplicito con quello che MANCA rispetto al piano sopra —
           non solo cosa include, anche cosa non include: crea il contrasto
-          che spinge verso il piano più caro (voce esplicita del coach).
-          Rosso invece del semplice grigio spento di prima: un "no" deve
-          leggersi a colpo d'occhio come tale, non solo come testo attenuato. */}
+          che spinge verso il piano più caro (voce esplicita del coach). */}
       {copy.excludes?.length > 0 && (
         <ul className="space-y-1 mb-3">
           {copy.excludes.map((f) => (
-            <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "#DC2626", opacity: 0.85 }}>
+            <li key={f} className="flex items-start gap-1.5 text-sm" style={{ color: "var(--ink)", opacity: 0.85 }}>
               <X size={13} className="shrink-0 mt-0.5" style={{ color: "#DC2626" }} /> {f}
             </li>
           ))}

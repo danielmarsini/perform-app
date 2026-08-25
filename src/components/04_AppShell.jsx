@@ -704,7 +704,7 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false }) {
    sopra e sempre leggibili), non intercetta il tocco (pointer-events:none).
    Mai un'immagine esterna: qui ricreato in puro CSS (radial-gradient +
    blur, animazione di posizione lenta) invece di un asset stock statico. */
-function LiveBackground({ gender, dark }) {
+export function LiveBackground({ gender, dark }) {
   const isFemale = gender === "F";
   // Colori più accesi/saturi (prima "rosa cipria" pallido, poco "vivo"
   // in confronto al nero): rosa acceso vero per lei, oro pieno per lui.
