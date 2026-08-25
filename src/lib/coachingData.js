@@ -33,6 +33,21 @@ const MUSCLE_TARGETS = [
   "Quadricipiti", "Femorali", "Adduttori", "Polpacci",
 ];
 
+// Piani che indicano un coaching REALE dietro (non autogestito): Scheda
+// Personalizzata, Coaching Allenamento, Full Coaching. Fonte unica sul
+// valore GREZZO di profiles.plan (check constraint SCHEMA_v14) — prima
+// esistevano tre condizioni indipendenti con lo stesso intento ma domini
+// diversi (09_CoachDashboard.jsx confrontava il valore grezzo del DB,
+// App.jsx e 05_HomeDashboard.jsx confrontavano "full_coaching" dopo la
+// propria rimappatura locale di "full"), un foot-gun silenzioso per chi
+// copiava la condizione da un file all'altro senza accorgersi del
+// rimappaggio. Chi lavora sul valore già rimappato lato UI usa
+// isRealCoachingPlan() qui sotto invece di un secondo Set hardcoded.
+export const REAL_COACHING_PLANS_DB = new Set(["scheda_personalizzata", "training", "full"]);
+export function isRealCoachingPlan(plan) {
+  return REAL_COACHING_PLANS_DB.has(plan === "full_coaching" ? "full" : plan);
+}
+
 /* ---------------------------------------------------------------------------
    LIBRERIA ESERCIZI CONDIVISA — spostata qui da 09_CoachDashboard.jsx così
    sia il pannello coach SIA la Home del cliente (05_HomeDashboard.jsx)

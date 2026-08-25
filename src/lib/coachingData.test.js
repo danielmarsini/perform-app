@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 import {
   xpToLevelInfo, levelMinXp, dayNutritionScore, parseRepsTarget,
   computeVolume, resolveMuscleTarget, MUSCLES, MUSCLE_TARGETS,
-  DEFAULT_EXERCISE_LIB,
+  DEFAULT_EXERCISE_LIB, isRealCoachingPlan, REAL_COACHING_PLANS_DB,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -168,5 +168,29 @@ describe("computeVolume", () => {
 describe("MUSCLES / MUSCLE_TARGETS", () => {
   it("le due liste hanno lo stesso numero di gruppi muscolari (nessuno perso nella doppia nomenclatura)", () => {
     expect(MUSCLES.length).toBe(MUSCLE_TARGETS.length);
+  });
+});
+
+describe("isRealCoachingPlan", () => {
+  it("riconosce i 3 piani a coaching reale sul valore grezzo del DB", () => {
+    expect(isRealCoachingPlan("scheda_personalizzata")).toBe(true);
+    expect(isRealCoachingPlan("training")).toBe(true);
+    expect(isRealCoachingPlan("full")).toBe(true);
+  });
+  it("riconosce anche il valore rimappato lato UI ('full_coaching' invece di 'full')", () => {
+    expect(isRealCoachingPlan("full_coaching")).toBe(true);
+  });
+  it("Free/Premium non sono coaching reale", () => {
+    expect(isRealCoachingPlan("free")).toBe(false);
+    expect(isRealCoachingPlan("performance_pack")).toBe(false);
+  });
+  it("null/undefined non lanciano e ritornano false", () => {
+    expect(isRealCoachingPlan(null)).toBe(false);
+    expect(isRealCoachingPlan(undefined)).toBe(false);
+  });
+  it("REAL_COACHING_PLANS_DB contiene solo i 3 valori grezzi (mai 'full_coaching')", () => {
+    expect(REAL_COACHING_PLANS_DB.has("full_coaching")).toBe(false);
+    expect(REAL_COACHING_PLANS_DB.has("full")).toBe(true);
+    expect(REAL_COACHING_PLANS_DB.size).toBe(3);
   });
 });
