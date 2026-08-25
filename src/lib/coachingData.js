@@ -180,6 +180,57 @@ async function saveExerciseGuide(supabase, name, direct, indirect, { howTo, avoi
   if (error) throw error;
 }
 
+// Elenco SOLO delle righe reali in libreria (mai i ~20 esercizi di base
+// hardcoded in DEFAULT_EXERCISE_LIB, che non esistono come riga da
+// correggere/eliminare) — usato dal pannello coach per rivedere un
+// esercizio personalizzato già salvato: nome sbagliato o dimenticato,
+// muscoli da rivedere, o un doppione da eliminare.
+async function fetchCustomExerciseLibraryRows(supabase) {
+  let { data, error } = await supabase.from("exercise_library")
+    .select("name, direct, indirect, how_to, avoid, video_url")
+    .order("name");
+  if (error?.code === "42703" || error?.code === "PGRST204") {
+    ({ data, error } = await supabase.from("exercise_library").select("name, direct, indirect").order("name"));
+  }
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    name: row.name, direct: row.direct ?? [], indirect: row.indirect ?? [],
+    howTo: row.how_to || null, avoid: row.avoid || null, videoUrl: row.video_url || null,
+  }));
+}
+
+// Corregge una riga già in libreria — rinomina inclusa: "name" è la primary
+// key, quindi questo è un UPDATE sulla riga esistente (WHERE name = vecchio
+// nome), mai un nuovo insert. Prima l'unico modo di "correggere" un
+// esercizio era risalvarlo con "Salva in libreria" (upsert per NOME): se il
+// coach si era sbagliato proprio nel nome, la vecchia riga sbagliata restava
+// lì per sempre, orfana — un doppione senza modo di ripulirlo. Se il nuovo
+// nome coincide con un esercizio già esistente, Postgres rifiuta l'update
+// con 23505 (violazione della chiave primaria) — tradotto in un errore
+// leggibile invece di un semplice fallimento.
+async function updateExerciseLibraryEntry(supabase, oldName, { name, direct, indirect, howTo, avoid, videoUrl }) {
+  const trimmed = name?.trim();
+  if (!trimmed || !direct?.length) return;
+  const patch = { name: trimmed, direct, indirect: indirect || [],
+    how_to: howTo || null, avoid: avoid || null, video_url: videoUrl || null };
+  let { error } = await supabase.from("exercise_library").update(patch).eq("name", oldName);
+  if (error?.code === "42703" || error?.code === "PGRST204") {
+    ({ error } = await supabase.from("exercise_library")
+      .update({ name: trimmed, direct, indirect: indirect || [] }).eq("name", oldName));
+  }
+  if (error?.code === "23505") {
+    throw new Error(`Esiste già un esercizio chiamato "${trimmed}" in libreria: elimina quello doppione o scegli un altro nome.`);
+  }
+  if (error) throw error;
+}
+
+// Elimina una voce sbagliata/doppione dalla libreria condivisa — SCHEMA_v72
+// (RLS: solo il coach, come l'update di SCHEMA_v61).
+async function deleteExerciseFromLibrary(supabase, name) {
+  const { error } = await supabase.from("exercise_library").delete().eq("name", name);
+  if (error) throw error;
+}
+
 // Serie dirette 100% + serie sui sinergici 50%, per gruppo muscolare —
 // STESSA funzione per il pannello coach e per la Home del cliente.
 function computeVolume(dayList, lib) {
@@ -2461,7 +2512,7 @@ export function recompositionReading(weightPoints, circPoints) {
   return { label, detail, tone, weightDeltaPct, waistDeltaPct };
 }
 
-export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, saveExerciseGuide, computeVolume, parseRepsTarget };
+export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, saveExerciseGuide, fetchCustomExerciseLibraryRows, updateExerciseLibraryEntry, deleteExerciseFromLibrary, computeVolume, parseRepsTarget };
 
 // Giorni con un allenamento REALMENTE completato (status 'done' in
 // workout_logs) in un range — per il pallino "saltato" nel calendario

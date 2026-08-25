@@ -186,8 +186,9 @@ import {
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
   fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutTemplateToClients,
   xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
-  MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, resolveMuscleTarget,
+  MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, EXERCISE_LIB_MUSCLE_TO_DB, resolveMuscleTarget,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
+  fetchCustomExerciseLibraryRows, updateExerciseLibraryEntry, deleteExerciseFromLibrary,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage,
   fetchReferrals,
@@ -2627,7 +2628,7 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
    (limite richiesto), storico all'indietro senza limite — si genera pigro
    ogni volta che il coach naviga in una settimana mai vista prima. */
 function ClientTimeline({ client, quickTargets, setQuickTargets }) {
-  const { supabase, isRealMode, exerciseLib, coachId, clients: CLIENTS } = useContext(CoachDataContext);
+  const { supabase, isRealMode, exerciseLib, coachId, clients: CLIENTS, reloadExerciseLib } = useContext(CoachDataContext);
   const myQuickTarget = quickTargets?.[client.id];
   const [weeksByOffset, setWeeksByOffset] = useState(() => ({ 0: makeDefaultWeek(client, 0, myQuickTarget) }));
   const [selOffset, setSelOffset] = useState(0);
@@ -2647,6 +2648,13 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     fetchWorkoutTemplates(supabase).then(setTemplates).catch((err) => console.error("PERFORM: errore caricamento template", err));
   }, [isRealMode, supabase]);
   useEffect(() => { loadTemplates(); }, [loadTemplates]);
+
+  // Richiesta esplicita: poter correggere un esercizio già salvato in
+  // libreria (nome sbagliato/dimenticato, muscoli da rivedere) o eliminare
+  // un doppione — senza che "Salva in libreria" (che fa un upsert per NOME,
+  // vedi saveExerciseToLib più sotto in WeekWorkoutEditor) lasci la vecchia
+  // voce sbagliata orfana a fianco di quella corretta.
+  const [libraryManagerOpen, setLibraryManagerOpen] = useState(false);
 
   // Generazione automatica primo piano (SCHEMA n/a, solo lato client): letta
   // una volta sola l'anamnesi del cliente, per proporre un punto di partenza
@@ -3042,6 +3050,10 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
                 className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
                 📋 Applica template
               </button>
+              <button onClick={() => setLibraryManagerOpen(true)}
+                className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
+                📚 Correggi libreria
+              </button>
               {realWorkout && realWorkout.every((d) => !d) && anamnesis?.sessioni && (
                 <button onClick={() => setGenPlanOpen(true)} className="c-btn px-3.5 py-2.5 rounded-lg text-sm font-medium">
                   🪄 Genera prima scheda da anamnesi
@@ -3067,6 +3079,10 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         <ApplyTemplateModal templates={templates} clients={CLIENTS} currentClientId={client.id}
           weekLabel={weekRangeLabel(selOffset)} targetWeekStartISO={weekStartISO} supabase={supabase}
           onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates} />
+      )}
+      {libraryManagerOpen && (
+        <ExerciseLibraryManagerModal supabase={supabase}
+          onClose={() => setLibraryManagerOpen(false)} onChanged={reloadExerciseLib} />
       )}
       {genPlanOpen && (
         <GenerateStarterPlanModal anamnesis={anamnesis} exerciseLib={exerciseLib}
@@ -3265,6 +3281,213 @@ function ApplyTemplateModal({ templates, clients, currentClientId, weekLabel, ta
         </div>
       </div>
     </Portal>
+  );
+}
+
+/* Corregge un esercizio già salvato nella libreria condivisa (nome, muscoli,
+   guida) o lo elimina se è un doppione/voce sbagliata — a differenza di
+   "Salva in libreria" (upsert per NOME dentro WeekWorkoutEditor), qui una
+   correzione al nome AGGIORNA la riga esistente invece di lasciarne una
+   nuova a fianco della vecchia, sbagliata. Elenca solo le righe reali del
+   DB (fetchCustomExerciseLibraryRows) — i ~20 esercizi di base dell'app
+   non sono qui: sono fissi nel codice, non hanno una riga da correggere. */
+function ExerciseLibraryManagerModal({ supabase, onClose, onChanged }) {
+  const [rows, setRows] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null); // riga selezionata per la modifica
+
+  const load = useCallback(() => {
+    setLoadError("");
+    fetchCustomExerciseLibraryRows(supabase)
+      .then(setRows)
+      .catch((err) => {
+        console.error("PERFORM: errore caricamento libreria per gestione", err);
+        setLoadError("Non sono riuscito a caricare la libreria.");
+        setRows([]);
+      });
+  }, [supabase]);
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!rows) return [];
+    return q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
+  }, [rows, query]);
+
+  const handleSaved = (oldName, saved) => {
+    setRows((rs) => rs.map((r) => (r.name === oldName ? saved : r)));
+    onChanged();
+    setEditing(null);
+  };
+  const handleDeleted = (name) => {
+    setRows((rs) => rs.filter((r) => r.name !== name));
+    onChanged();
+    setEditing(null);
+  };
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={editing ? undefined : onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+          {editing ? (
+            <ExerciseLibraryEditForm supabase={supabase} entry={editing}
+              onBack={() => setEditing(null)} onSaved={handleSaved} onDeleted={handleDeleted} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-1">
+                <p className="c-heading font-display font-bold">Correggi libreria</p>
+                <button onClick={onClose} aria-label="Chiudi" className="p-1"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+              </div>
+              <p className="c-muted text-xs mb-3">
+                Solo gli esercizi personalizzati che hai già salvato — correggi nome, muscoli o guida, oppure elimina un doppione.
+              </p>
+              <div className="relative mb-3">
+                <Search size={14} className="absolute top-1/2 left-3 -translate-y-1/2" style={{ color: "var(--ink-tertiary)" }} />
+                <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Cerca per nome…" className="c-ghost w-full pl-9 pr-3 py-2.5 rounded-lg text-sm" />
+              </div>
+              {loadError && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{loadError}</p>}
+              {rows === null ? (
+                <p className="c-muted text-sm">Caricamento…</p>
+              ) : filtered.length === 0 ? (
+                <p className="c-muted text-sm">{rows.length === 0 ? "Nessun esercizio personalizzato salvato finora." : "Nessun risultato."}</p>
+              ) : (
+                <div className="space-y-1.5" style={{ maxHeight: 360, overflowY: "auto" }}>
+                  {filtered.map((r) => (
+                    <button key={r.name} onClick={() => setEditing(r)}
+                      className="w-full text-left px-3 py-2.5 rounded-lg flex items-center justify-between gap-2 t-inner">
+                      <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>{r.name}</span>
+                      <span className="c-muted text-[11px] shrink-0">{r.direct[0] || "—"}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button onClick={onClose} className="c-ghost w-full px-4 py-2.5 rounded-lg text-sm font-medium mt-3">Chiudi</button>
+            </>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }) {
+  const [name, setName] = useState(entry.name);
+  const [muscleTarget, setMuscleTarget] = useState(EXERCISE_LIB_MUSCLE_TO_DB[entry.direct[0]] || entry.direct[0] || "");
+  const [synergists, setSynergists] = useState((entry.indirect || []).map((m) => EXERCISE_LIB_MUSCLE_TO_DB[m] || m));
+  const [howTo, setHowTo] = useState(entry.howTo || "");
+  const [avoid, setAvoid] = useState(entry.avoid || "");
+  const [videoUrl, setVideoUrl] = useState(entry.videoUrl || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteRef = useRef(null);
+  useEffect(() => () => clearTimeout(deleteRef.current), []);
+
+  const toggleSynergist = (m) => setSynergists((s) => (s.includes(m) ? s.filter((x) => x !== m) : [...s, m]));
+
+  const save = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setErr("Il nome non può essere vuoto."); return; }
+    if (!muscleTarget) { setErr("Scegli il distretto muscolare diretto."); return; }
+    setBusy(true);
+    setErr("");
+    const direct = [DB_MUSCLE_TO_CHART[muscleTarget] || muscleTarget];
+    const indirect = synergists.map((m) => DB_MUSCLE_TO_CHART[m] || m);
+    try {
+      await updateExerciseLibraryEntry(supabase, entry.name, { name: trimmed, direct, indirect, howTo, avoid, videoUrl });
+      onSaved(entry.name, { name: trimmed, direct, indirect, howTo: howTo || null, avoid: avoid || null, videoUrl: videoUrl || null });
+    } catch (e) {
+      console.error("PERFORM: errore correzione esercizio in libreria", e);
+      setErr(e?.message || "Non sono riuscito a salvare le modifiche.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const requestDelete = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      deleteRef.current = setTimeout(() => setConfirmDelete(false), 3000);
+      return;
+    }
+    clearTimeout(deleteRef.current);
+    setBusy(true);
+    setErr("");
+    try {
+      await deleteExerciseFromLibrary(supabase, entry.name);
+      onDeleted(entry.name);
+    } catch (e) {
+      console.error("PERFORM: errore eliminazione esercizio da libreria", e);
+      setErr(e?.message || "Non sono riuscito a eliminare l'esercizio.");
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="flex items-center gap-2 mb-3">
+        <button onClick={onBack} aria-label="Indietro" className="p-1"><ArrowLeft size={18} style={{ color: "var(--ink-2)" }} /></button>
+        <p className="c-heading font-display font-bold">Correggi esercizio</p>
+      </div>
+      <label className="block mb-3">
+        <span className="c-label block mb-1">Nome</span>
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+      </label>
+      <label className="block mb-3">
+        <span className="c-label block mb-1">Distretto muscolare (diretto)</span>
+        <select value={muscleTarget} onChange={(e) => setMuscleTarget(e.target.value)} className="t-input w-full text-sm rounded-md px-2.5 py-2">
+          <option value="">— scegli —</option>
+          {MUSCLE_TARGETS.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </label>
+      {muscleTarget && (
+        <div className="mb-3">
+          <span className="c-label block mb-1">Muscoli sinergici (indiretto, opzionale)</span>
+          <div className="flex flex-wrap gap-1.5">
+            {MUSCLE_TARGETS.filter((m) => m !== muscleTarget).map((m) => {
+              const active = synergists.includes(m);
+              return (
+                <button key={m} type="button" onClick={() => toggleSynergist(m)}
+                  className={`px-2 py-1 rounded-full text-[11px] border transition-colors ${active ? "bg-[var(--ink)] border-[var(--ink)]" : "c-ghost border-[var(--line)]"}`}
+                  style={active ? { color: "var(--page)" } : undefined}>
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <label className="block mb-3">
+        <span className="c-label block mb-1">Come si esegue (opzionale)</span>
+        <textarea value={howTo} rows={2} onChange={(e) => setHowTo(e.target.value)}
+          placeholder="Setup, esecuzione, respirazione..." className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+      </label>
+      <label className="block mb-3">
+        <span className="c-label block mb-1">Cosa evitare (opzionale)</span>
+        <textarea value={avoid} rows={2} onChange={(e) => setAvoid(e.target.value)}
+          placeholder="Errori tecnici comuni da correggere..." className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+      </label>
+      <label className="block mb-4">
+        <span className="c-label block mb-1">Link video esecuzione (opzionale)</span>
+        <input type="url" value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)}
+          placeholder="https://..." className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+      </label>
+      {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
+      <div className="flex gap-2 mb-2">
+        <button onClick={onBack} disabled={busy} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Annulla</button>
+        <button onClick={save} disabled={busy} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+          {busy ? "Salvo…" : "Salva modifiche"}
+        </button>
+      </div>
+      <button onClick={requestDelete} disabled={busy}
+        className="w-full px-4 py-2.5 rounded-lg text-sm font-medium"
+        style={{ border: confirmDelete ? "1px solid #DC2626" : "1px solid var(--line-strong)", color: confirmDelete ? "#DC2626" : "var(--ink-2)" }}>
+        {confirmDelete ? "Tocca di nuovo per confermare — elimina per sempre" : "🗑 Elimina questo esercizio dalla libreria"}
+      </button>
+    </>
   );
 }
 
