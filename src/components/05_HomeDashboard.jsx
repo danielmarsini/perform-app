@@ -2101,6 +2101,7 @@ export function HomeDashboard({
   onUpgrade, onOpenChat, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
   pendingSyncCount,
   userPlan, // 'free' | 'performance_pack' | 'scheda_personalizzata' | 'training' | 'full_coaching' — letta da Supabase
+  schedaAddonChatActive, // add-on Scheda Personalizzata (SCHEMA_v68): chat col coach attiva a prescindere da userPlan
   microAddon, // profiles.micro_addon — componente aggiuntivo micronutrienti per Scheda/Training, attivato dal coach
   stressLevel, onSetStressLevel, nightWakeups, onSetNightWakeups, morningEnergy, onSetMorningEnergy,
   caffeineMg, onSetCaffeineMg, caffeineTime, onSetCaffeineTime,
@@ -2962,6 +2963,7 @@ export function HomeDashboard({
                         accent={accent}
                         accentText={accentText}
                         userPlan={userPlan}
+                        schedaAddonChatActive={schedaAddonChatActive}
                         gender={profile.gender}
                         onUpgrade={onUpgrade}
                         onOpenChat={onOpenChat}
@@ -2991,6 +2993,7 @@ export function HomeDashboard({
                 <ErrorBoundary>
                   <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
                                        day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
+                                       schedaAddonChatActive={schedaAddonChatActive}
                                        supabase={supabase} userId={userId} />
                 </ErrorBoundary>
                 {/* Disponibile a TUTTI i piani, non solo a fine giorno di
@@ -4479,7 +4482,7 @@ function NutritionCalendarStrip({ weekPlan, selectedIso, onSelectIso, accent, lo
   );
 }
 
-function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, gender, onUpgrade, onOpenChat, onCoachSync }) {
+function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync }) {
   const [plates, setPlates] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [timer, setTimer] = useState(null); // { total, remaining } in secondi
@@ -4501,7 +4504,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   // Chat col coach: riservata a chi ha davvero un coach dietro (Scheda
   // Personalizzata, Coaching Allenamento, Full Coaching) — stessa
   // condizione di REAL_COACHING_PLANS in App.jsx.
-  const hasCoachChat = userPlan === "scheda_personalizzata" || userPlan === "training" || userPlan === "full_coaching";
+  const hasCoachChat = userPlan === "scheda_personalizzata" || userPlan === "training" || userPlan === "full_coaching" || schedaAddonChatActive;
 
   /* Storico: supporta sia il vecchio formato (array di kg) sia quello nuovo
      {kg, reps}, per ricordare il carico E le reps dell'ultima volta identica. */
@@ -4922,7 +4925,7 @@ function loadFreeRoutine(userId) {
   }
 }
 
-function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, gender, supabase, userId }) {
+function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, schedaAddonChatActive, gender, supabase, userId }) {
   const [innerTab, setInnerTab] = useState("oggi");
   const restored = useMemo(() => loadFreeRoutine(userId), [userId]);
   const [weeks, setWeeks] = useState(() => restored?.weeks ?? [emptyWeek()]);
@@ -5052,7 +5055,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                 return (
                   <ExerciseCard key={exObj.id} ex={exObj} index={exIdx} rows={setsFor(exObj)}
                     onSetField={onSetField} accent={accent} accentText={accentText} onCoachSync={onCoachSync}
-                    userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} />
+                    userPlan={userPlan} schedaAddonChatActive={schedaAddonChatActive} gender={gender} onUpgrade={onUpgrade} />
                 );
               })}
             </div>
@@ -9948,6 +9951,7 @@ export default function HomePreview({
   isOwner,                 // true solo per danielmarsini@coach.com (App.jsx) — il proprietario non ha bisogno di abbonamenti
   profileOverride,         // { name, nickname } dalla sessione reale, sostituisce i valori di preview
   microAddon: microAddonProp, // profiles.micro_addon reale — componente aggiuntivo micronutrienti per Scheda/Training
+  schedaAddonChatUntil, // profiles.scheda_addon_chat_until (SCHEMA_v68) — chat col coach per chi ha comprato la Scheda Personalizzata come add-on sopra Free/Premium, non collegata a planProp
   supabase: supabaseProp,  // se passato insieme a userId, sostituisce scheda/target finti con quelli reali assegnati dal coach
   userId,
   onUpgrade: onUpgradeProp,   // apre le impostazioni/abbonamento (App.jsx) — no-op in preview isolata
@@ -9957,6 +9961,7 @@ export default function HomePreview({
   // segue lo stato condiviso (tema/genere/piano); altrimenti resta autonomo
   // per continuare a funzionare come preview isolata (npm run dev su questo file).
   const isControlled = genderProp !== undefined;
+  const schedaAddonChatActive = Boolean(schedaAddonChatUntil) && new Date(schedaAddonChatUntil) > new Date();
   const [dark, setDark] = useState(darkProp ?? false);
   const [gender, setGender] = useState(genderProp ?? "M");
   // I 3 piani a coaching reale (full_coaching, scheda_personalizzata, training)
@@ -10628,6 +10633,7 @@ export default function HomePreview({
           // resta quello vero; il bucket demo serve solo quando non c'è
           // un App.jsx reale a fornirlo (preview isolata).
           userPlan={planProp ?? (planTier === "FREE" ? "free" : planTier === "BASE" ? "performance_pack" : "full_coaching")}
+          schedaAddonChatActive={schedaAddonChatActive}
           microAddon={microAddonProp}
           onSetSleep={(k, v) => setSleep((s) => {
             const next = { ...s, [k]: v };

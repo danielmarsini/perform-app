@@ -74,6 +74,31 @@ Deno.serve(async (req) => {
       const priceId = session.metadata?.price_id;
       const planDb = priceId ? PRICE_TO_PLAN[priceId] : null;
       if (userId && planDb) {
+        // Scheda Personalizzata (SCHEMA_v68): add-on SOPRA il piano base, mai
+        // una sostituzione — profiles.plan resta quello che era (Free o
+        // Premium), niente whitelisted_until azzerato (non è un pagamento
+        // che riguarda quel piano). Chat 2 settimane, programma 8 settimane:
+        // date esatte da oggi, indipendenti da qualunque altra colonna.
+        if (planDb === "scheda_personalizzata") {
+          const now = new Date();
+          const chatUntil = new Date(now); chatUntil.setDate(chatUntil.getDate() + 14);
+          const programUntil = new Date(now); programUntil.setDate(programUntil.getDate() + 56);
+          const update: Record<string, unknown> = {
+            stripe_customer_id: session.customer,
+            client_status: "active",
+            scheda_addon_chat_until: chatUntil.toISOString(),
+            scheda_addon_program_until: programUntil.toISOString(),
+          };
+          const { data: existingAnam } = await admin
+            .from("anamnesis_responses")
+            .select("user_id")
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (!existingAnam) update.onboarding_completed = false;
+          const { error } = await admin.from("profiles").update(update).eq("id", userId);
+          if (error) console.error("PERFORM: errore attivazione add-on Scheda Personalizzata", error);
+          return new Response(JSON.stringify({ received: true }), { headers: { "Content-Type": "application/json" } });
+        }
         // whitelisted_until azzerato: un pagamento reale rende il cliente
         // indipendente dal timer della whitelist (SCHEMA_v37) — non va mai
         // declassato da expire-whitelists solo perché il coach lo aveva
