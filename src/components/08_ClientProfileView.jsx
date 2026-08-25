@@ -1165,8 +1165,6 @@ export function ClientProfileView({
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId]);
 
-  const hasCoachChat = isRealMode && ["scheda", "training", "full"].includes(plan);
-
   const save = () => {
     const n = nick.trim();
     if (n.length < 3 || n.length > 20) return setErr("3–20 " + t.nicknameLabel.toLowerCase());
