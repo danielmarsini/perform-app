@@ -269,15 +269,25 @@ export async function fetchTodayWellness(supabase, userId, dateISO) {
 // il numero è identico ovunque venga calcolato, non un mix di dato live +
 // storico persistito.
 //
-// Media dei 7 giorni più recenti (oggi incluso) di SOLO passi e sonno — non
-// il dolore (nessun check-in reale collegato ancora) e non HRV/RHR (nessuna
-// fonte reale finché non c'è un device collegato: colonne già pronte in
-// daily_metrics, semplicemente vuote). Soglie: 7h di sonno e 8.000 passi =
-// punteggio pieno per quel giorno, lineare sotto soglia. Un giorno non
-// tracciato vale 0, quindi già pesa come "non hai recuperato bene" senza
-// bisogno di una penalità di frequenza a parte. Se TUTTI e 7 i giorni sono
-// completamente vuoti, torna null — stato neutro esplicito, mai uno 0% che
-// sembra un allarme.
+// Media degli ultimi giorni EFFETTIVI (max 7) fino a IERI — mai oggi: un
+// giorno ancora in corso non ha "fallito" solo perché non ancora registrato,
+// contarlo abbassa la media in modo scorretto. La finestra non parte mai
+// prima della data di iscrizione (profiles.created_at): un atleta iscritto da
+// 3 giorni viene valutato sui suoi 3 giorni reali, non su una finestra fissa
+// di 7 che include giorni in cui l'account non esisteva ancora (zeri che non
+// gli appartengono). Se oggi è il giorno stesso dell'iscrizione, nessun
+// giorno valutabile esiste ancora: stato neutro.
+//
+// SOLO passi e sonno — non il dolore (nessun check-in reale collegato
+// ancora) e non HRV/RHR (nessuna fonte reale finché non c'è un device
+// collegato: colonne già pronte in daily_metrics, semplicemente vuote).
+// Soglie: 7h di sonno e 8.000 passi = punteggio pieno per quel giorno,
+// lineare sotto soglia. Un giorno reale non tracciato vale comunque 0 (pesa
+// come "non hai recuperato bene", nessuna penalità di frequenza a parte) —
+// solo i giorni STRUTTURALMENTE non valutabili (oggi, pre-iscrizione) sono
+// esclusi, non i buchi nel tracking di un giorno realmente vissuto. Se TUTTI
+// i giorni della finestra sono completamente vuoti, torna null — stato
+// neutro esplicito, mai uno 0% che sembra un allarme.
 function recoverySleepScore(hours) {
   if (!hours || hours <= 0) return 0;
   return Math.min(100, Math.round((hours / 7) * 100));
@@ -288,34 +298,48 @@ function recoveryStepsScore(steps) {
 }
 export async function computeRecoveryCompliance(supabase, userId) {
   const today = toLocalISODate();
-  const sevenAgo = new Date(`${today}T00:00:00`);
+  const yesterday = new Date(`${today}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sevenAgo = new Date(yesterday);
   sevenAgo.setDate(sevenAgo.getDate() - 6);
+
+  const { data: profileRow, error: profileError } = await supabase
+    .from("profiles").select("created_at").eq("id", userId).maybeSingle();
+  if (profileError) throw profileError;
+  const joinedISO = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : null;
+  const windowStartISO = joinedISO && joinedISO > toLocalISODate(sevenAgo) ? joinedISO : toLocalISODate(sevenAgo);
+  const windowEndISO = toLocalISODate(yesterday);
+
+  if (windowStartISO > windowEndISO) {
+    return { status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0, windowDays: 0 };
+  }
+
   const { data, error } = await supabase
     .from("daily_metrics")
     .select("date, sleep_hours, steps")
     .eq("user_id", userId)
-    .gte("date", toLocalISODate(sevenAgo))
-    .lte("date", today);
+    .gte("date", windowStartISO)
+    .lte("date", windowEndISO);
   if (error) throw error;
 
   const byDate = new Map((data ?? []).map((r) => [r.date, r]));
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(sevenAgo);
-    d.setDate(d.getDate() + i);
-    return toLocalISODate(d);
-  });
+  const days = [];
+  for (let d = new Date(`${windowStartISO}T00:00:00`); toLocalISODate(d) <= windowEndISO; d.setDate(d.getDate() + 1)) {
+    days.push(toLocalISODate(d));
+  }
   const sleepVals = days.map((d) => Number(byDate.get(d)?.sleep_hours) || 0);
   const stepsVals = days.map((d) => Number(byDate.get(d)?.steps) || 0);
 
   const allUntracked = sleepVals.every((h) => !h) && stepsVals.every((s) => !s);
-  if (allUntracked) return { status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0 };
+  if (allUntracked) return { status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0, windowDays: days.length };
 
+  const n = days.length;
   const total = sleepVals.reduce((sum, h, i) => sum + (recoverySleepScore(h) + recoveryStepsScore(stepsVals[i])) / 2, 0);
-  const pct = Math.max(0, Math.min(100, Math.round(total / 7)));
+  const pct = Math.max(0, Math.min(100, Math.round(total / n)));
   const trackedDays = sleepVals.filter((h) => h > 0).length;
-  const sleepAvg = Math.round((sleepVals.reduce((a, b) => a + b, 0) / 7) * 10) / 10;
-  const stepsAvg = Math.round(stepsVals.reduce((a, b) => a + b, 0) / 7);
-  return { status: "ok", pct, sleepAvg, stepsAvg, trackedDays };
+  const sleepAvg = Math.round((sleepVals.reduce((a, b) => a + b, 0) / n) * 10) / 10;
+  const stepsAvg = Math.round(stepsVals.reduce((a, b) => a + b, 0) / n);
+  return { status: "ok", pct, sleepAvg, stepsAvg, trackedDays, windowDays: n };
 }
 
 // Diario pasti reale di UN giorno, per il "Diario Libero" della Home.
@@ -386,18 +410,22 @@ export async function updateNutritionLogItem(supabase, logId, patch) {
 // cliente e ClientDetail coach, legge solo dati già salvati (nutrition_logs
 // + nutrition_targets), mai stato locale del form.
 //
-// Per ciascuno degli ultimi 7 giorni: somma kcal/P/C/G registrati quel
-// giorno (nutrition_logs) e li confronta col target attivo per quel giorno
-// (nutrition_targets, effective_from <= quel giorno). Il tipo di giorno
-// (ON/OFF) non è salvato da nessuna parte per una data passata: lo si deduce
-// dalla presenza di workout_logs in quella data (giorno con allenamento
-// assegnato = ON, altrimenti OFF) — stesso segnale che l'app usa già altrove
-// per distinguere le due schede.
+// Per ciascuno degli ultimi giorni EFFETTIVI (max 7) fino a IERI — mai oggi,
+// un giorno ancora in corso non ha "sgarrato" solo perché il diario di oggi è
+// ancora vuoto — e mai prima della data di iscrizione (profiles.created_at):
+// somma kcal/P/C/G registrati quel giorno (nutrition_logs) e li confronta col
+// target attivo per quel giorno (nutrition_targets, effective_from <= quel
+// giorno). Il tipo di giorno (ON/OFF) non è salvato da nessuna parte per una
+// data passata: lo si deduce dalla presenza di workout_logs in quella data
+// (giorno con allenamento assegnato = ON, altrimenti OFF) — stesso segnale
+// che l'app usa già altrove per distinguere le due schede.
 // Scostamento simmetrico: sia sotto sia sopra target penalizzano allo stesso
 // modo (mai punteggio pieno solo perché si è mangiato meno). Un giorno senza
-// alcuna registrazione vale 0 (non "va bene", un buco nel diario è un buco).
-// Se in NESSUno dei 7 giorni c'è un target attivo (il coach non ha ancora
-// assegnato nulla), torna neutro esplicito.
+// alcuna registrazione vale 0 (non "va bene", un buco nel diario è un buco) —
+// ma solo se quel giorno aveva un target attivo: senza target (prima che
+// cliente o coach impostassero un obiettivo) il giorno non entra proprio
+// nella media, vedi dayNutritionScore. Se in NESSUNo dei giorni della
+// finestra c'è un target attivo, torna neutro esplicito.
 export function dayNutritionScore(logsTotals, target) {
   if (!target) return null; // nessun target attivo quel giorno: non giudicabile
   const dims = ["kcal", "p", "c", "f"];
@@ -406,14 +434,26 @@ export function dayNutritionScore(logsTotals, target) {
 }
 export async function computeNutritionCompliance(supabase, userId) {
   const today = toLocalISODate();
-  const sevenAgo = new Date(`${today}T00:00:00`);
+  const yesterday = new Date(`${today}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sevenAgo = new Date(yesterday);
   sevenAgo.setDate(sevenAgo.getDate() - 6);
-  const fromISO = toLocalISODate(sevenAgo);
+
+  const { data: profileRow, error: profileError } = await supabase
+    .from("profiles").select("created_at").eq("id", userId).maybeSingle();
+  if (profileError) throw profileError;
+  const joinedISO = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : null;
+  const fromISO = joinedISO && joinedISO > toLocalISODate(sevenAgo) ? joinedISO : toLocalISODate(sevenAgo);
+  const toISO = toLocalISODate(yesterday);
+
+  if (fromISO > toISO) {
+    return { status: "neutral", pct: null, daysScored: 0 };
+  }
 
   const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }] = await Promise.all([
-    supabase.from("nutrition_logs").select("date, kcal, protein, carbs, fat").eq("user_id", userId).gte("date", fromISO).lte("date", today),
-    supabase.from("nutrition_targets").select("day_type, kcal, protein, carbs, fat, effective_from").eq("user_id", userId).lte("effective_from", today).order("effective_from", { ascending: true }),
-    supabase.from("workout_logs").select("date").eq("user_id", userId).gte("date", fromISO).lte("date", today),
+    supabase.from("nutrition_logs").select("date, kcal, protein, carbs, fat").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
+    supabase.from("nutrition_targets").select("day_type, kcal, protein, carbs, fat, effective_from").eq("user_id", userId).lte("effective_from", toISO).order("effective_from", { ascending: true }),
+    supabase.from("workout_logs").select("date").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
   ]);
   if (logsError) throw logsError;
   if (targetsError) throw targetsError;
@@ -428,11 +468,10 @@ export async function computeNutritionCompliance(supabase, userId) {
     return { kcal: Number(latest.kcal), p: Number(latest.protein), c: Number(latest.carbs), f: Number(latest.fat) };
   };
 
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(sevenAgo);
-    d.setDate(d.getDate() + i);
-    return toLocalISODate(d);
-  });
+  const days = [];
+  for (let d = new Date(`${fromISO}T00:00:00`); toLocalISODate(d) <= toISO; d.setDate(d.getDate() + 1)) {
+    days.push(toLocalISODate(d));
+  }
 
   const scores = [];
   let anyTarget = false;
@@ -860,15 +899,18 @@ export async function computeTrainingCompliance(supabase, userId) {
   // abbondante anche per chi si allena 6 volte a settimana da un anno) e
   // dedup lato client — l'ordine desc si preserva perché un Set mantiene
   // l'ordine di primo inserimento.
-  // lte(oggi): il coach può programmare settimane future in anticipo
+  // lt(oggi), non lte: il coach può programmare settimane future in anticipo
   // (MAX_FORWARD_WEEKS in 09_CoachDashboard.jsx) — senza questo taglio,
   // "le date più recenti" pescherebbe sessioni future mai ancora svolte al
-  // posto delle ultime 7 sedute REALMENTE fatte, falsando il cerchio.
+  // posto delle ultime 7 sedute REALMENTE fatte, falsando il cerchio. Oggi
+  // stesso è escluso anche se una sessione è già stata assegnata per oggi:
+  // finché la giornata non è finita non ha ancora "fallito" solo perché non
+  // ancora registrata, non deve poter abbassare la percentuale a metà giornata.
   const { data: recentLogs, error: recentError } = await supabase
     .from("workout_logs")
     .select("date")
     .eq("user_id", userId)
-    .lte("date", toLocalISODate())
+    .lt("date", toLocalISODate())
     .order("date", { ascending: false })
     .limit(250);
   if (recentError) throw recentError;
