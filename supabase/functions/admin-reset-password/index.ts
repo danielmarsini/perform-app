@@ -21,10 +21,17 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-function randomPassword() {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  const digits = Array.from(bytes, (b) => b % 10).join("");
-  return `Perform-${digits}`;
+// BUG PRESO (audit sicurezza): 6 cifre decimali = 1.000.000 di combinazioni
+// possibili (~20 bit di entropia) per una password reale su un account di
+// produzione — troppo poco per un tentativo di forza bruta motivato, anche
+// con il rate limiting standard di Supabase Auth. 10 caratteri alfanumerici
+// (maiuscole+minuscole+cifre, escluso 0/O/1/l/I per evitare ambiguità nella
+// lettura/trascrizione) danno oltre 320 bit di entropia, restando comunque
+// facili da leggere e ricopiare al telefono col cliente.
+const PASSWORD_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+function randomPassword(length = 10) {
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, (b) => PASSWORD_ALPHABET[b % PASSWORD_ALPHABET.length]).join("");
 }
 
 Deno.serve(async (req) => {
