@@ -34,7 +34,12 @@ import { Loader2, Dumbbell, ShieldCheck, BarChart3, Trophy, ChevronRight } from 
 
 import { DesignSystem, LiveBackground } from "./04_AppShell.jsx";
 import { STRIPE_PLANS, translations, GradientText, PlanCard, hasAnnualPricing, withBillingCycle, BillingCycleToggle } from "./08_ClientProfileView.jsx";
-import { GlobalStyle as CoachGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./09_CoachDashboard.jsx";
+// Da AnamnesisShared.jsx (non più da 09_CoachDashboard.jsx): quel file è
+// 5000+ righe lazy-caricate solo per il coach — importare anche solo questi
+// 4 export da lì costringeva Vite a includerlo comunque nel bundle
+// principale per ogni utente, coach o meno (vedi commento in testa ad
+// AnamnesisShared.jsx).
+import { GlobalStyle as CoachGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./AnamnesisShared.jsx";
 import { saveAnamnesis, resolveReferralCode, recordReferralSignup } from "../lib/coachingData.js";
 
 // UI id (quello di STRIPE_PLANS, condiviso con SettingsDrawer) -> valore reale
