@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchExerciseSetHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -5240,6 +5240,85 @@ function loadFreeRoutine(userId) {
   }
 }
 
+/* Catalogo split (SCHEMA_v59 + SCHEMA_v71): richiesta esplicita — chi si
+   costruisce la routine da solo (Free/Premium) non deve inventarsi uno
+   split da zero né indovinare i muscoli di ogni esercizio "perché l'ho già
+   fatto io col mio occhio da professionista". Stessa tabella già usata dal
+   coach per applicare uno split ai propri clienti (workout_templates),
+   ora leggibile anche qui — sola lettura, il coach resta l'unico che può
+   aggiungerne o toglierne. Applicare un template SOSTITUISCE gli esercizi
+   della settimana attiva (mai un merge parziale che confonderebbe cosa
+   viene da dove); da lì in poi resta libero da personalizzare come
+   qualunque esercizio aggiunto a mano — stesso editor, stesso drag-to-
+   reorder, stessa possibilità di modificare o rimuovere. */
+function TemplateBrowserModal({ supabase, onClose, onApply, accent }) {
+  const [templates, setTemplates] = useState(null); // null = in caricamento
+  const [error, setError] = useState("");
+  const [confirmId, setConfirmId] = useState(null);
+
+  useEffect(() => {
+    fetchWorkoutTemplates(supabase)
+      .then(setTemplates)
+      .catch((err) => {
+        console.error("PERFORM: errore caricamento catalogo split", err);
+        setError("Non sono riuscito a caricare il catalogo.");
+        setTemplates([]);
+      });
+  }, [supabase]);
+
+  const trainingDays = (t) => t.days.filter(Boolean).length;
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ backgroundColor: "rgba(0,0,0,0.55)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="card w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5"
+             style={{ maxHeight: "85vh", overflowY: "auto" }}>
+          <div className="flex items-center justify-between mb-1">
+            <p className="h2">Catalogo split</p>
+            <button onClick={onClose} aria-label="Chiudi" className="p-1"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+          </div>
+          <p className="body mb-4" style={{ fontSize: "0.85rem" }}>
+            Split pronte, pensate per rispettare volume e recupero settimanale. Applicane una alla settimana
+            corrente — dopo puoi ancora modificare, riordinare o rimuovere ogni esercizio come vuoi.
+          </p>
+          {error && <p className="text-sm mb-3" style={{ color: "#DC2626" }}>{error}</p>}
+          {templates === null ? (
+            <p className="body">Caricamento…</p>
+          ) : templates.length === 0 ? (
+            <p className="body">Nessun modello disponibile per ora.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {templates.map((t) => (
+                <div key={t.id} className="inner p-3.5">
+                  <p className="h2" style={{ fontSize: "0.95rem" }}>{t.name}</p>
+                  <p className="meta mt-0.5">{trainingDays(t)} giorni di allenamento a settimana</p>
+                  {confirmId === t.id ? (
+                    <div className="flex gap-2 mt-2.5">
+                      <button onClick={() => setConfirmId(null)} className="flex-1 rounded-full px-3 py-2.5 text-xs font-semibold"
+                              style={{ border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                        Annulla
+                      </button>
+                      <button onClick={() => onApply(t)} className="flex-1 rounded-full px-3 py-2.5 text-xs btn-3d"
+                              style={{ backgroundColor: accent, color: "#111111", fontWeight: 700 }}>
+                        Sostituisci questa settimana
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmId(t.id)} className="mt-2.5 rounded-full px-3.5 py-2 text-xs font-semibold"
+                            style={{ border: "1px solid var(--line)", color: "var(--ink)" }}>
+                      Applica a questa settimana
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, schedaAddonChatActive, gender, supabase, userId }) {
   const [innerTab, setInnerTab] = useState("oggi");
   const restored = useMemo(() => loadFreeRoutine(userId), [userId]);
@@ -5324,6 +5403,33 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
   useEffect(() => {
     if (activeWeek >= weeks.length) setActiveWeek(Math.max(0, weeks.length - 1));
   }, [weeks.length, activeWeek]);
+
+  // Catalogo split: converte template.days (forma "coach", muscleTarget/
+  // synergists in nomi estesi — vedi saveWeekWorkout in coachingData.js)
+  // nella forma locale di questo editor. muscleTarget/synergists si
+  // portano dietro TALI QUALI (non serve convertirli in nomi brevi):
+  // computeVolume (coachingData.js) accetta già entrambi i formati per
+  // ex.targetMuscle/ex.synergists, li converte da sé via DB_MUSCLE_TO_CHART
+  // — così il grafico Volumi è corretto da subito, anche prima che il
+  // coach abbia eseguito la migrazione che aggiunge questi esercizi alla
+  // libreria condivisa.
+  const [templateBrowserOpen, setTemplateBrowserOpen] = useState(false);
+  const applyTemplateToWeek = (template) => {
+    const converted = template.days.map((d) => d && {
+      label: d.label,
+      exercises: d.exercises.map((ex) => ({
+        name: ex.name,
+        sets: ex.sets,
+        reps: ex.reps,
+        rest: String(ex.rest ?? 90),
+        intensity: ex.rirTarget ? `RIR ${ex.rirTarget}` : (ex.technique || ""),
+        targetMuscle: ex.muscleTarget,
+        synergists: ex.synergists || [],
+      })),
+    });
+    setWeeks((ws) => ws.map((w, wi) => (wi !== activeWeek ? w : converted)));
+    setTemplateBrowserOpen(false);
+  };
 
   return (
     <div>
@@ -5432,7 +5538,17 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                     style={{ border: "1px solid var(--line)", color: "var(--ink-2)" }}>
               Duplica questa settimana
             </button>
+            {isRealMode && userPlan !== "free" && (
+              <button onClick={() => setTemplateBrowserOpen(true)} className="rounded-full px-4 py-2 text-sm flex items-center gap-1.5"
+                      style={{ border: `1px solid ${accent}`, color: accent, fontWeight: 600 }}>
+                📋 Sfoglia split pronte
+              </button>
+            )}
           </div>
+          {templateBrowserOpen && (
+            <TemplateBrowserModal supabase={supabase} accent={accent}
+              onClose={() => setTemplateBrowserOpen(false)} onApply={applyTemplateToWeek} />
+          )}
 
           <div className="space-y-3">
             {WEEK_DAYS.map((dLabel, dIdx) => {
