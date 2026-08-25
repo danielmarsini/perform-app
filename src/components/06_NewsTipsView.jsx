@@ -1219,35 +1219,35 @@ const SEED_NEWS = [
 
 const SEED_TIPS = [
   { id: "p1", channel: "tips", like_count: 302,
-    title: "Leggi l'etichetta in 10 secondi: kcal, proteine, zuccheri aggiunti",
+    title: "Come leggere un'etichetta nutrizionale in 10 secondi",
     body: "Ignora la scritta in copertina. Guarda solo tre numeri per 100 g: le calorie, i grammi di proteine e gli zuccheri aggiunti.",
     bodyExtended: [
       "Le diciture in copertina (“leggero”, “proteico”, “naturale”) non hanno una definizione normativa stringente e servono soprattutto al marketing.",
       "Regola pratica: se le proteine per 100 g valgono meno del 15% delle calorie totali, o gli zuccheri aggiunti superano i 10 g per 100 g, il prodotto probabilmente non è quello che la confezione promette.",
     ], published_at: iso(20) },
   { id: "p2", channel: "tips", like_count: 121,
-    title: "Presa a martello in panca: meno stress sui polsi, stessa spinta",
+    title: "Come non fare la presa in panca se ti fanno male i polsi",
     body: "Sui manubri, ruotare leggermente i palmi l'uno verso l'altro nella fase di spinta riduce il momento torcente sul polso senza perdere reclutamento del pettorale.",
     bodyExtended: [
       "Nella presa pronata classica, il polso è esposto a un momento torcente costante durante tutta la spinta, soprattutto nella fase di massimo carico vicino al petto.",
       "Ruotando leggermente i palmi verso l'interno (presa neutra o semi-neutra) l'avambraccio si allinea meglio con la linea di spinta, riducendo lo stress articolare.",
     ], published_at: iso(180) },
   { id: "p3", channel: "tips", like_count: 176,
-    title: "Proteine in polvere: calcola il prezzo per grammo di proteina, non per kg",
+    title: "Come scegliere le proteine in polvere senza farti fregare dal prezzo",
     body: "Un prodotto più economico al kg può costare di più per grammo di proteina effettiva se la concentrazione è bassa.",
     bodyExtended: [
       "Due prodotti apparentemente simili possono avere concentrazioni proteiche molto diverse: un concentrato al 70% e un isolato al 90% non vanno confrontati a parità di prezzo al kg.",
       "Il calcolo corretto è: prezzo confezione ÷ grammi totali di proteina nella confezione. Questo numero è l'unico che permette un confronto onesto tra due prodotti.",
     ], published_at: iso(520) },
   { id: "p4", channel: "tips", like_count: 88,
-    title: "Caffeina pre-workout: la finestra che conta è 45-60 minuti prima",
+    title: "Cosa fare quando prendi caffeina pre-workout",
     body: "Il picco plasmatico della caffeina arriva 45-60 minuti dopo l'assunzione. A 3-6 mg per kg di peso corporeo, il beneficio su forza e percezione dello sforzo è documentato.",
     bodyExtended: [
       "L'assorbimento della caffeina non è istantaneo: il picco di concentrazione plasmatica si osserva tipicamente 45-60 minuti dopo l'ingestione.",
       "A dosi di 3-6 mg per kg di peso corporeo, gli studi mostrano un miglioramento misurabile su forza espressa e percezione dello sforzo. Oltre questa fascia, il rischio principale è ansia e disturbi gastrointestinali.",
     ], published_at: iso(980) },
   { id: "p5", channel: "tips", like_count: 64,
-    title: "Manovra di Valsalva controllata: stabilità sì, ma con la tecnica giusta",
+    title: "Come fare la manovra di Valsalva su stacco e squat pesanti",
     body: "Su stacco e squat pesanti, una breve trattenuta del respiro a glottide chiusa aumenta la pressione intra-addominale e stabilizza la colonna.",
     bodyExtended: [
       "Trattenere il respiro a glottide chiusa durante la fase concentrica di un carico massimale aumenta la pressione intra-addominale, che agisce come un vero e proprio cinturone interno per la colonna vertebrale.",
