@@ -1962,6 +1962,15 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   const [guideDrafts, setGuideDrafts] = useState({});
   const updateGuideDraft = (exId, field, value) =>
     setGuideDrafts((d) => ({ ...d, [exId]: { ...d[exId], [field]: value } }));
+  // Richiesta esplicita: molti esercizi (dip, chin-up, squat, affondi, stacco
+  // rumeno, hip thrust...) sfiniscono DUE gruppi muscolari entrambi al 100%,
+  // non uno diretto + sinergici al 50% — computeVolume() già itera OGNI
+  // elemento di "direct" al 100% (nessuna modifica lì necessaria), qui basta
+  // dare al coach un secondo select opzionale invece del solo "ex.muscleTarget"
+  // singolo (che resta il campo scritto su workout_logs, un solo valore per
+  // constraint — questo secondo target esiste solo per comporre "direct" al
+  // salvataggio in libreria, non tocca ex.muscleTarget).
+  const [secondMuscleDrafts, setSecondMuscleDrafts] = useState({}); // {exId: nome muscolo DB o ""}
   // BUG PRESO: prima non c'era nessun try/catch — saveExerciseGuide non
   // rilanciava mai un errore reale (solo console.error), quindi questa
   // funzione marcava SEMPRE "✓ Salvato in libreria" anche quando la
@@ -1972,7 +1981,9 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   const saveExerciseToLib = async (ex) => {
     if (!isRealMode || !ex.name?.trim() || !ex.muscleTarget) return;
     setSaveLibError((s) => ({ ...s, [ex.id]: "" }));
+    const secondMuscle = secondMuscleDrafts[ex.id];
     const direct = [DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget];
+    if (secondMuscle) direct.push(DB_MUSCLE_TO_CHART[secondMuscle] || secondMuscle);
     const indirect = (ex.synergists || []).map((m) => DB_MUSCLE_TO_CHART[m] || m);
     const guide = guideDrafts[ex.id] || {};
     try {
@@ -2127,17 +2138,38 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                   {ex.custom && (
                     <label className="flex-1 min-w-[160px]">
                       <span className="c-label block mb-1">Distretto muscolare (diretto)</span>
-                      <select value={ex.muscleTarget || ""} onChange={(e) => updateEx(i, "muscleTarget", e.target.value)} className="t-input w-full text-sm rounded-md px-2 py-1.5">
+                      <select value={ex.muscleTarget || ""}
+                        onChange={(e) => {
+                          updateEx(i, "muscleTarget", e.target.value);
+                          if (e.target.value === secondMuscleDrafts[ex.id]) setSecondMuscleDrafts((d) => ({ ...d, [ex.id]: "" }));
+                        }}
+                        className="t-input w-full text-sm rounded-md px-2 py-1.5">
                         <option value="">— scegli —</option>
                         {MUSCLE_TARGETS.map((m) => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </label>
                   )}
                   {ex.custom && ex.muscleTarget && (
+                    <label className="flex-1 min-w-[160px]">
+                      <span className="c-label block mb-1">2° distretto al 100% (opzionale)</span>
+                      <select value={secondMuscleDrafts[ex.id] || ""}
+                        onChange={(e) => setSecondMuscleDrafts((d) => ({ ...d, [ex.id]: e.target.value }))}
+                        className="t-input w-full text-sm rounded-md px-2 py-1.5">
+                        <option value="">— nessuno —</option>
+                        {MUSCLE_TARGETS.filter((m) => m !== ex.muscleTarget).map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {ex.custom && ex.muscleTarget && (
                     <div className="w-full">
+                      {secondMuscleDrafts[ex.id] && (
+                        <p className="c-muted text-[11px] mb-1.5">
+                          Salvato in libreria con {ex.muscleTarget} + {secondMuscleDrafts[ex.id]} entrambi al 100% — 1 serie vale come 1 serie allenante per ciascuno dei due.
+                        </p>
+                      )}
                       <span className="c-label block mb-1">Muscoli sinergici (indiretto, opzionale)</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {MUSCLE_TARGETS.filter((m) => m !== ex.muscleTarget).map((m) => {
+                        {MUSCLE_TARGETS.filter((m) => m !== ex.muscleTarget && m !== secondMuscleDrafts[ex.id]).map((m) => {
                           const active = (ex.synergists || []).includes(m);
                           return (
                             <button
@@ -3375,6 +3407,14 @@ function ExerciseLibraryManagerModal({ supabase, onClose, onChanged }) {
 function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }) {
   const [name, setName] = useState(entry.name);
   const [muscleTarget, setMuscleTarget] = useState(EXERCISE_LIB_MUSCLE_TO_DB[entry.direct[0]] || entry.direct[0] || "");
+  // Richiesta esplicita: molti esercizi (dip, chin-up, squat, affondi, stacco
+  // rumeno, hip thrust...) sfiniscono DUE gruppi muscolari entrambi al 100%
+  // per la stessa serie, non uno diretto + sinergici al 50% — direct è già
+  // un array in DB (computeVolume itera OGNI elemento al 100%), qui basta
+  // un secondo select opzionale invece del solo primo.
+  const [muscleTarget2, setMuscleTarget2] = useState(
+    entry.direct[1] ? (EXERCISE_LIB_MUSCLE_TO_DB[entry.direct[1]] || entry.direct[1]) : ""
+  );
   const [synergists, setSynergists] = useState((entry.indirect || []).map((m) => EXERCISE_LIB_MUSCLE_TO_DB[m] || m));
   const [howTo, setHowTo] = useState(entry.howTo || "");
   const [avoid, setAvoid] = useState(entry.avoid || "");
@@ -3394,6 +3434,7 @@ function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }
     setBusy(true);
     setErr("");
     const direct = [DB_MUSCLE_TO_CHART[muscleTarget] || muscleTarget];
+    if (muscleTarget2) direct.push(DB_MUSCLE_TO_CHART[muscleTarget2] || muscleTarget2);
     const indirect = synergists.map((m) => DB_MUSCLE_TO_CHART[m] || m);
     try {
       await updateExerciseLibraryEntry(supabase, entry.name, { name: trimmed, direct, indirect, howTo, avoid, videoUrl });
@@ -3437,17 +3478,34 @@ function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="t-input w-full text-sm rounded-md px-2.5 py-2" />
       </label>
       <label className="block mb-3">
-        <span className="c-label block mb-1">Distretto muscolare (diretto)</span>
-        <select value={muscleTarget} onChange={(e) => setMuscleTarget(e.target.value)} className="t-input w-full text-sm rounded-md px-2.5 py-2">
+        <span className="c-label block mb-1">Distretto muscolare (diretto, 100%)</span>
+        <select value={muscleTarget}
+          onChange={(e) => {
+            setMuscleTarget(e.target.value);
+            if (e.target.value === muscleTarget2) setMuscleTarget2("");
+          }}
+          className="t-input w-full text-sm rounded-md px-2.5 py-2">
           <option value="">— scegli —</option>
           {MUSCLE_TARGETS.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
       </label>
       {muscleTarget && (
+        <label className="block mb-3">
+          <span className="c-label block mb-1">2° distretto al 100% (opzionale)</span>
+          <select value={muscleTarget2} onChange={(e) => setMuscleTarget2(e.target.value)} className="t-input w-full text-sm rounded-md px-2.5 py-2">
+            <option value="">— nessuno —</option>
+            {MUSCLE_TARGETS.filter((m) => m !== muscleTarget).map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <p className="c-muted text-[11px] mt-1">
+            Per esercizi che sfiniscono due gruppi muscolari insieme (dip, chin-up, squat, affondi, stacco rumeno, hip thrust...): entrambi contano al 100% per la stessa serie, non al 50%.
+          </p>
+        </label>
+      )}
+      {muscleTarget && (
         <div className="mb-3">
           <span className="c-label block mb-1">Muscoli sinergici (indiretto, opzionale)</span>
           <div className="flex flex-wrap gap-1.5">
-            {MUSCLE_TARGETS.filter((m) => m !== muscleTarget).map((m) => {
+            {MUSCLE_TARGETS.filter((m) => m !== muscleTarget && m !== muscleTarget2).map((m) => {
               const active = synergists.includes(m);
               return (
                 <button key={m} type="button" onClick={() => toggleSynergist(m)}
