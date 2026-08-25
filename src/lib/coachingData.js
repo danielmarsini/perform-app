@@ -2196,6 +2196,19 @@ export async function adminDeleteAccount(supabase, clientId) {
   if (error) throw error;
 }
 
+// Self-service: "Sì, elimina tutto" in Impostazioni. Stessa Edge Function di
+// adminDeleteAccount ma SENZA userId nel corpo — la funzione lato server
+// legge il chiamante dal proprio token e cancella quello, mai un id passato
+// dal client (nessun utente deve poter chiedere l'eliminazione di un
+// account che non è il proprio). BUG PRESO: prima onDeleteAccount in App.jsx
+// era un no-op vuoto — il pulsante non faceva letteralmente nulla, l'utente
+// restava sulla stessa schermata credendo che l'eliminazione fosse fallita
+// in silenzio.
+export async function deleteMyAccount(supabase) {
+  const { error } = await supabase.functions.invoke("admin-delete-account", { body: {} });
+  if (error) throw error;
+}
+
 // Sezione Cardio (stile diario Strava semplificato) — registro manuale di
 // attività cardio, parte del Diario Libero disponibile a tutti i piani.
 export async function fetchCardioLogs(supabase, userId, limit = 20) {

@@ -10,7 +10,7 @@ import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount } from "./lib/coachingData.js";
 
 // Piani a coaching reale (Scheda Personalizzata, Coaching Allenamento, Full
 // Coaching): solo questi sbloccano il pulsante Chat (terzo tab, subito dopo
@@ -578,9 +578,16 @@ export default function App() {
             supabase.from("profiles").update({ plan: "free" }).eq("id", session.user.id)
               .then(({ error }) => { if (error) console.error("PERFORM: errore salvataggio piano gratuito", error); });
           }}
-          onDeleteAccount={() => {
-            // TODO produzione: cancellazione account reale (Supabase Auth admin
-            // + cascata su profiles/checkins/... secondo le policy GDPR).
+          onDeleteAccount={async () => {
+            // Edge Function admin-delete-account (service role, l'unico modo
+            // di eliminare un utente da auth.users) — chiamata a corpo vuoto,
+            // elimina il chiamante stesso, mai un id passato dal client. Il
+            // signOut dopo un delete riuscito è quello che riporta davvero
+            // alla schermata di accesso (onAuthStateChange sopra reagisce a
+            // session -> null): prima questo handler era un no-op vuoto, il
+            // pulsante "Sì, elimina tutto" non faceva letteralmente nulla.
+            await deleteMyAccount(supabase);
+            await supabase.auth.signOut();
           }}
           onLogout={async () => {
             // Il reset di tab/settingsOpen (BUG PRESO: restavano quelli di

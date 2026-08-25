@@ -1,11 +1,17 @@
 // PERFORM — Edge Function: admin-delete-account
 // ============================================================================
-// Hub Rete & Accessi: elimina definitivamente un account (uso previsto: ripulire
-// i doppioni di registrazione — chi ha provato ad accedere/iscriversi due
-// volte). Azione IRREVERSIBILE: cancella l'utente da auth.users (Admin API,
-// service role — mai possibile con la chiave anon) e la sua riga profiles.
-// La UI chiamante deve sempre chiedere conferma esplicita PRIMA di invocare
-// questa funzione: qui non c'è nessuna doppia conferma, esegue subito.
+// Due chiamanti, stessa funzione:
+//  1. Hub Rete & Accessi (coach): elimina un account altrui — uso previsto,
+//     ripulire i doppioni di registrazione. Chiama con { userId: <altro> }.
+//  2. Impostazioni > "Sì, elimina tutto" (qualunque utente, incluso un
+//     cliente in gestione): elimina il PROPRIO account. Chiama a corpo
+//     vuoto — targetId ricade sull'id del chiamante, mai passato dal client
+//     per un self-delete (nessun utente deve poter costruire una richiesta
+//     che elimina qualcun altro spacciandola per "elimina te stesso").
+// Azione IRREVERSIBILE: cancella l'utente da auth.users (Admin API, service
+// role — mai possibile con la chiave anon) e la sua riga profiles. La UI
+// chiamante deve sempre chiedere conferma esplicita PRIMA di invocare questa
+// funzione: qui non c'è nessuna doppia conferma, esegue subito.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -30,17 +36,23 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
   if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
-  if ((user.email || "").trim().toLowerCase() !== "danielmarsini@coach.com") {
-    return new Response(JSON.stringify({ error: "forbidden — solo il coach può eliminare account" }), { status: 403, headers: CORS_HEADERS });
+  const isCoach = (user.email || "").trim().toLowerCase() === "danielmarsini@coach.com";
+  const { userId: requestedUserId } = await req.json().catch(() => ({}));
+  // Self-delete: nessun userId nel corpo, il bersaglio è sempre e solo il
+  // chiamante — mai un id passato dal client per un self-delete, altrimenti
+  // un utente normale potrebbe costruire una richiesta che elimina un altro
+  // account spacciandola per "elimina il mio".
+  const targetId = requestedUserId || user.id;
+
+  if (isCoach) {
+    if (targetId === user.id) {
+      return new Response(JSON.stringify({ error: "Non puoi eliminare il tuo stesso account coach da qui." }), { status: 400, headers: CORS_HEADERS });
+    }
+  } else if (targetId !== user.id) {
+    return new Response(JSON.stringify({ error: "Puoi eliminare solo il tuo account." }), { status: 403, headers: CORS_HEADERS });
   }
 
-  const { userId } = await req.json().catch(() => ({}));
-  if (!userId) return new Response(JSON.stringify({ error: "userId mancante" }), { status: 400, headers: CORS_HEADERS });
-  if (userId === user.id) {
-    return new Response(JSON.stringify({ error: "Non puoi eliminare il tuo stesso account coach da qui." }), { status: 400, headers: CORS_HEADERS });
-  }
-
-  const { error: authDeleteError } = await admin.auth.admin.deleteUser(userId);
+  const { error: authDeleteError } = await admin.auth.admin.deleteUser(targetId);
   if (authDeleteError) {
     console.error("PERFORM: errore eliminazione utente admin", authDeleteError);
     return new Response(JSON.stringify({ error: "Non sono riuscito a eliminare l'account." }), { status: 500, headers: CORS_HEADERS });
@@ -48,7 +60,7 @@ Deno.serve(async (req) => {
   // Pulizia esplicita della riga profiles: non ci si affida a un'eventuale
   // FK ON DELETE CASCADE che potrebbe non essere configurata su questo
   // progetto — meglio un delete esplicito ridondante che una riga orfana.
-  const { error: profileDeleteError } = await admin.from("profiles").delete().eq("id", userId);
+  const { error: profileDeleteError } = await admin.from("profiles").delete().eq("id", targetId);
   if (profileDeleteError) console.error("PERFORM: errore eliminazione riga profiles residua", profileDeleteError);
 
   return new Response(JSON.stringify({ deleted: true }), { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });

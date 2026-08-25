@@ -1648,6 +1648,23 @@ export function SettingsDrawer({
   // su "piano" resterebbe lì anche alla prossima apertura da rotella normale.
   useEffect(() => { if (open) setTab(initialTab || "aspetto"); }, [open, initialTab]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const handleDeleteAccount = async () => {
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      await onDeleteAccount();
+      // Nessun setDeleteBusy(false) qui: onDeleteAccount, se va a buon fine,
+      // fa un signOut che smonta questo stesso pannello (session -> null in
+      // App.jsx) — resettare lo stato di un componente che sta per sparire
+      // non serve e rischierebbe solo un "set state on unmounted component".
+    } catch (err) {
+      console.error("PERFORM: errore eliminazione account", err);
+      setDeleteError(err?.message || "Non sono riuscito a eliminare l'account. Riprova.");
+      setDeleteBusy(false);
+    }
+  };
   const isRealMode = Boolean(supabase && userId);
 
   // Stato reale del push: letto dal browser (non da Supabase) perché
@@ -2084,14 +2101,16 @@ export function SettingsDrawer({
                 ) : (
                   <div className="spring-in">
                     <p className="text-sm mb-3" style={{ color: "#DC2626", fontWeight: 600 }}>{t.privacy.confirmText}</p>
+                    {deleteError && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{deleteError}</p>}
                     <div className="flex gap-2">
-                      <button onClick={onDeleteAccount}
-                        className="flex-1 rounded-full px-4 py-3 text-sm"
+                      <button onClick={handleDeleteAccount} disabled={deleteBusy}
+                        className="flex-1 rounded-full px-4 py-3 text-sm flex items-center justify-center gap-2 disabled:opacity-60"
                         style={{ backgroundColor: "#DC2626", color: "#FFFFFF", fontWeight: 600 }}>
+                        {deleteBusy && <Loader2 size={15} className="animate-spin" />}
                         {t.privacy.confirmYes}
                       </button>
-                      <button onClick={() => setConfirmDelete(false)}
-                        className="rounded-full px-4 py-3 text-sm"
+                      <button onClick={() => setConfirmDelete(false)} disabled={deleteBusy}
+                        className="rounded-full px-4 py-3 text-sm disabled:opacity-60"
                         style={{ border: "1px solid var(--line)", color: "var(--ink-2)" }}>
                         {t.privacy.confirmNo}
                       </button>
