@@ -35,7 +35,7 @@ import { Loader2, Dumbbell, ShieldCheck, BarChart3, Trophy, ChevronRight } from 
 import { DesignSystem } from "./04_AppShell.jsx";
 import { STRIPE_PLANS, translations, GradientText, PlanCard, hasAnnualPricing, withBillingCycle, BillingCycleToggle } from "./08_ClientProfileView.jsx";
 import { GlobalStyle as CoachGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./09_CoachDashboard.jsx";
-import { saveAnamnesis, resolveReferralCode, setReferredBy } from "../lib/coachingData.js";
+import { saveAnamnesis, resolveReferralCode, recordReferralSignup } from "../lib/coachingData.js";
 
 // UI id (quello di STRIPE_PLANS, condiviso con SettingsDrawer) -> valore reale
 // accettato dal check constraint di profiles.plan (SCHEMA_v14).
@@ -191,7 +191,8 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
     try {
       const referrerId = await resolveReferralCode(supabase, referralCode);
       if (!referrerId || referrerId === userId) { setReferralStatus("invalid"); return; }
-      await setReferredBy(supabase, userId, referrerId);
+      const res = await recordReferralSignup(supabase, referralCode);
+      if (!res?.ok) { setReferralStatus("invalid"); return; }
       setReferralStatus("applied");
     } catch (err) {
       console.error("PERFORM: errore applicazione codice invito", err);

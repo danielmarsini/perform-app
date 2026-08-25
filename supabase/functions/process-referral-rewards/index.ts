@@ -1,0 +1,100 @@
+// PERFORM — Edge Function: process-referral-rewards
+// ============================================================================
+// Chiamata una volta al giorno da un job pg_cron — stesso pattern
+// x-cron-secret di streak-reminder/expire-whitelists. Due passaggi:
+//
+// 1. Verifica email: per ogni referral_signups non ancora marcata verificata,
+//    controlla auth.users.email_confirmed_at (via Admin API, l'unico modo
+//    per leggere lo stato di un altro utente) e la segna verificata se
+//    confermata nel frattempo.
+// 2. Premio: per ogni referrer, conta gli IP DISTINTI fra i referral
+//    verificati — non il numero di righe, altrimenti la stessa persona con
+//    3 email e lo stesso IP otterrebbe comunque il premio, esattamente ciò
+//    che la richiesta esplicita di controllo IP voleva impedire. Ogni
+//    gruppo di 3 IP distinti vale un mese Premium; referral_rewards_granted
+//    su profiles impedisce di riapplicare un premio già dato.
+//
+// Mai tocca un cliente già su un piano di coaching reale (scheda
+// personalizzata/coaching allenamento/full coaching): il premio è
+// specificamente "un mese Premium", non deve mai declassare né sovrascrivere
+// un abbonamento di valore superiore già attivo — stessa cautela di
+// expire-whitelists, che allo stesso modo non tocca mai un pagante reale.
+
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const CRON_SECRET = Deno.env.get("CRON_SECRET")!;
+
+const REFERRALS_PER_REWARD = 3;
+const COACHING_PLANS = new Set(["scheda_personalizzata", "training", "full"]);
+
+Deno.serve(async (req) => {
+  if (req.headers.get("x-cron-secret") !== CRON_SECRET) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  }
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  // --- 1. Verifica email per i referral non ancora confermati -------------
+  const { data: pending, error: pendingError } = await admin
+    .from("referral_signups")
+    .select("id, referred_user_id")
+    .eq("email_verified", false);
+  if (pendingError) return new Response(JSON.stringify({ error: pendingError.message }), { status: 500 });
+
+  let newlyVerified = 0;
+  for (const row of pending || []) {
+    const { data, error } = await admin.auth.admin.getUserById(row.referred_user_id);
+    if (error || !data?.user?.email_confirmed_at) continue;
+    const { error: updErr } = await admin.from("referral_signups")
+      .update({ email_verified: true, verified_at: data.user.email_confirmed_at })
+      .eq("id", row.id);
+    if (!updErr) newlyVerified++;
+  }
+
+  // --- 2. Calcola e applica i premi maturati -------------------------------
+  const { data: verifiedRows, error: verifiedError } = await admin
+    .from("referral_signups")
+    .select("referrer_id, ip_address")
+    .eq("email_verified", true)
+    .not("ip_address", "is", null);
+  if (verifiedError) return new Response(JSON.stringify({ error: verifiedError.message }), { status: 500 });
+
+  const ipsByReferrer = new Map(); // referrer_id -> Set<ip>
+  for (const row of verifiedRows || []) {
+    if (!ipsByReferrer.has(row.referrer_id)) ipsByReferrer.set(row.referrer_id, new Set());
+    ipsByReferrer.get(row.referrer_id).add(row.ip_address);
+  }
+
+  let rewarded = 0;
+  for (const [referrerId, ipSet] of ipsByReferrer.entries()) {
+    const eligibleRewards = Math.floor(ipSet.size / REFERRALS_PER_REWARD);
+    if (eligibleRewards <= 0) continue;
+
+    const { data: referrer, error: refErr } = await admin.from("profiles")
+      .select("plan, whitelisted_until, referral_rewards_granted")
+      .eq("id", referrerId).maybeSingle();
+    if (refErr || !referrer) continue;
+
+    const owedMonths = eligibleRewards - (referrer.referral_rewards_granted || 0);
+    if (owedMonths <= 0) continue;
+
+    // Un cliente già su un piano di coaching reale ha già più valore di
+    // Premium: il premio resta "guadagnato" (contatore aggiornato, non si
+    // ripresenta ad ogni corsa) ma non tocchiamo il suo piano attivo.
+    if (!COACHING_PLANS.has(referrer.plan)) {
+      const base = referrer.whitelisted_until && new Date(referrer.whitelisted_until) > new Date()
+        ? new Date(referrer.whitelisted_until)
+        : new Date();
+      base.setMonth(base.getMonth() + owedMonths);
+      const update = { whitelisted_until: base.toISOString(), referral_rewards_granted: eligibleRewards };
+      if (referrer.plan !== "performance_pack") update.plan = "performance_pack";
+      const { error: grantErr } = await admin.from("profiles").update(update).eq("id", referrerId);
+      if (!grantErr) rewarded++;
+    } else {
+      await admin.from("profiles").update({ referral_rewards_granted: eligibleRewards }).eq("id", referrerId);
+    }
+  }
+
+  return new Response(JSON.stringify({ newlyVerified, rewarded }), { headers: { "Content-Type": "application/json" } });
+});

@@ -1987,15 +1987,33 @@ export async function resolveReferralCode(supabase, code) {
   return data || null;
 }
 
-export async function setReferredBy(supabase, userId, referrerId) {
-  const { error } = await supabase.from("profiles").update({ referred_by: referrerId }).eq("id", userId);
+// Registra l'iscrizione arrivata da un codice invito: chiama l'Edge
+// Function record-referral-signup (SCHEMA_v67) invece di scrivere
+// referred_by direttamente — solo lì si può catturare l'IP di chi si
+// iscrive (un client non può leggere né dichiarare in modo affidabile il
+// proprio IP pubblico), la base con cui process-referral-rewards riconosce
+// e blocca chi tenta di auto-invitarsi con più email dallo stesso posto.
+export async function recordReferralSignup(supabase, referralCode) {
+  const { data, error } = await supabase.functions.invoke("record-referral-signup", { body: { referralCode } });
   if (error) throw error;
+  return data; // { ok: true } oppure { ok: false, reason: "invalid" }
+}
+
+// Il proprio progresso verso il prossimo premio: quanti amici invitati con
+// email verificata e IP distinto (referral_progress, SCHEMA_v67) e quanti
+// mesi Premium già ricevuti — per la UI "2 su 3 amici" in ReferralCodeCard.
+export async function fetchReferralProgress(supabase) {
+  const { data, error } = await supabase.rpc("referral_progress");
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return { verifiedCount: row?.verified_count ?? 0, rewardsGranted: row?.rewards_granted ?? 0 };
 }
 
 // Per il coach: chi ha invitato chi, con il piano attuale del cliente
-// invitato — decide se e quando applicare il premio (whitelistClient, un
-// mese sul piano che già ha) manualmente, mai un premio automatico non
-// rivisto: un referral non convertito non deve costare un mese gratis.
+// invitato — il premio (1 mese Premium) scatta ora da solo quando il
+// referrer accumula 3 amici verificati (SCHEMA_v67, process-referral-
+// rewards); whitelistClient resta comunque disponibile per un premio
+// manuale extra, a discrezione del coach, oltre a quello automatico.
 export async function fetchReferrals(supabase) {
   const { data, error } = await supabase.from("profiles")
     .select("id, nickname, full_name, plan, created_at, referred_by")

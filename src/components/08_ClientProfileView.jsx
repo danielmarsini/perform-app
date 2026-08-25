@@ -38,7 +38,7 @@ import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress } from "../lib/coachingData.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
 import { isPushSupported, pushUnsupportedReason, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
@@ -1557,14 +1557,15 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
 }
 
 /* §08 memo "Verso l'élite" — Il business dietro l'app: programma referral.
-   Un codice invito personale, condivisibile con un tap — il coach vede chi
-   ha portato chi (fetchReferrals) e applica il premio a mano (whitelist di
-   un mese), mai un'automazione Stripe che richiederebbe nuovi prezzi non
-   disponibili in questo ambiente. */
+   Un codice invito personale, condivisibile con un tap — il premio (1 mese
+   Premium) scatta da solo (SCHEMA_v67, process-referral-rewards) quando 3
+   amici invitati confermano l'email da 3 indirizzi IP distinti, nessun
+   passaggio manuale del coach richiesto. */
 function ReferralCodeCard({ supabase, userId }) {
   const [code, setCode] = useState(null); // null = non ancora caricato
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState(null); // { verifiedCount, rewardsGranted }
 
   useEffect(() => {
     if (!supabase || !userId) return;
@@ -1572,6 +1573,9 @@ function ReferralCodeCard({ supabase, userId }) {
     ensureReferralCode(supabase, userId)
       .then((c) => { if (!cancelled) setCode(c); })
       .catch((err) => { console.error("PERFORM: errore lettura codice invito", err); if (!cancelled) setError("Non sono riuscito a caricare il tuo codice invito."); });
+    fetchReferralProgress(supabase)
+      .then((p) => { if (!cancelled) setProgress(p); })
+      .catch((err) => console.error("PERFORM: errore lettura progresso invito", err));
     return () => { cancelled = true; };
   }, [supabase, userId]);
 
@@ -1592,8 +1596,8 @@ function ReferralCodeCard({ supabase, userId }) {
     <div className="card mb-4">
       <p className="label mb-1">🎁 Invita un amico</p>
       <p className="meta mb-3" style={{ fontSize: "0.72rem" }}>
-        Condividi il tuo codice: se un amico si iscrive con questo codice, entrambi potete ricevere un mese in
-        regalo — chiedi al coach una volta che si è iscritto.
+        Condividi il tuo codice: ogni 3 amici che si iscrivono con questo codice e confermano l'email ricevi
+        automaticamente 1 mese Premium in regalo — nessuna richiesta da fare, arriva da solo.
       </p>
       {error && <p className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</p>}
       {code && (
@@ -1606,6 +1610,12 @@ function ReferralCodeCard({ supabase, userId }) {
             {copied ? "✓ Copiato" : "Copia"}
           </button>
         </div>
+      )}
+      {progress && (
+        <p className="meta mt-2.5" style={{ fontSize: "0.72rem" }}>
+          {progress.verifiedCount % 3}/3 amici verificati verso il prossimo mese
+          {progress.rewardsGranted > 0 && ` — ${progress.rewardsGranted} già ricevuto${progress.rewardsGranted > 1 ? "i" : ""}`}
+        </p>
       )}
     </div>
   );
