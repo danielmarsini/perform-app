@@ -632,19 +632,85 @@ export async function setSelfSupplementTaken(supabase, userId, selfSupplementId,
   }
 }
 
-// Storico di un esercizio specifico (per il grafico/cronologia in HomeDashboard),
-// solo le sessioni realmente svolte (status='done'), più recenti prima.
+// Storico di un esercizio specifico (per il grafico/cronologia in HomeDashboard
+// e per il rilevamento PR), solo le sessioni realmente svolte (status='done'),
+// più recenti prima. Un punto per sessione: il TOP SET reale (carico massimo
+// tra le serie svolte quel giorno), letto da workout_sets.
+// BUG PRESO: prima leggeva workout_logs.load_kg/reps_completed, ma
+// logWorkoutSet lo sovrascrive ad OGNI serie salvata — quel valore finiva per
+// essere "l'ultima serie inserita", non il top set, e nemmeno sempre l'ultima
+// in ordine cronologico se l'utente correggeva una serie precedente dopo.
 export async function fetchExerciseHistory(supabase, userId, exerciseName, limit = 8) {
-  const { data, error } = await supabase
+  const { data: logs, error: logsError } = await supabase
     .from("workout_logs")
-    .select("date, load_kg, reps_completed")
+    .select("id, date")
     .eq("user_id", userId)
     .eq("exercise_name", exerciseName)
     .eq("status", "done")
     .order("date", { ascending: false })
     .limit(limit);
-  if (error) throw error;
-  return (data ?? []).reverse().map((r) => ({ kg: Number(r.load_kg), reps: r.reps_completed }));
+  if (logsError) throw logsError;
+  if (!logs?.length) return [];
+
+  const logIds = logs.map((l) => l.id);
+  const { data: sets, error: setsError } = await supabase
+    .from("workout_sets")
+    .select("workout_log_id, load_kg, reps_completed")
+    .in("workout_log_id", logIds)
+    .not("load_kg", "is", null);
+  if (setsError) throw setsError;
+
+  const setsByLog = new Map();
+  (sets ?? []).forEach((s) => {
+    if (!setsByLog.has(s.workout_log_id)) setsByLog.set(s.workout_log_id, []);
+    setsByLog.get(s.workout_log_id).push(s);
+  });
+
+  return logs
+    .filter((l) => setsByLog.has(l.id))
+    .reverse()
+    .map((l) => {
+      const top = setsByLog.get(l.id).reduce((a, b) => (Number(b.load_kg) > Number(a.load_kg) ? b : a));
+      return { kg: Number(top.load_kg), reps: top.reps_completed };
+    });
+}
+
+// Come fetchExerciseHistory ma con TUTTE le serie di ogni sessione (non solo
+// il top set) — per mostrare/correggere lo storico completo di un esercizio
+// invece del solo massimale. Una riga per sessione, con l'array di serie
+// nell'ordine in cui sono state svolte (set_number crescente).
+export async function fetchExerciseSetHistory(supabase, userId, exerciseName, sessionLimit = 6) {
+  const { data: logs, error: logsError } = await supabase
+    .from("workout_logs")
+    .select("id, date")
+    .eq("user_id", userId)
+    .eq("exercise_name", exerciseName)
+    .eq("status", "done")
+    .order("date", { ascending: false })
+    .limit(sessionLimit);
+  if (logsError) throw logsError;
+  if (!logs?.length) return [];
+
+  const logIds = logs.map((l) => l.id);
+  const { data: sets, error: setsError } = await supabase
+    .from("workout_sets")
+    .select("workout_log_id, set_number, load_kg, reps_completed, rir")
+    .in("workout_log_id", logIds)
+    .order("set_number", { ascending: true });
+  if (setsError) throw setsError;
+
+  const setsByLog = new Map();
+  (sets ?? []).forEach((s) => {
+    if (!setsByLog.has(s.workout_log_id)) setsByLog.set(s.workout_log_id, []);
+    // rir incluso solo per PRESERVARLO quando si corregge kg/reps di una
+    // serie passata (PastSetRow in 05_HomeDashboard.jsx) — senza, la
+    // correzione lo azzererebbe silenziosamente pur non toccandolo mai in UI.
+    setsByLog.get(s.workout_log_id).push({ setNumber: s.set_number, kg: s.load_kg != null ? Number(s.load_kg) : null, reps: s.reps_completed, rir: s.rir });
+  });
+
+  return logs
+    .filter((l) => setsByLog.has(l.id))
+    .map((l) => ({ workoutLogId: l.id, date: l.date, sets: setsByLog.get(l.id) }));
 }
 
 // "I Miei Traguardi" (profilo): storico REALE di ogni esercizio mai svolto

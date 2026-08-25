@@ -22,9 +22,9 @@ import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
-  Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical,
+  Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchExerciseSetHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
@@ -2968,6 +2968,8 @@ export function HomeDashboard({
                         onUpgrade={onUpgrade}
                         onOpenChat={onOpenChat}
                         onCoachSync={onCoachSync}
+                        supabase={supabase}
+                        userId={userId}
                       />
                     ))}
                   </div>
@@ -4483,9 +4485,78 @@ function NutritionCalendarStrip({ weekPlan, selectedIso, onSelectIso, accent, lo
   );
 }
 
-function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync }) {
+/* Riga di una serie di una sessione PASSATA, modificabile in loco: corregge un
+   carico/reps dimenticati di segnare durante l'allenamento. Salva subito su
+   workout_sets via logWorkoutSet (stessa upsert usata durante la sessione
+   live) — nessuno stato "in sospeso" da confermare altrove. */
+function PastSetRow({ workoutLogId, set, supabase, userId }) {
+  const [editing, setEditing] = useState(false);
+  const [kg, setKg] = useState(set.kg ?? "");
+  const [reps, setReps] = useState(set.reps ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await logWorkoutSet(supabase, workoutLogId, userId, set.setNumber, {
+        repsCompleted: reps === "" ? null : Number(reps),
+        loadKg: kg === "" ? null : Number(kg),
+        rir: set.rir ?? null, // preserva il RIR già registrato, mai azzerato da una correzione kg/reps
+      });
+      setEditing(false);
+    } catch (err) {
+      console.error("PERFORM: errore correzione serie passata", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-12 gap-2 items-center">
+      <span className="col-span-2 text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>S{set.setNumber}</span>
+      {editing ? (
+        <>
+          <input type="number" min="0" value={kg} onChange={(e) => setKg(e.target.value)} autoFocus
+                 className="col-span-4 input w-full px-2 py-2 text-center text-sm" aria-label={`kg serie ${set.setNumber}`} />
+          <input type="number" min="0" value={reps} onChange={(e) => setReps(e.target.value)}
+                 className="col-span-4 input w-full px-2 py-2 text-center text-sm" aria-label={`reps serie ${set.setNumber}`} />
+          <button onClick={save} disabled={saving} className="col-span-2 flex items-center justify-center" aria-label="Salva correzione">
+            {saving ? <Loader2 size={16} className="animate-spin" style={{ color: "var(--ink-2)" }} /> : <Check size={18} style={{ color: "#10B981" }} />}
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="col-span-4 text-center text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{set.kg != null ? `${set.kg} kg` : "—"}</span>
+          <span className="col-span-4 text-center text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{set.reps != null ? `${set.reps} reps` : "—"}</span>
+          <button onClick={() => setEditing(true)} className="col-span-2 flex items-center justify-center" aria-label={`Modifica serie ${set.setNumber}`}>
+            <Pencil size={14} style={{ color: "var(--ink-2)" }} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* Una sessione passata intera: data + tutte le serie (non solo il top set),
+   ognuna modificabile singolarmente via PastSetRow. */
+function PastSessionCard({ session, supabase, userId }) {
+  const label = new Date(`${session.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return (
+    <div className="inner px-3.5 py-3">
+      <p className="meta mb-2" style={{ fontWeight: 700 }}>{label}</p>
+      <div className="space-y-1.5">
+        {session.sets.map((s) => (
+          <PastSetRow key={s.setNumber} workoutLogId={session.workoutLogId} set={s} supabase={supabase} userId={userId} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId }) {
   const [plates, setPlates] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [timer, setTimer] = useState(null); // { total, remaining } in secondi
   const [prToast, setPrToast] = useState(null);
 
@@ -4766,6 +4837,30 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
           </div>
         )}
       </div>
+
+      {/* Sessioni precedenti: non solo il top set (com'era prima) ma OGNI
+          serie svolta, modificabile — utile per correggere un carico/reps che
+          ci si è scordati di segnare al momento (richiesta esplicita). */}
+      {ex.setHistory && ex.setHistory.length > 0 && supabase && userId && (
+        <div className="mt-3">
+          <button onClick={() => setHistoryOpen((v) => !v)}
+                  className="w-full flex items-center justify-between rounded-2xl px-3.5 py-2.5 transition-all duration-300"
+                  style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+            <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+              <History size={13} style={{ color: "var(--ink-2)" }} />
+              Sessioni precedenti
+            </span>
+            {historyOpen ? <ChevronUp size={14} style={{ color: "var(--ink-2)" }} /> : <ChevronDown size={14} style={{ color: "var(--ink-2)" }} />}
+          </button>
+          {historyOpen && (
+            <div className="spring-in mt-2 space-y-2">
+              {ex.setHistory.map((session) => (
+                <PastSessionCard key={session.workoutLogId} session={session} supabase={supabase} userId={userId} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <PRCelebrationToast toast={prToast} />
     </div>
   );
@@ -10075,9 +10170,10 @@ export default function HomePreview({
           const dayRows = byDate.get(date);
           if (!dayRows || dayRows.length === 0) return null;
           const exercisesForDay = await Promise.all(dayRows.map(async (r) => {
-            const [history, loggedSets] = await Promise.all([
+            const [history, loggedSets, setHistory] = await Promise.all([
               fetchExerciseHistory(supabaseProp, userId, r.exercise_name),
               fetchWorkoutSets(supabaseProp, r.id),
+              fetchExerciseSetHistory(supabaseProp, userId, r.exercise_name),
             ]);
             if (loggedSets.length > 0) {
               setsPatch[r.id] = Array.from({ length: r.sets_count ?? 3 }, (_, i) => {
@@ -10096,6 +10192,7 @@ export default function HomePreview({
               technique: r.intensity_technique || "",
               rests: Array.from({ length: r.sets_count ?? 3 }, () => r.rest_seconds ?? 120),
               history,
+              setHistory, // [{workoutLogId, date, sets:[{setNumber, kg, reps}]}] — sessioni passate modificabili
               splitLabel: r.split_label,
               // BUG PRESO: mancavano qui — computeVolume(weekPlan) per un
               // esercizio custom non ancora nella libreria condivisa si
