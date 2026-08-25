@@ -1562,8 +1562,10 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
 
 /* §08 memo "Verso l'élite" — Il business dietro l'app: programma referral.
    Un codice invito personale, condivisibile con un tap — il premio (1 mese
-   Premium) scatta da solo (SCHEMA_v67, process-referral-rewards) quando 3
-   amici invitati confermano l'email da 3 indirizzi IP distinti, nessun
+   Premium) scatta da solo (SCHEMA_v67/v69, process-referral-rewards) quando
+   3 amici invitati confermano l'email, usano davvero l'app almeno una volta
+   (SCHEMA_v69: un account mai aperto dopo la registrazione non conta) da 3
+   indirizzi IP distinti, fino a un tetto di 3 mesi (9 amici) — nessun
    passaggio manuale del coach richiesto. */
 function ReferralCodeCard({ supabase, userId }) {
   const [code, setCode] = useState(null); // null = non ancora caricato
@@ -1600,8 +1602,9 @@ function ReferralCodeCard({ supabase, userId }) {
     <div className="card mb-4">
       <p className="label mb-1">🎁 Invita un amico</p>
       <p className="meta mb-3" style={{ fontSize: "0.72rem" }}>
-        Condividi il tuo codice: ogni 3 amici che si iscrivono con questo codice e confermano l'email ricevi
-        automaticamente 1 mese Premium in regalo — nessuna richiesta da fare, arriva da solo.
+        Condividi il tuo codice: ogni 3 amici che si iscrivono con questo codice, confermano l'email e usano
+        davvero l'app almeno una volta ricevi automaticamente 1 mese Premium in regalo — fino a un massimo di
+        3 mesi (9 amici), nessuna richiesta da fare, arriva da solo.
       </p>
       {error && <p className="text-xs mb-2" style={{ color: "#DC2626" }}>{error}</p>}
       {code && (
@@ -1617,8 +1620,10 @@ function ReferralCodeCard({ supabase, userId }) {
       )}
       {progress && (
         <p className="meta mt-2.5" style={{ fontSize: "0.72rem" }}>
-          {progress.verifiedCount % 3}/3 amici verificati verso il prossimo mese
-          {progress.rewardsGranted > 0 && ` — ${progress.rewardsGranted} già ricevuto${progress.rewardsGranted > 1 ? "i" : ""}`}
+          {progress.rewardsGranted >= 3
+            ? "Hai raggiunto il massimo: 3 mesi Premium già ricevuti 🎉"
+            : `${progress.verifiedCount % 3}/3 amici verso il prossimo mese`}
+          {progress.rewardsGranted > 0 && progress.rewardsGranted < 3 && ` — ${progress.rewardsGranted} già ricevuto${progress.rewardsGranted > 1 ? "i" : ""}`}
         </p>
       )}
     </div>
