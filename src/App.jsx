@@ -303,7 +303,7 @@ export default function App() {
     const loadProfile = (attempt = 0) => {
       supabase
         .from("profiles")
-        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon")
+        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon, scheda_addon_chat_until, scheda_addon_program_until")
         .eq("id", session.user.id)
         .single()
         .then(({ data, error }) => {
@@ -313,7 +313,12 @@ export default function App() {
             setProfileLoading(false);
             return;
           }
-          if (justPaid && data.plan === "free" && attempt < 6) {
+          // Scheda Personalizzata (SCHEMA_v68) non cambia mai profiles.plan
+          // (è un add-on sopra Free/Premium, non una sostituzione): il
+          // vecchio segnale "plan è ancora free" da solo non basta più a
+          // dire "il webhook non è ancora passato" per questo acquisto —
+          // serve controllare anche se l'add-on è comparso.
+          if (justPaid && data.plan === "free" && !data.scheda_addon_chat_until && attempt < 6) {
             setTimeout(() => { if (!cancelled) loadProfile(attempt + 1); }, 1500);
             return;
           }
@@ -338,10 +343,14 @@ export default function App() {
 
   const accent = accentFor(gender, dark);
   const isCoach = (session?.user?.email || "").trim().toLowerCase() === COACH_EMAIL;
+  // Add-on Scheda Personalizzata (SCHEMA_v68): concede la chat col coach per
+  // 2 settimane a prescindere dal piano base (Free/Premium) — profiles.plan
+  // non cambia mai per questo acquisto, quindi va controllato a parte.
+  const schedaAddonChatActive = Boolean(profile?.scheda_addon_chat_until) && new Date(profile.scheda_addon_chat_until) > new Date();
   // Il coach vede sempre il tab Chat (la sua inbox con tutti i clienti),
   // a prescindere dal piano sulla SUA riga profiles — non sta "consumando"
   // un coaching, lo sta fornendo.
-  const hasCoachChat = isCoach || REAL_COACHING_PLANS.has(userPlan);
+  const hasCoachChat = isCoach || REAL_COACHING_PLANS.has(userPlan) || schedaAddonChatActive;
 
   const stripePlanId =
     userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : "free";
@@ -388,7 +397,18 @@ export default function App() {
         lang={lang}
         accent={accent}
         initialPlan={profile.plan}
+        // L'anamnesi va comunque compilata da chi ha appena comprato la
+        // Scheda Personalizzata come add-on: initialPlan da solo non lo dice
+        // più (profiles.plan resta free/premium, vedi SCHEMA_v68) — il
+        // segnale è la presenza dell'add-on stesso, non un cambio di piano.
+        resumedAddonPlanId={profile.scheda_addon_program_until ? "scheda" : null}
         onComplete={({ plan }) => {
+          // plan null = anamnesi dell'add-on Scheda Personalizzata: il piano
+          // base (Free/Premium) non deve cambiare, solo chiudere l'onboarding.
+          if (plan == null) {
+            setProfile((p) => ({ ...(p ?? {}), onboarding_completed: true }));
+            return;
+          }
           setUserPlan(plan === "full" ? "full_coaching" : plan);
           setProfile((p) => ({ ...(p ?? {}), plan, onboarding_completed: true }));
         }}
@@ -420,6 +440,7 @@ export default function App() {
               planTier={userPlan}
               isOwner={isCoach}
               microAddon={!!profile?.micro_addon}
+              schedaAddonChatUntil={profile?.scheda_addon_chat_until || null}
               supabase={supabase}
               userId={session.user.id}
               onUpgrade={() => setSettingsOpen(true)}

@@ -161,18 +161,30 @@ function AppIntroTutorial({ gender, dark, onFinish }) {
 // superato lo step "plan" e si è interrotto durante l'anamnesi (refresh,
 // connessione caduta). In quel caso si riparte direttamente da lì, invece di
 // fargli rifare la scelta e perdere quello che aveva già iniziato a scrivere.
-export default function OnboardingFlow({ supabase, userId, gender = "M", dark = true, lang = "it", accent, initialPlan, onComplete }) {
+export default function OnboardingFlow({ supabase, userId, gender = "M", dark = true, lang = "it", accent, initialPlan, resumedAddonPlanId, onComplete }) {
   const resumedPlanId = DB_TO_UI_PLAN[initialPlan];
   // Performance Pack è pagato ma non a coaching: tornando da Stripe con
   // initialPlan già confermato dal webhook non va in anamnesi (non richiesta,
   // vedi nota in testa al file), ma l'onboarding va comunque chiuso — lo fa
   // l'effect subito sotto, "step" resta 'plan' solo per il breve istante in
   // cui quell'effect gira (isFinishingPack copre quel caso a schermo).
-  const isResumedPerformancePack = initialPlan === "performance_pack";
-  const [step, setStep] = useState(resumedPlanId ? "anamnesi" : "intro"); // 'intro' | 'plan' | 'anamnesi'
+  // resumedAddonPlanId ha sempre precedenza: un Premium che ha appena
+  // comprato l'add-on Scheda Personalizzata ha initialPlan="performance_pack"
+  // invariato (non è mai stato "di nuovo" un pagamento Performance Pack) —
+  // senza questo controllo lo scorciatoia qui sotto chiuderebbe l'onboarding
+  // senza fargli mai compilare l'anamnesi richiesta dall'add-on.
+  const isResumedPerformancePack = initialPlan === "performance_pack" && !resumedAddonPlanId;
+  // resumedAddonPlanId: chi ha comprato Scheda Personalizzata come add-on
+  // sopra Free/Premium (SCHEMA_v68) — initialPlan da solo non lo dice più
+  // (profiles.plan resta il piano base, mai riscritto per questo acquisto),
+  // ma l'anamnesi va comunque compilata. dbValue: null segnala a onComplete
+  // di NON toccare il piano base al termine, solo chiudere l'onboarding.
+  const [step, setStep] = useState(resumedPlanId || resumedAddonPlanId ? "anamnesi" : "intro"); // 'intro' | 'plan' | 'anamnesi'
   const [chosenPlan, setChosenPlan] = useState(
-    resumedPlanId ? { id: resumedPlanId, dbValue: initialPlan } : null
-  ); // { id, dbValue } — id STRIPE_PLANS, dbValue colonna reale
+    resumedPlanId ? { id: resumedPlanId, dbValue: initialPlan }
+      : resumedAddonPlanId ? { id: resumedAddonPlanId, dbValue: null }
+      : null
+  ); // { id, dbValue } — id STRIPE_PLANS, dbValue colonna reale (null = add-on, non tocca il piano base)
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [answers, setAnswers] = useState({});
