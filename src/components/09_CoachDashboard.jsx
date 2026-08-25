@@ -1331,7 +1331,18 @@ function ClientRow({ client, onOpen }) {
         <button onClick={onOpen} className="flex-1 min-w-0 text-left">
           <p className="truncate" style={{ color: (critical || warning) ? "#27272A" : "var(--ink)", fontSize: "1rem", fontWeight: 500 }}>{client.name}</p>
           <p className="font-data mt-0.5 truncate" style={{ color: (critical || warning) ? "#3F3F46" : "var(--ink-soft)", fontSize: "0.68rem", letterSpacing: "0.04em" }}>
-            {client.plan === "full" ? "Full Coaching" : client.plan === "training" ? "Solo Allenamento" : "Scheda Personalizzata"}
+            {/* BUG PRESO: il "resto" cadeva su "Scheda Personalizzata" per
+                QUALUNQUE piano diverso da full/training — Free e Premium
+                inclusi, se mai finivano qui per un client_status scritto
+                male altrove (vedi whitelistClient in coachingData.js). Le
+                3 etichette sono ora esplicite una per una: qualunque altro
+                valore di client.plan (non dovrebbe più capitare, questa
+                card è solo per i 3 piani di coaching reale) mostra il nome
+                del piano invece di indovinare "Scheda Personalizzata". */}
+            {client.plan === "full" ? "Full Coaching"
+              : client.plan === "training" ? "Solo Allenamento"
+              : client.plan === "scheda_personalizzata" ? "Scheda Personalizzata"
+              : WHITELIST_PLAN_LABELS[client.plan] || client.plan}
           </p>
           <ClientComplianceBadges clientId={client.id} />
         </button>

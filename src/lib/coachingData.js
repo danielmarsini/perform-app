@@ -2063,6 +2063,17 @@ const WHITELISTABLE_PLANS = ["free", "performance_pack", "scheda_personalizzata"
 // è già un piano coaching (resumedPlanId) e salta dritto allo step
 // anamnesi — stesso comportamento di un cliente vero tornato da Stripe,
 // nessuna doppia scelta del piano.
+// BUG PRESO: scriveva client_status:"active" per QUALUNQUE piano whitelistato,
+// Free e Premium inclusi — ma client_status:"active" è il segnale che mette
+// un atleta nel roster "Attivi" di Hub Atleti (deptOf in 09_CoachDashboard.jsx)
+// e fa apparire un'etichetta di piano coaching sulla sua card (fallback
+// "Scheda Personalizzata" quando il piano non è "full"/"training"). Un
+// amico whitelistato per Premium finiva così a comparire come se il coach lo
+// stesse seguendo personalmente con una Scheda Personalizzata mai comprata.
+// Free e Premium sono piani AUTOGESTITI (vivono solo in Hub Utenti, mai in
+// Hub Atleti) esattamente come per un pagamento Stripe vero — vedi la stessa
+// distinzione già presente in stripe-webhook (client_status:"active" solo se
+// COACHING_PLANS.has(planDb)) e in activateClient qui sopra.
 export async function whitelistClient(supabase, clientId, plan, months, skipAnamnesis = true) {
   if (!WHITELISTABLE_PLANS.includes(plan)) {
     throw new Error(`piano non valido per la whitelist: "${plan}"`);
@@ -2072,7 +2083,10 @@ export async function whitelistClient(supabase, clientId, plan, months, skipAnam
   const until = new Date();
   until.setMonth(until.getMonth() + n);
   const { error } = await supabase.from("profiles").update({
-    plan, client_status: "active", onboarding_completed: skipAnamnesis, whitelisted_until: until.toISOString(),
+    plan,
+    client_status: COACHING_PLANS.includes(plan) ? "active" : "registered",
+    onboarding_completed: skipAnamnesis,
+    whitelisted_until: until.toISOString(),
   }).eq("id", clientId);
   if (error) throw error;
 }
