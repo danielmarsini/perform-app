@@ -4840,11 +4840,16 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   // condizione di REAL_COACHING_PLANS in App.jsx.
   const hasCoachChat = userPlan === "scheda_personalizzata" || userPlan === "training" || userPlan === "full_coaching" || schedaAddonChatActive;
 
-  /* Storico: supporta sia il vecchio formato (array di kg) sia quello nuovo
-     {kg, reps}, per ricordare il carico E le reps dell'ultima volta identica. */
+  /* Storico: historyEntries resta il TOP SET per sessione (serve solo al
+     confronto record/PR toast qui sotto, mai mostrato da solo all'atleta —
+     richiesta esplicita: "fai vedere tutte le serie non solo il top set"). */
   const historyEntries = (ex.history || []).map((h) => (typeof h === "object" ? h : { kg: h, reps: null }));
   const best = historyEntries.length ? Math.max(...historyEntries.map((h) => h.kg)) : 0;
-  const lastEntry = historyEntries.length ? historyEntries[historyEntries.length - 1] : null;
+  // Scorsa sessione per intero (TUTTE le serie, non solo la prima o il top
+  // set): ex.setHistory è già ordinato dal più recente (vedi
+  // fetchExerciseSetHistory in coachingData.js), quindi [0] è l'ultima volta.
+  const lastSession = ex.setHistory && ex.setHistory.length > 0 ? ex.setHistory[0] : null;
+  const lastSessionSets = lastSession ? lastSession.sets.filter((s) => s.kg != null && s.kg > 0) : [];
 
   const pl = platesFor(peak);
   const complete = (r) => r.kg !== "" && r.reps !== "";
@@ -4935,14 +4940,17 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
           : `${ex.sets} serie × ${ex.reps} reps`} · RIR {ex.rirTarget}
       </p>
       {ex.technique && <p className="mt-1 text-sm" style={{ color: "var(--ink-2)", fontWeight: 500 }}>Tecnica: {ex.technique}</p>}
-      {lastEntry && lastEntry.kg > 0 ? (
+      {lastSessionSets.length > 0 ? (
         <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
-          Scorsa sessione identica: <span style={{ color: "var(--ink)", fontWeight: 700 }}>{lastEntry.kg} kg{lastEntry.reps ? ` × ${lastEntry.reps} reps` : ""}</span>
+          Scorsa sessione:{" "}
+          <span style={{ color: "var(--ink)", fontWeight: 700 }}>
+            {lastSessionSets.map((s, i) => `${s.kg} kg${s.reps != null ? ` × ${s.reps}` : ""}`).join(" · ")}
+          </span>
           {best > 0 && <> · record da battere: <span style={{ color: RECORD_GOLD_GREEN, fontWeight: 700 }}>{best} kg</span></>}
         </p>
       ) : (
         <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
-          Scorsa sessione identica: <span style={{ color: "var(--ink)", fontWeight: 700 }}>n/d</span>
+          Scorsa sessione: <span style={{ color: "var(--ink)", fontWeight: 700 }}>n/d</span>
         </p>
       )}
       <p className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: "var(--ink)" }}>
