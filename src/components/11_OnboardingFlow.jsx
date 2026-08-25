@@ -64,28 +64,28 @@ const ANAM_REQUIRED = ANAM_FILLABLE.filter((q) => q.req);
    ========================================================================== */
 const INTRO_SLIDES = [
   {
-    icon: Dumbbell,
+    icon: BarChart3,
     kicker: "Benvenuto in PERFORM",
-    title: "Non l'ennesima app fitness.",
-    body: "Un metodo evidence-based costruito per chi non si accontenta: atleti e persone che vogliono allenarsi sul serio, mettersi alla prova e raggiungere obiettivi estetici, di performance e di salute veri — con un team di professionisti al tuo fianco, non un algoritmo generico.",
+    title: "Basta rincorrere i tuoi dati su dieci app diverse.",
+    body: "Allenamento, alimentazione, recupero, integrazione, progressi: PERFORM raccoglie tutto in un unico posto, pensato per accompagnarti in ogni fase del tuo percorso — non per farti perdere tempo a incrociare numeri tra un'app e l'altra.",
+  },
+  {
+    icon: Dumbbell,
+    kicker: "Ogni dato ha uno scopo",
+    title: "Tracciato come un atleta vero.",
+    body: "Le variabili che spostano davvero i risultati — allenamento, nutrizione, sonno, recupero — monitorate giorno per giorno, per raggiungere i tuoi obiettivi estetici, di performance e di salute con un metodo, non a intuito.",
   },
   {
     icon: ShieldCheck,
-    kicker: "Un coach reale, non un piano scaricato",
-    title: "Ti segue una persona, non un modello.",
-    body: "Scheda di allenamento e piano alimentare costruiti su misura, aggiornati nel tempo in base ai tuoi progressi reali — check dopo check, mai un piano statico lasciato a se stesso dopo il primo giorno.",
-  },
-  {
-    icon: BarChart3,
-    kicker: "Ogni progresso conta",
-    title: "Tracciato come un atleta vero.",
-    body: "Allenamento, alimentazione, recupero e integrazione monitorati giorno per giorno: dati che il tuo coach legge davvero per calibrare il percorso, non numeri che spariscono in un diario dimenticato.",
+    kicker: "Non da solo, mai",
+    title: "Al tuo fianco, professionisti veri.",
+    body: "Scheda di allenamento e piano alimentare costruiti su misura da un coach in carne e ossa, aggiornati sui tuoi progressi reali — perché nessun algoritmo sostituisce chi ti conosce e ti segue davvero, check dopo check.",
   },
   {
     icon: Trophy,
     kicker: "Pronto a iniziare",
     title: "Mettiti alla prova.",
-    body: "Scegli il piano più adatto a te per cominciare il tuo percorso con PERFORM.",
+    body: "Scegli il piano più adatto a te e inizia oggi il percorso che stavi aspettando.",
   },
 ];
 
