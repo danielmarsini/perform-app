@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchExerciseSetHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -4816,9 +4816,10 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const avoid = ex.avoid || exerciseAvoid(ex.name);
   const hasGuide = Boolean(howTo);
   // Chat col coach: riservata a chi ha davvero un coach dietro (Scheda
-  // Personalizzata, Coaching Allenamento, Full Coaching) — stessa
-  // condizione di REAL_COACHING_PLANS in App.jsx.
-  const hasCoachChat = userPlan === "scheda_personalizzata" || userPlan === "training" || userPlan === "full_coaching" || schedaAddonChatActive;
+  // Personalizzata, Coaching Allenamento, Full Coaching) — stessa fonte
+  // unica di App.jsx (isRealCoachingPlan, coachingData.js), non più una
+  // terza copia hardcoded della stessa condizione.
+  const hasCoachChat = isRealCoachingPlan(userPlan) || schedaAddonChatActive;
 
   /* Storico: historyEntries resta il TOP SET per sessione (serve solo al
      confronto record/PR toast qui sotto, mai mostrato da solo all'atleta —

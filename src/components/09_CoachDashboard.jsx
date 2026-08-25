@@ -90,7 +90,7 @@ import {
   fetchCustomExerciseLibraryRows, updateExerciseLibraryEntry, deleteExerciseFromLibrary,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage,
-  fetchReferrals,
+  fetchReferrals, REAL_COACHING_PLANS_DB,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -172,7 +172,10 @@ const DEPTS = [
 // ora client_status='expired' quando un abbonamento coaching non si
 // rinnova, invece di tornare silenziosamente 'registered' — è quello il
 // segnale per "Scaduti", non billingStatus (mai popolato per i dati reali).
-const REAL_COACHING_PLANS = new Set(["scheda_personalizzata", "training", "full", "scheda"]); // "scheda" = id demo
+// "scheda" = id demo, aggiunto solo qui sopra al dominio reale condiviso
+// (REAL_COACHING_PLANS_DB in coachingData.js) — usato SOLO quando isRealMode
+// è false, mai un valore reale di profiles.plan.
+const REAL_COACHING_PLANS = new Set([...REAL_COACHING_PLANS_DB, "scheda"]);
 function deptOf(c) {
   if (c.clientStatus === "active") return "active";
   if (c.clientStatus === "expired" || c.clientStatus === "paused") return "expired";

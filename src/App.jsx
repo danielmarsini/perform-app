@@ -10,13 +10,7 @@ import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount } from "./lib/coachingData.js";
-
-// Piani a coaching reale (Scheda Personalizzata, Coaching Allenamento, Full
-// Coaching): solo questi sbloccano il pulsante Chat (terzo tab, subito dopo
-// News) — un Free/Premium autogestito non ha un coach dietro con cui
-// scrivere. Stessa condizione già usata per REAL_COACHING_PLANS lato coach.
-const REAL_COACHING_PLANS = new Set(["scheda_personalizzata", "training", "full_coaching"]);
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan } from "./lib/coachingData.js";
 
 /* Schermata Chat a schermo intero, dietro il tab di navigazione dedicato —
    include anche il video-check tecnica (invio video esercizi dentro la
@@ -380,7 +374,7 @@ export default function App() {
   // Il coach vede sempre il tab Chat (la sua inbox con tutti i clienti),
   // a prescindere dal piano sulla SUA riga profiles — non sta "consumando"
   // un coaching, lo sta fornendo.
-  const hasCoachChat = isCoach || REAL_COACHING_PLANS.has(userPlan) || schedaAddonChatActive;
+  const hasCoachChat = isCoach || isRealCoachingPlan(userPlan) || schedaAddonChatActive;
 
   const stripePlanId =
     userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : "free";
