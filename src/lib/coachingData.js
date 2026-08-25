@@ -2061,10 +2061,24 @@ export async function unmanageClient(supabase, clientId, targetPlan) {
   if (!UNMANAGE_TARGET_PLANS.includes(targetPlan)) {
     throw new Error(`piano di destinazione non valido per "smetti di gestire": "${targetPlan}"`);
   }
-  const { error } = await supabase.from("profiles")
-    .update({ plan: targetPlan, client_status: null, whitelisted_until: null })
-    .eq("id", clientId);
+  // "registered" invece di null: stesso significato (fetchClientRoster legge
+  // già p.client_status || "registered" per un client_status vuoto), ma
+  // scrivere un valore letterale invece di NULL evita qualunque comportamento
+  // a sorpresa di policy/constraint sulla colonna non tracciate in questo
+  // repo (BUG PRESO: era l'UNICA scrittura di tutto il codebase a mandare
+  // NULL su questa colonna — "Smetti di gestire" restava silenziosamente
+  // senza effetto, nessun errore visibile, il cliente restava nel roster).
+  // .select("id") + controllo righe: un UPDATE bloccato da RLS non genera un
+  // errore Postgres, affetta semplicemente zero righe — senza questo
+  // controllo il fallimento resterebbe silenzioso come prima.
+  const { data, error } = await supabase.from("profiles")
+    .update({ plan: targetPlan, client_status: "registered", whitelisted_until: null })
+    .eq("id", clientId)
+    .select("id");
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error("Nessuna riga aggiornata: verifica i permessi o riprova.");
+  }
 }
 
 // §08 memo "Verso l'élite" — Il business dietro l'app: programma referral.

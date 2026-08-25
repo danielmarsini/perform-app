@@ -3425,14 +3425,17 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
   // convenzione di CoachingPlanPicker sopra): niente doppio tap aggiuntivo.
   const [unmanaging, setUnmanaging] = useState(false);
   const [unmanageBusy, setUnmanageBusy] = useState(false);
+  const [unmanageError, setUnmanageError] = useState("");
   const doUnmanage = async (targetPlan) => {
     setUnmanageBusy(true);
+    setUnmanageError("");
     try {
       await unmanageClient(supabase, client.id, targetPlan);
-      reloadRoster?.();
+      await reloadRoster?.(); // atteso: il roster fresco deve essere pronto PRIMA di tornare al catalogo
       onBack(); // il cliente non è più nel reparto corrente: torna al catalogo
     } catch (err) {
       console.error("PERFORM: errore nello smettere di gestire il cliente", err);
+      setUnmanageError(err?.message || "Non sono riuscito a completare l'operazione. Riprova.");
       setUnmanageBusy(false);
     }
   };
@@ -3474,8 +3477,9 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
                     <button type="button" onClick={() => doUnmanage("free")} disabled={unmanageBusy}
                       className="c-ghost px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">Free</button>
                     <button type="button" onClick={() => doUnmanage("performance_pack")} disabled={unmanageBusy}
-                      className="c-ghost px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">Performance Pack</button>
+                      className="c-ghost px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">Premium</button>
                   </div>
+                  {unmanageError && <p className="text-xs" style={{ color: "#DC2626" }}>{unmanageError}</p>}
                   <button type="button" onClick={() => setUnmanaging(false)} disabled={unmanageBusy} className="text-xs self-start" style={{ color: "var(--ink-soft)" }}>
                     Annulla
                   </button>
