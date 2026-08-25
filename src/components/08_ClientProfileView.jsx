@@ -117,6 +117,7 @@ export const translations = {
       current: "Piano attuale",
       freeCta: "Torna al Free", freeCtaSignup: "Iscriviti gratis", oneTimeCta: "Acquista ora", switchCta: "Acquista abbonamento",
       billingMonthly: "Mensile", billingAnnual: "Annuale · 2 mesi gratis",
+      annualPitch: "Un percorso annuale segue cicli completi di allenamento e alimentazione — non uno scatto isolato, ma la programmazione vera che porta a risultati concreti e duraturi. Oltre al risparmio, ti impegni con me per il tempo che serve davvero a raggiungere l'obiettivo.",
     },
     plans: {
       free:        { name: "Free", includes: ["Diario libero autogestito: allenamento, dieta, integrazione, passi, sonno, novità sull'ambito fitness e wiki"],
@@ -205,6 +206,7 @@ export const translations = {
       current: "Current plan",
       freeCta: "Back to Free", freeCtaSignup: "Sign up for free", oneTimeCta: "Buy now", switchCta: "Subscribe now",
       billingMonthly: "Monthly", billingAnnual: "Annual · 2 months free",
+      annualPitch: "A full year follows complete training and nutrition cycles — not an isolated push, but the real programming that leads to concrete, lasting results. Beyond the savings, you're committing with me for the time it actually takes to reach your goal.",
     },
     plans: {
       free:        { name: "FREE", includes: ["Self-guided free-form diary: training, diet, supplements, steps and sleep, plus fitness news and the wiki"],
@@ -289,6 +291,7 @@ export const translations = {
       current: "Plan actual",
       freeCta: "Volver al Gratis", freeCtaSignup: "Regístrate gratis", oneTimeCta: "Comprar ahora", switchCta: "Suscribirse ahora",
       billingMonthly: "Mensual", billingAnnual: "Anual · 2 meses gratis",
+      annualPitch: "Un año completo sigue ciclos enteros de entrenamiento y alimentación — no un impulso aislado, sino la programación real que lleva a resultados concretos y duraderos. Además del ahorro, te comprometes conmigo el tiempo que realmente hace falta para alcanzar tu objetivo.",
     },
     plans: {
       free:        { name: "GRATIS", includes: ["Diario libre autogestionado: entrenamiento, dieta, suplementación, pasos y sueño, además de novedades de fitness y la wiki"],
@@ -373,6 +376,7 @@ export const translations = {
       current: "Plan actuel",
       freeCta: "Retour au Gratuit", freeCtaSignup: "Inscris-toi gratuitement", oneTimeCta: "Acheter maintenant", switchCta: "S'abonner maintenant",
       billingMonthly: "Mensuel", billingAnnual: "Annuel · 2 mois offerts",
+      annualPitch: "Une année complète suit des cycles entiers d'entraînement et d'alimentation — pas une action isolée, mais la vraie programmation qui mène à des résultats concrets et durables. Au-delà de l'économie, tu t'engages avec moi pour le temps qu'il faut vraiment pour atteindre ton objectif.",
     },
     plans: {
       free:        { name: "GRATUIT", includes: ["Journal libre autogéré : entraînement, alimentation, compléments, pas et sommeil, ainsi que les actualités fitness et le wiki"],
@@ -1947,7 +1951,14 @@ export function SettingsDrawer({
                 </p>
               )}
               {hasAnnualPricing && (
-                <BillingCycleToggle cycle={billingCycle} onChange={setBillingCycle} accent={accent} t={t} />
+                <>
+                  <BillingCycleToggle cycle={billingCycle} onChange={setBillingCycle} accent={accent} t={t} />
+                  {billingCycle === "annual" && (
+                    <p className="text-xs leading-relaxed mb-4 px-1" style={{ color: "var(--ink-2)" }}>
+                      {t.plan.annualPitch}
+                    </p>
+                  )}
+                </>
               )}
               {withBillingCycle(STRIPE_PLANS, billingCycle).map((p) => (
                 <PlanCard key={p.id} plan={p} active={p.id === activePlan.id}

@@ -386,7 +386,14 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
         )}
 
         {hasAnnualPricing && (
-          <BillingCycleToggle cycle={billingCycle} onChange={setBillingCycle} accent={accent || "#C5A059"} t={t} />
+          <>
+            <BillingCycleToggle cycle={billingCycle} onChange={setBillingCycle} accent={accent || "#C5A059"} t={t} />
+            {billingCycle === "annual" && (
+              <p className="text-xs leading-relaxed mb-4 px-1" style={{ color: "var(--ink-2)" }}>
+                {t.plan.annualPitch}
+              </p>
+            )}
+          </>
         )}
 
         {withBillingCycle(STRIPE_PLANS, billingCycle).map((plan) => (
