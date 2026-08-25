@@ -104,7 +104,16 @@ function resolveMuscleTarget(exerciseName, lib) {
 // lo stesso esercizio. Ordinata alfabeticamente per il menu a tendina.
 async function fetchExerciseLibrary(supabase) {
   const lib = { ...DEFAULT_EXERCISE_LIB };
-  const { data, error } = await supabase.from("exercise_library").select("name, direct, indirect, how_to, avoid, video_url");
+  let { data, error } = await supabase.from("exercise_library").select("name, direct, indirect, how_to, avoid, video_url");
+  // BUG PRESO: se SCHEMA_v61 non è ancora stato eseguito (colonne guida
+  // assenti), questa select falliva IN BLOCCO — sparivano non solo how_to/
+  // avoid/video_url ma anche i muscoli target/sinergici di OGNI esercizio
+  // personalizzato già salvato, perché si tornava a DEFAULT_EXERCISE_LIB
+  // vuoto. Ora, solo in questo caso specifico, ripiega su una select senza
+  // le colonne guida — la parte che serve subito (muscoli) non va più persa.
+  if (error?.code === "42703" || error?.code === "PGRST204") {
+    ({ data, error } = await supabase.from("exercise_library").select("name, direct, indirect"));
+  }
   if (error) { console.error("PERFORM: errore lettura libreria esercizi", error); return lib; }
   (data ?? []).forEach((row) => {
     lib[row.name] = { direct: row.direct ?? [], indirect: row.indirect ?? [],
@@ -145,11 +154,15 @@ async function learnExercise(supabase, name, direct, indirect, userId) {
 // assenti). L'esercizio spariva così dalla libreria condivisa al prossimo
 // caricamento, mai un errore vero comunicato — esattamente il sintomo
 // segnalato ("non lo salva"). Ora rilancia sempre un errore reale, tranne
-// per 42703 ("undefined column" = SCHEMA_v61 non ancora eseguito): in quel
-// caso ripiega su un upsert senza le colonne guida, così muscoli
+// quando le colonne guida non esistono ancora (SCHEMA_v61 non eseguito):
+// in quel caso ripiega su un upsert senza le colonne guida, così muscoli
 // target/sinergici — la parte che serve SUBITO per il grafico volumi e per
 // riassegnare l'esercizio ad altri clienti — si salvano comunque, mentre la
-// guida testuale resta rimandata a dopo la migrazione.
+// guida testuale resta rimandata a dopo la migrazione. Il codice reale
+// restituito da Supabase in questo caso è "PGRST204" ("Could not find the
+// 'x' column... in the schema cache", errore di PostgREST prima ancora di
+// arrivare al DB) — 42703 è il codice Postgres nativo per lo stesso
+// problema mai raggiunto qui, tenuto come rete di sicurezza aggiuntiva.
 async function saveExerciseGuide(supabase, name, direct, indirect, { howTo, avoid, videoUrl }, coachId) {
   if (!name?.trim() || !direct?.length) return;
   const { error } = await supabase.from("exercise_library")
@@ -157,7 +170,7 @@ async function saveExerciseGuide(supabase, name, direct, indirect, { howTo, avoi
       how_to: howTo || null, avoid: avoid || null, video_url: videoUrl || null,
       created_by: coachId || null }, { onConflict: "name" })
     .select().maybeSingle();
-  if (error?.code === "42703") {
+  if (error?.code === "42703" || error?.code === "PGRST204") {
     const fallback = await supabase.from("exercise_library")
       .upsert({ name: name.trim(), direct, indirect: indirect || [], created_by: coachId || null }, { onConflict: "name" })
       .select().maybeSingle();
