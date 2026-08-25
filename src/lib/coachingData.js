@@ -458,9 +458,10 @@ export async function computeNutritionCompliance(supabase, userId) {
 // Scheda assegnata dal coach per un intervallo di date: righe is_read_only=true.
 // Le raggruppa per data così da poter costruire il weekPlan di HomeDashboard.
 export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDateISO) {
-  const { data, error } = await supabase
+  const cols = "id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only";
+  let { data, error } = await supabase
     .from("workout_logs")
-    .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only, sort_order")
+    .select(`${cols}, sort_order`)
     .eq("user_id", userId)
     .gte("date", fromDateISO)
     .lte("date", toDateISO)
@@ -471,6 +472,21 @@ export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDat
     // in cui sono stati inseriti nel database.
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
+  // 42703 = "undefined column": SCHEMA_v65 non ancora eseguito — ripiega sul
+  // solo ordine created_at invece di rompere l'intera schermata Allenamento
+  // del cliente (vedi stessa protezione in fetchWeekWorkout qui sopra).
+  if (error?.code === "42703") {
+    const fallback = await supabase
+      .from("workout_logs")
+      .select(cols)
+      .eq("user_id", userId)
+      .gte("date", fromDateISO)
+      .lte("date", toDateISO)
+      .order("date", { ascending: true })
+      .order("created_at", { ascending: true });
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error) throw error;
   return data ?? [];
 }
@@ -958,7 +974,7 @@ function weekDatesFrom(weekStartDateISO) {
 // ciclo tra i due moduli.
 export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCustomExercise) {
   const dates = weekDatesFrom(weekStartDateISO);
-  const { data, error } = await supabase
+  const baseQuery = () => supabase
     .from("workout_logs")
     .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, intensity_technique, sort_order")
     .eq("user_id", userId)
@@ -969,6 +985,24 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
     // scritte prima della migrazione, nel caso non fossero ancora backfillate.
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
+
+  let { data, error } = await baseQuery();
+  // 42703 = "undefined column": SCHEMA_v65 non ancora eseguito sul database
+  // (colonna sort_order mancante) — invece di far crollare l'intero editor
+  // con un errore generico, ripiega sul solo ordine created_at (comportamento
+  // pre-v65) finché la migrazione non viene applicata. Mai un altro tipo di
+  // errore silenziato qui: solo questo caso specifico e riconoscibile.
+  if (error?.code === "42703") {
+    const fallback = await supabase
+      .from("workout_logs")
+      .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, intensity_technique")
+      .eq("user_id", userId)
+      .in("date", dates)
+      .order("date", { ascending: true })
+      .order("created_at", { ascending: true });
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error) throw error;
 
   const byDate = new Map();
