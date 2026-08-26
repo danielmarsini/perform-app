@@ -2070,7 +2070,14 @@ export function SettingsDrawer({
                       pushState === "unsupported"
                         ? (pushReason === "ios-not-installed"
                             ? "Su iPhone le notifiche funzionano solo per l'app installata: tocca Condividi (icona con la freccia) nella barra di Safari, poi \"Aggiungi a Home\" e riapri PERFORM da quell'icona per attivarle."
-                            : "Non supportato su questo browser/dispositivo.")
+                            // BUG PRESO: "no-vapid" e "browser" mostravano lo stesso testo
+                            // generico, nascondendo quale delle due cause tecniche fosse —
+                            // diagnosi impossibile da remoto senza vedere il devtools del
+                            // telefono. Distinti esplicitamente per poterli riconoscere
+                            // da una semplice descrizione a schermo.
+                            : pushReason === "no-vapid"
+                              ? "Configurazione mancante lato server (chiave push) — segnalalo al supporto."
+                              : "Il browser di questo dispositivo non supporta le notifiche push.")
                         : "Ricevi un avviso sul telefono per i nuovi messaggi in chat e se rischi di perdere lo streak di oggi — chiede il permesso al sistema operativo la prima volta."
                     }
                   />
