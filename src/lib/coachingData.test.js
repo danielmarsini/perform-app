@@ -18,7 +18,7 @@ import {
   fetchWeekExerciseHistories,
   computeCrewWeeklyActivity, computeCrewStreak,
   fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
-  hasUnseenAnnouncements, hasUnreadChatMessages,
+  hasUnreadChatMessages,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -75,12 +75,24 @@ describe("dayNutritionScore", () => {
     const target = { kcal: 2000, p: 150, c: 200, f: 60 };
     expect(dayNutritionScore({ ...target }, target)).toBe(100);
   });
-  it("dentro la tolleranza del 12% => punteggio pieno (nessuno lo rispetta al millimetro)", () => {
+  it("dentro la tolleranza del 5% sulle kcal => punteggio pieno (nessuno lo rispetta al millimetro)", () => {
     const target = { kcal: 2000, p: 150, c: 200, f: 60 };
-    const under = dayNutritionScore({ kcal: 1800, p: 150, c: 200, f: 60 }, target); // -10%
-    const over = dayNutritionScore({ kcal: 2200, p: 150, c: 200, f: 60 }, target); // +10%
+    const under = dayNutritionScore({ kcal: 1900, p: 150, c: 200, f: 60 }, target); // -5%
+    const over = dayNutritionScore({ kcal: 2100, p: 150, c: 200, f: 60 }, target); // +5%
     expect(under).toBe(100);
     expect(over).toBe(100);
+  });
+  it("dentro la tolleranza del 10% sui singoli macro => punteggio pieno", () => {
+    const target = { kcal: 2000, p: 150, c: 200, f: 60 };
+    const under = dayNutritionScore({ kcal: 2000, p: 135, c: 180, f: 54 }, target); // macro -10%
+    const over = dayNutritionScore({ kcal: 2000, p: 165, c: 220, f: 66 }, target); // macro +10%
+    expect(under).toBe(100);
+    expect(over).toBe(100);
+  });
+  it("oltre la tolleranza del 5% sulle kcal penalizza anche se i macro sono centrati", () => {
+    const target = { kcal: 2000, p: 150, c: 200, f: 60 };
+    const score = dayNutritionScore({ kcal: 2200, p: 150, c: 200, f: 60 }, target); // +10% kcal
+    expect(score).toBeLessThan(100);
   });
   it("scostamento sotto e sopra target OLTRE la tolleranza penalizzano allo stesso modo (simmetrico)", () => {
     const target = { kcal: 2000, p: 150, c: 200, f: 60 };
@@ -770,37 +782,6 @@ describe("fetchClientRoster", () => {
     expect(roster[0].lastCheck).toEqual({ weight: null });
     expect(roster[0].weightHistory).toEqual([]);
     expect(roster[0].goal).toBeNull();
-  });
-});
-
-describe("hasUnseenAnnouncements", () => {
-  it("mai visitato + almeno un annuncio esistente => true", async () => {
-    const supabase = makeMockSupabase({
-      profiles: [{ id: "u1", last_seen_announcements_at: null }],
-      team_announcements: [{ id: "a1", created_at: daysAgoISO(1) }],
-    });
-    expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(true);
-  });
-  it("nessun annuncio pubblicato ancora => false", async () => {
-    const supabase = makeMockSupabase({
-      profiles: [{ id: "u1", last_seen_announcements_at: null }],
-      team_announcements: [],
-    });
-    expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(false);
-  });
-  it("annuncio pubblicato PRIMA dell'ultima visita => false (già visto)", async () => {
-    const supabase = makeMockSupabase({
-      profiles: [{ id: "u1", last_seen_announcements_at: daysAgoISO(0) }],
-      team_announcements: [{ id: "a1", created_at: daysAgoISO(3) }],
-    });
-    expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(false);
-  });
-  it("annuncio pubblicato DOPO l'ultima visita => true (nuovo)", async () => {
-    const supabase = makeMockSupabase({
-      profiles: [{ id: "u1", last_seen_announcements_at: daysAgoISO(3) }],
-      team_announcements: [{ id: "a1", created_at: daysAgoISO(0) }],
-    });
-    expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(true);
   });
 });
 

@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -930,12 +930,18 @@ export function MacroRow({ values }) {
    4 · MACRO-FINESTRA TRIDIMENSIONALE
    ========================================================================== */
 
-export function Window3D({ icon: Icon, label, sub, accent, floatClass, onClick, locked, onLocked }) {
+export function Window3D({ icon: Icon, label, sub, accent, floatClass, onClick, locked, onLocked, novelty }) {
   return (
     <button onClick={locked ? onLocked : onClick}
             className="card card-tap relative w-full text-left overflow-hidden flex items-center gap-3.5"
             style={{ padding: "1.1rem 1.25rem" }}
             aria-disabled={locked}>
+      {novelty && (
+        <span aria-hidden="true" className="absolute" style={{ top: 10, right: 12, width: 10, height: 10 }}>
+          <span className="novelty-ping absolute inset-0 rounded-full" style={{ backgroundColor: "#E5484D" }} />
+          <span className="absolute inset-0 rounded-full" style={{ backgroundColor: "#E5484D", boxShadow: "0 0 0 2px var(--surface)" }} />
+        </span>
+      )}
       <div className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center ${floatClass}`}
            style={{ background: "radial-gradient(circle at 32% 28%, #3A3A3A 0%, #111111 62%)",
                     boxShadow: `0 8px 18px rgba(0,0,0,0.28), inset 0 2px 3px rgba(255,255,255,0.18),
@@ -1071,7 +1077,7 @@ function nutritionPrecision(target, consumed) {
    normale, ed etichetta di stato in maiuscolo piccolo sotto la percentuale —
    nessuna emoji, nessun elemento giocoso: deve leggersi come lo strumento
    che misura le prestazioni di un atleta serio, non come un badge. */
-function ComplianceCircle({ pct, size = 76, stroke = 8, subLabel }) {
+function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   // pct === null → nulla da misurare questa settimana (es. niente assegnato):
   // stato neutro esplicito, non un 0% (allarme) né un 100% (falso completo).
   const isNeutral = pct == null;
@@ -1140,11 +1146,6 @@ function ComplianceCircle({ pct, size = 76, stroke = 8, subLabel }) {
         <span className="font-data" style={{ fontSize: size > 60 ? "1.05rem" : "0.85rem", fontWeight: 700, color: isNeutral ? "var(--ink-2)" : "var(--ink)", transition: "color 0.3s ease", lineHeight: 1 }}>
           {isNeutral ? "n/d" : `${pct}%`}
         </span>
-        {subLabel && (
-          <span style={{ fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-2)", marginTop: 2 }}>
-            {subLabel}
-          </span>
-        )}
       </div>
     </div>
   );
@@ -1156,13 +1157,12 @@ function ComplianceRings({ rings, onSelect }) {
   return (
     <div className="grid grid-cols-3 gap-3">
       {rings.map((r) => {
-        const tier = r.pct == null ? { color: "var(--ink-2)", label: "n/d" } : complianceTier(r.pct);
         return (
           <button key={r.id} onClick={() => onSelect(r.id)}
                   className="flex flex-col items-center gap-2 transition-transform active:scale-95">
-            <ComplianceCircle pct={r.pct} subLabel={r.pct == null ? null : tier.label} />
-            <span className="text-xs flex items-center gap-1 text-center" style={{ color: "var(--ink-2)", fontWeight: 700 }}>
-              <r.icon size={11} style={{ color: tier.color }} /> {r.label}
+            <ComplianceCircle pct={r.pct} />
+            <span className="text-xs text-center" style={{ color: "var(--ink-2)", fontWeight: 700, opacity: 0.7 }}>
+              {r.label}
             </span>
           </button>
         );
@@ -1266,7 +1266,6 @@ function LevelRoadmapModal({ currentXp, onClose }) {
                 <div key={tier.title} className="inner flex items-center justify-between gap-3 px-4 py-3"
                      style={isCurrent ? { border: `1.5px solid var(--ink)` } : undefined}>
                   <span className="flex items-center gap-2.5 min-w-0">
-                    <span style={{ fontSize: "1.15rem" }} aria-hidden="true">{tier.icon}</span>
                     <span className="text-sm truncate" style={{ color: isPast || isCurrent ? "var(--ink)" : "var(--ink-2)", fontWeight: isCurrent ? 700 : 500 }}>
                       {tier.title}{isCurrent ? ` ${currentInfo.level - i * LEVELS_PER_TIER + 1}` : ""}
                     </span>
@@ -2512,6 +2511,35 @@ export function HomeDashboard({
   // vivono i 3 cerchi di compliance) perché streakXpBonus, subito sotto,
   // deve già vedere lo streak reale se disponibile.
   const isRealMode = Boolean(supabase && userId);
+
+  // Pallino "novità" (SCHEMA_v80): Allenamento/Alimentazione/Integrazione si
+  // illuminano quando il coach ha aggiornato quella sezione dopo l'ultima
+  // visita del cliente. Ricalcolato anche a ogni coachSyncCount (stesso
+  // segnale di "qualcosa è cambiato" già usato per XP/streak sopra), non solo
+  // al mount — così il pallino appare senza dover ricaricare la pagina se il
+  // coach salva mentre il cliente è già sulla Home.
+  const [sectionNovelty, setSectionNovelty] = useState({ workout: false, nutrition: false, supplements: false });
+  useEffect(() => {
+    if (!isRealMode) return undefined;
+    let cancelled = false;
+    fetchSectionNovelty(supabase, userId)
+      .then((n) => { if (!cancelled) setSectionNovelty(n); })
+      .catch((err) => console.error("PERFORM: errore lettura novità sezioni", err));
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, userId, coachSyncCount]);
+
+  // Aprire una sezione la segna "vista": il pallino sparisce subito, finché
+  // il coach non tocca di nuovo quella sezione specifica.
+  useEffect(() => {
+    if (!isRealMode) return;
+    if (screen !== "workout" && screen !== "nutrition" && screen !== "supplements") return;
+    if (!sectionNovelty[screen]) return;
+    markSectionSeen(supabase, userId, screen)
+      .then(() => setSectionNovelty((prev) => ({ ...prev, [screen]: false })))
+      .catch((err) => console.error("PERFORM: errore segna sezione vista", err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, isRealMode]);
+
   const [realXpStreak, setRealXpStreak] = useState(null); // null = non ancora calcolato
   // BUG PRESO: prima si ricalcolava SOLO una volta al mount — se l'atleta
   // completava una serie, registrava un pasto o il sonno mentre era già
@@ -3048,12 +3076,15 @@ export function HomeDashboard({
         <div className="grid grid-cols-1 gap-2.5">
           <Window3D icon={Dumbbell} label="Allenamento" accent={accent} floatClass="icon-float-1"
             sub={day.isTraining ? day.sessionLabel : "Giorno di riposo"}
+            novelty={sectionNovelty.workout}
             onClick={() => setScreen("workout")} />
           <Window3D icon={Salad} label="Alimentazione" accent={accent} floatClass="icon-float-2"
             sub={`${remaining.kcal} kcal rimanenti`}
+            novelty={sectionNovelty.nutrition}
             onClick={() => setScreen("nutrition")} />
           <Window3D icon={Pill} label="Integrazione" accent={accent} floatClass="icon-float-2"
             sub={access.pro ? "Piano del coach attivo" : "Diario libero + wiki scientifica"}
+            novelty={sectionNovelty.supplements}
             onClick={() => setScreen("supplements")} />
           <Window3D icon={BedDouble} label="Recupero e Attività" accent={accent} floatClass="icon-float-3"
             sub={access.recovery
@@ -4998,6 +5029,12 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const ringR = 27, ringC = 2 * Math.PI * ringR;
   const ringOffset = timer ? ringC * (1 - timer.remaining / timer.total) : 0;
 
+  // Entry point per correggere/recuperare serie passate: si clicca il nome
+  // dell'esercizio stesso, non più un pannello separato più in basso —
+  // richiesta esplicita, e più naturale: "voglio sistemare QUESTO esercizio"
+  // parte proprio dal suo nome.
+  const canRecoverHistory = Boolean(((ex.setHistory && ex.setHistory.length > 0) || (ex.missedSessions && ex.missedSessions.length > 0)) && supabase && userId);
+
   return (
     <div className="card">
       <div className="flex flex-wrap items-center gap-1.5 mb-2">
@@ -5016,7 +5053,21 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
         )}
       </div>
 
-      <p className="h2">{ex.name}</p>
+      {canRecoverHistory ? (
+        <button onClick={() => setHistoryOpen((v) => !v)} className="flex items-center gap-1.5 text-left">
+          <span className="h2" style={{ textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: "var(--ink-2)", textUnderlineOffset: 3 }}>
+            {ex.name}
+          </span>
+          <History size={13} style={{ color: "var(--ink-2)" }} />
+          {ex.missedSessions && ex.missedSessions.length > 0 && (
+            <span className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+              ({ex.missedSessions.length} da recuperare)
+            </span>
+          )}
+        </button>
+      ) : (
+        <p className="h2">{ex.name}</p>
+      )}
       <p className="meta mt-0.5">
         {hasPerSetTargets
           ? repsTargets.map((t, i) => `S${i + 1}: ${t}`).join(" · ")
@@ -5167,19 +5218,10 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
           status "missed" mai toccato): capita di allenarsi davvero e
           scordarsi di segnarlo in app — qui si recupera invece di perderlo
           per sempre, con le stesse righe usate per correggere una sessione
-          già fatta (vedi nota su PastSessionCard). */}
-      {((ex.setHistory && ex.setHistory.length > 0) || (ex.missedSessions && ex.missedSessions.length > 0)) && supabase && userId && (
+          già fatta (vedi nota su PastSessionCard). Si apre/chiude cliccando
+          il nome dell'esercizio qui sopra, non più un pannello a sé. */}
+      {canRecoverHistory && (
         <div className="mt-3">
-          <button onClick={() => setHistoryOpen((v) => !v)}
-                  className="w-full flex items-center justify-between rounded-2xl px-3.5 py-2.5 transition-all duration-300"
-                  style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-            <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-              <History size={13} style={{ color: "var(--ink-2)" }} />
-              Sessioni precedenti
-              {ex.missedSessions && ex.missedSessions.length > 0 && ` (${ex.missedSessions.length} da recuperare)`}
-            </span>
-            {historyOpen ? <ChevronUp size={14} style={{ color: "var(--ink-2)" }} /> : <ChevronDown size={14} style={{ color: "var(--ink-2)" }} />}
-          </button>
           {historyOpen && (
             <div className="spring-in mt-2 space-y-2">
               {(ex.missedSessions ?? []).map((m) => (
@@ -11199,6 +11241,9 @@ export default function HomePreview({
         @media (prefers-reduced-motion: reduce){.chart3d-sheen{animation:none}}
         .ring-breathe{animation:ringBreathe 3.4s ease-in-out infinite}
         @media (prefers-reduced-motion: reduce){.ring-breathe{animation:none}}
+        @keyframes noveltyPing{0%{transform:scale(1);opacity:0.7}75%,100%{transform:scale(2.4);opacity:0}}
+        .novelty-ping{animation:noveltyPing 1.6s cubic-bezier(0,0,0.2,1) infinite}
+        @media (prefers-reduced-motion: reduce){.novelty-ping{animation:none;opacity:0}}
         .metallic-badge{background-size:220% auto;animation:performGlow 4s ease-in-out infinite}
         @media (prefers-reduced-motion: reduce){.metallic-badge{animation:none}}
         @keyframes greetingWave{0%,100%{transform:rotate(0deg)}20%{transform:rotate(14deg)}40%{transform:rotate(-8deg)}60%{transform:rotate(14deg)}80%{transform:rotate(0deg)}}

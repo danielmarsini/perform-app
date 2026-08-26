@@ -659,19 +659,23 @@ export async function fetchFoodUsageStats(supabase, userId, sinceDays = 90) {
 // nella media, vedi dayNutritionScore. Se in NESSUNo dei giorni della
 // finestra c'è un target attivo, torna neutro esplicito.
 //
-// TOLLERANZA (non più scostamento millimetrico): dentro il 12% dal target su
-// ciascuna macro il giorno vale punteggio pieno — nessun atleta reale becca
-// kcal/macro esatti tutti i giorni, e pretenderlo avrebbe reso il cerchio
-// impossibile da tenere alto anche per chi si segna tutto e mangia bene.
-// Oltre quel 12% la penalità cresce in modo lineare, mai negativa.
-const NUTRITION_TOLERANCE = 0.12;
+// TOLLERANZA (non più scostamento millimetrico): dentro il 5% dal target sulle
+// kcal e dentro il 10% su ciascun macro preso singolarmente il giorno vale
+// punteggio pieno su quella dimensione — nessun atleta reale becca kcal/macro
+// esatti tutti i giorni, e pretenderlo avrebbe reso il cerchio impossibile da
+// tenere alto anche per chi si segna tutto e mangia bene. Oltre la soglia la
+// penalità cresce in modo lineare, mai negativa. Le kcal hanno una tolleranza
+// più stretta dei singoli macro perché sono la somma di tutti e tre: un
+// margine identico ai macro le avrebbe rese di fatto ininfluenti nel calcolo.
+const NUTRITION_TOLERANCE = { kcal: 0.05, p: 0.10, c: 0.10, f: 0.10 };
 export function dayNutritionScore(logsTotals, target) {
   if (!target) return null; // nessun target attivo quel giorno: non giudicabile
   const dims = ["kcal", "p", "c", "f"];
   const devs = dims.map((d) => {
     if (!(target[d] > 0)) return 0;
+    const tolerance = NUTRITION_TOLERANCE[d];
     const relDev = Math.abs(logsTotals[d] - target[d]) / target[d];
-    return Math.max(0, Math.min(1, (relDev - NUTRITION_TOLERANCE) / (1 - NUTRITION_TOLERANCE)));
+    return Math.max(0, Math.min(1, (relDev - tolerance) / (1 - tolerance)));
   });
   return Math.max(0, Math.min(100, Math.round((1 - devs.reduce((a, b) => a + b, 0) / dims.length) * 100)));
 }
@@ -1498,6 +1502,7 @@ export async function saveWeekSupplements(supabase, coachId, clientId, sections)
       rows.push({ user_id: clientId, coach_id: coachId, moment, name: it.name.trim(), dose: it.dose || null, sort_order: i, day_type: it.dayType || "all" });
     });
   });
+  await markSectionUpdated(supabase, clientId, "supplements");
   if (rows.length === 0) return;
 
   const { error: insertError } = await supabase.from("prescribed_supplements").insert(rows);
@@ -1515,6 +1520,7 @@ export async function assignNutritionTarget(supabase, {
     set_by: coachId,
   });
   if (error) throw error;
+  await markSectionUpdated(supabase, clientId, "nutrition");
 }
 
 // Lunedì di partenza (weekStartDateISO, 'YYYY-MM-DD') → i 7 giorni di quella
@@ -1712,6 +1718,7 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
       }
     }
   }
+  await markSectionUpdated(supabase, userId, "workout");
 }
 
 // Clona una settimana di allenamento su un'altra: legge le righe della
@@ -1848,25 +1855,25 @@ export function levelMinXp(level) {
 }
 
 // Nomi raggruppati in "tier" da 5 sotto-livelli ciascuno (Principiante 1..5,
-// Amatore 1..5, ...); una volta esaurito l'ultimo tier (Leggenda del Ferro)
-// il numero continua a crescere all'infinito invece di richiedere un nome
-// nuovo per ogni livello possibile — è così che restano davvero infiniti.
+// Neofita 1..5, ...); una volta esaurito l'ultimo tier (Master) il numero
+// continua a crescere all'infinito invece di richiedere un nome nuovo per
+// ogni livello possibile — è così che restano davvero infiniti.
 // Esportati (non più solo interni a xpToLevelInfo): la Bacheca Trofei del
-// Profilo li riusa per i trofei "livello raggiunto", stessi nomi/icone del
+// Profilo li riusa per i trofei "livello raggiunto", stessi nomi del
 // livello reale mostrato altrove — mai una seconda nomenclatura duplicata.
-// Nomi ancorati al mondo reale di palestra/bodybuilding (non più un
-// generico tier militare/RPG): la stessa scala di classificazione che
-// userebbe un coach — principiante → amatore → intermedio → avanzato →
-// atleta → bodybuilder → mostro natural → leggenda del ferro.
+// Nomi ancorati al mondo reale di palestra/fitness/bodybuilding, tono serio
+// e non gamificato (niente icone/emoji, niente nomi da RPG): la stessa scala
+// di classificazione che userebbe un coach — neofita → intermedio →
+// avanzato → atleta → professionista → elite → veterano → master.
 export const LEVEL_TIERS = [
-  { title: "Principiante", icon: "🌱" },
-  { title: "Amatore", icon: "🏋️" },
-  { title: "Intermedio", icon: "💪" },
-  { title: "Avanzato", icon: "🔥" },
-  { title: "Atleta", icon: "🥇" },
-  { title: "Bodybuilder", icon: "🦍" },
-  { title: "Natural Monster", icon: "👹" },
-  { title: "Leggenda del Ferro", icon: "⚡" },
+  { title: "Neofita", icon: "" },
+  { title: "Intermedio", icon: "" },
+  { title: "Avanzato", icon: "" },
+  { title: "Atleta", icon: "" },
+  { title: "Professionista", icon: "" },
+  { title: "Elite", icon: "" },
+  { title: "Veterano", icon: "" },
+  { title: "Master", icon: "" },
 ];
 export const LEVELS_PER_TIER = 5;
 function levelTitleAndIcon(level) {
@@ -3364,60 +3371,70 @@ export async function markGuideTourCompleted(supabase, userId) {
 }
 
 /* ---------------------------------------------------------------------------
-   AVVISI TEAM (SCHEMA_v77) — annunci broadcast del coach a tutti i clienti:
-   nuove funzionalità dell'app, cosa fare per approfittarne. Feed unico, non
-   per-cliente — la "lettura" si traccia con UN timestamp su profiles
-   (last_seen_announcements_at), non una tabella di join per-annuncio: un
-   annuncio è nuovo per un utente se created_at > quel timestamp.
+   AVVISI TEAM — canale "team" già esistente in News & Tips (coach_news_tips,
+   SCHEMA_v35): non una tabella/UI separata, solo la scrittura che mancava.
+   L'RLS ("coach_news_tips_insert_team") già permette insert al coach su
+   channel='team', il feed/il tab erano pronti da prima — serviva solo il
+   form di pubblicazione, ora dentro NewsTipsView invece che in un modale a
+   sé nell'header (vedi SCHEMA_v78 per la policy di eliminazione).
    ------------------------------------------------------------------------- */
 
-// Feed completo, dal più recente. Letto sia dal cliente (schermata Avvisi
-// Team) sia dal coach (per vedere cosa ha già pubblicato prima di postarne
-// un altro).
-export async function fetchTeamAnnouncements(supabase, limit = 50) {
-  const { data, error } = await supabase
-    .from("team_announcements")
-    .select("id, title, body, created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return data ?? [];
-}
-
-// Pubblica un nuovo annuncio — RLS lato server rifiuta chiunque non sia il
-// coach, qui non serve ricontrollarlo.
-export async function createTeamAnnouncement(supabase, coachId, { title, body }) {
-  const { error } = await supabase.from("team_announcements").insert({
-    title: title.trim(), body: body.trim(), created_by: coachId,
+export async function publishTeamPost(supabase, { eyebrow, title, body }) {
+  const { error } = await supabase.from("coach_news_tips").insert({
+    channel: "team", eyebrow: eyebrow?.trim() || null, title: title.trim(), body: body.trim(),
   });
   if (error) throw error;
 }
 
-// Elimina un annuncio pubblicato per errore.
-export async function deleteTeamAnnouncement(supabase, announcementId) {
-  const { error } = await supabase.from("team_announcements").delete().eq("id", announcementId);
+export async function deleteTeamPost(supabase, postId) {
+  const { error } = await supabase.from("coach_news_tips").delete().eq("id", postId);
   if (error) throw error;
 }
 
-// Timestamp di "ultimo controllo" del cliente: aggiornato all'apertura della
-// schermata Avvisi Team, azzera il pallino rosso sull'icona finché non arriva
-// un annuncio pubblicato DOPO questo momento.
-export async function markAnnouncementsSeen(supabase, userId) {
-  const { error } = await supabase.from("profiles").update({ last_seen_announcements_at: new Date().toISOString() }).eq("id", userId);
-  if (error) throw error;
+/* ---------------------------------------------------------------------------
+   NOVITÀ PER SEZIONE (SCHEMA_v80) — pallino rosso pulsante su Allenamento/
+   Alimentazione/Integrazione in Home quando il coach ha aggiornato quella
+   sezione dopo l'ultima visita del cliente. Stesso principio di
+   last_seen_announcements_at (ora ritirato): un timestamp "aggiornato" (scritto
+   dalle funzioni di scrittura coach — saveWeekWorkout/assignNutritionTarget/
+   saveWeekSupplements) confrontato con un timestamp "visto" (scritto quando
+   il cliente apre quella sezione in Home).
+   ------------------------------------------------------------------------- */
+
+const SECTION_COLUMNS = {
+  workout: { updated: "workout_updated_at", seen: "workout_seen_at" },
+  nutrition: { updated: "nutrition_updated_at", seen: "nutrition_seen_at" },
+  supplements: { updated: "supplements_updated_at", seen: "supplements_seen_at" },
+};
+
+// Chiamata dalle funzioni di scrittura del coach qui sopra — mai dal client
+// per la propria scheda: è il coach a "creare novità", mai il cliente.
+async function markSectionUpdated(supabase, userId, section) {
+  const { error } = await supabase.from("profiles")
+    .update({ [SECTION_COLUMNS[section].updated]: new Date().toISOString() }).eq("id", userId);
+  if (error) console.error("PERFORM: errore aggiornamento novità sezione", section, userId, error);
 }
 
-// true se esiste almeno un annuncio pubblicato dopo l'ultima visita
-// dell'utente (mai vista = qualunque annuncio esistente è "nuovo").
-export async function hasUnseenAnnouncements(supabase, userId) {
-  const { data: profileRow, error: profileError } = await supabase
-    .from("profiles").select("last_seen_announcements_at").eq("id", userId).maybeSingle();
-  if (profileError) throw profileError;
-  const lastSeen = profileRow?.last_seen_announcements_at;
+// Chiamata dalla Home quando il cliente apre la sezione: azzera il pallino
+// finché il coach non tocca di nuovo quella sezione.
+export async function markSectionSeen(supabase, userId, section) {
+  const { error } = await supabase.from("profiles")
+    .update({ [SECTION_COLUMNS[section].seen]: new Date().toISOString() }).eq("id", userId);
+  if (error) console.error("PERFORM: errore aggiornamento visto sezione", section, userId, error);
+}
 
-  let query = supabase.from("team_announcements").select("id").limit(1);
-  if (lastSeen) query = query.gt("created_at", lastSeen);
-  const { data, error } = await query;
+// { workout: bool, nutrition: bool, supplements: bool } — true se il coach ha
+// aggiornato quella sezione DOPO l'ultima visita del cliente (mai vista =
+// qualunque aggiornamento esistente è "nuovo").
+export async function fetchSectionNovelty(supabase, userId) {
+  const { data, error } = await supabase.from("profiles")
+    .select("workout_updated_at, workout_seen_at, nutrition_updated_at, nutrition_seen_at, supplements_updated_at, supplements_seen_at")
+    .eq("id", userId).maybeSingle();
   if (error) throw error;
-  return (data ?? []).length > 0;
+  const isNew = (updated, seen) => !!updated && (!seen || new Date(updated) > new Date(seen));
+  return {
+    workout: isNew(data?.workout_updated_at, data?.workout_seen_at),
+    nutrition: isNew(data?.nutrition_updated_at, data?.nutrition_seen_at),
+    supplements: isNew(data?.supplements_updated_at, data?.supplements_seen_at),
+  };
 }
