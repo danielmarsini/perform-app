@@ -1806,6 +1806,7 @@ export function SettingsDrawer({
   // potrebbe esistere per un altro device.
   const [pushState, setPushState] = useState("checking"); // checking | on | off | unsupported | busy
   const [pushReason, setPushReason] = useState(null); // motivo quando unsupported: "ios-not-installed" | "browser" | "no-vapid"
+  const [pushError, setPushError] = useState(""); // errore ritentabile (es. salvataggio abbonamento fallito) — distinto da "unsupported"
   useEffect(() => {
     if (!open || !isRealMode) return;
     if (!isPushSupported()) { setPushReason(pushUnsupportedReason()); setPushState("unsupported"); return; }
@@ -1962,13 +1963,24 @@ export function SettingsDrawer({
 
   const togglePush = async () => {
     setPushState("busy");
+    setPushError("");
     if (pushState === "on") {
       await unsubscribeFromPush(supabase, userId);
       setPushState("off");
       return;
     }
     const res = await subscribeToPush(supabase, userId);
-    setPushState(res.ok ? "on" : (res.reason === "denied" ? "off" : "unsupported"));
+    if (res.ok) { setPushState("on"); return; }
+    if (res.reason === "denied") { setPushState("off"); return; }
+    if (res.reason === "not-supported") { setPushReason(pushUnsupportedReason()); setPushState("unsupported"); return; }
+    // BUG PRESO: "save-failed" (upsert su push_subscriptions rifiutato dal
+    // DB, es. permesso UPDATE mancante quando l'endpoint esiste già da
+    // un'installazione precedente) veniva marcato "unsupported" come i
+    // limiti reali del dispositivo — messaggio fuorviante ("il browser non
+    // supporta le notifiche") e toggle bloccato per sempre, quando invece è
+    // un errore di salvataggio ritentabile.
+    setPushError("Non sono riuscito a salvare l'abbonamento — riprova.");
+    setPushState("off");
   };
 
   // Questi due DEVONO stare prima dell'early return "if (!open) return null"
@@ -2078,7 +2090,11 @@ export function SettingsDrawer({
                             : pushReason === "no-vapid"
                               ? "Configurazione mancante lato server (chiave push) — segnalalo al supporto."
                               : "Il browser di questo dispositivo non supporta le notifiche push.")
-                        : "Ricevi un avviso sul telefono per i nuovi messaggi in chat e se rischi di perdere lo streak di oggi — chiede il permesso al sistema operativo la prima volta."
+                        : pushError
+                          // Errore di salvataggio (es. upsert rifiutato dal DB) — distinto
+                          // da "unsupported": qui il dispositivo è capace, si può ritentare.
+                          ? pushError
+                          : "Ricevi un avviso sul telefono per i nuovi messaggi in chat e se rischi di perdere lo streak di oggi — chiede il permesso al sistema operativo la prima volta."
                     }
                   />
                 </div>
