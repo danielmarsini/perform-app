@@ -17,7 +17,7 @@ import {
   computeTrainingCompliance, computeBatchTrainingCompliance,
   fetchWeekExerciseHistories,
   computeCrewWeeklyActivity, computeCrewStreak,
-  fetchFoodUsageStats,
+  fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -225,6 +225,8 @@ function makeMockSupabase(tables) {
         gte(col, val) { rows = rows.filter((r) => getPath(r, col) >= val); return builder; },
         lte(col, val) { rows = rows.filter((r) => getPath(r, col) <= val); return builder; },
         lt(col, val) { rows = rows.filter((r) => getPath(r, col) < val); return builder; },
+        neq(col, val) { rows = rows.filter((r) => getPath(r, col) !== val); return builder; },
+        is(col, val) { rows = rows.filter((r) => getPath(r, col) === val); return builder; },
         not(col, op, val) {
           if (op === "is" && val === null) rows = rows.filter((r) => getPath(r, col) != null);
           return builder;
@@ -534,5 +536,95 @@ describe("fetchFoodUsageStats", () => {
     const supabase = makeMockSupabase({ nutrition_logs: [] });
     const stats = await fetchFoodUsageStats(supabase, "u1");
     expect(stats.size).toBe(0);
+  });
+});
+
+describe("fetchCoachChatInbox", () => {
+  it("ultimo messaggio e conteggio non letti per cliente, ordinati per messaggio più recente", async () => {
+    const tables = {
+      profiles: [
+        { id: "u1", role: "user", plan: "scheda_personalizzata", nickname: "Mario", full_name: "Mario Rossi" },
+        { id: "u2", role: "user", plan: "training", nickname: "Luca", full_name: null },
+      ],
+      chat_messages: [
+        { client_id: "u1", sender_id: "coach", body: "Come va?", attachment_type: null, created_at: "2026-08-20T10:00:00Z", read_at: "2026-08-20T10:05:00Z" },
+        { client_id: "u1", sender_id: "u1", body: "Tutto bene!", attachment_type: null, created_at: "2026-08-21T09:00:00Z", read_at: null },
+        { client_id: "u2", sender_id: "u2", body: null, attachment_type: "image", created_at: "2026-08-19T08:00:00Z", read_at: null },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const rows = await fetchCoachChatInbox(supabase, "coach");
+
+    const u1 = rows.find((r) => r.id === "u1");
+    expect(u1.lastMessage).toBe("Tutto bene!");
+    expect(u1.lastMessageMine).toBe(false);
+    expect(u1.unreadCount).toBe(1);
+
+    const u2 = rows.find((r) => r.id === "u2");
+    expect(u2.lastMessage).toBe("📎 Allegato");
+    expect(u2.unreadCount).toBe(1);
+
+    expect(rows.map((r) => r.id)).toEqual(["u1", "u2"]); // 21/08 prima di 19/08
+  });
+
+  it("un cliente senza nessun messaggio non genera errori e finisce in fondo alla lista", async () => {
+    const tables = {
+      profiles: [
+        { id: "u1", role: "user", plan: "full", nickname: "Anna", full_name: "Anna Bianchi" },
+        { id: "u2", role: "user", plan: "full", nickname: "Bea", full_name: "Bea Verdi" },
+      ],
+      chat_messages: [
+        { client_id: "u1", sender_id: "coach", body: "Ciao", attachment_type: null, created_at: "2026-08-20T10:00:00Z", read_at: "2026-08-20T10:05:00Z" },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const rows = await fetchCoachChatInbox(supabase, "coach");
+    const u2 = rows.find((r) => r.id === "u2");
+    expect(u2.lastMessage).toBeNull();
+    expect(u2.unreadCount).toBe(0);
+    expect(rows[rows.length - 1].id).toBe("u2");
+  });
+});
+
+describe("fetchClientRoster", () => {
+  it("assegna a ciascun cliente solo i propri checkin e la propria anamnesi, ultimo checkin per primo tra i più recenti", async () => {
+    const tables = {
+      profiles: [
+        { id: "u1", role: "user", full_name: "Mario Rossi", nickname: "Mario", email: "m@x.it", gender: "male", xp_total: 100, current_streak: 3, plan: "training", client_status: "active", last_activity: "2026-08-25", created_at: "2026-01-01", whitelisted_until: null },
+        { id: "u2", role: "user", full_name: "Anna Bianchi", nickname: "Anna", email: "a@x.it", gender: "female", xp_total: 50, current_streak: 1, plan: "free", client_status: "registered", last_activity: "2026-08-20", created_at: "2026-02-01", whitelisted_until: null },
+      ],
+      checkins: [
+        { user_id: "u1", date: "2026-08-01", weight: 80, chest: null, arm: null, thigh: null },
+        { user_id: "u1", date: "2026-08-15", weight: 79, chest: null, arm: null, thigh: null }, // più recente di u1
+        { user_id: "u2", date: "2026-08-10", weight: 60, chest: null, arm: null, thigh: null },
+      ],
+      anamnesis_responses: [
+        { user_id: "u1", answers: { obiettivoPrinc: "ipertrofia" } },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const roster = await fetchClientRoster(supabase);
+
+    const u1 = roster.find((r) => r.id === "u1");
+    expect(u1.goal).toBe("ipertrofia");
+    expect(u1.lastCheck.weight).toBe(79); // il più recente dei suoi 2 checkin, non quello di u2
+    expect(u1.weightHistory).toEqual([80, 79]); // dal più vecchio al più recente
+
+    const u2 = roster.find((r) => r.id === "u2");
+    expect(u2.goal).toBeNull(); // nessuna anamnesi per u2
+    expect(u2.lastCheck.weight).toBe(60);
+    expect(u2.weightHistory).toEqual([60]);
+  });
+
+  it("un cliente senza checkin né anamnesi non genera errori", async () => {
+    const supabase = makeMockSupabase({
+      profiles: [{ id: "u1", role: "user", full_name: "Solo", nickname: "Solo", email: "s@x.it", gender: "male", xp_total: 0, current_streak: 0, plan: "free", client_status: "registered", last_activity: null, created_at: "2026-01-01", whitelisted_until: null }],
+      checkins: [],
+      anamnesis_responses: [],
+    });
+    const roster = await fetchClientRoster(supabase);
+    expect(roster[0].lastCheck).toEqual({ weight: null });
+    expect(roster[0].weightHistory).toEqual([]);
+    expect(roster[0].goal).toBeNull();
   });
 });
