@@ -564,6 +564,37 @@ export async function updateNutritionLogItem(supabase, logId, patch) {
   if (error) throw error;
 }
 
+// Abitudini alimentari personali, derivate dagli ultimi `sinceDays` giorni di
+// nutrition_logs già salvati (nessuna tabella nuova): per ogni nome esatto di
+// alimento, l'ultima quantità in grammi usata e quante volte è stato
+// registrato. Usata dal Diario Libero per due cose — precompilare i grammi
+// quando si sceglie un alimento già mangiato prima, e proporre per primi
+// negli alimenti suggeriti quelli mangiati più spesso: molte persone
+// ripetono più o meno sempre le stesse quantità degli stessi alimenti,
+// quindi velocizza l'inserimento invece di dover ridigitare gli stessi
+// grammi ogni volta.
+export async function fetchFoodUsageStats(supabase, userId, sinceDays = 90) {
+  const from = new Date();
+  from.setDate(from.getDate() - sinceDays);
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .select("name, grams, created_at")
+    .eq("user_id", userId)
+    .gte("date", toLocalISODate(from))
+    .not("grams", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+
+  const stats = new Map(); // nome alimento -> { lastGrams, count }
+  (data ?? []).forEach((r) => {
+    const existing = stats.get(r.name);
+    if (existing) { existing.count++; return; }
+    stats.set(r.name, { lastGrams: Number(r.grams), count: 1 }); // righe più recenti prima: la prima volta che un nome compare È l'ultima quantità usata
+  });
+  return stats;
+}
+
 // Cerchio Alimentazione reale — STESSO principio di computeTrainingCompliance
 // e computeRecoveryCompliance: un'unica funzione, chiamata identica da Home
 // cliente e ClientDetail coach, legge solo dati già salvati (nutrition_logs
