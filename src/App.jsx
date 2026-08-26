@@ -7,6 +7,7 @@ import HomeScreen from "./components/05_HomeDashboard.jsx";
 import { NewsTipsView, NewsTipsViewStyles } from "./components/06_NewsTipsView.jsx";
 import ProfileScreen, { SettingsDrawer } from "./components/08_ClientProfileView.jsx";
 import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
+import LandingIntro from "./components/LandingIntro.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
@@ -246,6 +247,13 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);       // riga profiles reale, null finché non caricata
   const [profileLoading, setProfileLoading] = useState(true);
+  // Landing pubblica (LandingIntro, le 4 slide di presentazione): mostrata
+  // una volta sola per dispositivo/browser prima del login — non a ogni
+  // apertura dell'app, altrimenti diventerebbe fastidiosa per chi ha già
+  // un account e semplicemente ha perso la sessione (logout, cache pulita).
+  const [seenLanding, setSeenLanding] = useState(() => {
+    try { return localStorage.getItem("perform_seen_landing") === "1"; } catch (err) { return false; }
+  });
 
   // --- Stato condiviso tra TUTTE le schermate ---------------------------------
   // Tema: Onyx (nero) è l'UNICO tema dell'app, per tutti — la modalità
@@ -402,6 +410,23 @@ export default function App() {
 
   if (authLoading) {
     return <SplashScreen dark={dark} />;
+  }
+
+  // Porta d'ingresso pubblica: mostrata una volta sola per dispositivo,
+  // PRIMA del login/registrazione — non più come primo step di
+  // OnboardingFlow (dopo l'account già creato). Chi ha già una sessione
+  // valida (torna con l'app già installata) non la vede mai, nemmeno la
+  // prima volta: salta dritto oltre questo blocco.
+  if (!session && !seenLanding) {
+    return (
+      <LandingIntro
+        dark={dark}
+        onFinish={() => {
+          try { localStorage.setItem("perform_seen_landing", "1"); } catch (err) { /* best-effort */ }
+          setSeenLanding(true);
+        }}
+      />
+    );
   }
 
   if (!session) {

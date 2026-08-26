@@ -30,7 +30,7 @@
    ========================================================================== */
 
 import React, { useState, useEffect } from "react";
-import { Loader2, Dumbbell, ShieldCheck, BarChart3, Trophy, ChevronRight } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { DesignSystem, LiveBackground } from "./04_AppShell.jsx";
 import { STRIPE_PLANS, translations, GradientText, PlanCard, hasAnnualPricing, withBillingCycle, BillingCycleToggle } from "./08_ClientProfileView.jsx";
@@ -57,106 +57,11 @@ const DB_TO_UI_PLAN = { scheda_personalizzata: "scheda", training: "training", f
 const ANAM_FILLABLE = ANAM_QUESTIONS.filter((q) => q.t !== "photos");
 const ANAM_REQUIRED = ANAM_FILLABLE.filter((q) => q.req);
 
-/* ============================================================================
-   MINI-TUTORIAL DI BENVENUTO — mostrato UNA volta, subito dopo la
-   registrazione e PRIMA della scelta del piano: prima di chiedere una carta
-   di credito, va costruita l'aspettativa. Posiziona PERFORM come un metodo
-   costruito per chi si allena sul serio (atleti, persone che vogliono
-   mettersi alla prova) seguito da un team reale — non l'ennesima app fitness
-   generica scaricata e dimenticata dopo una settimana. Nessun dato reale
-   qui dentro: solo presentazione, si passa allo step "plan" al termine (o
-   subito, con "Salta introduzione").
-   ========================================================================== */
-const INTRO_SLIDES = [
-  {
-    icon: BarChart3,
-    kicker: "Benvenuto in PERFORM",
-    title: "Basta rincorrere i tuoi dati su dieci app diverse.",
-    body: "Allenamento, alimentazione, recupero, integrazione, progressi: PERFORM raccoglie tutto in un unico posto, pensato per accompagnarti in ogni fase del tuo percorso — non per farti perdere tempo a incrociare numeri tra un'app e l'altra.",
-  },
-  {
-    icon: Dumbbell,
-    kicker: "Ogni dato ha uno scopo",
-    title: "Tracciato come un atleta vero.",
-    body: "Le variabili che spostano davvero i risultati — allenamento, nutrizione, sonno, recupero — monitorate giorno per giorno, per raggiungere i tuoi obiettivi estetici, di performance e di salute con un metodo, non a intuito.",
-  },
-  {
-    icon: ShieldCheck,
-    kicker: "Non da solo, mai",
-    title: "Al tuo fianco, professionisti veri.",
-    body: "Scheda di allenamento e piano alimentare costruiti su misura da un coach in carne e ossa, aggiornati sui tuoi progressi reali — perché nessun algoritmo sostituisce chi ti conosce e ti segue davvero, check dopo check.",
-  },
-  {
-    icon: Trophy,
-    kicker: "Pronto a iniziare",
-    title: "Mettiti alla prova.",
-    body: "Scegli il piano più adatto a te e inizia oggi il percorso che stavi aspettando.",
-  },
-];
-
-function AppIntroTutorial({ gender, dark, onFinish }) {
-  const [slide, setSlide] = useState(0);
-  const last = slide === INTRO_SLIDES.length - 1;
-  const s = INTRO_SLIDES[slide];
-  const Icon = s.icon;
-
-  return (
-    <div className="app-root min-h-screen flex flex-col" data-theme={dark ? "dark" : "light"}
-         style={{ backgroundColor: "var(--page)" }}>
-      <DesignSystem />
-      <LiveBackground gender={gender} dark={dark} />
-      <div style={{ position: "relative", zIndex: 1 }} className="min-h-screen flex flex-col">
-        <div className="flex justify-end px-5 pt-5">
-          <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-            Salta introduzione
-          </button>
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" style={{ maxWidth: 480, margin: "0 auto" }}>
-          <div key={slide} className="spring-in">
-            <div className="mx-auto mb-6 rounded-full flex items-center justify-center"
-                 style={{
-                   width: 84, height: 84,
-                   background: gender === "F"
-                     ? "linear-gradient(135deg, rgba(212,165,165,0.22), rgba(212,165,165,0.06))"
-                     : "linear-gradient(135deg, rgba(197,160,89,0.22), rgba(197,160,89,0.06))",
-                   border: `1px solid ${gender === "F" ? "rgba(212,165,165,0.4)" : "rgba(197,160,89,0.4)"}`,
-                   boxShadow: `0 0 40px ${gender === "F" ? "rgba(212,165,165,0.25)" : "rgba(197,160,89,0.25)"}`,
-                 }}>
-              <Icon size={34} style={{ color: gender === "F" ? "#D4A5A5" : "#C5A059" }} />
-            </div>
-
-            <p className="font-data mb-3" style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-2)" }}>
-              {s.kicker}
-            </p>
-            <GradientText gender={gender} style={{ fontSize: "1.7rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2, display: "block" }}>
-              {s.title}
-            </GradientText>
-            <p className="mt-4 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
-              {s.body}
-            </p>
-          </div>
-        </div>
-
-        <div className="px-6 pb-10" style={{ maxWidth: 480, width: "100%", margin: "0 auto" }}>
-          <div className="flex items-center justify-center gap-2 mb-6">
-            {INTRO_SLIDES.map((_, i) => (
-              <button key={i} onClick={() => setSlide(i)} aria-label={`Vai alla schermata ${i + 1}`}
-                className="rounded-full transition-all duration-300"
-                style={{ width: i === slide ? 22 : 7, height: 7,
-                         backgroundColor: i === slide ? (gender === "F" ? "#D4A5A5" : "#C5A059") : "var(--line)" }} />
-            ))}
-          </div>
-          <button onClick={() => (last ? onFinish() : setSlide((v) => v + 1))}
-            className="w-full rounded-full px-4 py-3.5 text-sm flex items-center justify-center gap-1.5 btn-3d"
-            style={{ backgroundColor: gender === "F" ? "#D4A5A5" : "#C5A059", color: "#111111", fontWeight: 700 }}>
-            {last ? "Scegli il tuo piano" : "Avanti"} <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Il mini-tutorial di benvenuto (le 4 slide di presentazione) non vive più
+// qui: è stato spostato in LandingIntro.jsx e mostrato PRIMA della
+// registrazione (App.jsx), non più come primo step di questo flusso —
+// prima di chiedere un account, va costruita l'aspettativa. Questo
+// componente parte quindi direttamente dallo step "plan".
 
 // `initialPlan` è il valore già presente su profiles.plan quando questo
 // componente monta. Il default DB per un profilo nuovo è 'free', quindi non
@@ -184,7 +89,7 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
   // (profiles.plan resta il piano base, mai riscritto per questo acquisto),
   // ma l'anamnesi va comunque compilata. dbValue: null segnala a onComplete
   // di NON toccare il piano base al termine, solo chiudere l'onboarding.
-  const [step, setStep] = useState(resumedPlanId || resumedAddonPlanId ? "anamnesi" : "intro"); // 'intro' | 'plan' | 'anamnesi'
+  const [step, setStep] = useState(resumedPlanId || resumedAddonPlanId ? "anamnesi" : "plan"); // 'plan' | 'anamnesi'
   const [chosenPlan, setChosenPlan] = useState(
     resumedPlanId ? { id: resumedPlanId, dbValue: initialPlan }
       : resumedAddonPlanId ? { id: resumedAddonPlanId, dbValue: null }
@@ -296,10 +201,6 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
         </p>
       </div>
     );
-  }
-
-  if (step === "intro") {
-    return <AppIntroTutorial gender={gender} dark={dark} onFinish={() => setStep("plan")} />;
   }
 
   if (step === "anamnesi") {
