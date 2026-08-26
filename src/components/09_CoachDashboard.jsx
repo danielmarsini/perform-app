@@ -3692,7 +3692,10 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className={`font-display text-xl ${titleClass}`}>{client.name}</p>
-            <p className="c-muted font-data text-xs uppercase mt-1">{client.goal} · {client.calories} kcal · streak {client.streak} giorni · aderenza {client.adherence != null ? `${client.adherence}%` : "n/d"}</p>
+            {/* BUG PRESO: "streak N giorni" restava fisso al plurale anche
+                con N=1 ("streak 1 giorni") — un cliente appena preso in
+                gestione ha quasi sempre streak 1 nei primi giorni. */}
+            <p className="c-muted font-data text-xs uppercase mt-1">{client.goal} · {client.calories} kcal · streak {client.streak} {client.streak === 1 ? "giorno" : "giorni"} · aderenza {client.adherence != null ? `${client.adherence}%` : "n/d"}</p>
           </div>
           <button onClick={() => setShowAnamnesis(true)} className="c-ghost shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium">
             <FileText size={14} /> Anamnesi

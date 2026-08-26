@@ -1001,7 +1001,10 @@ function MonthlyReportView({ profile, accent, level, xp, streak, weightPoints, c
           </div>
 
           <div className="report-stats">
-            {[["Livello", level], ["XP totali", xp.toLocaleString()], ["Streak", `${streak} giorni`]].map(([k, v]) => (
+            {/* BUG PRESO: "Streak" diceva sempre "N giorni", anche con N=1
+                ("1 giorni" — grammaticalmente sbagliato in italiano) in un
+                report mensile pensato per essere condiviso/salvato. */}
+            {[["Livello", level], ["XP totali", xp.toLocaleString()], ["Streak", `${streak} ${streak === 1 ? "giorno" : "giorni"}`]].map(([k, v]) => (
               <div key={k} className="report-stat">
                 <p className="report-stat-label">{k}</p>
                 <p className="report-stat-value">{v}</p>
