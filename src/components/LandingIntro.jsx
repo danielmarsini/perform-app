@@ -61,7 +61,12 @@ export default function LandingIntro({ dark, onFinish }) {
       <DesignSystem />
       <LiveBackground gender={gender} dark={dark} />
       <div style={{ position: "relative", zIndex: 1 }} className="min-h-screen flex flex-col">
-        <div className="flex justify-end px-5 pt-5">
+        {/* BUG PRESO: pt-5 fisso non lascia spazio alla barra di stato su
+            iPhone da app installata — il pulsante finiva dietro la batteria,
+            impossibile da toccare. Stesso pattern env(safe-area-inset-top)
+            già usato altrove (04_AppShell.jsx, 05_HomeDashboard.jsx,
+            SettingsDrawer). */}
+        <div className="flex justify-end px-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)" }}>
           <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
             Salta introduzione
           </button>
