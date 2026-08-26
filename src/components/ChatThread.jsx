@@ -10,6 +10,14 @@
    WhatsApp — bucket privato "chat-attachments", URL sempre firmato al
    momento della lettura (mai un link pubblico permanente), stesso
    principio già in uso per i video-check tecnica in TechniqueVideoPanel.
+
+   BUG PRESO: un messaggio inviato non generava MAI un push all'altra
+   parte — solo un salvataggio su chat_messages, letto dall'altro lato solo
+   se aveva l'app aperta o la riapriva. Più clienti hanno segnalato "quando
+   mi scrivi non mi arriva niente". `onSent` (opzionale) viene chiamato con
+   il messaggio appena salvato subito dopo l'invio: chi monta questo
+   componente decide se e come notificare l'altra parte (vedi App.jsx,
+   dove il lato coach lo usa per invocare notify-client verso il cliente).
    ========================================================================== */
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
@@ -47,7 +55,7 @@ function dayDivider(iso) {
   });
 }
 
-export default function ChatThread({ supabase, clientId, meId, accent, emptyText, gender = "M" }) {
+export default function ChatThread({ supabase, clientId, meId, accent, emptyText, gender = "M", onSent }) {
   const [messages, setMessages] = useState(null); // null = non ancora caricato
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -179,6 +187,7 @@ export default function ChatThread({ supabase, clientId, meId, accent, emptyText
       setDraft("");
       clearPending();
       haptic("confirm");
+      onSent?.(saved);
     } catch (err) {
       console.error("PERFORM: errore invio messaggio", err);
       setAttachError("Non sono riuscito a inviare — controlla la connessione e riprova.");
