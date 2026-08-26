@@ -401,33 +401,15 @@ function recoveryStepsScore(steps) {
   if (!steps || steps <= 0) return 0;
   return Math.min(100, Math.round((steps / 8000) * 100));
 }
-export async function computeRecoveryCompliance(supabase, userId) {
-  const today = toLocalISODate();
-  const yesterday = new Date(`${today}T00:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const sevenAgo = new Date(yesterday);
-  sevenAgo.setDate(sevenAgo.getDate() - 6);
-
-  const { data: profileRow, error: profileError } = await supabase
-    .from("profiles").select("created_at").eq("id", userId).maybeSingle();
-  if (profileError) throw profileError;
-  const joinedISO = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : null;
-  const windowStartISO = joinedISO && joinedISO > toLocalISODate(sevenAgo) ? joinedISO : toLocalISODate(sevenAgo);
-  const windowEndISO = toLocalISODate(yesterday);
-
+// Logica pura, estratta così che la versione singolo-cliente e quella
+// batch (vedi computeBatchRecoveryCompliance) restino UNA sola fonte di
+// verità per il punteggio — mai due formule copiate che rischiano di
+// disallinearsi in futuro.
+function recoveryComplianceFromRows(rows, windowStartISO, windowEndISO) {
   if (windowStartISO > windowEndISO) {
     return { status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0, windowDays: 0 };
   }
-
-  const { data, error } = await supabase
-    .from("daily_metrics")
-    .select("date, sleep_hours, steps")
-    .eq("user_id", userId)
-    .gte("date", windowStartISO)
-    .lte("date", windowEndISO);
-  if (error) throw error;
-
-  const byDate = new Map((data ?? []).map((r) => [r.date, r]));
+  const byDate = new Map((rows ?? []).map((r) => [r.date, r]));
   const days = [];
   for (let d = new Date(`${windowStartISO}T00:00:00`); toLocalISODate(d) <= windowEndISO; d.setDate(d.getDate() + 1)) {
     days.push(toLocalISODate(d));
@@ -445,6 +427,78 @@ export async function computeRecoveryCompliance(supabase, userId) {
   const sleepAvg = Math.round((sleepVals.reduce((a, b) => a + b, 0) / n) * 10) / 10;
   const stepsAvg = Math.round(stepsVals.reduce((a, b) => a + b, 0) / n);
   return { status: "ok", pct, sleepAvg, stepsAvg, trackedDays, windowDays: n };
+}
+export async function computeRecoveryCompliance(supabase, userId) {
+  const today = toLocalISODate();
+  const yesterday = new Date(`${today}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sevenAgo = new Date(yesterday);
+  sevenAgo.setDate(sevenAgo.getDate() - 6);
+
+  const { data: profileRow, error: profileError } = await supabase
+    .from("profiles").select("created_at").eq("id", userId).maybeSingle();
+  if (profileError) throw profileError;
+  const joinedISO = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : null;
+  const windowStartISO = joinedISO && joinedISO > toLocalISODate(sevenAgo) ? joinedISO : toLocalISODate(sevenAgo);
+  const windowEndISO = toLocalISODate(yesterday);
+
+  if (windowStartISO > windowEndISO) {
+    return recoveryComplianceFromRows([], windowStartISO, windowEndISO);
+  }
+
+  const { data, error } = await supabase
+    .from("daily_metrics")
+    .select("date, sleep_hours, steps")
+    .eq("user_id", userId)
+    .gte("date", windowStartISO)
+    .lte("date", windowEndISO);
+  if (error) throw error;
+  return recoveryComplianceFromRows(data, windowStartISO, windowEndISO);
+}
+
+// Stessa identica formula di computeRecoveryCompliance ma per N clienti in
+// un colpo solo: 2 query totali (profiles + daily_metrics) invece di 2×N.
+// Pensata per Hub Atleti, dove la lista clienti chiamava questa funzione una
+// volta per riga (60-90+ query per 20-30 clienti solo per disegnare 3
+// pallini). Ogni cliente mantiene la propria finestra, clampata sulla
+// propria data di iscrizione esattamente come nella versione singola —
+// solo le query sono condivise, mai il calcolo.
+export async function computeBatchRecoveryCompliance(supabase, userIds) {
+  const results = new Map();
+  if (!userIds || userIds.length === 0) return results;
+
+  const today = toLocalISODate();
+  const yesterday = new Date(`${today}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sevenAgo = new Date(yesterday);
+  sevenAgo.setDate(sevenAgo.getDate() - 6);
+  const windowEndISO = toLocalISODate(yesterday);
+  const globalWindowStartISO = toLocalISODate(sevenAgo);
+
+  const { data: profiles, error: profileError } = await supabase
+    .from("profiles").select("id, created_at").in("id", userIds);
+  if (profileError) throw profileError;
+  const joinedByUser = new Map((profiles ?? []).map((p) => [p.id, p.created_at ? toLocalISODate(new Date(p.created_at)) : null]));
+
+  const { data: metrics, error: metricsError } = await supabase
+    .from("daily_metrics")
+    .select("user_id, date, sleep_hours, steps")
+    .in("user_id", userIds)
+    .gte("date", globalWindowStartISO)
+    .lte("date", windowEndISO);
+  if (metricsError) throw metricsError;
+
+  const rowsByUser = new Map(userIds.map((id) => [id, []]));
+  for (const row of metrics ?? []) {
+    if (rowsByUser.has(row.user_id)) rowsByUser.get(row.user_id).push(row);
+  }
+
+  for (const userId of userIds) {
+    const joinedISO = joinedByUser.get(userId) ?? null;
+    const windowStartISO = joinedISO && joinedISO > globalWindowStartISO ? joinedISO : globalWindowStartISO;
+    results.set(userId, recoveryComplianceFromRows(rowsByUser.get(userId), windowStartISO, windowEndISO));
+  }
+  return results;
 }
 
 // Diario pasti reale di UN giorno, per il "Diario Libero" della Home.
@@ -537,32 +591,11 @@ export function dayNutritionScore(logsTotals, target) {
   const devs = dims.map((d) => (target[d] > 0 ? Math.min(1, Math.abs(logsTotals[d] - target[d]) / target[d]) : 0));
   return Math.max(0, Math.min(100, Math.round((1 - devs.reduce((a, b) => a + b, 0) / dims.length) * 100)));
 }
-export async function computeNutritionCompliance(supabase, userId) {
-  const today = toLocalISODate();
-  const yesterday = new Date(`${today}T00:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const sevenAgo = new Date(yesterday);
-  sevenAgo.setDate(sevenAgo.getDate() - 6);
-
-  const { data: profileRow, error: profileError } = await supabase
-    .from("profiles").select("created_at").eq("id", userId).maybeSingle();
-  if (profileError) throw profileError;
-  const joinedISO = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : null;
-  const fromISO = joinedISO && joinedISO > toLocalISODate(sevenAgo) ? joinedISO : toLocalISODate(sevenAgo);
-  const toISO = toLocalISODate(yesterday);
-
-  if (fromISO > toISO) {
-    return { status: "neutral", pct: null, daysScored: 0 };
-  }
-
-  const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }] = await Promise.all([
-    supabase.from("nutrition_logs").select("date, kcal, protein, carbs, fat").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
-    supabase.from("nutrition_targets").select("day_type, kcal, protein, carbs, fat, effective_from").eq("user_id", userId).lte("effective_from", toISO).order("effective_from", { ascending: true }),
-    supabase.from("workout_logs").select("date").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
-  ]);
-  if (logsError) throw logsError;
-  if (targetsError) throw targetsError;
-  if (workoutsError) throw workoutsError;
+// Logica pura (stesso principio di recoveryComplianceFromRows sopra):
+// unica fonte di verità condivisa tra la versione singolo-cliente e
+// computeBatchNutritionCompliance qui sotto.
+function nutritionComplianceFromRows(logs, targets, workouts, fromISO, toISO) {
+  if (fromISO > toISO) return { status: "neutral", pct: null, daysScored: 0 };
 
   const trainingDates = new Set((workouts ?? []).map((w) => w.date));
   // Per ogni day_type, il target con effective_from più recente <= quella data.
@@ -597,6 +630,85 @@ export async function computeNutritionCompliance(supabase, userId) {
   }
   const pct = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   return { status: "ok", pct, daysScored: scores.length };
+}
+export async function computeNutritionCompliance(supabase, userId) {
+  const today = toLocalISODate();
+  const yesterday = new Date(`${today}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sevenAgo = new Date(yesterday);
+  sevenAgo.setDate(sevenAgo.getDate() - 6);
+
+  const { data: profileRow, error: profileError } = await supabase
+    .from("profiles").select("created_at").eq("id", userId).maybeSingle();
+  if (profileError) throw profileError;
+  const joinedISO = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : null;
+  const fromISO = joinedISO && joinedISO > toLocalISODate(sevenAgo) ? joinedISO : toLocalISODate(sevenAgo);
+  const toISO = toLocalISODate(yesterday);
+
+  if (fromISO > toISO) {
+    return { status: "neutral", pct: null, daysScored: 0 };
+  }
+
+  const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }] = await Promise.all([
+    supabase.from("nutrition_logs").select("date, kcal, protein, carbs, fat").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
+    supabase.from("nutrition_targets").select("day_type, kcal, protein, carbs, fat, effective_from").eq("user_id", userId).lte("effective_from", toISO).order("effective_from", { ascending: true }),
+    supabase.from("workout_logs").select("date").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
+  ]);
+  if (logsError) throw logsError;
+  if (targetsError) throw targetsError;
+  if (workoutsError) throw workoutsError;
+
+  return nutritionComplianceFromRows(logs, targets, workouts, fromISO, toISO);
+}
+
+// Stessa formula di computeNutritionCompliance per N clienti in un colpo
+// solo: 3 query totali invece di 3×N (vedi nota su computeBatchRecoveryCompliance,
+// stesso principio).
+export async function computeBatchNutritionCompliance(supabase, userIds) {
+  const results = new Map();
+  if (!userIds || userIds.length === 0) return results;
+
+  const today = toLocalISODate();
+  const yesterday = new Date(`${today}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const sevenAgo = new Date(yesterday);
+  sevenAgo.setDate(sevenAgo.getDate() - 6);
+  const toISO = toLocalISODate(yesterday);
+  const globalFromISO = toLocalISODate(sevenAgo);
+
+  const { data: profiles, error: profileError } = await supabase
+    .from("profiles").select("id, created_at").in("id", userIds);
+  if (profileError) throw profileError;
+  const joinedByUser = new Map((profiles ?? []).map((p) => [p.id, p.created_at ? toLocalISODate(new Date(p.created_at)) : null]));
+
+  const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }] = await Promise.all([
+    supabase.from("nutrition_logs").select("user_id, date, kcal, protein, carbs, fat").in("user_id", userIds).gte("date", globalFromISO).lte("date", toISO),
+    supabase.from("nutrition_targets").select("user_id, day_type, kcal, protein, carbs, fat, effective_from").in("user_id", userIds).lte("effective_from", toISO).order("effective_from", { ascending: true }),
+    supabase.from("workout_logs").select("user_id, date").in("user_id", userIds).gte("date", globalFromISO).lte("date", toISO),
+  ]);
+  if (logsError) throw logsError;
+  if (targetsError) throw targetsError;
+  if (workoutsError) throw workoutsError;
+
+  const groupByUser = (rows) => {
+    const map = new Map(userIds.map((id) => [id, []]));
+    for (const row of rows ?? []) if (map.has(row.user_id)) map.get(row.user_id).push(row);
+    return map;
+  };
+  const logsByUser = groupByUser(logs);
+  const targetsByUser = groupByUser(targets);
+  const workoutsByUser = groupByUser(workouts);
+
+  for (const userId of userIds) {
+    const joinedISO = joinedByUser.get(userId) ?? null;
+    const fromISO = joinedISO && joinedISO > globalFromISO ? joinedISO : globalFromISO;
+    if (fromISO > toISO) {
+      results.set(userId, { status: "neutral", pct: null, daysScored: 0 });
+      continue;
+    }
+    results.set(userId, nutritionComplianceFromRows(logsByUser.get(userId), targetsByUser.get(userId), workoutsByUser.get(userId), fromISO, toISO));
+  }
+  return results;
 }
 
 // Scheda assegnata dal coach per un intervallo di date: righe is_read_only=true.
@@ -986,47 +1098,9 @@ export async function fetchClientSetHistory(supabase, userId, fromDateISO, toDat
 // in questo calcolo. Non esiste ancora un check-in reale del cliente
 // collegato a Supabase — è un'omissione intenzionale, non dimenticata: si
 // aggiunge quando costruiamo quel pezzo (checkins reali, non più simulati).
-export async function computeTrainingCompliance(supabase, userId) {
-  // Le date più recenti con almeno un esercizio assegnato. PostgREST non fa
-  // "distinct date con limit" in una query sola: fetch generosa (250 righe,
-  // abbondante anche per chi si allena 6 volte a settimana da un anno) e
-  // dedup lato client — l'ordine desc si preserva perché un Set mantiene
-  // l'ordine di primo inserimento.
-  // lt(oggi), non lte: il coach può programmare settimane future in anticipo
-  // (MAX_FORWARD_WEEKS in 09_CoachDashboard.jsx) — senza questo taglio,
-  // "le date più recenti" pescherebbe sessioni future mai ancora svolte al
-  // posto delle ultime 7 sedute REALMENTE fatte, falsando il cerchio. Oggi
-  // stesso è escluso anche se una sessione è già stata assegnata per oggi:
-  // finché la giornata non è finita non ha ancora "fallito" solo perché non
-  // ancora registrata, non deve poter abbassare la percentuale a metà giornata.
-  const { data: recentLogs, error: recentError } = await supabase
-    .from("workout_logs")
-    .select("date")
-    .eq("user_id", userId)
-    .lt("date", toLocalISODate())
-    .order("date", { ascending: false })
-    .limit(250);
-  if (recentError) throw recentError;
-
-  const distinctDates = [...new Set((recentLogs ?? []).map((r) => r.date))];
-  if (distinctDates.length === 0) {
-    return { status: "neutral", pct: null, completionPct: null, progression: "neutral" };
-  }
-
-  const currentDates = distinctDates.slice(0, 7);
-  const priorDates = distinctDates.slice(7, 14);
-  const allDates = [...currentDates, ...priorDates];
-
-  const [{ data: assignedRows, error: assignedError }, { data: setsJoined, error: setsError }] = await Promise.all([
-    supabase.from("workout_logs").select("sets_count").eq("user_id", userId).in("date", currentDates),
-    supabase.from("workout_sets")
-      .select("load_kg, workout_logs!inner(date, exercise_name, user_id)")
-      .eq("workout_logs.user_id", userId)
-      .in("workout_logs.date", allDates),
-  ]);
-  if (assignedError) throw assignedError;
-  if (setsError) throw setsError;
-
+// Logica pura (stesso principio delle due funzioni sopra): unica fonte di
+// verità condivisa tra la versione singolo-cliente e computeBatchTrainingCompliance.
+function trainingComplianceFromRows(assignedRows, setsJoined, currentDates, priorDates) {
   const assignedSetsTotal = (assignedRows ?? []).reduce((a, r) => a + (Number(r.sets_count) || 0), 0);
   if (assignedSetsTotal === 0) {
     return { status: "neutral", pct: null, completionPct: null, progression: "neutral" };
@@ -1074,6 +1148,118 @@ export async function computeTrainingCompliance(supabase, userId) {
     : progression === "negative" ? Math.round(completionPct * 0.8)
     : completionPct;
   return { status: "ok", pct, completionPct, progression };
+}
+export async function computeTrainingCompliance(supabase, userId) {
+  // Le date più recenti con almeno un esercizio assegnato. PostgREST non fa
+  // "distinct date con limit" in una query sola: fetch generosa (250 righe,
+  // abbondante anche per chi si allena 6 volte a settimana da un anno) e
+  // dedup lato client — l'ordine desc si preserva perché un Set mantiene
+  // l'ordine di primo inserimento.
+  // lt(oggi), non lte: il coach può programmare settimane future in anticipo
+  // (MAX_FORWARD_WEEKS in 09_CoachDashboard.jsx) — senza questo taglio,
+  // "le date più recenti" pescherebbe sessioni future mai ancora svolte al
+  // posto delle ultime 7 sedute REALMENTE fatte, falsando il cerchio. Oggi
+  // stesso è escluso anche se una sessione è già stata assegnata per oggi:
+  // finché la giornata non è finita non ha ancora "fallito" solo perché non
+  // ancora registrata, non deve poter abbassare la percentuale a metà giornata.
+  const { data: recentLogs, error: recentError } = await supabase
+    .from("workout_logs")
+    .select("date")
+    .eq("user_id", userId)
+    .lt("date", toLocalISODate())
+    .order("date", { ascending: false })
+    .limit(250);
+  if (recentError) throw recentError;
+
+  const distinctDates = [...new Set((recentLogs ?? []).map((r) => r.date))];
+  if (distinctDates.length === 0) {
+    return { status: "neutral", pct: null, completionPct: null, progression: "neutral" };
+  }
+
+  const currentDates = distinctDates.slice(0, 7);
+  const priorDates = distinctDates.slice(7, 14);
+  const allDates = [...currentDates, ...priorDates];
+
+  const [{ data: assignedRows, error: assignedError }, { data: setsJoined, error: setsError }] = await Promise.all([
+    supabase.from("workout_logs").select("sets_count").eq("user_id", userId).in("date", currentDates),
+    supabase.from("workout_sets")
+      .select("load_kg, workout_logs!inner(date, exercise_name, user_id)")
+      .eq("workout_logs.user_id", userId)
+      .in("workout_logs.date", allDates),
+  ]);
+  if (assignedError) throw assignedError;
+  if (setsError) throw setsError;
+
+  return trainingComplianceFromRows(assignedRows, setsJoined, currentDates, priorDates);
+}
+
+// Stessa formula di computeTrainingCompliance per N clienti in un colpo
+// solo (vedi nota su computeBatchRecoveryCompliance). Qui la finestra "ultime
+// 7 sessioni" è per forza calcolata per-cliente (chi si allena spesso ha
+// sessioni più recenti di chi si allena poco): la prima query resta quindi
+// generosa per NUMERO DI RIGHE totale (fino a 5000, non 250×N — abbondante
+// per un roster realistico di qualche decina di clienti) e il resto del
+// calcolo avviene lato client esattamente come nella versione singola.
+export async function computeBatchTrainingCompliance(supabase, userIds) {
+  const results = new Map();
+  if (!userIds || userIds.length === 0) return results;
+
+  const { data: allLogs, error: logsError } = await supabase
+    .from("workout_logs")
+    .select("user_id, date, sets_count")
+    .in("user_id", userIds)
+    .lt("date", toLocalISODate())
+    .order("date", { ascending: false })
+    .limit(5000);
+  if (logsError) throw logsError;
+
+  const rowsByUser = new Map(userIds.map((id) => [id, []]));
+  for (const row of allLogs ?? []) {
+    if (rowsByUser.has(row.user_id)) rowsByUser.get(row.user_id).push(row);
+  }
+
+  const perUserDates = new Map();
+  const allDatesGlobal = new Set();
+  for (const userId of userIds) {
+    const rows = rowsByUser.get(userId) ?? [];
+    // rowsByUser preserva l'ordine desc di allLogs (filtro, non risort):
+    // il primo elemento di ogni Set è la data più recente, come nella
+    // versione singolo-cliente.
+    const distinctDates = [...new Set(rows.map((r) => r.date))];
+    const currentDates = distinctDates.slice(0, 7);
+    const priorDates = distinctDates.slice(7, 14);
+    perUserDates.set(userId, { currentDates, priorDates });
+    currentDates.forEach((d) => allDatesGlobal.add(d));
+    priorDates.forEach((d) => allDatesGlobal.add(d));
+  }
+
+  let setsJoined = [];
+  if (allDatesGlobal.size > 0) {
+    const { data, error: setsError } = await supabase
+      .from("workout_sets")
+      .select("load_kg, workout_logs!inner(date, exercise_name, user_id)")
+      .in("workout_logs.user_id", userIds)
+      .in("workout_logs.date", [...allDatesGlobal]);
+    if (setsError) throw setsError;
+    setsJoined = data;
+  }
+
+  const setsByUser = new Map(userIds.map((id) => [id, []]));
+  for (const row of setsJoined ?? []) {
+    const uid = row.workout_logs?.user_id;
+    if (setsByUser.has(uid)) setsByUser.get(uid).push(row);
+  }
+
+  for (const userId of userIds) {
+    const { currentDates, priorDates } = perUserDates.get(userId);
+    if (currentDates.length === 0) {
+      results.set(userId, { status: "neutral", pct: null, completionPct: null, progression: "neutral" });
+      continue;
+    }
+    const assignedRows = (rowsByUser.get(userId) ?? []).filter((r) => currentDates.includes(r.date));
+    results.set(userId, trainingComplianceFromRows(assignedRows, setsByUser.get(userId), currentDates, priorDates));
+  }
+  return results;
 }
 
 /* ---------------------------------------------------------------------------

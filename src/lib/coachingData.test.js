@@ -1,14 +1,20 @@
 // Test unitari per le funzioni pure di coachingData.js — la logica di
 // business più critica dell'app (XP/livelli, volume muscolare, punteggio
 // nutrizione, parsing serie) non aveva NESSUNA copertura di test finora.
-// Copre solo le funzioni pure (nessuna chiamata a Supabase): le funzioni
-// async che leggono/scrivono dal DB richiederebbero un mock del client
-// supabase, fuori scopo per questa prima infrastruttura di test.
+// Copre soprattutto le funzioni pure (nessuna chiamata a Supabase). Le
+// funzioni di aderenza (compute*Compliance) sono invece verificate con un
+// finto client supabase in fondo al file: qui il test che conta davvero è
+// che la versione "batch" (N clienti, poche query) e quella a singolo
+// cliente producano ESATTAMENTE lo stesso risultato — sono la stessa
+// formula, non due copie che rischiano di disallinearsi.
 import { describe, it, expect } from "vitest";
 import {
   xpToLevelInfo, levelMinXp, dayNutritionScore, parseRepsTarget,
   computeVolume, resolveMuscleTarget, MUSCLES, MUSCLE_TARGETS,
   DEFAULT_EXERCISE_LIB, isRealCoachingPlan, REAL_COACHING_PLANS_DB,
+  computeRecoveryCompliance, computeBatchRecoveryCompliance,
+  computeNutritionCompliance, computeBatchNutritionCompliance,
+  computeTrainingCompliance, computeBatchTrainingCompliance,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -192,5 +198,150 @@ describe("isRealCoachingPlan", () => {
     expect(REAL_COACHING_PLANS_DB.has("full_coaching")).toBe(false);
     expect(REAL_COACHING_PLANS_DB.has("full")).toBe(true);
     expect(REAL_COACHING_PLANS_DB.size).toBe(3);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   FINTO CLIENT SUPABASE — solo per compute*Compliance / computeBatch*Compliance.
+   Supporta esattamente le chiamate usate da queste funzioni: select/eq/in/
+   gte/lte/lt/order/limit/maybeSingle, più il "thenable" per l'await diretto
+   sul builder. I filtri leggono anche percorsi puntati (es.
+   "workout_logs.user_id") per il join finto usato da workout_sets.
+   ------------------------------------------------------------------------- */
+function getPath(obj, path) {
+  return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
+}
+function makeMockSupabase(tables) {
+  return {
+    from(table) {
+      let rows = [...(tables[table] || [])];
+      const builder = {
+        select() { return builder; },
+        eq(col, val) { rows = rows.filter((r) => getPath(r, col) === val); return builder; },
+        in(col, vals) { rows = rows.filter((r) => vals.includes(getPath(r, col))); return builder; },
+        gte(col, val) { rows = rows.filter((r) => getPath(r, col) >= val); return builder; },
+        lte(col, val) { rows = rows.filter((r) => getPath(r, col) <= val); return builder; },
+        lt(col, val) { rows = rows.filter((r) => getPath(r, col) < val); return builder; },
+        order(col, opts) {
+          const asc = !opts || opts.ascending !== false;
+          rows = [...rows].sort((a, b) => {
+            const av = getPath(a, col), bv = getPath(b, col);
+            if (av === bv) return 0;
+            return asc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+          });
+          return builder;
+        },
+        limit(n) { rows = rows.slice(0, n); return builder; },
+        maybeSingle() { return Promise.resolve({ data: rows[0] ?? null, error: null }); },
+        then(resolve, reject) { return Promise.resolve({ data: rows, error: null }).then(resolve, reject); },
+      };
+      return builder;
+    },
+  };
+}
+
+// Date relative a "oggi" (esecuzione del test), non hardcoded: le funzioni
+// di aderenza ragionano sempre su "ieri" e sui 6 giorni precedenti.
+function daysAgoISO(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+describe("computeBatchRecoveryCompliance vs computeRecoveryCompliance", () => {
+  it("produce esattamente lo stesso risultato della versione singolo-cliente per ogni utente", async () => {
+    const tables = {
+      profiles: [
+        { id: "u1", created_at: "2020-01-01T00:00:00Z" },
+        { id: "u2", created_at: "2020-01-01T00:00:00Z" },
+      ],
+      daily_metrics: [
+        { user_id: "u1", date: daysAgoISO(1), sleep_hours: 7.5, steps: 9000 },
+        { user_id: "u1", date: daysAgoISO(3), sleep_hours: 5, steps: 3000 },
+        { user_id: "u2", date: daysAgoISO(2), sleep_hours: 8, steps: 10000 },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const [single1, single2] = await Promise.all([
+      computeRecoveryCompliance(supabase, "u1"),
+      computeRecoveryCompliance(supabase, "u2"),
+    ]);
+    const batch = await computeBatchRecoveryCompliance(supabase, ["u1", "u2"]);
+    expect(batch.get("u1")).toEqual(single1);
+    expect(batch.get("u2")).toEqual(single2);
+  });
+  it("un cliente senza nessun dato tracciato resta neutro sia singolo sia batch", async () => {
+    const tables = { profiles: [{ id: "u3", created_at: "2020-01-01T00:00:00Z" }], daily_metrics: [] };
+    const supabase = makeMockSupabase(tables);
+    const single = await computeRecoveryCompliance(supabase, "u3");
+    const batch = await computeBatchRecoveryCompliance(supabase, ["u3"]);
+    expect(single.status).toBe("neutral");
+    expect(batch.get("u3")).toEqual(single);
+  });
+});
+
+describe("computeBatchNutritionCompliance vs computeNutritionCompliance", () => {
+  it("produce esattamente lo stesso risultato della versione singolo-cliente per ogni utente", async () => {
+    const tables = {
+      profiles: [
+        { id: "u1", created_at: "2020-01-01T00:00:00Z" },
+        { id: "u2", created_at: "2020-01-01T00:00:00Z" },
+      ],
+      nutrition_logs: [
+        { user_id: "u1", date: daysAgoISO(1), kcal: 2000, protein: 150, carbs: 200, fat: 60 },
+        { user_id: "u2", date: daysAgoISO(1), kcal: 1500, protein: 100, carbs: 150, fat: 40 },
+      ],
+      nutrition_targets: [
+        { user_id: "u1", day_type: "off", kcal: 2000, protein: 150, carbs: 200, fat: 60, effective_from: "2020-01-01" },
+        { user_id: "u2", day_type: "off", kcal: 2000, protein: 150, carbs: 200, fat: 60, effective_from: "2020-01-01" },
+      ],
+      workout_logs: [],
+    };
+    const supabase = makeMockSupabase(tables);
+    const [single1, single2] = await Promise.all([
+      computeNutritionCompliance(supabase, "u1"),
+      computeNutritionCompliance(supabase, "u2"),
+    ]);
+    const batch = await computeBatchNutritionCompliance(supabase, ["u1", "u2"]);
+    expect(batch.get("u1")).toEqual(single1);
+    expect(batch.get("u2")).toEqual(single2);
+    // u1 ha centrato il target nell'unico giorno registrato, u2 no: nella
+    // finestra di 7 giorni contano anche i giorni senza alcuna registrazione
+    // (0 contro un target attivo, punteggio basso) — qui basta verificare
+    // che il giorno migliore di u1 si rifletta in un punteggio più alto.
+    expect(single1.pct).toBeGreaterThan(single2.pct);
+  });
+});
+
+describe("computeBatchTrainingCompliance vs computeTrainingCompliance", () => {
+  it("produce esattamente lo stesso risultato della versione singolo-cliente per ogni utente", async () => {
+    const tables = {
+      workout_logs: [
+        { user_id: "u1", date: daysAgoISO(1), sets_count: 3 },
+        { user_id: "u1", date: daysAgoISO(3), sets_count: 3 },
+        { user_id: "u2", date: daysAgoISO(2), sets_count: 4 },
+      ],
+      workout_sets: [
+        { load_kg: 80, workout_logs: { date: daysAgoISO(1), exercise_name: "Panca piana bilanciere", user_id: "u1" } },
+        { load_kg: 80, workout_logs: { date: daysAgoISO(1), exercise_name: "Panca piana bilanciere", user_id: "u1" } },
+        { load_kg: 60, workout_logs: { date: daysAgoISO(2), exercise_name: "Squat bilanciere", user_id: "u2" } },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const [single1, single2] = await Promise.all([
+      computeTrainingCompliance(supabase, "u1"),
+      computeTrainingCompliance(supabase, "u2"),
+    ]);
+    const batch = await computeBatchTrainingCompliance(supabase, ["u1", "u2"]);
+    expect(batch.get("u1")).toEqual(single1);
+    expect(batch.get("u2")).toEqual(single2);
+  });
+  it("un cliente senza nessuna sessione assegnata resta neutro sia singolo sia batch", async () => {
+    const tables = { workout_logs: [], workout_sets: [] };
+    const supabase = makeMockSupabase(tables);
+    const single = await computeTrainingCompliance(supabase, "u9");
+    const batch = await computeBatchTrainingCompliance(supabase, ["u9"]);
+    expect(single.status).toBe("neutral");
+    expect(batch.get("u9")).toEqual(single);
   });
 });

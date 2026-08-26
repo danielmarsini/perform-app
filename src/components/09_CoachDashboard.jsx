@@ -80,6 +80,7 @@ import {
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, fetchBothNutritionTargets, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance,
+  computeBatchTrainingCompliance, computeBatchRecoveryCompliance, computeBatchNutritionCompliance,
   notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
@@ -1084,21 +1085,15 @@ async function callPerformAI(kind, payload) {
 // I 3 cerchi di compliance (STESSA formula di Home cliente/Bioritmi — mai
 // calcolata due volte) accanto al nome: scorrendo l'elenco il coach vede
 // subito chi sta andando bene/male senza aprire ogni scheda una per una.
-function ClientComplianceBadges({ clientId }) {
-  const { supabase, isRealMode } = useContext(CoachDataContext);
-  const [pcts, setPcts] = useState(null); // null = non ancora caricato
-  useEffect(() => {
-    if (!isRealMode) return;
-    let cancelled = false;
-    Promise.all([
-      computeTrainingCompliance(supabase, clientId).catch(() => ({ pct: null })),
-      computeNutritionCompliance(supabase, clientId).catch(() => ({ pct: null })),
-      computeRecoveryCompliance(supabase, clientId).catch(() => ({ pct: null })),
-    ]).then(([t, n, r]) => { if (!cancelled) setPcts({ train: t.pct, nutri: n.pct, recovery: r.pct }); });
-    return () => { cancelled = true; };
-  }, [isRealMode, supabase, clientId]);
-
-  if (!isRealMode || !pcts) return null;
+// BUG PRESO (perf): prima ogni card cliente in Hub Atleti calcolava questi 3
+// pallini per conto proprio (3 query Supabase indipendenti per riga) —
+// con 20-30 clienti a coaching reale, 60-90+ query solo per disegnare dei
+// pallini. RosterView ora calcola l'aderenza di TUTTO il roster in un colpo
+// solo (computeBatch*Compliance, poche query totali) e passa qui il
+// risultato già pronto per quel cliente: questo componente non fa più
+// nessuna chiamata a Supabase.
+function ClientComplianceBadges({ pcts }) {
+  if (!pcts) return null;
 
   const badge = (Icon, pct, label) => {
     const color = pct == null ? "var(--ink-tertiary)" : pct >= 80 ? "#047857" : pct >= 60 ? "#92400E" : "#B91C1C";
@@ -1120,7 +1115,7 @@ function ClientComplianceBadges({ clientId }) {
   );
 }
 
-function ClientRow({ client, onOpen }) {
+function ClientRow({ client, onOpen, compliance }) {
   const status = computeStatus(client);
   const grado = client.evening.doloreGrado;
   const critical = grado >= 4;
@@ -1146,7 +1141,7 @@ function ClientRow({ client, onOpen }) {
               : client.plan === "scheda_personalizzata" ? "Scheda Personalizzata"
               : WHITELIST_PLAN_LABELS[client.plan] || client.plan}
           </p>
-          <ClientComplianceBadges clientId={client.id} />
+          <ClientComplianceBadges pcts={compliance} />
         </button>
         {(critical || warning) && (
           <a href={waLink(client, `Ciao ${client.name.split(" ")[0]}, ho visto il dolore Grado ${grado} che hai segnalato ieri sera. Modifico subito il piano: dimmi come sta adesso.`)}
@@ -4719,11 +4714,37 @@ function ReferralsPanel() {
 
 /* -------------------------------- CATALOGO ---------------------------------- */
 function RosterView({ onOpen }) {
-  const { clients: CLIENTS } = useContext(CoachDataContext);
+  const { clients: CLIENTS, supabase, isRealMode } = useContext(CoachDataContext);
   const [dept, setDept] = useState("active");
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const list = CLIENTS.filter((c) => deptOf(c) === dept && (q === "" || c.name.toLowerCase().includes(q))).sort((a, b) => b.evening.doloreGrado - a.evening.doloreGrado || a.name.localeCompare(b.name, "it"));
+
+  // Aderenza di TUTTO il roster (non solo il reparto attivo) calcolata UNA
+  // volta sola con le funzioni batch — vedi nota su ClientComplianceBadges
+  // più sopra. rosterIds come dipendenza stringa (non l'array CLIENTS
+  // stesso) così l'effetto riparte solo quando l'elenco clienti cambia
+  // davvero, non a ogni cambio di reparto o di ricerca.
+  const rosterIds = CLIENTS.filter((c) => deptOf(c) !== null).map((c) => c.id).join(",");
+  const [complianceByClient, setComplianceByClient] = useState(new Map());
+  useEffect(() => {
+    if (!isRealMode || !rosterIds) { setComplianceByClient(new Map()); return; }
+    let cancelled = false;
+    const ids = rosterIds.split(",");
+    Promise.all([
+      computeBatchTrainingCompliance(supabase, ids).catch(() => new Map()),
+      computeBatchNutritionCompliance(supabase, ids).catch(() => new Map()),
+      computeBatchRecoveryCompliance(supabase, ids).catch(() => new Map()),
+    ]).then(([train, nutri, recovery]) => {
+      if (cancelled) return;
+      const merged = new Map();
+      ids.forEach((id) => {
+        merged.set(id, { train: train.get(id)?.pct ?? null, nutri: nutri.get(id)?.pct ?? null, recovery: recovery.get(id)?.pct ?? null });
+      });
+      setComplianceByClient(merged);
+    });
+    return () => { cancelled = true; };
+  }, [isRealMode, supabase, rosterIds]);
 
   return (
     <div>
@@ -4749,7 +4770,7 @@ function RosterView({ onOpen }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {list.map((c) => <ClientRow key={c.id} client={c} onOpen={() => onOpen(c.id)} />)}
+        {list.map((c) => <ClientRow key={c.id} client={c} onOpen={() => onOpen(c.id)} compliance={complianceByClient.get(c.id)} />)}
         {list.length === 0 && <p className="c-muted text-sm py-8 md:col-span-2 text-center">Nessun cliente in questo reparto</p>}
       </div>
     </div>
