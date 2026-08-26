@@ -36,9 +36,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp,
-  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video,
+  ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video, Share2,
 } from "lucide-react";
 import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress } from "../lib/coachingData.js";
+import { shareWrappedStory } from "../lib/wrappedShare.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
 import { isPushSupported, pushUnsupportedReason, getBrowserPushSubscription, subscribeToPush, unsubscribeFromPush } from "../lib/pushNotifications.js";
@@ -903,6 +904,29 @@ function BiometricPhotoGallery({ checkPhotos, t }) {
    numeri grandi, tono festoso, disponibile a QUALUNQUE piano.
    ------------------------------------------------------------------------- */
 function WrappedModal({ stats, profile, accent, onClose }) {
+  // Condividi come storia (IG/TikTok/WhatsApp): il Wrapped disegnato di
+  // nuovo su <canvas> in formato 1080×1920, poi lo share sheet nativo del
+  // telefono se supporta la condivisione di file, altrimenti download
+  // diretto dell'immagine — mai un vicolo cieco, vedi wrappedShare.js.
+  const [sharing, setSharing] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const doShare = async () => {
+    setSharing(true);
+    setShareError("");
+    try {
+      await shareWrappedStory(stats, profile, accent);
+    } catch (err) {
+      // AbortError: l'utente ha chiuso lo share sheet senza scegliere
+      // nulla — non è un errore da mostrare, solo un ripensamento.
+      if (err?.name !== "AbortError") {
+        console.error("PERFORM: errore condivisione Wrapped", err);
+        setShareError("Non sono riuscito a preparare l'immagine. Riprova.");
+      }
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const tiles = [
     { emoji: "🏋️", value: stats.workoutDays, label: stats.workoutDays === 1 ? "giorno di allenamento" : "giorni di allenamento" },
     { emoji: "🔢", value: stats.totalSets.toLocaleString("it-IT"), label: "serie totali svolte" },
@@ -958,10 +982,20 @@ function WrappedModal({ stats, profile, accent, onClose }) {
               </div>
             </>
           )}
-          {stats.workoutDays === 0 && stats.nutritionDays === 0 && (
+          {stats.workoutDays === 0 && stats.nutritionDays === 0 ? (
             <p style={{ fontSize: "0.78rem", opacity: 0.85, marginTop: 10 }}>
               Ancora nessun dato registrato negli ultimi 30 giorni — torna qui dopo qualche allenamento e pasto registrato.
             </p>
+          ) : (
+            <>
+              <button onClick={doShare} disabled={sharing}
+                className="w-full mt-5 rounded-2xl py-3 flex items-center justify-center gap-2 text-sm font-bold disabled:opacity-60"
+                style={{ backgroundColor: "rgba(255,255,255,0.18)" }}>
+                <Share2 size={16} />
+                {sharing ? "Preparo l'immagine…" : "Condividi come storia"}
+              </button>
+              {shareError && <p className="text-center mt-2" style={{ fontSize: "0.72rem", opacity: 0.9 }}>{shareError}</p>}
+            </>
           )}
         </div>
       </div>
