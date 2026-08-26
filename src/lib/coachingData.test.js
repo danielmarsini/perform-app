@@ -17,6 +17,7 @@ import {
   computeTrainingCompliance, computeBatchTrainingCompliance,
   fetchWeekExerciseHistories,
   computeCrewWeeklyActivity, computeCrewStreak,
+  fetchFoodUsageStats,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -224,6 +225,10 @@ function makeMockSupabase(tables) {
         gte(col, val) { rows = rows.filter((r) => getPath(r, col) >= val); return builder; },
         lte(col, val) { rows = rows.filter((r) => getPath(r, col) <= val); return builder; },
         lt(col, val) { rows = rows.filter((r) => getPath(r, col) < val); return builder; },
+        not(col, op, val) {
+          if (op === "is" && val === null) rows = rows.filter((r) => getPath(r, col) != null);
+          return builder;
+        },
         order(col, opts) {
           const asc = !opts || opts.ascending !== false;
           rows = [...rows].sort((a, b) => {
@@ -486,5 +491,48 @@ describe("computeCrewStreak", () => {
     ]);
     const { streak } = computeCrewStreak(weekly, today);
     expect(streak).toBe(1); // solo oggi: ieri perdonato dalla grazia, l'altro ieri no
+  });
+});
+
+describe("fetchFoodUsageStats", () => {
+  it("l'ultima quantità registrata per un alimento è quella della riga più recente, non la prima inserita", async () => {
+    const tables = {
+      nutrition_logs: [
+        { user_id: "u1", name: "Pane comune", grams: 50, date: daysAgoISO(5), created_at: daysAgoISO(5) + "T08:00:00Z" },
+        { user_id: "u1", name: "Pane comune", grams: 100, date: daysAgoISO(1), created_at: daysAgoISO(1) + "T08:00:00Z" }, // più recente
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const stats = await fetchFoodUsageStats(supabase, "u1");
+    expect(stats.get("Pane comune")).toEqual({ lastGrams: 100, count: 2 });
+  });
+
+  it("conta le occorrenze per proporre per primi gli alimenti mangiati più spesso", async () => {
+    const tables = {
+      nutrition_logs: [
+        { user_id: "u1", name: "Riso basmati", grams: 80, date: daysAgoISO(3), created_at: daysAgoISO(3) + "T08:00:00Z" },
+        { user_id: "u1", name: "Riso basmati", grams: 80, date: daysAgoISO(2), created_at: daysAgoISO(2) + "T08:00:00Z" },
+        { user_id: "u1", name: "Riso basmati", grams: 80, date: daysAgoISO(1), created_at: daysAgoISO(1) + "T08:00:00Z" },
+        { user_id: "u1", name: "Quinoa", grams: 60, date: daysAgoISO(1), created_at: daysAgoISO(1) + "T08:00:00Z" },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const stats = await fetchFoodUsageStats(supabase, "u1");
+    expect(stats.get("Riso basmati").count).toBe(3);
+    expect(stats.get("Quinoa").count).toBe(1);
+  });
+
+  it("righe senza grammi registrati (integratori, acqua) non contano come utilizzo di un alimento", async () => {
+    const supabase = makeMockSupabase({
+      nutrition_logs: [{ user_id: "u1", name: "Whey isolate", grams: null, date: daysAgoISO(1), created_at: daysAgoISO(1) + "T08:00:00Z" }],
+    });
+    const stats = await fetchFoodUsageStats(supabase, "u1");
+    expect(stats.has("Whey isolate")).toBe(false);
+  });
+
+  it("nessuno storico alimentare => mappa vuota, mai un errore", async () => {
+    const supabase = makeMockSupabase({ nutrition_logs: [] });
+    const stats = await fetchFoodUsageStats(supabase, "u1");
+    expect(stats.size).toBe(0);
   });
 });

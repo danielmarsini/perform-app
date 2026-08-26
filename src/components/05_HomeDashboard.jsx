@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -3304,7 +3304,7 @@ export function HomeDashboard({
             onRemoveFood={selectedNutritionIso ? removeFoodForPastDay : onRemoveFood}
             onUpdateFood={selectedNutritionIso ? updateFoodForPastDay : onUpdateFood}
             onOpenScanner={onOpenScanner} onAddCustomFood={onAddCustomFood}
-            onCopyYesterday={selectedNutritionIso ? null : onCopyYesterday} supabase={supabase}
+            onCopyYesterday={selectedNutritionIso ? null : onCopyYesterday} supabase={supabase} userId={userId}
             fullAccess={targetIsCoachSet} isRealMode={isRealMode}
             subsAccess={userPlan === "performance_pack" || userPlan === "full_coaching"}
             onUpgrade={onUpgrade} onOpenChat={onOpenChat}
@@ -7216,7 +7216,7 @@ function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide,
   onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday,
   fullAccess, subsAccess, onUpgrade, onOpenChat, isRealMode,
-  userPlan, gender, waterMl, microAddon, digestValue, onDigestChange, supabase,
+  userPlan, gender, waterMl, microAddon, digestValue, onDigestChange, supabase, userId,
   pastDayMode, // true quando si sta correggendo un giorno passato (NutritionCalendarStrip):
                // solo il Diario Libero ha senso qui, Sostituzioni/Dieta Tipo/Wiki non sono
                // legate a una data e micronutrienti/check-in digestivo riguardano "oggi".
@@ -7269,11 +7269,41 @@ function NutritionTabs({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subsAccess, fullAccess]);
 
+  // Abitudini alimentari personali (fetchFoodUsageStats, coachingData.js):
+  // caricate una volta sola all'apertura di questa schermata, usate qui sotto
+  // per proporre per primi gli alimenti mangiati più spesso, e più giù
+  // (pickFood) per precompilare i grammi con l'ultima quantità usata per
+  // quell'alimento — la maggior parte delle persone ripete più o meno
+  // sempre le stesse quantità degli stessi alimenti.
+  const [foodUsage, setFoodUsage] = useState(new Map());
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let cancelled = false;
+    fetchFoodUsageStats(supabase, userId)
+      .then((stats) => { if (!cancelled) setFoodUsage(stats); })
+      .catch((err) => console.error("PERFORM: errore lettura abitudini alimentari", err));
+    return () => { cancelled = true; };
+  }, [supabase, userId]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return foods.slice(0, 10);
-    return foods.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 10);
-  }, [query, foods]);
+    const base = q ? foods.filter((f) => f.name.toLowerCase().includes(q)) : foods;
+    const byUsage = [...base].sort((a, b) => (foodUsage.get(b.name)?.count ?? 0) - (foodUsage.get(a.name)?.count ?? 0));
+    return byUsage.slice(0, 10);
+  }, [query, foods, foodUsage]);
+
+  // Unico punto in cui si "sceglie" un alimento già noto (dal catalogo locale
+  // o da Open Food Facts) — precompila i grammi con l'ultima quantità
+  // davvero usata per questo nome, se ce n'è una; altrimenti lascia il campo
+  // come sta (l'utente digita, come oggi). Tap sui grammi per modificarli
+  // resta sempre possibile, prima o dopo l'aggiunta al pasto.
+  const pickFood = (food) => {
+    setSelected(food);
+    setQuery(food.name);
+    setDropOpen(false);
+    const usage = foodUsage.get(food.name);
+    if (usage) setGrams(String(usage.lastGrams));
+  };
 
   /* Il catalogo condiviso locale non ha ancora tutto (parte vuoto e cresce
      con quello che i clienti aggiungono) — quando i risultati locali sono
@@ -7525,7 +7555,7 @@ function NutritionTabs({
                                 quello mangiato) dai numeri, non deve indovinarlo dal solo nome. */}
                             {filtered.map((f) => (
                               <button key={f.name}
-                                onMouseDown={() => { setSelected(f); setQuery(f.name); setDropOpen(false); }}
+                                onMouseDown={() => pickFood(f)}
                                 className="search-strong w-full text-left px-4 py-2.5"
                                 style={{ borderBottom: "1px solid var(--line)" }}>
                                 <span className="block truncate">{f.name}</span>
@@ -7556,7 +7586,7 @@ function NutritionTabs({
                             )}
                             {offResults.map((f) => (
                               <button key={`off-${f.name}`}
-                                onMouseDown={() => { onAddCustomFood && onAddCustomFood(f); setSelected(f); setQuery(f.name); setDropOpen(false); }}
+                                onMouseDown={() => { onAddCustomFood && onAddCustomFood(f); pickFood(f); }}
                                 className="search-strong w-full text-left px-4 py-2.5"
                                 style={{ borderBottom: "1px solid var(--line)" }}>
                                 <span className="block truncate">{f.name}</span>
