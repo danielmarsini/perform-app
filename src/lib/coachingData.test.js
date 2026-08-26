@@ -516,6 +516,43 @@ describe("fetchWeekExerciseHistories", () => {
     expect(result.historyByExerciseName.size).toBe(0);
     expect(result.setHistoryByExerciseName.size).toBe(0);
     expect(result.loggedSetsByLogId.size).toBe(0);
+    expect(result.missedByExerciseName.size).toBe(0);
+  });
+
+  it("un giorno passato assegnato ma mai registrato (status 'missed') compare in missedByExerciseName, mai in history/setHistory", async () => {
+    const thisWeekRows = [{ id: "log_today_panca", exercise_name: "Panca piana bilanciere" }];
+    const tables = {
+      workout_logs: [
+        { id: "log_past_done", date: daysAgoISO(2), exercise_name: "Panca piana bilanciere", user_id: "u1", status: "done", sets_count: 3 },
+        { id: "log_past_missed", date: daysAgoISO(5), exercise_name: "Panca piana bilanciere", user_id: "u1", status: "missed", sets_count: 4 },
+      ],
+      workout_sets: [
+        { workout_log_id: "log_past_done", set_number: 1, load_kg: 80, reps_completed: 8, rir: 2 },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const { historyByExerciseName, setHistoryByExerciseName, missedByExerciseName } =
+      await fetchWeekExerciseHistories(supabase, "u1", thisWeekRows);
+
+    expect(historyByExerciseName.get("Panca piana bilanciere")).toEqual([{ kg: 80, reps: 8 }]);
+    expect(setHistoryByExerciseName.get("Panca piana bilanciere").map((s) => s.workoutLogId)).toEqual(["log_past_done"]);
+
+    const missed = missedByExerciseName.get("Panca piana bilanciere");
+    expect(missed).toEqual([{ workoutLogId: "log_past_missed", date: daysAgoISO(5), setsCount: 4 }]);
+  });
+
+  it("un giorno di OGGI o futuro assegnato non compare mai come 'dimenticato' (non è ancora scaduto)", async () => {
+    const thisWeekRows = [{ id: "log_today", exercise_name: "Squat bilanciere" }];
+    const tables = {
+      workout_logs: [
+        { id: "log_today", date: daysAgoISO(0), exercise_name: "Squat bilanciere", user_id: "u1", status: "missed", sets_count: 3 },
+        { id: "log_future", date: daysAgoISO(-3), exercise_name: "Squat bilanciere", user_id: "u1", status: "missed", sets_count: 3 },
+      ],
+      workout_sets: [],
+    };
+    const supabase = makeMockSupabase(tables);
+    const { missedByExerciseName } = await fetchWeekExerciseHistories(supabase, "u1", thisWeekRows);
+    expect(missedByExerciseName.get("Squat bilanciere")).toEqual([]);
   });
 });
 

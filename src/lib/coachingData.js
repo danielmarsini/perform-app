@@ -1027,31 +1027,50 @@ export async function fetchWeekExerciseHistories(supabase, userId, thisWeekRows)
   const historyByExerciseName = new Map();
   const setHistoryByExerciseName = new Map();
   const loggedSetsByLogId = new Map();
+  const missedByExerciseName = new Map();
 
   const exerciseNames = [...new Set((thisWeekRows ?? []).map((r) => r.exercise_name))];
   const thisWeekLogIds = (thisWeekRows ?? []).map((r) => r.id);
   if (exerciseNames.length === 0) {
-    return { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId };
+    return { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId, missedByExerciseName };
   }
 
+  // status incluso (non più filtrato a "done"): serve a distinguere le
+  // sessioni passate REALMENTE fatte (done, storico classico sotto) dalle
+  // sessioni passate assegnate ma MAI registrate (missed, vedi
+  // missedByExerciseName) — un giorno programmato che non risulta mai
+  // toccato non vuol dire che non sia stato fatto: capita di dimenticarsi
+  // di registrare, senza un modo per recuperarlo dopo restava perso per
+  // sempre. lt(oggi): mai i giorni futuri già assegnati in anticipo (stato
+  // "missed" di default finché non arriva la data), altrimenti ogni sessione
+  // non ancora svolta comparirebbe già come "dimenticata".
   const { data: pastLogs, error: pastLogsError } = await supabase
     .from("workout_logs")
-    .select("id, date, exercise_name")
+    .select("id, date, exercise_name, status, sets_count")
     .eq("user_id", userId)
-    .eq("status", "done")
+    .lt("date", toLocalISODate())
     .in("exercise_name", exerciseNames)
     .order("date", { ascending: false })
     .limit(300);
   if (pastLogsError) throw pastLogsError;
 
+  const doneLogs = (pastLogs ?? []).filter((l) => l.status === "done");
+  const missedLogs = (pastLogs ?? []).filter((l) => l.status !== "done");
+
   const logsByExercise = new Map();
-  (pastLogs ?? []).forEach((l) => {
+  doneLogs.forEach((l) => {
     if (!logsByExercise.has(l.exercise_name)) logsByExercise.set(l.exercise_name, []);
     logsByExercise.get(l.exercise_name).push(l); // già in ordine desc (query globale ordinata per data)
   });
 
+  const missedByExercise = new Map();
+  missedLogs.forEach((l) => {
+    if (!missedByExercise.has(l.exercise_name)) missedByExercise.set(l.exercise_name, []);
+    missedByExercise.get(l.exercise_name).push(l);
+  });
+
   const allLogIds = new Set(thisWeekLogIds);
-  (pastLogs ?? []).forEach((l) => allLogIds.add(l.id));
+  doneLogs.forEach((l) => allLogIds.add(l.id)); // i missed non hanno mai serie in workout_sets: inutile cercarle
 
   let sets = [];
   if (allLogIds.size > 0) {
@@ -1105,9 +1124,20 @@ export async function fetchWeekExerciseHistories(supabase, userId, thisWeekRows)
         sets: (setsByLog.get(l.id) ?? []).map((s) => ({ setNumber: s.set_number, kg: s.load_kg != null ? Number(s.load_kg) : null, reps: s.reps_completed, rir: s.rir })),
       }));
     setHistoryByExerciseName.set(name, setHistory);
+
+    // Giorni assegnati ma MAI registrati per questo esercizio (status ancora
+    // "missed"): fino a 10 più recenti, più vecchio prima — così l'atleta
+    // può recuperare una sessione fatta ma mai spuntata in app invece di
+    // perderla per sempre. Nessuna serie precompilata (mai stata salvata):
+    // il chiamante costruisce righe vuote da 1 a setsCount.
+    const missed = (missedByExercise.get(name) ?? [])
+      .slice(0, 10)
+      .reverse()
+      .map((l) => ({ workoutLogId: l.id, date: l.date, setsCount: Number(l.sets_count) || 0 }));
+    missedByExerciseName.set(name, missed);
   });
 
-  return { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId };
+  return { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId, missedByExerciseName };
 }
 
 // "I Miei Traguardi" (profilo): storico REALE di ogni esercizio mai svolto
