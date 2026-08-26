@@ -16,6 +16,7 @@ import {
   computeNutritionCompliance, computeBatchNutritionCompliance,
   computeTrainingCompliance, computeBatchTrainingCompliance,
   fetchWeekExerciseHistories,
+  computeCrewWeeklyActivity, computeCrewStreak,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -401,5 +402,80 @@ describe("fetchWeekExerciseHistories", () => {
     expect(result.historyByExerciseName.size).toBe(0);
     expect(result.setHistoryByExerciseName.size).toBe(0);
     expect(result.loggedSetsByLogId.size).toBe(0);
+  });
+});
+
+describe("computeCrewWeeklyActivity", () => {
+  it("un membro attivo tutti i giorni risulta completo 7 giorni su 7", async () => {
+    const days = Array.from({ length: 7 }, (_, i) => daysAgoISO(6 - i));
+    const tables = {
+      nutrition_logs: days.map((d) => ({ user_id: "u1", date: d })),
+      daily_metrics: days.map((d) => ({ user_id: "u1", date: d, sleep_hours: 7, steps: 8000 })),
+      workout_logs: [], // nessun allenamento previsto quel giorno = riposo, non penalizza
+      pause_periods: [],
+      streak_freezes: [],
+    };
+    const supabase = makeMockSupabase(tables);
+    const result = await computeCrewWeeklyActivity(supabase, ["u1"]);
+    const u1 = result.get("u1");
+    expect(u1.completeCount).toBe(7);
+    expect(u1.dayFlags.every(Boolean)).toBe(true);
+  });
+
+  it("un membro senza alcun dato tracciato risulta a 0 giorni completi, mai un errore", async () => {
+    const supabase = makeMockSupabase({ nutrition_logs: [], daily_metrics: [], workout_logs: [], pause_periods: [], streak_freezes: [] });
+    const result = await computeCrewWeeklyActivity(supabase, ["u2"]);
+    expect(result.get("u2").completeCount).toBe(0);
+  });
+});
+
+describe("computeCrewStreak", () => {
+  const days = Array.from({ length: 7 }, (_, i) => daysAgoISO(6 - i));
+  const today = daysAgoISO(0);
+  const makeEntry = (completeFromIndex) => ({
+    days,
+    dayFlags: days.map((_, i) => i >= completeFromIndex),
+    completeCount: days.length - completeFromIndex,
+  });
+
+  it("conta i giorni consecutivi in cui tutta la crew è stata costante", () => {
+    // 3 membri, tutti completi negli ultimi 3 giorni (oggi compreso), nessuno prima.
+    const weekly = new Map([
+      ["u1", makeEntry(4)],
+      ["u2", makeEntry(4)],
+      ["u3", makeEntry(4)],
+    ]);
+    const { streak } = computeCrewStreak(weekly, today);
+    expect(streak).toBe(3);
+  });
+
+  it("un solo membro assente in un giorno non rompe lo streak di gruppo (tolleranza)", () => {
+    // 4 membri, tutti i 7 giorni completi TRANNE u4 che manca ieri soltanto —
+    // resta comunque 3/4 presenti quel giorno, sopra la soglia (max 1 assente).
+    const weekly = new Map([
+      ["u1", makeEntry(0)],
+      ["u2", makeEntry(0)],
+      ["u3", makeEntry(0)],
+      ["u4", { days, dayFlags: days.map((_, i) => i !== 5), completeCount: 6 }],
+    ]);
+    const { streak } = computeCrewStreak(weekly, today);
+    expect(streak).toBe(7);
+  });
+
+  it("due giorni di fila sotto soglia rompono lo streak di gruppo oltre la finestra di grazia", () => {
+    // 4 membri: u2 e u3 mancano ENTRAMBI 2 giorni fa e ieri (indici 4 e 5) —
+    // 2 presenti su 4 quel giorno, sotto la soglia (max 1 assente su 4). La
+    // finestra di grazia perdona solo il giorno più recente (ieri, indice 5,
+    // a 1 giorno da oggi): il giorno prima (indice 4, a 2 giorni da oggi) è
+    // fuori grazia e interrompe davvero la risalita.
+    const absentAt4And5 = { days, dayFlags: days.map((_, i) => i !== 4 && i !== 5), completeCount: 5 };
+    const weekly = new Map([
+      ["u1", makeEntry(0)],
+      ["u2", absentAt4And5],
+      ["u3", absentAt4And5],
+      ["u4", makeEntry(0)],
+    ]);
+    const { streak } = computeCrewStreak(weekly, today);
+    expect(streak).toBe(1); // solo oggi: ieri perdonato dalla grazia, l'altro ieri no
   });
 });

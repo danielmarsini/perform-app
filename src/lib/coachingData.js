@@ -1718,7 +1718,7 @@ export function xpToLevelInfo(xpTotal) {
 // genera nemmeno il bonus XP "giornata piena" (quel conteggio, più sotto in
 // computeRealXpAndStreak, guarda solo i giorni con un pasto REALMENTE
 // registrato, quindi i giorni di pausa restano naturalmente esclusi da lì).
-function isDayComplete(dateISO, { nutritionDays, metricsDays, workoutStatusByDate, pauseDates }) {
+export function isDayComplete(dateISO, { nutritionDays, metricsDays, workoutStatusByDate, pauseDates }) {
   if (pauseDates?.has(dateISO)) return true;
   const status = workoutStatusByDate.get(dateISO);
   const workoutOk = status === undefined || status === "done";
@@ -1879,6 +1879,204 @@ export async function useStreakFreezeToday(supabase, userId) {
   const { error } = await supabase.from("streak_freezes")
     .upsert({ user_id: userId, date: toLocalISODate() }, { onConflict: "user_id,date" });
   if (error) throw error;
+}
+
+/* ============================================================================
+   CREW — streak solitaria a piccoli gruppi (SCHEMA_v74)
+   ----------------------------------------------------------------------------
+   Un gruppo di 3-6 persone (massimo imposto anche lato DB, vedi
+   enforce_crew_capacity) che condivide una versione "di gruppo" dello stesso
+   streak individuale già in uso ovunque nell'app: stessa isDayComplete per
+   ogni membro, ma la catena di giorni consecutivi appartiene alla crew, non
+   al singolo. Un giorno storto di UN membro non deve rompere lo streak di
+   tutti — vedi CREW_DAY_THRESHOLD più sotto — altrimenti il meccanismo
+   punisce il gruppo invece di responsabilizzarlo, e la community si scioglie
+   alla prima delusione invece di rinforzarsi.
+   ========================================================================== */
+
+const CREW_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // stesso alfabeto di generateReferralCode
+const CREW_ACTIVITY_DAYS = 7;
+// Quanti membri possono mancare in un giorno senza rompere lo streak di
+// gruppo. Una quota percentuale (es. 70%) fallisce proprio nelle crew più
+// piccole: con soli 3 membri, il 70% arrotondato per eccesso richiede TUTTI
+// e 3, azzerando la tolleranza che invece serve di più ai gruppi piccoli.
+// Una soglia assoluta funziona identica da 3 a 6 membri.
+const CREW_DAY_MAX_MISSING = 1;
+
+function generateCrewCode() {
+  let code = "";
+  for (let i = 0; i < 6; i++) code += CREW_CODE_CHARS[Math.floor(Math.random() * CREW_CODE_CHARS.length)];
+  return code;
+}
+
+// Crea una nuova crew e vi iscrive subito il creatore. Riprova su collisione
+// del codice invito (23505), praticamente mai necessario con 6 caratteri da
+// un alfabeto di 32 ma mai un crash se succede davvero (stesso pattern di
+// ensureReferralCode).
+export async function createCrew(supabase, userId, name) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateCrewCode();
+    const { data, error } = await supabase.from("crews")
+      .insert({ name: (name || "").trim() || "La mia crew", invite_code: code, created_by: userId })
+      .select("id").maybeSingle();
+    if (!error) {
+      const { error: joinErr } = await supabase.from("crew_members").insert({ crew_id: data.id, user_id: userId });
+      if (joinErr) throw joinErr;
+      return data.id;
+    }
+    if (error.code !== "23505") throw error;
+  }
+  throw new Error("Non sono riuscito a creare la crew — riprova.");
+}
+
+// Entra in una crew tramite codice invito. Il tetto di 6 membri è applicato
+// dal trigger enforce_crew_capacity lato DB (mai solo lato client): un
+// insert respinto per quel motivo torna qui come errore leggibile invece del
+// messaggio tecnico Postgres grezzo.
+export async function joinCrewByCode(supabase, userId, code) {
+  const { data: crewId, error } = await supabase.rpc("resolve_crew_code", { code: (code || "").trim() });
+  if (error) throw error;
+  if (!crewId) throw new Error("Codice non valido — controlla di averlo scritto giusto.");
+  const { error: insErr } = await supabase.from("crew_members").insert({ crew_id: crewId, user_id: userId });
+  if (insErr) {
+    if (insErr.code === "23505") throw new Error("Fai già parte di una crew — esci prima da quella per unirti a un'altra.");
+    if (/piena/i.test(insErr.message || "")) throw new Error("Questa crew ha già raggiunto il massimo di 6 membri.");
+    throw insErr;
+  }
+  return crewId;
+}
+
+export async function leaveCrew(supabase, userId, crewId) {
+  const { error } = await supabase.from("crew_members").delete().eq("crew_id", crewId).eq("user_id", userId);
+  if (error) throw error;
+}
+
+// La crew dell'utente corrente (null se non ne fa parte), coi profili di
+// tutti i membri già risolti — sempre al più 6 righe, mai un problema di
+// N+1 per una lista così piccola.
+export async function fetchMyCrew(supabase, userId) {
+  const { data: memberRow, error } = await supabase.from("crew_members").select("crew_id").eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  if (!memberRow) return null;
+
+  const { data: crewRow, error: crewErr } = await supabase.from("crews")
+    .select("id, name, invite_code, created_by, created_at").eq("id", memberRow.crew_id).maybeSingle();
+  if (crewErr) throw crewErr;
+  if (!crewRow) return null;
+
+  const { data: memberRows, error: membersErr } = await supabase.from("crew_members")
+    .select("user_id, joined_at").eq("crew_id", crewRow.id).order("joined_at", { ascending: true });
+  if (membersErr) throw membersErr;
+
+  const ids = (memberRows ?? []).map((m) => m.user_id);
+  const { data: profiles, error: profErr } = await supabase.from("profiles")
+    .select("id, nickname, full_name, avatar_url").in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
+  if (profErr) throw profErr;
+  const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
+
+  const members = (memberRows ?? []).map((m) => {
+    const p = profileById.get(m.user_id);
+    return { userId: m.user_id, joinedAt: m.joined_at, nickname: p?.nickname || p?.full_name || "Atleta", avatarUrl: p?.avatar_url || null };
+  });
+
+  return { id: crewRow.id, name: crewRow.name, inviteCode: crewRow.invite_code, createdBy: crewRow.created_by, members };
+}
+
+// Attività degli ultimi CREW_ACTIVITY_DAYS giorni per ogni membro, con la
+// STESSA identica isDayComplete usata da computeRealXpAndStreak — 5 query
+// totali per l'intera crew (mai per-membro): stesso principio di batching già
+// applicato a computeBatchRecoveryCompliance/NutritionCompliance/TrainingCompliance
+// qui sopra.
+export async function computeCrewWeeklyActivity(supabase, userIds) {
+  const ids = userIds ?? [];
+  if (ids.length === 0) return new Map();
+
+  const today = toLocalISODate();
+  const from = new Date(`${today}T00:00:00`);
+  from.setDate(from.getDate() - (CREW_ACTIVITY_DAYS - 1));
+  const fromISO = toLocalISODate(from);
+
+  const [{ data: nutriRows, error: nutriErr }, { data: metricsRows, error: metricsErr },
+    { data: workoutRows, error: workoutErr }, { data: pauseRows, error: pauseErr },
+    { data: freezeRows, error: freezeErr }] = await Promise.all([
+    supabase.from("nutrition_logs").select("user_id, date").in("user_id", ids).gte("date", fromISO),
+    supabase.from("daily_metrics").select("user_id, date, sleep_hours, steps").in("user_id", ids).gte("date", fromISO),
+    supabase.from("workout_logs").select("user_id, date, status").in("user_id", ids).gte("date", fromISO),
+    supabase.from("pause_periods").select("user_id, start_date, end_date").in("user_id", ids),
+    supabase.from("streak_freezes").select("user_id, date").in("user_id", ids).gte("date", fromISO),
+  ]);
+  if (nutriErr) throw nutriErr;
+  if (metricsErr) throw metricsErr;
+  if (workoutErr) throw workoutErr;
+  if (pauseErr) throw pauseErr;
+  if (freezeErr) throw freezeErr;
+
+  const days = [];
+  for (let d = new Date(from); toLocalISODate(d) <= today; d.setDate(d.getDate() + 1)) days.push(toLocalISODate(d));
+
+  const ctxByUser = new Map(ids.map((id) => [id, { nutritionDays: new Set(), metricsDays: new Set(), workoutStatusByDate: new Map(), pauseDates: new Set() }]));
+  (nutriRows ?? []).forEach((r) => ctxByUser.get(r.user_id)?.nutritionDays.add(r.date));
+  (metricsRows ?? []).forEach((r) => { if (r.sleep_hours != null && r.steps != null) ctxByUser.get(r.user_id)?.metricsDays.add(r.date); });
+  (workoutRows ?? []).forEach((r) => ctxByUser.get(r.user_id)?.workoutStatusByDate.set(r.date, r.status));
+  (pauseRows ?? []).forEach((r) => {
+    const ctx = ctxByUser.get(r.user_id);
+    if (ctx) expandPauseDates([r]).forEach((d) => ctx.pauseDates.add(d));
+  });
+  (freezeRows ?? []).forEach((r) => ctxByUser.get(r.user_id)?.pauseDates.add(r.date));
+
+  const result = new Map();
+  ids.forEach((id) => {
+    const ctx = ctxByUser.get(id);
+    const dayFlags = days.map((d) => isDayComplete(d, ctx));
+    result.set(id, { days, dayFlags, completeCount: dayFlags.filter(Boolean).length });
+  });
+  return result;
+}
+
+// Streak di gruppo, calcolata da computeCrewWeeklyActivity: un giorno conta
+// per la crew se al massimo CREW_DAY_MAX_MISSING membri non hanno avuto una
+// giornata completa — tollera un "giorno storto" isolato senza far crollare
+// lo streak di tutti (stessa filosofia della finestra di grazia individuale,
+// isWithinGraceWindow, qui applicata al giorno di gruppo). Pura funzione:
+// nessuna query, testabile da sola.
+export function computeCrewStreak(weeklyActivityByUser, todayIso) {
+  const entries = [...weeklyActivityByUser.values()];
+  if (entries.length === 0) return { streak: 0, dayCompleteByDate: new Map() };
+
+  const days = entries[0].days;
+  const minComplete = Math.max(0, entries.length - CREW_DAY_MAX_MISSING);
+  const dayCompleteByDate = new Map(days.map((d, i) => [d, entries.filter((e) => e.dayFlags[i]).length >= minComplete]));
+
+  let streak = 0;
+  const cursor = new Date(`${todayIso}T00:00:00`);
+  if (!dayCompleteByDate.get(todayIso)) cursor.setDate(cursor.getDate() - 1);
+  for (let i = 0; i < days.length; i++) {
+    const d = toLocalISODate(cursor);
+    if (!dayCompleteByDate.has(d)) break;
+    if (dayCompleteByDate.get(d)) { streak++; cursor.setDate(cursor.getDate() - 1); continue; }
+    if (isWithinGraceWindow(d, todayIso)) { cursor.setDate(cursor.getDate() - 1); continue; }
+    break;
+  }
+  return { streak, dayCompleteByDate };
+}
+
+// Chat di crew: stesso principio di ChatThread/chat_messages, esteso da 2 a
+// fino a 6 partecipanti — niente allegati/vocali qui (restano una cosa da
+// chat 1:1 col coach): questa è pensata per un cameratismo leggero ("Oggi ho
+// spinto forte 💪", "chi manca oggi?"), non per un secondo canale di supporto.
+export async function fetchCrewMessages(supabase, crewId) {
+  const { data, error } = await supabase.from("crew_messages")
+    .select("id, crew_id, sender_id, body, created_at").eq("crew_id", crewId)
+    .order("created_at", { ascending: true }).limit(200);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function sendCrewMessage(supabase, crewId, senderId, body) {
+  const { data, error } = await supabase.from("crew_messages")
+    .insert({ crew_id: crewId, sender_id: senderId, body }).select().maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 // "Wrapped" mensile stile Spotify: riepilogo di un periodo (di norma gli
