@@ -52,7 +52,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Heart, Bookmark, Lock, Newspaper, ArrowLeft } from "lucide-react";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
-import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel } from "../lib/coachingData.js";
+import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel, publishTeamPost, deleteTeamPost } from "../lib/coachingData.js";
 
 /* ============================================================================
    1 · UTILITÀ
@@ -272,7 +272,14 @@ function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3 }) {
     }
   }, [real, supabase, meId, likedMine]);
 
-  return { loading, loadingMore, hasMore, items, likedMine, toggleLike, loadMore };
+  // Rimozione locale immediata (coach che elimina un proprio post Avvisi
+  // Team): niente realtime DELETE in ascolto, quindi senza questo la card
+  // resterebbe visibile sullo stesso schermo finché non si ricarica la tab.
+  const removeItem = useCallback((itemId) => {
+    setItems((all) => all.filter((it) => it.id !== itemId));
+  }, []);
+
+  return { loading, loadingMore, hasMore, items, likedMine, toggleLike, loadMore, removeItem };
 }
 
 /* ============================================================================
@@ -387,7 +394,7 @@ function CoachSignature() {
    5 · SCHEDA IN FEED — TEASER CLICCABILE
    ========================================================================== */
 
-function FeedCard({ item, channel, isLatest, gender, accent, liked, likeCount, saved, onToggleLike, onToggleSave, onOpen }) {
+function FeedCard({ item, channel, isLatest, gender, accent, liked, likeCount, saved, onToggleLike, onToggleSave, onOpen, onDelete }) {
   const expires = channelExpires(channel);
 
   return (
@@ -405,9 +412,17 @@ function FeedCard({ item, channel, isLatest, gender, accent, liked, likeCount, s
               {item.eyebrow}
             </span>
           ) : <span />}
-          <span style={{ fontSize: "0.7rem", fontWeight: 400, color: "var(--satin-gray)", whiteSpace: "nowrap" }}>
-            {timeAgo(item.published_at)}
-          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span style={{ fontSize: "0.7rem", fontWeight: 400, color: "var(--satin-gray)", whiteSpace: "nowrap" }}>
+              {timeAgo(item.published_at)}
+            </span>
+            {onDelete && (
+              <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} aria-label="Elimina avviso"
+                      style={{ color: "var(--satin-gray)", lineHeight: 1 }}>
+                ✕
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -720,11 +735,59 @@ function VaultOverlay({ vault, gender, accent, onOpenItem, onRemove, onClose }) 
   );
 }
 
+/* Form di pubblicazione per il canale Avvisi Team, visibile solo al coach:
+   scrive direttamente su coach_news_tips (channel='team', RLS già presente
+   da SCHEMA_v35) — niente tabella o modale a sé, solo la scrittura che
+   mancava su un canale che esisteva già in lettura. */
+function TeamComposer({ supabase }) {
+  const [eyebrow, setEyebrow] = useState("Comunicazione ufficiale");
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const publish = () => {
+    if (!title.trim() || !body.trim() || posting) return;
+    setPosting(true);
+    setError(null);
+    publishTeamPost(supabase, { eyebrow, title, body })
+      .then(() => { setTitle(""); setBody(""); })
+      .catch((err) => {
+        console.error("PERFORM: errore pubblicazione avviso team", err);
+        setError("Pubblicazione non riuscita, riprova.");
+      })
+      .finally(() => setPosting(false));
+  };
+
+  return (
+    <div className="news-card px-6 py-6 mb-5">
+      <p className="mb-3" style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--ink)" }}>Pubblica un avviso</p>
+      <select value={eyebrow} onChange={(e) => setEyebrow(e.target.value)}
+              className="w-full text-sm mb-2 bg-transparent outline-none" style={{ color: "var(--ink-2)" }}>
+        <option>Comunicazione ufficiale</option>
+        <option>Traguardo atleta</option>
+        <option>Traguardo squadra</option>
+      </select>
+      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titolo dell'avviso" maxLength={120}
+             className="w-full text-sm mb-2 bg-transparent outline-none" style={{ color: "var(--ink)" }} />
+      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} maxLength={1000}
+                placeholder="Cosa è cambiato e cosa devono fare i clienti per approfittarne (o come risolvere se riscontrano ancora un problema già corretto)..."
+                className="w-full text-sm bg-transparent outline-none resize-none" style={{ color: "var(--ink)" }} />
+      {error && <p className="text-xs mt-1" style={{ color: "#E5484D" }}>{error}</p>}
+      <button onClick={publish} disabled={!title.trim() || !body.trim() || posting}
+              className="w-full mt-2 rounded-full px-4 py-2 text-sm btn-3d"
+              style={{ backgroundColor: "#C5A059", color: "#111111", fontWeight: 700, opacity: (!title.trim() || !body.trim() || posting) ? 0.5 : 1 }}>
+        {posting ? "Pubblicazione…" : "Pubblica"}
+      </button>
+    </div>
+  );
+}
+
 /* ============================================================================
    8 · COLONNA — SCORRIMENTO INFINITO
    ========================================================================== */
 
-function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave }) {
+function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave, onDelete }) {
   const sentinelRef = useRef(null);
 
   useEffect(() => {
@@ -764,6 +827,7 @@ function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave
           onToggleLike={() => feed.toggleLike(item.id)}
           onToggleSave={() => onToggleSave(item, !!feed.likedMine[item.id])}
           onOpen={() => onOpen(item.id)}
+          onDelete={onDelete ? () => onDelete(item.id) : undefined}
         />
       ))}
       <div ref={sentinelRef} style={{ height: 1 }} />
@@ -777,7 +841,7 @@ function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave
    9 · CONTENITORE PRINCIPALE
    ========================================================================== */
 
-export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride }) {
+export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride, isCoach = false }) {
   const [active, setActive] = useState("news");
   const [expanded, setExpanded] = useState(null);          // { channel, id } | null
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -889,10 +953,14 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
       <div className="mt-7">
         {Object.keys(CHANNELS).map((ch) => (
           <div key={ch} style={{ display: active === ch ? "block" : "none" }}>
+            {ch === "team" && isCoach && real && <TeamComposer supabase={supabase} />}
             <FeedColumn
               channel={ch} feed={feeds[ch]} gender={gender} accent={accent} vault={vault}
               onOpen={(id) => setExpanded({ channel: ch, id })}
               onToggleSave={(item, likedNow) => toggleSave(item, ch, likedNow)}
+              onDelete={ch === "team" && isCoach && real
+                ? (id) => deleteTeamPost(supabase, id).then(() => feeds.team.removeItem(id)).catch((err) => console.error("PERFORM: errore rimozione avviso team", err))
+                : undefined}
             />
           </div>
         ))}

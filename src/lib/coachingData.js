@@ -3368,60 +3368,22 @@ export async function markGuideTourCompleted(supabase, userId) {
 }
 
 /* ---------------------------------------------------------------------------
-   AVVISI TEAM (SCHEMA_v77) — annunci broadcast del coach a tutti i clienti:
-   nuove funzionalità dell'app, cosa fare per approfittarne. Feed unico, non
-   per-cliente — la "lettura" si traccia con UN timestamp su profiles
-   (last_seen_announcements_at), non una tabella di join per-annuncio: un
-   annuncio è nuovo per un utente se created_at > quel timestamp.
+   AVVISI TEAM — canale "team" già esistente in News & Tips (coach_news_tips,
+   SCHEMA_v35): non una tabella/UI separata, solo la scrittura che mancava.
+   L'RLS ("coach_news_tips_insert_team") già permette insert al coach su
+   channel='team', il feed/il tab erano pronti da prima — serviva solo il
+   form di pubblicazione, ora dentro NewsTipsView invece che in un modale a
+   sé nell'header (vedi SCHEMA_v78 per la policy di eliminazione).
    ------------------------------------------------------------------------- */
 
-// Feed completo, dal più recente. Letto sia dal cliente (schermata Avvisi
-// Team) sia dal coach (per vedere cosa ha già pubblicato prima di postarne
-// un altro).
-export async function fetchTeamAnnouncements(supabase, limit = 50) {
-  const { data, error } = await supabase
-    .from("team_announcements")
-    .select("id, title, body, created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return data ?? [];
-}
-
-// Pubblica un nuovo annuncio — RLS lato server rifiuta chiunque non sia il
-// coach, qui non serve ricontrollarlo.
-export async function createTeamAnnouncement(supabase, coachId, { title, body }) {
-  const { error } = await supabase.from("team_announcements").insert({
-    title: title.trim(), body: body.trim(), created_by: coachId,
+export async function publishTeamPost(supabase, { eyebrow, title, body }) {
+  const { error } = await supabase.from("coach_news_tips").insert({
+    channel: "team", eyebrow: eyebrow?.trim() || null, title: title.trim(), body: body.trim(),
   });
   if (error) throw error;
 }
 
-// Elimina un annuncio pubblicato per errore.
-export async function deleteTeamAnnouncement(supabase, announcementId) {
-  const { error } = await supabase.from("team_announcements").delete().eq("id", announcementId);
+export async function deleteTeamPost(supabase, postId) {
+  const { error } = await supabase.from("coach_news_tips").delete().eq("id", postId);
   if (error) throw error;
-}
-
-// Timestamp di "ultimo controllo" del cliente: aggiornato all'apertura della
-// schermata Avvisi Team, azzera il pallino rosso sull'icona finché non arriva
-// un annuncio pubblicato DOPO questo momento.
-export async function markAnnouncementsSeen(supabase, userId) {
-  const { error } = await supabase.from("profiles").update({ last_seen_announcements_at: new Date().toISOString() }).eq("id", userId);
-  if (error) throw error;
-}
-
-// true se esiste almeno un annuncio pubblicato dopo l'ultima visita
-// dell'utente (mai vista = qualunque annuncio esistente è "nuovo").
-export async function hasUnseenAnnouncements(supabase, userId) {
-  const { data: profileRow, error: profileError } = await supabase
-    .from("profiles").select("last_seen_announcements_at").eq("id", userId).maybeSingle();
-  if (profileError) throw profileError;
-  const lastSeen = profileRow?.last_seen_announcements_at;
-
-  let query = supabase.from("team_announcements").select("id").limit(1);
-  if (lastSeen) query = query.gt("created_at", lastSeen);
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []).length > 0;
 }

@@ -40,12 +40,8 @@
      #E4E4E7  corpo dei paragrafi lunghi
    ========================================================================== */
 
-import React, { useState, useEffect, useId, useRef } from "react";
-import { BarChart3, Newspaper, Trophy, User, Settings, Activity, SlidersHorizontal, ShieldCheck, MessageCircle, Megaphone, X } from "lucide-react";
-import Portal from "./Portal.jsx";
-import SwipeHandle from "./SwipeHandle.jsx";
-import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
-import { fetchTeamAnnouncements, createTeamAnnouncement, deleteTeamAnnouncement, markAnnouncementsSeen } from "../lib/coachingData.js";
+import React, { useState, useEffect, useId } from "react";
+import { BarChart3, Newspaper, Trophy, User, Settings, Activity, SlidersHorizontal, ShieldCheck, MessageCircle } from "lucide-react";
 
 export const BRAND = {
   gold: "#C5A059",
@@ -395,7 +391,7 @@ export function BrandMark({ dark = false, size = 36 }) {
    diventare solo trasparenti.
    ========================================================================== */
 
-export function AppHeader({ dark, onOpenSettings, onOpenAnnouncements, hasUnseenAnnouncements }) {
+export function AppHeader({ dark, onOpenSettings }) {
   return (
     <header
       id="app-header"
@@ -425,27 +421,6 @@ export function AppHeader({ dark, onOpenSettings, onOpenAnnouncements, hasUnseen
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {onOpenAnnouncements && (
-            <button
-              onClick={onOpenAnnouncements}
-              className="relative w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-90 shrink-0"
-              style={{
-                border: `1px solid ${dark ? "rgba(255,255,255,0.14)" : "rgba(17,17,17,0.1)"}`,
-                backgroundColor: dark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.5)",
-                backdropFilter: "blur(10px)",
-                WebkitBackdropFilter: "blur(10px)",
-              }}
-              aria-label="Avvisi Team"
-            >
-              <Megaphone size={17} strokeWidth={1.6} style={{ color: dark ? "#FAFAFA" : "#111111" }} />
-              {hasUnseenAnnouncements && (
-                <span aria-hidden="true" className="absolute rounded-full" style={{
-                  top: 5, right: 5, width: 8, height: 8, backgroundColor: "#E5484D",
-                  boxShadow: "0 0 0 2px " + (dark ? "rgba(20,20,20,0.9)" : "rgba(255,255,255,0.9)"),
-                }} />
-              )}
-            </button>
-          )}
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
@@ -464,109 +439,6 @@ export function AppHeader({ dark, onOpenSettings, onOpenAnnouncements, hasUnseen
         </div>
       </div>
     </header>
-  );
-}
-
-/* "Avvisi Team" (SCHEMA_v77): feed di annunci pubblicati dal coach — nuove
-   funzionalità dell'app, cosa fare per approfittarne. Aperto dall'icona a
-   megafono in header (vedi AppHeader sopra); segna "letto" appena si apre,
-   così il pallino rosso sparisce subito senza bisogno di leggere ogni riga.
-   Il coach vede in più un piccolo form di pubblicazione in cima — stesso
-   componente per entrambi i ruoli, niente schermata separata da mantenere. */
-export function AnnouncementsModal({ supabase, userId, isCoach, onClose }) {
-  const modalRef = useRef(null);
-  useSwipeDownClose(modalRef, onClose, true);
-  const [items, setItems] = useState(null); // null = ancora in caricamento
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [posting, setPosting] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchTeamAnnouncements(supabase)
-      .then((rows) => { if (!cancelled) setItems(rows); })
-      .catch((err) => { console.error("PERFORM: errore caricamento avvisi team", err); if (!cancelled) setItems([]); });
-    if (userId) {
-      markAnnouncementsSeen(supabase, userId).catch((err) => console.error("PERFORM: errore aggiornamento lettura avvisi", err));
-    }
-    return () => { cancelled = true; };
-  }, [supabase, userId]);
-
-  const publish = () => {
-    if (!title.trim() || !body.trim() || posting) return;
-    setPosting(true);
-    setError(null);
-    createTeamAnnouncement(supabase, userId, { title, body })
-      .then(() => { setTitle(""); setBody(""); return fetchTeamAnnouncements(supabase); })
-      .then((rows) => setItems(rows))
-      .catch((err) => {
-        console.error("PERFORM: errore pubblicazione avviso team", err);
-        setError("Pubblicazione non riuscita, riprova.");
-      })
-      .finally(() => setPosting(false));
-  };
-
-  const remove = (id) => {
-    deleteTeamAnnouncement(supabase, id)
-      .then(() => setItems((prev) => (prev || []).filter((a) => a.id !== id)))
-      .catch((err) => console.error("PERFORM: errore rimozione avviso team", err));
-  };
-
-  return (
-    <Portal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-           style={{ backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)", overflowY: "auto" }} onClick={onClose}>
-        <div ref={modalRef} className="spring-in w-full sm:max-w-sm rounded-3xl p-6 overflow-y-auto"
-             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "88vh" }}
-             onClick={(e) => e.stopPropagation()}>
-          <SwipeHandle />
-          <div className="flex items-center justify-between mb-4">
-            <p className="h1 flex items-center gap-2">
-              <Megaphone size={18} style={{ color: "var(--ink-2)" }} /> Avvisi Team
-            </p>
-            <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
-          </div>
-
-          {isCoach && (
-            <div className="rounded-2xl px-4 py-3.5 mb-4" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Titolo dell'avviso" maxLength={120}
-                     className="w-full text-sm mb-2 bg-transparent outline-none" style={{ color: "var(--ink)" }} />
-              <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} maxLength={1000}
-                        placeholder="Cosa è cambiato e cosa devono fare i clienti per approfittarne..."
-                        className="w-full text-sm bg-transparent outline-none resize-none" style={{ color: "var(--ink)" }} />
-              {error && <p className="text-xs mt-1" style={{ color: "#E5484D" }}>{error}</p>}
-              <button onClick={publish} disabled={!title.trim() || !body.trim() || posting}
-                      className="w-full mt-2 rounded-full px-4 py-2 text-sm btn-3d"
-                      style={{ backgroundColor: "#C5A059", color: "#111111", fontWeight: 700, opacity: (!title.trim() || !body.trim() || posting) ? 0.5 : 1 }}>
-                {posting ? "Pubblicazione…" : "Pubblica"}
-              </button>
-            </div>
-          )}
-
-          {items === null && <p className="meta">Caricamento…</p>}
-          {items !== null && items.length === 0 && <p className="meta">Ancora nessun avviso.</p>}
-          <div className="space-y-2">
-            {(items || []).map((a) => (
-              <div key={a.id} className="inner px-4 py-3">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-sm" style={{ fontWeight: 700, color: "var(--ink)" }}>{a.title}</span>
-                  {isCoach && (
-                    <button onClick={() => remove(a.id)} aria-label="Elimina avviso" className="shrink-0">
-                      <X size={14} style={{ color: "var(--ink-2)" }} />
-                    </button>
-                  )}
-                </div>
-                <p className="text-sm" style={{ color: "var(--ink-2)", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>{a.body}</p>
-                <p className="meta mt-1.5" style={{ fontSize: "0.62rem" }}>
-                  {new Date(a.created_at).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" })}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </Portal>
   );
 }
 
@@ -872,8 +744,6 @@ export function AppShell({
   tab,
   onTabChange,
   onOpenSettings,
-  onOpenAnnouncements,
-  hasUnseenAnnouncements,
   chatHasUnread,
   screens = {},          // { home, news, ranking, profile, chat, coach }
 }) {
@@ -966,8 +836,7 @@ export function AppShell({
           senza affidarsi alle regole di stacking di default del browser
           per elementi non posizionati (che possono variare). */}
       <div style={{ position: "relative", zIndex: 1 }}>
-        <AppHeader dark={dark} onOpenSettings={onOpenSettings}
-                   onOpenAnnouncements={onOpenAnnouncements} hasUnseenAnnouncements={hasUnseenAnnouncements} />
+        <AppHeader dark={dark} onOpenSettings={onOpenSettings} />
 
         <main className="max-w-2xl mx-auto px-4 py-6" style={{ paddingBottom: 128 }}>
           {[...visitedTabs].map((key) => {
