@@ -604,7 +604,7 @@ function HistoryChart({ kind, series, todayWeekday, accent }) {
 /* Blocco Laboratorio Analitico: al posto del grafico storico, per i profili
    FREE. Vetro sfocato (glassmorphism) + lucchetto oro (uomo) o rosa (donna),
    coerente col sistema di gradiente animato del brand. */
-function LockedChartOverlay({ gender, onUpgrade, title, text }) {
+function LockedChartOverlay({ gender, onUpgrade, title, text, ctaLabel, onCtaClick }) {
   const isFemale = gender === "F";
   const lockGradient = isFemale
     ? "linear-gradient(135deg, #E5C1CD, #C896A6)"
@@ -628,9 +628,18 @@ function LockedChartOverlay({ gender, onUpgrade, title, text }) {
         <p className="body mb-4" style={{ fontSize: "0.8rem", maxWidth: 300 }}>
           {text || "Passa al Premium (€5/mese) per analizzare i tuoi grafici storici stile Apple Salute e monitorare il recupero del Sistema Nervoso."}
         </p>
-        <button onClick={onUpgrade} className="rounded-full px-5 py-2.5 text-sm transition-transform active:scale-95 btn-3d"
+        {/* BUG PRESO: il bottone era SEMPRE "Scopri il Premium" + onUpgrade
+            (apre le Impostazioni sull'abbonamento), anche nel caso "componente
+            aggiuntivo" qui sotto — dove il testo sopra dice esplicitamente
+            "parlane con il tuo coach" a chi ha GIÀ un piano di coaching reale
+            (Scheda Personalizzata/Coaching Allenamento, sopra Premium). Un
+            cliente pagante finiva su una schermata di upgrade che non
+            c'entra nulla con quello che gli era stato appena detto di fare.
+            ctaLabel/onCtaClick opzionali permettono a un chiamante di
+            sovrascrivere testo e azione del bottone caso per caso. */}
+        <button onClick={onCtaClick || onUpgrade} className="rounded-full px-5 py-2.5 text-sm transition-transform active:scale-95 btn-3d"
                 style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700 }}>
-          Scopri il Premium →
+          {ctaLabel || "Scopri il Premium →"}
         </button>
       </div>
     </div>
@@ -708,7 +717,7 @@ function MicroBar({ id, value, target, accent }) {
      componente aggiuntivo a pagamento separato (micro_addon su profiles,
      lo attiva il coach quando il cliente lo richiede/paga), diverso dal
      semplice upgrade di piano — copy e CTA dedicate. */
-function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, accent, waterMl, microAddon }) {
+function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, onOpenChat, accent, waterMl, microAddon }) {
   if (userPlan === "free") {
     return (
       <div className="mt-4">
@@ -726,7 +735,8 @@ function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, accent, w
         <p className="label mb-2">Micronutrienti · target giornaliero</p>
         <LockedChartOverlay gender={gender} onUpgrade={onUpgrade}
           title="🔒 COMPONENTE AGGIUNTIVO"
-          text="L'analisi di Sodio, Potassio, Ferro, Calcio e Magnesio non è inclusa nel tuo piano: è un componente a parte. Parlane con il tuo coach per attivarlo." />
+          text="L'analisi di Sodio, Potassio, Ferro, Calcio e Magnesio non è inclusa nel tuo piano: è un componente a parte. Parlane con il tuo coach per attivarlo."
+          ctaLabel="Scrivi al coach →" onCtaClick={onOpenChat} />
       </div>
     );
   }
@@ -3285,7 +3295,7 @@ export function HomeDashboard({
             onCopyYesterday={selectedNutritionIso ? null : onCopyYesterday} supabase={supabase}
             fullAccess={targetIsCoachSet} isRealMode={isRealMode}
             subsAccess={userPlan === "performance_pack" || userPlan === "full_coaching"}
-            onUpgrade={onUpgrade}
+            onUpgrade={onUpgrade} onOpenChat={onOpenChat}
             userPlan={userPlan} gender={profile.gender} waterMl={water} microAddon={microAddon}
             digestValue={digestValue}
             onDigestChange={(v) => { setDigestValue(v); onCoachSync && onCoachSync({ type: "bio-symptom", symptom: "digest", value: v }); }}
@@ -7193,7 +7203,7 @@ function ShoppingListModal({ items, accent, onClose }) {
 function NutritionTabs({
   accent, accentSoft, accentText, target, mealsBySlot, foods, mealGuide,
   onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday,
-  fullAccess, subsAccess, onUpgrade, isRealMode,
+  fullAccess, subsAccess, onUpgrade, onOpenChat, isRealMode,
   userPlan, gender, waterMl, microAddon, digestValue, onDigestChange, supabase,
   pastDayMode, // true quando si sta correggendo un giorno passato (NutritionCalendarStrip):
                // solo il Diario Libero ha senso qui, Sostituzioni/Dieta Tipo/Wiki non sono
@@ -7665,7 +7675,7 @@ function NutritionTabs({
             giorno passato dalla striscia calendario. */}
         {!pastDayMode && (
           <>
-            <MicronutrientGrid mealsBySlot={mealsBySlot} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} waterMl={waterMl} microAddon={microAddon} />
+            <MicronutrientGrid mealsBySlot={mealsBySlot} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} onOpenChat={onOpenChat} accent={accent} waterMl={waterMl} microAddon={microAddon} />
 
             {/* Non "!fullAccess" (che ora significa solo "non è Full Coaching"):
                 Scheda Personalizzata e Solo Allenamento Coaching hanno già un
