@@ -339,12 +339,12 @@ function PodiumCard({ athlete: a, position, delay, onSelect, isMe }) {
       </div>
       <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-podium" />
       <div className={`pc-podium-nick pc-nick-metal pc-nick-${metal}`}>{a.nickname}</div>
-      <div className="pc-podium-xp pc-shine-text">
+      <div className="pc-podium-xp pc-shine-text pc-nowrap-ellipsis">
         {formatXP(a.xp)} <span className="pc-xp-unit">XP</span>
       </div>
       <div className="pc-inline-flame pc-podium-streak">
         <FlameIcon size={12} />
-        <span className="pc-shine-text">{a.streakDays} Giorni</span>
+        <span className="pc-shine-text pc-nowrap-ellipsis">{a.streakDays} Giorni</span>
       </div>
     </div>
   );
@@ -787,7 +787,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
         /* ---------- Podio — vetro etereo, zero luminescenze, solo bordo metallico ---------- */
 
-        .pc-podium { position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: center; gap: 16px; margin-bottom: 44px; }
+        .pc-podium { position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: center; gap: 16px; margin: 0 auto 44px; max-width: 560px; }
 
         .pc-podium-card {
           flex: 1;
@@ -856,9 +856,18 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         .pc-level-badge { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 500; letter-spacing: -0.005em; white-space: nowrap; margin-top: 5px; }
         .pc-level-badge-sm { font-size: 9.5px; flex-shrink: 0; margin-top: 0; }
 
+        /* BUG PRESO: XP mensile e giorni di streak non avevano white-space:
+           nowrap (a differenza del nickname, che già lo aveva) — con un
+           numero abbastanza lungo (es. XP del mese a 5 cifre, "12.480 XP")
+           il testo andava a capo su due righe SOLO per quella card, la
+           allungava rispetto alle altre due sullo stesso podio e rompeva la
+           gerarchia visiva 1°>2°>3° pensata (segnalato: "il terzo posto è
+           ingigantito rispetto al secondo"). Stesso trattamento già usato
+           per .pc-podium-nick, applicato anche qui. */
+        .pc-nowrap-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
         .pc-podium-xp { font-size: 16px; font-weight: 300; letter-spacing: -0.01em; margin-top: 10px; }
         .pc-xp-unit { font-size: 10px; font-weight: 300; color: var(--pc-text-tertiary); -webkit-text-fill-color: var(--pc-text-tertiary); }
-        .pc-podium-streak { font-size: 11px; font-weight: 300; letter-spacing: -0.01em; margin-top: 8px; justify-content: center; }
+        .pc-podium-streak { font-size: 11px; font-weight: 300; letter-spacing: -0.01em; margin-top: 8px; justify-content: center; max-width: 100%; }
 
         /* ---------- Lista 4°-10° — semplice, alto contrasto, minimalista ---------- */
 
@@ -887,11 +896,11 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         .pc-row-main { flex: 1; min-width: 0; }
         .pc-row-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
         .pc-row-nick { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: var(--pc-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .pc-row-xp { font-size: 13px; font-weight: 300; letter-spacing: -0.01em; flex-shrink: 0; }
+        .pc-row-xp { font-size: 13px; font-weight: 300; letter-spacing: -0.01em; flex-shrink: 0; white-space: nowrap; }
         .pc-row-track { height: 3px; background: var(--pc-track-bg); border-radius: 999px; overflow: hidden; }
         .pc-row-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--pc-accent-3), var(--pc-accent-1), var(--pc-accent-2)); background-size: 220% 100%; animation: pc-flow-bar 4.5s linear infinite; }
         .pc-row-bottom { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; gap: 8px; }
-        .pc-row-streak { font-size: 11px; font-weight: 300; letter-spacing: -0.01em; flex-shrink: 0; }
+        .pc-row-streak { font-size: 11px; font-weight: 300; letter-spacing: -0.01em; flex-shrink: 0; white-space: nowrap; }
 
         /* ---------- Pulsante Archivio Storico Report ---------- */
 
