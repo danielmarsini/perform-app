@@ -2248,6 +2248,18 @@ export async function notifyClientPlanChange(supabase, userId, { title, body, ur
   }
 }
 
+// Direzione inversa: un cliente ha appena scritto in chat, il coach va
+// avvisato per poter rispondere in tempo anche da webapp (notify-coach
+// costruisce titolo/coach-id lato server dal JWT del chiamante, qui passiamo
+// solo l'anteprima del messaggio già visibile in chat).
+export async function notifyCoachNewMessage(supabase, body) {
+  try {
+    await supabase.functions.invoke("notify-coach", { body: { body } });
+  } catch (err) {
+    console.error("PERFORM: errore invio notifica push al coach", err);
+  }
+}
+
 // Classifica di UN mese specifico (formato 'YYYY-MM', es. '2026-08'): il
 // guadagno XP di ciascun atleta in quel mese, non il totale lifetime.
 // Calcolato come differenza fra due snapshot consecutivi scritti dalla Edge

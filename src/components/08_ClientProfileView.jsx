@@ -2060,13 +2060,13 @@ export function SettingsDrawer({
                   <Toggle
                     on={pushState === "on"}
                     onClick={pushState === "busy" || pushState === "checking" || pushState === "unsupported" ? undefined : togglePush}
-                    label="Promemoria streak"
+                    label="Notifiche push"
                     desc={
                       pushState === "unsupported"
                         ? (pushReason === "ios-not-installed"
                             ? "Su iPhone le notifiche funzionano solo per l'app installata: tocca Condividi (icona con la freccia) nella barra di Safari, poi \"Aggiungi a Home\" e riapri PERFORM da quell'icona per attivarle."
                             : "Non supportato su questo browser/dispositivo.")
-                        : "Un avviso in serata se rischi di perdere lo streak di oggi — mai più di uno al giorno, e chiede il permesso al sistema operativo la prima volta."
+                        : "Ricevi un avviso sul telefono per i nuovi messaggi in chat e se rischi di perdere lo streak di oggi — chiede il permesso al sistema operativo la prima volta."
                     }
                   />
                 </div>

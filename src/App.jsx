@@ -11,7 +11,7 @@ import LandingIntro from "./components/LandingIntro.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage } from "./lib/coachingData.js";
 
 // Anteprima leggibile del messaggio appena inviato, per il push — mai il
 // body grezzo se manca (solo un allegato): un push senza testo sembrerebbe
@@ -36,7 +36,8 @@ function ChatScreen({ supabase, userId, accent, gender }) {
         <p className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>Chat privata col coach</p>
       </div>
       <div className="flex-1 min-h-0">
-        <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} gender={gender} />
+        <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} gender={gender}
+          onSent={(msg) => notifyCoachNewMessage(supabase, chatPushPreview(msg))} />
       </div>
     </div>
   );
