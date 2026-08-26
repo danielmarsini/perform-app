@@ -4898,6 +4898,11 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
 
       syncToCoach({ kind: "set-completed", rowIndex: i, row: r });
       if (!wasComplete) {
+        // BUG PRESO: completare una serie — l'azione più frequente di tutta
+        // l'app — non dava MAI un haptic, nonostante sia l'esempio d'uso
+        // esplicito nell'header di haptics.js ("completa serie"). Altre
+        // azioni molto meno frequenti (acqua, cibo, cardio) lo avevano già.
+        haptic("confirm");
         const dur = ex.rests?.[i] ?? 120;
         setTimer({ total: dur, remaining: dur });
         // Celebrazione automatica: questa serie appena completata batte il
