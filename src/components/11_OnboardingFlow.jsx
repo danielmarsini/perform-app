@@ -141,6 +141,17 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
   const choosePlan = async (plan) => {
     setError("");
     setBusy(true);
+    // BUG PRESO: chi scriveva un codice invito e poi toccava direttamente una
+    // card piano (l'azione più naturale, essendo le card l'elemento
+    // visivamente dominante) SENZA prima premere "Applica" perdeva il codice
+    // per sempre — resolveReferralCode/recordReferralSignup non vengono mai
+    // richiamate da nessun'altra schermata dopo la registrazione. Un codice
+    // scritto ma non ancora confermato si applica qui, silenziosamente,
+    // prima di procedere: un errore nell'applicazione non deve MAI bloccare
+    // la scelta del piano (il programma referral resta "facoltativo").
+    if (referralCode.trim() && referralStatus !== "applied") {
+      await applyReferralCode();
+    }
     const dbValue = UI_TO_DB_PLAN[plan.id];
     try {
       if (plan.billing === "none") {
