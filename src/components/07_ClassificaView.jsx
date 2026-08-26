@@ -3,6 +3,7 @@ import { xpToLevelInfo, fetchMonthlyLeaderboard } from '../lib/coachingData.js';
 import Portal from './Portal.jsx';
 import SwipeHandle from './SwipeHandle.jsx';
 import { useSwipeDownClose } from '../lib/useSwipeGesture.js';
+import CrewView from './CrewView.jsx';
 
 const ITALIAN_MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
 function monthKeyLabel(monthKey) {
@@ -524,6 +525,9 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [expandedMonthId, setExpandedMonthId] = useState(null);
+  // Secondo tab di questa stessa schermata invece di un nuovo punto in bottom
+  // nav — vedi CrewView.jsx in cima al file per il perché.
+  const [tab, setTab] = useState('classifica');
 
   // Classifica globale reale: XP guadagnato NEL MESE (non più il totale
   // lifetime), da fetchMonthlyLeaderboard — diff fra due snapshot mensili
@@ -1062,41 +1066,63 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
       `}</style>
 
       <div className="pc-header-center">
-        <div className="pc-title-line1">Classifica Globale</div>
-        <div className="pc-title-line2">migliori atleti di {currentMonth.monthName}</div>
+        <div className="pc-title-line1">{tab === 'crew' ? 'La mia Crew' : 'Classifica Globale'}</div>
+        <div className="pc-title-line2">
+          {tab === 'crew' ? 'streak di gruppo, 3-6 persone' : `migliori atleti di ${currentMonth.monthName}`}
+        </div>
       </div>
 
-      <div className="pc-podium">
-        {podiumOrder.map(({ athlete: a, position, delay }) => (
-          <PodiumCard key={a.rank} athlete={a} position={position} delay={delay} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
-        ))}
-      </div>
+      {isRealMode && (
+        <div className="pc-pill-toggle" style={{ margin: '0 auto 28px', width: 'fit-content' }}>
+          <button type="button" onClick={() => setTab('classifica')} className={tab === 'classifica' ? 'pc-pill-active' : ''}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>
+            Classifica
+          </button>
+          <span className="pc-pill-sep">|</span>
+          <button type="button" onClick={() => setTab('crew')} className={tab === 'crew' ? 'pc-pill-active' : ''}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>
+            La mia Crew
+          </button>
+        </div>
+      )}
 
-      <div className="pc-list">
-        {restOfList.map((a) => (
-          <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
-        ))}
-      </div>
+      {tab === 'crew' && isRealMode ? (
+        <CrewView supabase={supabase} meId={meId} gender={gender === 'female' ? 'female' : 'male'} />
+      ) : (
+        <>
+          <div className="pc-podium">
+            {podiumOrder.map(({ athlete: a, position, delay }) => (
+              <PodiumCard key={a.rank} athlete={a} position={position} delay={delay} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
+            ))}
+          </div>
 
-      <button type="button" className="pc-archive-btn"
-              onClick={() => { setDrawerOpen(true); if (isRealMode) loadRealArchive(); }}>
-        🏛️ Archivio Storico Report
-      </button>
+          <div className="pc-list">
+            {restOfList.map((a) => (
+              <LeaderboardRow key={a.rank} athlete={a} maxXP={maxXP} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
+            ))}
+          </div>
 
-      <ArchiveDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        months={pastMonths}
-        expandedId={expandedMonthId}
-        onToggleExpand={handleToggleExpand}
-        loading={isRealMode && archiveLoading}
-        empty={isRealMode && !archiveLoading && pastMonths.length === 0}
-        showLaunchLabel={!isRealMode}
-        onSelectAthlete={setSelectedAthlete}
-        meId={isRealMode ? meId : null}
-      />
+          <button type="button" className="pc-archive-btn"
+                  onClick={() => { setDrawerOpen(true); if (isRealMode) loadRealArchive(); }}>
+            🏛️ Archivio Storico Report
+          </button>
 
-      <AthleteDetailModal athlete={selectedAthlete} onClose={() => setSelectedAthlete(null)} />
+          <ArchiveDrawer
+            open={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            months={pastMonths}
+            expandedId={expandedMonthId}
+            onToggleExpand={handleToggleExpand}
+            loading={isRealMode && archiveLoading}
+            empty={isRealMode && !archiveLoading && pastMonths.length === 0}
+            showLaunchLabel={!isRealMode}
+            onSelectAthlete={setSelectedAthlete}
+            meId={isRealMode ? meId : null}
+          />
+
+          <AthleteDetailModal athlete={selectedAthlete} onClose={() => setSelectedAthlete(null)} />
+        </>
+      )}
     </div>
   );
 }
