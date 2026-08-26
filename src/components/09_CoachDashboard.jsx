@@ -2547,6 +2547,20 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const skipNextAutosaveRef = useRef(true);
   const autosaveTimerRef = useRef(null);
   const [autosavedAt, setAutosavedAt] = useState(null);
+  // BUG PRESO ("modifico le serie, dopo 2s torna come prima"): sia il
+  // salvataggio manuale sia l'autosalvataggio fanno save->refetch->
+  // setRealWorkout(fresh) — un giro di rete. Se il coach modifica un ALTRO
+  // campo (o lo stesso) MENTRE quel giro è in corso, il "fresh" che arriva
+  // dopo riflette lo stato di PRIMA della nuova modifica: sovrascrivendolo
+  // sempre, la modifica nuova spariva silenziosamente finché non si
+  // ripeteva più volte (a volte "vinceva" solo per fortuna di tempismo).
+  // realWorkoutRef tiene traccia dello stato PIÙ RECENTE in ogni momento:
+  // se al ritorno del refetch non coincide più con l'istantanea salvata,
+  // vuol dire che nel frattempo è arrivata una modifica più nuova — quella
+  // ha già il proprio ciclo di autosalvataggio in coda, quindi si ignora il
+  // "fresh" ormai superato invece di lasciarlo vincere.
+  const realWorkoutRef = useRef(realWorkout);
+  useEffect(() => { realWorkoutRef.current = realWorkout; }, [realWorkout]);
 
   useEffect(() => {
     if (!isRealMode) return undefined;
@@ -2603,6 +2617,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     setWorkoutBusy(true);
     setWorkoutError("");
     if (autosaveTimerRef.current) { clearTimeout(autosaveTimerRef.current); autosaveTimerRef.current = null; }
+    const snapshot = realWorkout; // vedi realWorkoutRef sopra: confrontato dopo il refetch
     try {
       const resolved = resolveDays(realWorkout);
       await saveWeekWorkout(supabase, client.id, weekStartISO, resolved);
@@ -2621,8 +2636,13 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       // vero dal DB dopo ogni salvataggio, l'editor ha SEMPRE gli id reali e
       // l'ordine mostrato è garantito identico a quello che il cliente vede.
       const fresh = await fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name]);
-      skipNextAutosaveRef.current = true; // il refetch qui sopra rientra come "dato appena caricato", non una modifica nuova del coach
-      setRealWorkout(fresh);
+      // Applica il refetch solo se nel frattempo non è arrivata una modifica
+      // più recente — altrimenti la ignoriamo (quella modifica ha già
+      // innescato il proprio ciclo di autosalvataggio, che la persisterà).
+      if (realWorkoutRef.current === snapshot) {
+        skipNextAutosaveRef.current = true; // il refetch qui sopra rientra come "dato appena caricato", non una modifica nuova del coach
+        setRealWorkout(fresh);
+      }
       setWorkoutSaved(true);
       setTimeout(() => setWorkoutSaved(false), 2500);
       notifyClientPlanChange(supabase, client.id, {
@@ -2649,8 +2669,9 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     if (!isRealMode || !realWorkout) return undefined;
     if (skipNextAutosaveRef.current) { skipNextAutosaveRef.current = false; return undefined; }
     if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    const snapshot = realWorkout; // vedi realWorkoutRef sopra: confrontato dopo il refetch
     autosaveTimerRef.current = setTimeout(() => {
-      const resolved = resolveDays(realWorkout);
+      const resolved = resolveDays(snapshot);
       saveWeekWorkout(supabase, client.id, weekStartISO, resolved)
         // STESSO motivo del refetch in saveWorkout qui sopra: un esercizio
         // appena aggiunto ha ancora un id finto (uid() locale) finché non si
@@ -2660,8 +2681,14 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         // causa già trovata e corretta per il salvataggio manuale.
         .then(() => fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name]))
         .then((fresh) => {
-          skipNextAutosaveRef.current = true; // il refetch è "dato appena caricato", non una nuova modifica
-          setRealWorkout(fresh);
+          // Stessa guardia del salvataggio manuale: se nel frattempo è
+          // arrivata una modifica più recente, questo "fresh" è già
+          // superato — non sovrascriverla, la modifica nuova ha già il
+          // proprio ciclo di autosalvataggio in coda.
+          if (realWorkoutRef.current === snapshot) {
+            skipNextAutosaveRef.current = true; // il refetch è "dato appena caricato", non una nuova modifica
+            setRealWorkout(fresh);
+          }
           setAutosavedAt(Date.now());
         })
         .catch((err) => console.error("PERFORM: errore autosalvataggio allenamento", err));
