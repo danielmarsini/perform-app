@@ -1879,8 +1879,9 @@ export const LEVELS_PER_TIER = 5;
 function levelTitleAndIcon(level) {
   const tierIdx = Math.min(Math.floor(level / LEVELS_PER_TIER), LEVEL_TIERS.length - 1);
   const tier = LEVEL_TIERS[tierIdx];
-  const subLevel = level - tierIdx * LEVELS_PER_TIER + 1;
-  return { title: `${tier.title} ${subLevel}`, icon: tier.icon };
+  // Solo il nome del grado, senza il numero di sotto-livello: la barra XP
+  // subito sotto mostra già il progresso, ripeterlo qui era ridondante.
+  return { title: tier.title, icon: tier.icon };
 }
 
 // XP totale → { level, title, icon, xpInLevel, xpNeeded, isMaxLevel }. Usata
@@ -1951,6 +1952,26 @@ function isWithinGraceWindow(missedDayIso, todayIso) {
   return diffDays <= STREAK_GRACE_DAYS;
 }
 
+// Moltiplicatore XP per streak (progressivo, non eccessivo): più a lungo si
+// tiene viva la costanza, leggermente più XP si guadagna per ogni azione del
+// giorno (serie svolte, pasto registrato, sonno+passi registrati) — un
+// incentivo in più a non dimenticarsi di segnare le cose, separato dal bonus
+// fisso già esistente ogni 7 giorni pieni (quello resta invariato). Tetto al
+// +25%: oltre non ha senso, diventerebbe sleale verso chi si allena bene ma
+// ha avuto una sola interruzione.
+const STREAK_XP_MULTIPLIER_TIERS = [
+  { minDays: 90, multiplier: 1.25 },
+  { minDays: 60, multiplier: 1.20 },
+  { minDays: 30, multiplier: 1.15 },
+  { minDays: 14, multiplier: 1.10 },
+  { minDays: 7, multiplier: 1.05 },
+  { minDays: 0, multiplier: 1.00 },
+];
+export function streakXpMultiplier(streakDays) {
+  const days = Math.max(0, Number(streakDays) || 0);
+  return STREAK_XP_MULTIPLIER_TIERS.find((t) => days >= t.minDays).multiplier;
+}
+
 // Ricalcola XP totale e streak corrente di un cliente dai dati reali già
 // salvati (workout_sets, nutrition_logs, daily_metrics, workout_logs,
 // xp_bonuses) e li scrive in cache su profiles. Ritorna sempre il valore
@@ -1965,7 +1986,7 @@ export async function computeRealXpAndStreak(supabase, userId) {
     { data: metricsRows, error: metricsError }, { data: workoutRows, error: workoutError },
     { data: bonusRows, error: bonusError }, { data: pauseRows, error: pauseError },
     { data: freezeRows, error: freezeError }] = await Promise.all([
-    supabase.from("workout_sets").select("id").eq("user_id", userId).not("reps_completed", "is", null).gte("completed_at", sinceDate),
+    supabase.from("workout_sets").select("completed_at").eq("user_id", userId).not("reps_completed", "is", null).gte("completed_at", sinceDate),
     supabase.from("nutrition_logs").select("date").eq("user_id", userId).gte("date", sinceDate),
     supabase.from("daily_metrics").select("date, sleep_hours, steps").eq("user_id", userId).gte("date", sinceDate),
     supabase.from("workout_logs").select("date, status").eq("user_id", userId).gte("date", sinceDate),
@@ -2018,15 +2039,47 @@ export async function computeRealXpAndStreak(supabase, userId) {
     break;
   }
 
-  let completeDays = 0;
-  nutritionDays.forEach((d) => { if (isDayComplete(d, ctx)) completeDays++; });
+  // Serie svolte raggruppate per giorno locale (completed_at è un timestamp,
+  // non una data pura): serve per pesare ogni giorno col moltiplicatore da
+  // streak in vigore in QUEL giorno, non un totale aggregato una tantum.
+  const setsCountByDate = new Map();
+  (setsRows ?? []).forEach((r) => {
+    const d = toLocalISODate(new Date(r.completed_at));
+    setsCountByDate.set(d, (setsCountByDate.get(d) ?? 0) + 1);
+  });
+
   const bonusXp = (bonusRows ?? []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-  const xpTotal = Math.round(
-    (setsRows?.length ?? 0) * 10       // +10 per serie realmente svolta e registrata
-    + nutritionDays.size * 5            // +5 per ogni giorno con almeno un pasto registrato
-    + metricsDays.size * 5              // +5 per ogni giorno con sonno + passi registrati
-    + completeDays * 15                 // bonus giornata piena (allenamento+dieta+recupero)
-    + Math.floor(streak / 7) * 50       // bonus ogni settimana intera di streak
+
+  // XP giorno per giorno, non più un totale aggregato: serve per applicare a
+  // ciascun giorno il moltiplicatore da streak (streakXpMultiplier) in base
+  // a QUANTI giorni consecutivi di costanza lo precedevano, non lo streak di
+  // OGGI applicato retroattivamente a tutta la storia (che farebbe scendere
+  // il totale ad ogni streak interrotto — mai un XP totale che scende).
+  // Nota: qui, a differenza dello streak "ufficiale" calcolato sopra, non si
+  // applica la finestra di grazia di 24h — un'imprecisione minima e solo
+  // temporanea (al più un giorno), accettata per non duplicare quella
+  // logica (pensata per "oggi", non per un giorno storico qualsiasi) in un
+  // secondo ciclo parallelo.
+  let xpTotal = 0;
+  let xpStreakRun = 0;
+  const xpCursor = new Date(`${sinceDate}T00:00:00`);
+  const todayDate = new Date(`${today}T00:00:00`);
+  for (let i = 0; i < 3650 && xpCursor <= todayDate; i++) {
+    const d = toLocalISODate(xpCursor);
+    const dayComplete = isDayComplete(d, ctx);
+    xpStreakRun = dayComplete ? xpStreakRun + 1 : 0;
+    const multiplier = streakXpMultiplier(xpStreakRun);
+    const dayPoints =
+      (setsCountByDate.get(d) ?? 0) * 10   // +10 per serie realmente svolta e registrata
+      + (nutritionDays.has(d) ? 5 : 0)      // +5 per il giorno con almeno un pasto registrato
+      + (metricsDays.has(d) ? 5 : 0)        // +5 per il giorno con sonno + passi registrati
+      + (nutritionDays.has(d) && dayComplete ? 15 : 0); // bonus giornata piena (allenamento+dieta+recupero)
+    xpTotal += dayPoints * multiplier;
+    xpCursor.setDate(xpCursor.getDate() + 1);
+  }
+  xpTotal = Math.round(
+    xpTotal
+    + Math.floor(streak / 7) * 50       // bonus ogni settimana intera di streak (invariato)
     + bonusXp                           // bonus manuali assegnati dal coach (xp_bonuses)
   );
 

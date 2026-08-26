@@ -18,7 +18,7 @@ import {
   fetchWeekExerciseHistories,
   computeCrewWeeklyActivity, computeCrewStreak,
   fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
-  hasUnreadChatMessages,
+  hasUnreadChatMessages, streakXpMultiplier,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -64,6 +64,29 @@ describe("xpToLevelInfo", () => {
     const early = titleAt(0);
     const later = titleAt(levelMinXp(20));
     expect(early).not.toBe(later);
+  });
+});
+
+describe("streakXpMultiplier", () => {
+  it("streak corta (0-6 giorni) => nessun moltiplicatore", () => {
+    expect(streakXpMultiplier(0)).toBe(1);
+    expect(streakXpMultiplier(6)).toBe(1);
+  });
+  it("cresce in modo monotono non decrescente con più giorni di streak", () => {
+    const days = [0, 7, 14, 30, 60, 90, 200];
+    const mults = days.map((d) => streakXpMultiplier(d));
+    for (let i = 1; i < mults.length; i++) {
+      expect(mults[i]).toBeGreaterThanOrEqual(mults[i - 1]);
+    }
+  });
+  it("non supera mai il tetto del +25%", () => {
+    expect(streakXpMultiplier(90)).toBe(1.25);
+    expect(streakXpMultiplier(9999)).toBe(1.25);
+  });
+  it("input negativo o non numerico => trattato come 0 (nessun moltiplicatore)", () => {
+    expect(streakXpMultiplier(-5)).toBe(1);
+    expect(streakXpMultiplier(null)).toBe(1);
+    expect(streakXpMultiplier(undefined)).toBe(1);
   });
 });
 

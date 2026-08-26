@@ -794,6 +794,12 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
         .pc-podium-card {
           flex: 1;
+          /* min-width:0 sovrascrive il min-width:auto di default sui figli
+             flex: senza questo, un QUALSIASI testo interno abbastanza lungo
+             (nickname, badge livello, XP...) può forzare SOLO quella card a
+             crescere oltre le altre, anche con overflow/ellipsis sui figli —
+             root cause reale, non un sintomo, dell'asimmetria del podio. */
+          min-width: 0;
           max-width: 156px;
           display: flex;
           flex-direction: column;
@@ -856,7 +862,14 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
 
         .pc-podium-nick { font-size: 13.5px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
-        .pc-level-badge { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 500; letter-spacing: -0.005em; white-space: nowrap; margin-top: 5px; }
+        /* BUG PRESO: a differenza di nickname/XP/streak (già con overflow
+           hidden + ellipsis), questo badge non aveva nessun limite di
+           larghezza — un nome di livello più lungo su UN solo atleta del
+           podio (min-width:auto di default sui figli flex) forzava SOLO
+           quella card a crescere oltre gli altri 156px, rompendo di nuovo
+           la simmetria del podio (stesso identico bug già preso e corretto
+           su XP/streak in precedenza, qui riapparso su un campo nuovo). */
+        .pc-level-badge { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 500; letter-spacing: -0.005em; white-space: nowrap; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
         .pc-level-badge-sm { font-size: 9.5px; flex-shrink: 0; margin-top: 0; }
 
         /* BUG PRESO: XP mensile e giorni di streak non avevano white-space:
