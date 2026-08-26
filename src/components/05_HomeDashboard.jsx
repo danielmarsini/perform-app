@@ -1968,7 +1968,12 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
                         : <Camera size={20} style={{ color: accent }} />}
                       <span className="text-xs" style={{ color: photos[key] ? "#FFFFFF" : "var(--ink-2)", fontWeight: 600 }}>{lab}</span>
                     </span>
-                    <input type="file" accept="image/*" capture="user" className="hidden" onChange={handlePhoto(key)} />
+                    {/* BUG PRESO: capture="user" forzava la fotocamera anteriore tramite
+                        un intent Android non affidabile su molti dispositivi (specie
+                        Samsung) — spesso non apriva nulla al tap, quindi niente file
+                        selezionato e niente da caricare. Nessun vincolo di capture, come
+                        nell'allegato chat: si apre la scelta nativa fotocamera/galleria. */}
+                    <input type="file" accept="image/*" className="hidden" onChange={handlePhoto(key)} />
                   </label>
                 ))}
               </div>
