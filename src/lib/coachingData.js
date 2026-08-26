@@ -3252,6 +3252,24 @@ export async function markChatMessagesRead(supabase, clientId, readerId) {
   if (error) throw error;
 }
 
+// Pallino rosso sull'icona Chat del cliente: true se esiste almeno un
+// messaggio dell'ALTRA parte (il coach) ancora non letto. Stessa logica di
+// markChatMessagesRead sopra (neq sender_id + read_at is null), qui in sola
+// lettura — ChatThread.jsx già segna tutto come letto non appena il thread
+// viene aperto, questa funzione serve solo a decidere se mostrare il
+// pallino PRIMA di entrarci.
+export async function hasUnreadChatMessages(supabase, clientId, readerId) {
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select("id")
+    .eq("client_id", clientId)
+    .neq("sender_id", readerId)
+    .is("read_at", null)
+    .limit(1);
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
 // Allegati chat (SCHEMA_v50): bucket privato "chat-attachments", stesso
 // pattern path "{clientId}/..." di technique-videos — qui però scrivono
 // entrambi i lati della conversazione (client E coach), non solo il

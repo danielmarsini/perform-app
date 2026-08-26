@@ -18,7 +18,7 @@ import {
   fetchWeekExerciseHistories,
   computeCrewWeeklyActivity, computeCrewStreak,
   fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
-  hasUnseenAnnouncements,
+  hasUnseenAnnouncements, hasUnreadChatMessages,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -801,5 +801,30 @@ describe("hasUnseenAnnouncements", () => {
       team_announcements: [{ id: "a1", created_at: daysAgoISO(0) }],
     });
     expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(true);
+  });
+});
+
+describe("hasUnreadChatMessages", () => {
+  it("messaggio dell'altra parte non ancora letto => true", async () => {
+    const supabase = makeMockSupabase({
+      chat_messages: [{ id: "m1", client_id: "u1", sender_id: "coach1", read_at: null }],
+    });
+    expect(await hasUnreadChatMessages(supabase, "u1", "u1")).toBe(true);
+  });
+  it("nessun messaggio => false", async () => {
+    const supabase = makeMockSupabase({ chat_messages: [] });
+    expect(await hasUnreadChatMessages(supabase, "u1", "u1")).toBe(false);
+  });
+  it("messaggio già letto (read_at valorizzato) => false", async () => {
+    const supabase = makeMockSupabase({
+      chat_messages: [{ id: "m1", client_id: "u1", sender_id: "coach1", read_at: "2026-01-01T00:00:00Z" }],
+    });
+    expect(await hasUnreadChatMessages(supabase, "u1", "u1")).toBe(false);
+  });
+  it("messaggio scritto da me stesso (mai da segnare non letto) => false", async () => {
+    const supabase = makeMockSupabase({
+      chat_messages: [{ id: "m1", client_id: "u1", sender_id: "u1", read_at: null }],
+    });
+    expect(await hasUnreadChatMessages(supabase, "u1", "u1")).toBe(false);
   });
 });

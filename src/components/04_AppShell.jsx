@@ -648,7 +648,7 @@ function goldStopsFor(boxIsBlack) {
 /* Un singolo pulsante di navigazione. Componente a parte (non una funzione
    inline nel .map) perché ha bisogno di useId per il proprio gradiente SVG:
    gli hook vanno chiamati dentro un vero componente, non in un callback. */
-function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isCoachTab }) {
+function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isCoachTab, hasBadge }) {
   const uid = useId();
   const gradId = `navIconGrad-${uid}`;
   const boxIsBlack = !dark;
@@ -724,6 +724,12 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
               }}
             />
           )}
+          {hasBadge && (
+            <span aria-hidden="true" className="absolute rounded-full" style={{
+              top: -2, right: -2, width: 9, height: 9, backgroundColor: "#E5484D",
+              boxShadow: `0 0 0 2px ${boxIsBlack ? "#111111" : "#FFFFFF"}`,
+            }} />
+          )}
         </span>
       ) : (
         /* --- stato inattivo: piatto, minimale, nessun rilievo --- */
@@ -735,6 +741,12 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
               strokeWidth={2.4}
               style={{ position: "absolute", top: 2, right: 2, color: idle }}
             />
+          )}
+          {hasBadge && (
+            <span aria-hidden="true" className="absolute rounded-full" style={{
+              top: 4, right: 4, width: 9, height: 9, backgroundColor: "#E5484D",
+              boxShadow: `0 0 0 2px ${dark ? "rgba(20,20,20,0.9)" : "rgba(255,255,255,0.9)"}`,
+            }} />
           )}
         </span>
       )}
@@ -756,7 +768,7 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
   );
 }
 
-export function BottomBar({ active, onSelect, accent, dark, isCoach = false }) {
+export function BottomBar({ active, onSelect, accent, dark, isCoach = false, chatHasUnread = false }) {
   const [burst, setBurst] = useState(null);
   const idle = dark ? "#71717A" : "#A1A1AA";
 
@@ -811,6 +823,7 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false }) {
             burst={burst}
             onPick={pick}
             isCoachTab={id === "coach"}
+            hasBadge={id === "chat" && chatHasUnread}
           />
         ))}
       </div>
@@ -861,6 +874,7 @@ export function AppShell({
   onOpenSettings,
   onOpenAnnouncements,
   hasUnseenAnnouncements,
+  chatHasUnread,
   screens = {},          // { home, news, ranking, profile, chat, coach }
 }) {
   const accent = accentFor(gender, dark);
@@ -985,7 +999,7 @@ export function AppShell({
           })}
         </main>
 
-        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} />
+        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} chatHasUnread={chatHasUnread} />
       </div>
     </div>
   );
