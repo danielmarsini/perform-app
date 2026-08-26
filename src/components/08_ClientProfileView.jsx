@@ -2016,7 +2016,12 @@ export function SettingsDrawer({
 
       <div className="drawer-in relative w-full max-w-sm h-full overflow-y-auto"
            style={{ backgroundColor: "var(--surface)", boxShadow: "-12px 0 44px rgba(0,0,0,0.18)" }}>
-        <div className="px-6 pt-7 pb-4 flex items-center justify-between">
+        {/* BUG PRESO: pt-7 fisso non lascia spazio alla barra di stato/notch
+            su iPhone quando l'app gira da installata (niente più barra Safari
+            a fare da margine) — titolo e X finivano premuti contro l'alto
+            dello schermo, X difficile da toccare. Stesso pattern già usato
+            altrove nell'app (04_AppShell.jsx, 05_HomeDashboard.jsx). */}
+        <div className="px-6 pb-4 flex items-center justify-between" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.75rem)" }}>
           <p className="h1" style={{ fontSize: "1.2rem", fontWeight: 700 }}>{t.settingsTitle}</p>
           <button onClick={onClose} className="p-2" style={{ color: "var(--ink-2)" }} aria-label="close">
             <X size={17} />
