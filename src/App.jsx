@@ -181,18 +181,39 @@ const CoachDashboard = lazy(() => import("./components/09_CoachDashboard.jsx"));
 // piano a coaching la trova comunque nel menu, non sparisce — qui dentro
 // vede il perché e come sbloccarla, invece di essere rimbalzato in
 // silenzio su Home come succedeva prima.
-function LockedChatScreen({ accent, onUpgrade }) {
+// BUG PRESO: chi aveva comprato l'add-on "Scheda Personalizzata" sopra
+// Free/Premium (chat col coach per 2 settimane, scheda_addon_chat_until —
+// vedi schedaAddonChatActive più sotto) vedeva SEMPRE lo stesso identico
+// messaggio generico "inclusa da Scheda Personalizzata in su" appena la
+// finestra scadeva — niente che spiegasse che aveva avuto la chat e le era
+// scaduta, sembrava un errore o una feature mai posseduta. expiredAddonUntil
+// (passata solo quando scheda_addon_chat_until esiste ma è nel passato)
+// distingue questo caso da chi la chat non l'ha mai avuta.
+function LockedChatScreen({ accent, onUpgrade, expiredAddonUntil }) {
   return (
     <div className="card text-center py-12">
       <span className="inline-flex items-center justify-center rounded-full mb-4"
             style={{ width: 56, height: 56, backgroundColor: accent + "22" }}>
         <Lock size={24} style={{ color: accent }} />
       </span>
-      <p className="h1 mb-2">Un coach vero, non un algoritmo</p>
-      <p className="body max-w-xs mx-auto mb-6">
-        Scrivi direttamente a me: correggo la tua tecnica da un video, aggiusto il piano quando qualcosa non torna,
-        rispondo ai tuoi dubbi prima che diventino un problema. Inclusa da Scheda Personalizzata in su.
-      </p>
+      {expiredAddonUntil ? (
+        <>
+          <p className="h1 mb-2">La tua chat col coach è scaduta</p>
+          <p className="body max-w-xs mx-auto mb-6">
+            La finestra di 2 settimane della Scheda Personalizzata si è chiusa il{" "}
+            {expiredAddonUntil.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })}.
+            Per riaverla senza limiti di tempo passa a un piano con coaching incluso.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="h1 mb-2">Un coach vero, non un algoritmo</p>
+          <p className="body max-w-xs mx-auto mb-6">
+            Scrivi direttamente a me: correggo la tua tecnica da un video, aggiusto il piano quando qualcosa non torna,
+            rispondo ai tuoi dubbi prima che diventino un problema. Inclusa da Scheda Personalizzata in su.
+          </p>
+        </>
+      )}
       <button onClick={onUpgrade} className="rounded-full px-5 py-3 text-sm"
               style={{ backgroundColor: accent, color: "#111111", fontWeight: 600 }}>
         Vedi i piani
@@ -523,7 +544,8 @@ export default function App() {
             ? <CoachChatInboxScreen supabase={supabase} coachId={session.user.id} accent={accent} gender={gender} />
             : (hasCoachChat
                 ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} gender={gender} />
-                : <LockedChatScreen accent={accent} onUpgrade={openUpgradeSettings} />),
+                : <LockedChatScreen accent={accent} onUpgrade={openUpgradeSettings}
+                    expiredAddonUntil={profile?.scheda_addon_chat_until ? new Date(profile.scheda_addon_chat_until) : null} />),
         }}
       />
       </Suspense>
