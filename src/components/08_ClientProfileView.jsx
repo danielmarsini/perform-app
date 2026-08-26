@@ -1234,13 +1234,18 @@ export function ClientProfileView({
   const [reportOpen, setReportOpen] = useState(false);
   const [wrapped, setWrapped] = useState(null); // null = non richiesto/non ancora caricato
   const [wrappedLoading, setWrappedLoading] = useState(false);
+  const [wrappedError, setWrappedError] = useState("");
   const fileRef = useRef(null);
 
   // "Wrapped" mensile: caricato solo quando l'utente lo apre (non ad ogni
   // visita del Profilo) — disponibile a TUTTI i piani.
+  // BUG PRESO: un fallimento qui restava solo in console — wrapped restava
+  // null, il pulsante tornava da "Carico…" al testo normale, e non succedeva
+  // visibilmente nulla: tap → attesa → niente, senza nessuna spiegazione.
   const openWrapped = () => {
     if (!isRealMode) return;
     setWrappedLoading(true);
+    setWrappedError("");
     const today = new Date();
     const todayISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     const fromDate = new Date(today);
@@ -1248,7 +1253,10 @@ export function ClientProfileView({
     const fromISO = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}`;
     fetchMonthlyWrapped(supabase, userId, fromISO, todayISO)
       .then(setWrapped)
-      .catch((err) => console.error("PERFORM: errore caricamento Wrapped mensile", err))
+      .catch((err) => {
+        console.error("PERFORM: errore caricamento Wrapped mensile", err);
+        setWrappedError("Non sono riuscito a caricare il tuo Wrapped — riprova.");
+      })
       .finally(() => setWrappedLoading(false));
   };
 
@@ -1443,8 +1451,8 @@ export function ClientProfileView({
             {isRealMode && (
               <button onClick={openWrapped} disabled={wrappedLoading}
                 className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs"
-                style={{ border: `1px solid ${accentText}`, color: accentText, fontWeight: 600 }}>
-                {wrappedLoading ? "Carico…" : "🎁 Il tuo Wrapped"}
+                style={{ border: `1px solid ${wrappedError ? "#DC2626" : accentText}`, color: wrappedError ? "#DC2626" : accentText, fontWeight: 600 }}>
+                {wrappedLoading ? "Carico…" : wrappedError ? "⚠ Riprova" : "🎁 Il tuo Wrapped"}
               </button>
             )}
             {weightPoints?.length > 0 && (
@@ -1463,6 +1471,7 @@ export function ClientProfileView({
             )}
           </span>
         </div>
+        {wrappedError && <p className="text-xs mb-2" style={{ color: "#DC2626" }}>{wrappedError}</p>}
         <WeightChart points={weightPoints} accent={accent} t={t.archive} />
 
         <p className="label mt-6 mb-2">Confronto circonferenze</p>
