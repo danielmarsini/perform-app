@@ -4759,9 +4759,11 @@ function PastSetRow({ workoutLogId, set, supabase, userId }) {
   const [kg, setKg] = useState(set.kg ?? "");
   const [reps, setReps] = useState(set.reps ?? "");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const save = async () => {
     setSaving(true);
+    setError("");
     try {
       await logWorkoutSet(supabase, workoutLogId, userId, set.setNumber, {
         repsCompleted: reps === "" ? null : Number(reps),
@@ -4770,34 +4772,41 @@ function PastSetRow({ workoutLogId, set, supabase, userId }) {
       });
       setEditing(false);
     } catch (err) {
+      // BUG PRESO: un fallimento qui restava solo in console — l'editor
+      // rimaneva aperto senza nessuna spiegazione, sembrava che il tap su
+      // "salva" non avesse fatto nulla.
       console.error("PERFORM: errore correzione serie passata", err);
+      setError("Non sono riuscito a salvare — riprova.");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="grid grid-cols-12 gap-2 items-center">
-      <span className="col-span-2 text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>S{set.setNumber}</span>
-      {editing ? (
-        <>
-          <input type="number" min="0" value={kg} onChange={(e) => setKg(e.target.value)} autoFocus
-                 className="col-span-4 input w-full px-2 py-2 text-center text-sm" aria-label={`kg serie ${set.setNumber}`} />
-          <input type="number" min="0" value={reps} onChange={(e) => setReps(e.target.value)}
-                 className="col-span-4 input w-full px-2 py-2 text-center text-sm" aria-label={`reps serie ${set.setNumber}`} />
-          <button onClick={save} disabled={saving} className="col-span-2 flex items-center justify-center" aria-label="Salva correzione">
-            {saving ? <Loader2 size={16} className="animate-spin" style={{ color: "var(--ink-2)" }} /> : <Check size={18} style={{ color: "#10B981" }} />}
-          </button>
-        </>
-      ) : (
-        <>
-          <span className="col-span-4 text-center text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{set.kg != null ? `${set.kg} kg` : "—"}</span>
-          <span className="col-span-4 text-center text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{set.reps != null ? `${set.reps} reps` : "—"}</span>
-          <button onClick={() => setEditing(true)} className="col-span-2 flex items-center justify-center" aria-label={`Modifica serie ${set.setNumber}`}>
-            <Pencil size={14} style={{ color: "var(--ink-2)" }} />
-          </button>
-        </>
-      )}
+    <div>
+      <div className="grid grid-cols-12 gap-2 items-center">
+        <span className="col-span-2 text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>S{set.setNumber}</span>
+        {editing ? (
+          <>
+            <input type="number" min="0" value={kg} onChange={(e) => setKg(e.target.value)} autoFocus
+                   className="col-span-4 input w-full px-2 py-2 text-center text-sm" aria-label={`kg serie ${set.setNumber}`} />
+            <input type="number" min="0" value={reps} onChange={(e) => setReps(e.target.value)}
+                   className="col-span-4 input w-full px-2 py-2 text-center text-sm" aria-label={`reps serie ${set.setNumber}`} />
+            <button onClick={save} disabled={saving} className="col-span-2 flex items-center justify-center" aria-label="Salva correzione">
+              {saving ? <Loader2 size={16} className="animate-spin" style={{ color: "var(--ink-2)" }} /> : <Check size={18} style={{ color: "#10B981" }} />}
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="col-span-4 text-center text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{set.kg != null ? `${set.kg} kg` : "—"}</span>
+            <span className="col-span-4 text-center text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{set.reps != null ? `${set.reps} reps` : "—"}</span>
+            <button onClick={() => setEditing(true)} className="col-span-2 flex items-center justify-center" aria-label={`Modifica serie ${set.setNumber}`}>
+              <Pencil size={14} style={{ color: "var(--ink-2)" }} />
+            </button>
+          </>
+        )}
+      </div>
+      {error && <p className="text-xs mt-1" style={{ color: "#DC2626" }}>{error}</p>}
     </div>
   );
 }
@@ -7239,6 +7248,11 @@ function NutritionTabs({
   const [editingGramsKey, setEditingGramsKey] = useState(null); // `${slotId}-${index}`
   const [editGramsValue, setEditGramsValue] = useState("");
   const [shoppingListOpen, setShoppingListOpen] = useState(false);
+  // BUG PRESO: onCopyYesterday poteva fallire (rete, RLS) e l'unico segnale
+  // era un console.error — il pulsante tornava normale senza nessuna
+  // spiegazione, sembrava non avesse fatto nulla.
+  const [copyYesterdayBusy, setCopyYesterdayBusy] = useState(false);
+  const [copyYesterdayError, setCopyYesterdayError] = useState("");
 
   // Diario Libero resta sempre disponibile. "I Miei Target" non è più un tab
   // qui accanto: i target vivono ora in cima alla schermata Alimentazione
@@ -7414,12 +7428,23 @@ function NutritionTabs({
       {tab === "diary" && (
         <div className="spring-in">
           {onCopyYesterday && (
-            <button onClick={onCopyYesterday}
-              className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full mb-5"
-              style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
-              <RefreshCw size={15} style={{ color: "#FFFFFF" }} />
-              Copia i pasti di ieri
-            </button>
+            <>
+              <button onClick={async () => {
+                  setCopyYesterdayBusy(true); setCopyYesterdayError("");
+                  try { await onCopyYesterday(); }
+                  catch (err) { setCopyYesterdayError("Non sono riuscito a copiare i pasti di ieri — riprova."); }
+                  finally { setCopyYesterdayBusy(false); }
+                }}
+                disabled={copyYesterdayBusy}
+                className="w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-full mb-5 disabled:opacity-60"
+                style={{ backgroundColor: accent, color: "#FFFFFF", fontWeight: 600 }}>
+                {copyYesterdayBusy ? <Loader2 size={15} className="animate-spin" style={{ color: "#FFFFFF" }} /> : <RefreshCw size={15} style={{ color: "#FFFFFF" }} />}
+                Copia i pasti di ieri
+              </button>
+              <p className="text-xs text-center mb-5" style={{ color: "#DC2626", display: copyYesterdayError ? "block" : "none" }}>
+                {copyYesterdayError || " "}
+              </p>
+            </>
           )}
 
           <div className="space-y-4">
@@ -10889,7 +10914,12 @@ export default function HomePreview({
         return next;
       });
     } catch (err) {
+      // BUG PRESO: l'errore restava solo in console — il pulsante tornava
+      // normale e sembrava che "copia i pasti di ieri" non avesse fatto
+      // nulla, senza nessuna spiegazione. Rilanciato: il pulsante che invoca
+      // questa funzione (NutritionTabs) lo intercetta e mostra un errore vero.
       console.error("PERFORM: errore copia pasti di ieri", err);
+      throw err;
     }
   };
 
