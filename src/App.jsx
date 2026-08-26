@@ -11,7 +11,7 @@ import LandingIntro from "./components/LandingIntro.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, hasUnseenAnnouncements as checkHasUnseenAnnouncements } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, hasUnseenAnnouncements as checkHasUnseenAnnouncements, hasUnreadChatMessages } from "./lib/coachingData.js";
 
 // Anteprima leggibile del messaggio appena inviato, per il push — mai il
 // body grezzo se manca (solo un allegato): un push senza testo sembrerebbe
@@ -435,6 +435,27 @@ export default function App() {
   // un coaching, lo sta fornendo.
   const hasCoachChat = isCoach || isRealCoachingPlan(userPlan) || schedaAddonChatActive;
 
+  // Pallino rosso sull'icona Chat: solo lato cliente (il coach ha la sua
+  // inbox con i conteggi già visibili lì, non serve un secondo indicatore) e
+  // solo se ha davvero una chat attiva col coach. Stesso principio delle
+  // altre due checks "non letto" in questo file: controllato all'apertura e
+  // ogni cambio tab (copre "il coach mi ha scritto mentre ero altrove"),
+  // ChatThread.jsx segna già tutto come letto appena il thread si apre.
+  const [chatHasUnread, setChatHasUnread] = useState(false);
+  useEffect(() => {
+    if (!supabase || !session?.user?.id || isCoach || !hasCoachChat) return;
+    // Aprire il tab Chat segna già tutto come letto (ChatThread.jsx) — niente
+    // da controllare, il pallino sparisce subito invece di aspettare il
+    // prossimo cambio tab per rifare la query.
+    if (tab === "chat") { setChatHasUnread(false); return; }
+    let cancelled = false;
+    hasUnreadChatMessages(supabase, session.user.id, session.user.id)
+      .then((v) => { if (!cancelled) setChatHasUnread(v); })
+      .catch((err) => console.error("PERFORM: errore controllo chat non letta", err));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, session?.user?.id, isCoach, hasCoachChat, tab]);
+
   const stripePlanId =
     userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : "free";
 
@@ -533,6 +554,7 @@ export default function App() {
         onOpenSettings={() => { setSettingsInitialTab(undefined); setSettingsOpen(true); }}
         onOpenAnnouncements={() => setAnnouncementsOpen(true)}
         hasUnseenAnnouncements={hasUnseenAnnouncements}
+        chatHasUnread={chatHasUnread}
         screens={{
           home: (
             <HomeScreen
