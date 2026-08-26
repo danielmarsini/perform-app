@@ -1063,8 +1063,15 @@ function nutritionPrecision(target, consumed) {
 }
 
 /* Anello singolo: vivo, fluido, con lucentezza 3D (sheen + glow), colore
-   continuo che si intensifica agli estremi. */
-function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
+   continuo che si intensifica agli estremi.
+   Redesign "strumento di misurazione seria" (non più solo gamification):
+   tacche di graduazione ogni 10% come un quadrante analogico professionale,
+   cifre in font-data (monospazio, tabular-nums — stesso carattere usato per
+   XP e altri numeri "di precisione" nell'app) invece del font testuale
+   normale, ed etichetta di stato in maiuscolo piccolo sotto la percentuale —
+   nessuna emoji, nessun elemento giocoso: deve leggersi come lo strumento
+   che misura le prestazioni di un atleta serio, non come un badge. */
+function ComplianceCircle({ pct, size = 76, stroke = 8, subLabel }) {
   // pct === null → nulla da misurare questa settimana (es. niente assegnato):
   // stato neutro esplicito, non un 0% (allarme) né un 100% (falso completo).
   const isNeutral = pct == null;
@@ -1087,6 +1094,19 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   const hiS = Math.max(30, ringS - 12);
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
   const filledLen = c * (Math.max(0, Math.min(100, pct ?? 0)) / 100);
+  // Tacche di graduazione ogni 10%, come un quadrante analogico: partono dal
+  // 12 in punto (stesso riferimento -90° dell'arco) e girano in senso orario.
+  // Radius leggermente più interno della traccia, così restano visibili
+  // sotto l'arco colorato senza sporgere dal cerchio.
+  const tickInner = r - stroke / 2 - 1;
+  const tickOuter = tickInner - Math.max(2, size * 0.045);
+  const ticks = Array.from({ length: 10 }, (_, i) => {
+    const angle = ((i * 36 - 90) * Math.PI) / 180;
+    return {
+      x1: cx + tickOuter * Math.cos(angle), y1: cy + tickOuter * Math.sin(angle),
+      x2: cx + tickInner * Math.cos(angle), y2: cy + tickInner * Math.sin(angle),
+    };
+  });
   return (
     <div className="relative shrink-0 ring-breathe" style={{ width: size, height: size }}>
       <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
@@ -1112,11 +1132,19 @@ function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
           <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={Math.max(1.5, stroke * 0.3)}
                   strokeDasharray="4 5" strokeOpacity="0.55" />
         )}
+        {ticks.map((t, i) => (
+          <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="var(--page)" strokeWidth={1} strokeOpacity={0.7} strokeLinecap="round" />
+        ))}
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span style={{ fontSize: size > 60 ? "1.05rem" : "0.85rem", fontWeight: 700, color: isNeutral ? "var(--ink-2)" : "var(--ink)", transition: "color 0.3s ease" }}>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="font-data" style={{ fontSize: size > 60 ? "1.05rem" : "0.85rem", fontWeight: 700, color: isNeutral ? "var(--ink-2)" : "var(--ink)", transition: "color 0.3s ease", lineHeight: 1 }}>
           {isNeutral ? "n/d" : `${pct}%`}
         </span>
+        {subLabel && (
+          <span style={{ fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-2)", marginTop: 2 }}>
+            {subLabel}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1132,7 +1160,7 @@ function ComplianceRings({ rings, onSelect }) {
         return (
           <button key={r.id} onClick={() => onSelect(r.id)}
                   className="flex flex-col items-center gap-2 transition-transform active:scale-95">
-            <ComplianceCircle pct={r.pct} />
+            <ComplianceCircle pct={r.pct} subLabel={r.pct == null ? null : tier.label} />
             <span className="text-xs flex items-center gap-1 text-center" style={{ color: "var(--ink-2)", fontWeight: 700 }}>
               <r.icon size={11} style={{ color: tier.color }} /> {r.label}
             </span>
@@ -2636,18 +2664,33 @@ export function HomeDashboard({
   // Il simulatore di test (trainOverride) resta solo per la preview demo:
   // sovrascrivere un numero reale con uno slider di prova sarebbe fuorviante.
   // (isRealMode è già dichiarato più sopra, vicino a XP/livello/streak.)
+  // BUG PRESO / redesign richiesto: prima si ricalcolava SOLO al mount della
+  // Home — se il cliente registrava una serie, un pasto o il sonno mentre era
+  // già sulla schermata, il cerchio restava fermo al valore letto
+  // all'apertura finché non ricaricava la pagina ("i cerchi non si muovono
+  // quando registro qualcosa"). Stesso pattern già in uso per XP/streak qui
+  // sopra: si ricalcola SUBITO a ogni nuovo evento (coachSyncCount, che
+  // cresce già a ogni serie completata) e ogni 20s come rete di sicurezza per
+  // gli eventi che non passano da coachFeed (pasto aggiunto, sonno/passi
+  // salvati) — il cerchio si muove entro pochi secondi da qualunque
+  // registrazione, non al prossimo accesso.
   const [realTrainCompliance, setRealTrainCompliance] = useState(null); // null = non ancora caricato
   useEffect(() => {
-    if (!isRealMode) return;
+    if (!isRealMode) return undefined;
     let cancelled = false;
-    computeTrainingCompliance(supabase, userId)
-      .then((r) => { if (!cancelled) setRealTrainCompliance(r); })
-      .catch((err) => {
-        console.error("PERFORM: errore calcolo cerchio Allenamento", err);
-        if (!cancelled) setRealTrainCompliance({ status: "neutral", pct: null, completionPct: null, progression: "neutral" });
-      });
-    return () => { cancelled = true; };
-  }, [isRealMode, supabase, userId]);
+    const refresh = () => {
+      computeTrainingCompliance(supabase, userId)
+        .then((r) => { if (!cancelled) setRealTrainCompliance(r); })
+        .catch((err) => {
+          console.error("PERFORM: errore calcolo cerchio Allenamento", err);
+          if (!cancelled) setRealTrainCompliance((prev) => prev ?? { status: "neutral", pct: null, completionPct: null, progression: "neutral" });
+        });
+    };
+    refresh();
+    const id = setInterval(refresh, 20000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRealMode, supabase, userId, coachSyncCount]);
 
   const trainPct = isRealMode ? (realTrainCompliance?.pct ?? null) : (trainOverride ?? trainPctComputed);
 
@@ -2656,37 +2699,43 @@ export function HomeDashboard({
   // + nutrition_targets già salvati, stesso principio degli altri due cerchi.
   const [realNutritionCompliance, setRealNutritionCompliance] = useState(null);
   useEffect(() => {
-    if (!isRealMode) return;
+    if (!isRealMode) return undefined;
     let cancelled = false;
-    computeNutritionCompliance(supabase, userId)
-      .then((r) => { if (!cancelled) setRealNutritionCompliance(r); })
-      .catch((err) => {
-        console.error("PERFORM: errore calcolo cerchio Alimentazione", err);
-        if (!cancelled) setRealNutritionCompliance({ status: "neutral", pct: null, daysScored: 0 });
-      });
-    return () => { cancelled = true; };
-  }, [isRealMode, supabase, userId]);
+    const refresh = () => {
+      computeNutritionCompliance(supabase, userId)
+        .then((r) => { if (!cancelled) setRealNutritionCompliance(r); })
+        .catch((err) => {
+          console.error("PERFORM: errore calcolo cerchio Alimentazione", err);
+          if (!cancelled) setRealNutritionCompliance((prev) => prev ?? { status: "neutral", pct: null, daysScored: 0 });
+        });
+    };
+    refresh();
+    const id = setInterval(refresh, 20000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRealMode, supabase, userId, coachSyncCount]);
   const nutriPct = isRealMode ? (realNutritionCompliance?.pct ?? null) : (nutriOverride ?? nutriPctComputed);
 
   // Cerchio Recupero reale: STESSA formula di ClientDetail (coach), mai
   // calcolata due volte — vedi computeRecoveryCompliance in coachingData.js.
-  // Legge solo daily_metrics già salvato, non lo stato locale del form: si
-  // calcola all'apertura della Home, non in diretta a ogni tasto — se il
-  // cliente modifica sonno/passi lo vedrà aggiornato al prossimo ricaricamento,
-  // stesso comportamento già scelto per il cerchio Allenamento. È il prezzo
-  // di avere lo STESSO numero che vede il coach, non un mix stato-locale+DB.
+  // Legge solo daily_metrics già salvato, non lo stato locale del form.
   const [realRecoveryCompliance, setRealRecoveryCompliance] = useState(null);
   useEffect(() => {
-    if (!isRealMode) return;
+    if (!isRealMode) return undefined;
     let cancelled = false;
-    computeRecoveryCompliance(supabase, userId)
-      .then((r) => { if (!cancelled) setRealRecoveryCompliance(r); })
-      .catch((err) => {
-        console.error("PERFORM: errore calcolo cerchio Recupero", err);
-        if (!cancelled) setRealRecoveryCompliance({ status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0, windowDays: 0 });
-      });
-    return () => { cancelled = true; };
-  }, [isRealMode, supabase, userId]);
+    const refresh = () => {
+      computeRecoveryCompliance(supabase, userId)
+        .then((r) => { if (!cancelled) setRealRecoveryCompliance(r); })
+        .catch((err) => {
+          console.error("PERFORM: errore calcolo cerchio Recupero", err);
+          if (!cancelled) setRealRecoveryCompliance((prev) => prev ?? { status: "neutral", pct: null, sleepAvg: null, stepsAvg: null, trackedDays: 0, windowDays: 0 });
+        });
+    };
+    refresh();
+    const id = setInterval(refresh, 20000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRealMode, supabase, userId, coachSyncCount]);
 
   const recoveryBasePct = isRealMode ? (realRecoveryCompliance?.pct ?? null) : recoveryPctComputed;
   const recoveryPct = recoveryOverride ?? blendRecoveryWithReadiness(recoveryBasePct, readiness);
@@ -10716,7 +10765,9 @@ export default function HomePreview({
         sleep_end: sleep.end || null,
         sleep_hours: sleep.hours || null,
         steps: steps !== "" ? Number(steps) : null,
-      }).catch((err) => console.error("PERFORM: errore salvataggio daily_metrics", err));
+      })
+        .then(() => pushCoachSync({ type: "recovery-metrics" })) // il cerchio Recupero si muove subito, non al prossimo poll
+        .catch((err) => console.error("PERFORM: errore salvataggio daily_metrics", err));
     }, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -11221,6 +11272,7 @@ export default function HomePreview({
               addNutritionLogItem(supabaseProp, userId, toLocalISODate(), slot, item)
                 .then((saved) => {
                   setMeals((m) => ({ ...m, [slot]: m[slot].map((it) => (it === localItem ? { ...it, id: saved.id } : it)) }));
+                  pushCoachSync({ type: "nutrition" }); // il cerchio Alimentazione si muove subito, non al prossimo poll
                 })
                 .catch((err) => console.error("PERFORM: errore salvataggio pasto", err));
             }
@@ -11229,7 +11281,9 @@ export default function HomePreview({
             setMeals((m) => {
               const item = m[slot][index];
               if (supabaseProp && userId && item?.id) {
-                removeNutritionLogItem(supabaseProp, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto", err));
+                removeNutritionLogItem(supabaseProp, item.id)
+                  .then(() => pushCoachSync({ type: "nutrition" }))
+                  .catch((err) => console.error("PERFORM: errore rimozione pasto", err));
               }
               return { ...m, [slot]: m[slot].filter((_, i) => i !== index) };
             });
@@ -11241,7 +11295,9 @@ export default function HomePreview({
               if (!item) return m;
               const patched = scaleFoodItem(item, newGrams);
               if (supabaseProp && userId && item.id) {
-                updateNutritionLogItem(supabaseProp, item.id, patched).catch((err) => console.error("PERFORM: errore modifica pasto", err));
+                updateNutritionLogItem(supabaseProp, item.id, patched)
+                  .then(() => pushCoachSync({ type: "nutrition" }))
+                  .catch((err) => console.error("PERFORM: errore modifica pasto", err));
               }
               return { ...m, [slot]: items.map((it, i) => (i === index ? patched : it)) };
             });

@@ -374,14 +374,34 @@ export async function fetchTodayWellness(supabase, userId, dateISO) {
 // il numero è identico ovunque venga calcolato, non un mix di dato live +
 // storico persistito.
 //
-// Media degli ultimi giorni EFFETTIVI (max 7) fino a IERI — mai oggi: un
-// giorno ancora in corso non ha "fallito" solo perché non ancora registrato,
-// contarlo abbassa la media in modo scorretto. La finestra non parte mai
-// prima della data di iscrizione (profiles.created_at): un atleta iscritto da
-// 3 giorni viene valutato sui suoi 3 giorni reali, non su una finestra fissa
-// di 7 che include giorni in cui l'account non esisteva ancora (zeri che non
-// gli appartengono). Se oggi è il giorno stesso dell'iscrizione, nessun
-// giorno valutabile esiste ancora: stato neutro.
+// Media degli ultimi giorni EFFETTIVI (max 7) fino a IERI — mai oggi, A MENO
+// che oggi non abbia già sonno/passi registrati: allora entra subito nella
+// finestra al posto del giorno più vecchio, così il cerchio si muove nello
+// stesso momento in cui si registra qualcosa, non il giorno dopo. Un giorno
+// ancora in corso e completamente vuoto non ha invece "fallito" solo perché
+// non ancora registrato, contarlo abbasserebbe la media in modo scorretto.
+//
+// 2 ORE DI GRAZIA dopo mezzanotte (recoveryWindowEndISO): chi si sveglia
+// presto e registra il sonno della notte appena finita subito dopo la
+// mezzanotte non deve vedersi giudicare "ieri" come già perso — solo dopo le
+// 2 di notte un "ieri" ancora vuoto conta davvero come giornata non
+// registrata e abbassa la percentuale.
+//
+// La finestra non parte mai prima della data di iscrizione (profiles.created_at):
+// un atleta iscritto da 3 giorni viene valutato sui suoi 3 giorni reali, non
+// su una finestra fissa di 7 che include giorni in cui l'account non esisteva
+// ancora (zeri che non gli appartengono). Se oggi è il giorno stesso
+// dell'iscrizione, nessun giorno valutabile esiste ancora: stato neutro.
+//
+function recoveryWindowEndISO(includeToday) {
+  const todayISO = toLocalISODate();
+  if (includeToday) return todayISO;
+  const graceShifted = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const effectiveToday = toLocalISODate(graceShifted);
+  const d = new Date(`${effectiveToday}T00:00:00`);
+  d.setDate(d.getDate() - 1);
+  return toLocalISODate(d);
+}
 //
 // SOLO passi e sonno — non il dolore (nessun check-in reale collegato
 // ancora) e non HRV/RHR (nessuna fonte reale finché non c'è un device
@@ -429,10 +449,15 @@ function recoveryComplianceFromRows(rows, windowStartISO, windowEndISO) {
   return { status: "ok", pct, sleepAvg, stepsAvg, trackedDays, windowDays: n };
 }
 export async function computeRecoveryCompliance(supabase, userId) {
-  const today = toLocalISODate();
-  const yesterday = new Date(`${today}T00:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const sevenAgo = new Date(yesterday);
+  const todayISO = toLocalISODate();
+  const { data: todayRow, error: todayError } = await supabase
+    .from("daily_metrics").select("sleep_hours, steps").eq("user_id", userId).eq("date", todayISO).maybeSingle();
+  if (todayError) throw todayError;
+  const todayHasData = !!(todayRow && (Number(todayRow.sleep_hours) > 0 || Number(todayRow.steps) > 0));
+
+  const windowEndISO = recoveryWindowEndISO(todayHasData);
+  const endDate = new Date(`${windowEndISO}T00:00:00`);
+  const sevenAgo = new Date(endDate);
   sevenAgo.setDate(sevenAgo.getDate() - 6);
 
   const { data: profileRow, error: profileError } = await supabase
@@ -440,7 +465,6 @@ export async function computeRecoveryCompliance(supabase, userId) {
   if (profileError) throw profileError;
   const joinedISO = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : null;
   const windowStartISO = joinedISO && joinedISO > toLocalISODate(sevenAgo) ? joinedISO : toLocalISODate(sevenAgo);
-  const windowEndISO = toLocalISODate(yesterday);
 
   if (windowStartISO > windowEndISO) {
     return recoveryComplianceFromRows([], windowStartISO, windowEndISO);
@@ -467,13 +491,26 @@ export async function computeBatchRecoveryCompliance(supabase, userIds) {
   const results = new Map();
   if (!userIds || userIds.length === 0) return results;
 
-  const today = toLocalISODate();
-  const yesterday = new Date(`${today}T00:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const sevenAgo = new Date(yesterday);
-  sevenAgo.setDate(sevenAgo.getDate() - 6);
-  const windowEndISO = toLocalISODate(yesterday);
-  const globalWindowStartISO = toLocalISODate(sevenAgo);
+  const todayISO = toLocalISODate();
+  // Stessa reattività della versione singolo-cliente: chi ha già registrato
+  // sonno o passi oggi vede oggi entrare subito nella propria finestra —
+  // un'unica query di controllo per tutto il roster, non una per cliente.
+  const { data: todayRows, error: todayError } = await supabase
+    .from("daily_metrics").select("user_id, sleep_hours, steps").in("user_id", userIds).eq("date", todayISO);
+  if (todayError) throw todayError;
+  const usersWithTodayData = new Set(
+    (todayRows ?? []).filter((r) => Number(r.sleep_hours) > 0 || Number(r.steps) > 0).map((r) => r.user_id)
+  );
+
+  const globalWindowEndISO = recoveryWindowEndISO(false);
+  // Il range di fetch condiviso copre il caso più ampio (fino a oggi, se
+  // qualcuno lo ha già registrato); ogni cliente userà comunque il proprio
+  // windowEndISO (oggi o il normale fine-finestra con grazia) qui sotto.
+  const globalFetchEndISO = usersWithTodayData.size > 0 ? todayISO : globalWindowEndISO;
+  const fetchEndDate = new Date(`${globalFetchEndISO}T00:00:00`);
+  const globalFetchStart = new Date(fetchEndDate);
+  globalFetchStart.setDate(globalFetchStart.getDate() - 6);
+  const globalFetchStartISO = toLocalISODate(globalFetchStart);
 
   const { data: profiles, error: profileError } = await supabase
     .from("profiles").select("id, created_at").in("id", userIds);
@@ -484,8 +521,8 @@ export async function computeBatchRecoveryCompliance(supabase, userIds) {
     .from("daily_metrics")
     .select("user_id, date, sleep_hours, steps")
     .in("user_id", userIds)
-    .gte("date", globalWindowStartISO)
-    .lte("date", windowEndISO);
+    .gte("date", globalFetchStartISO)
+    .lte("date", globalFetchEndISO);
   if (metricsError) throw metricsError;
 
   const rowsByUser = new Map(userIds.map((id) => [id, []]));
@@ -494,8 +531,13 @@ export async function computeBatchRecoveryCompliance(supabase, userIds) {
   }
 
   for (const userId of userIds) {
+    const windowEndISO = usersWithTodayData.has(userId) ? todayISO : globalWindowEndISO;
+    const endDate = new Date(`${windowEndISO}T00:00:00`);
+    const userSevenAgo = new Date(endDate);
+    userSevenAgo.setDate(userSevenAgo.getDate() - 6);
+    const userWindowStartISO = toLocalISODate(userSevenAgo);
     const joinedISO = joinedByUser.get(userId) ?? null;
-    const windowStartISO = joinedISO && joinedISO > globalWindowStartISO ? joinedISO : globalWindowStartISO;
+    const windowStartISO = joinedISO && joinedISO > userWindowStartISO ? joinedISO : userWindowStartISO;
     results.set(userId, recoveryComplianceFromRows(rowsByUser.get(userId), windowStartISO, windowEndISO));
   }
   return results;
@@ -616,10 +658,21 @@ export async function fetchFoodUsageStats(supabase, userId, sinceDays = 90) {
 // cliente o coach impostassero un obiettivo) il giorno non entra proprio
 // nella media, vedi dayNutritionScore. Se in NESSUNo dei giorni della
 // finestra c'è un target attivo, torna neutro esplicito.
+//
+// TOLLERANZA (non più scostamento millimetrico): dentro il 12% dal target su
+// ciascuna macro il giorno vale punteggio pieno — nessun atleta reale becca
+// kcal/macro esatti tutti i giorni, e pretenderlo avrebbe reso il cerchio
+// impossibile da tenere alto anche per chi si segna tutto e mangia bene.
+// Oltre quel 12% la penalità cresce in modo lineare, mai negativa.
+const NUTRITION_TOLERANCE = 0.12;
 export function dayNutritionScore(logsTotals, target) {
   if (!target) return null; // nessun target attivo quel giorno: non giudicabile
   const dims = ["kcal", "p", "c", "f"];
-  const devs = dims.map((d) => (target[d] > 0 ? Math.min(1, Math.abs(logsTotals[d] - target[d]) / target[d]) : 0));
+  const devs = dims.map((d) => {
+    if (!(target[d] > 0)) return 0;
+    const relDev = Math.abs(logsTotals[d] - target[d]) / target[d];
+    return Math.max(0, Math.min(1, (relDev - NUTRITION_TOLERANCE) / (1 - NUTRITION_TOLERANCE)));
+  });
   return Math.max(0, Math.min(100, Math.round((1 - devs.reduce((a, b) => a + b, 0) / dims.length) * 100)));
 }
 // Logica pura (stesso principio di recoveryComplianceFromRows sopra):
@@ -663,10 +716,20 @@ function nutritionComplianceFromRows(logs, targets, workouts, fromISO, toISO) {
   return { status: "ok", pct, daysScored: scores.length };
 }
 export async function computeNutritionCompliance(supabase, userId) {
-  const today = toLocalISODate();
-  const yesterday = new Date(`${today}T00:00:00`);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const sevenAgo = new Date(yesterday);
+  const todayISO = toLocalISODate();
+
+  // Reattività richiesta: il cerchio si deve muovere SUBITO appena si
+  // registra un pasto, non aspettare la mezzanotte — ma una giornata ancora
+  // senza NULLA nel diario non deve ancora "sgarrare" solo perché non è
+  // finita. Oggi entra nella finestra solo se ha già almeno un pasto loggato.
+  const { data: todayLogs, error: todayLogsError } = await supabase
+    .from("nutrition_logs").select("id").eq("user_id", userId).eq("date", todayISO).limit(1);
+  if (todayLogsError) throw todayLogsError;
+  const includeToday = (todayLogs ?? []).length > 0;
+
+  const toDate = new Date(`${todayISO}T00:00:00`);
+  if (!includeToday) toDate.setDate(toDate.getDate() - 1);
+  const sevenAgo = new Date(toDate);
   sevenAgo.setDate(sevenAgo.getDate() - 6);
 
   const { data: profileRow, error: profileError } = await supabase
@@ -674,7 +737,7 @@ export async function computeNutritionCompliance(supabase, userId) {
   if (profileError) throw profileError;
   const joinedISO = profileRow?.created_at ? toLocalISODate(new Date(profileRow.created_at)) : null;
   const fromISO = joinedISO && joinedISO > toLocalISODate(sevenAgo) ? joinedISO : toLocalISODate(sevenAgo);
-  const toISO = toLocalISODate(yesterday);
+  const toISO = toLocalISODate(toDate);
 
   if (fromISO > toISO) {
     return { status: "neutral", pct: null, daysScored: 0 };
@@ -699,12 +762,26 @@ export async function computeBatchNutritionCompliance(supabase, userIds) {
   const results = new Map();
   if (!userIds || userIds.length === 0) return results;
 
-  const today = toLocalISODate();
-  const yesterday = new Date(`${today}T00:00:00`);
+  const todayISO = toLocalISODate();
+  const yesterday = new Date(`${todayISO}T00:00:00`);
   yesterday.setDate(yesterday.getDate() - 1);
-  const sevenAgo = new Date(yesterday);
+  const yesterdayISO = toLocalISODate(yesterday);
+
+  // Stessa reattività della versione singolo-cliente: chi ha già registrato
+  // un pasto oggi vede oggi entrare subito nella propria finestra — un'unica
+  // query di controllo per tutto il roster, non una per cliente.
+  const { data: todayLogRows, error: todayLogsError } = await supabase
+    .from("nutrition_logs").select("user_id").eq("date", todayISO).in("user_id", userIds);
+  if (todayLogsError) throw todayLogsError;
+  const usersWithTodayLogged = new Set((todayLogRows ?? []).map((r) => r.user_id));
+
+  // Il range di fetch condiviso copre il caso più ampio (fino a oggi, se
+  // qualcuno lo ha già registrato); ogni cliente userà comunque il proprio
+  // toISO (oggi o ieri) qui sotto.
+  const globalToISO = usersWithTodayLogged.size > 0 ? todayISO : yesterdayISO;
+  const globalToDate = new Date(`${globalToISO}T00:00:00`);
+  const sevenAgo = new Date(globalToDate);
   sevenAgo.setDate(sevenAgo.getDate() - 6);
-  const toISO = toLocalISODate(yesterday);
   const globalFromISO = toLocalISODate(sevenAgo);
 
   const { data: profiles, error: profileError } = await supabase
@@ -713,9 +790,9 @@ export async function computeBatchNutritionCompliance(supabase, userIds) {
   const joinedByUser = new Map((profiles ?? []).map((p) => [p.id, p.created_at ? toLocalISODate(new Date(p.created_at)) : null]));
 
   const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }] = await Promise.all([
-    supabase.from("nutrition_logs").select("user_id, date, kcal, protein, carbs, fat").in("user_id", userIds).gte("date", globalFromISO).lte("date", toISO),
-    supabase.from("nutrition_targets").select("user_id, day_type, kcal, protein, carbs, fat, effective_from").in("user_id", userIds).lte("effective_from", toISO).order("effective_from", { ascending: true }),
-    supabase.from("workout_logs").select("user_id, date").in("user_id", userIds).gte("date", globalFromISO).lte("date", toISO),
+    supabase.from("nutrition_logs").select("user_id, date, kcal, protein, carbs, fat").in("user_id", userIds).gte("date", globalFromISO).lte("date", globalToISO),
+    supabase.from("nutrition_targets").select("user_id, day_type, kcal, protein, carbs, fat, effective_from").in("user_id", userIds).lte("effective_from", globalToISO).order("effective_from", { ascending: true }),
+    supabase.from("workout_logs").select("user_id, date").in("user_id", userIds).gte("date", globalFromISO).lte("date", globalToISO),
   ]);
   if (logsError) throw logsError;
   if (targetsError) throw targetsError;
@@ -731,8 +808,13 @@ export async function computeBatchNutritionCompliance(supabase, userIds) {
   const workoutsByUser = groupByUser(workouts);
 
   for (const userId of userIds) {
+    const toISO = usersWithTodayLogged.has(userId) ? todayISO : yesterdayISO;
+    const toDate = new Date(`${toISO}T00:00:00`);
+    const userSevenAgo = new Date(toDate);
+    userSevenAgo.setDate(userSevenAgo.getDate() - 6);
+    const userFromISO = toLocalISODate(userSevenAgo);
     const joinedISO = joinedByUser.get(userId) ?? null;
-    const fromISO = joinedISO && joinedISO > globalFromISO ? joinedISO : globalFromISO;
+    const fromISO = joinedISO && joinedISO > userFromISO ? joinedISO : userFromISO;
     if (fromISO > toISO) {
       results.set(userId, { status: "neutral", pct: null, daysScored: 0 });
       continue;
@@ -1134,9 +1216,18 @@ export async function fetchClientSetHistory(supabase, userId, fromDateISO, toDat
 //                    confrontabili sono peggiorati; "negative" se TUTTI i
 //                    confrontabili sono peggiorati; "neutral" altrimenti
 //                    (inclusi il caso "nessun esercizio confrontabile").
-//   pct finale    = completionPct, con una penalità (×0.75) solo se la
-//                    progressione è negativa — positiva/neutra non alterano
-//                    il numero (nessun bonus implementato, il tetto resta 100).
+//   pct finale    = completionPct, con un BONUS (fino a +10, mai oltre 100)
+//                    solo se la progressione è positiva. NESSUNA penalità se
+//                    negativa/stabile: chi va in palestra alle sedute
+//                    programmate e registra tutto (carichi, ripetizioni,
+//                    sensazioni) si è allenato, punto — che quella settimana
+//                    i carichi siano saliti o no è secondario. Prima una
+//                    progressione negativa applicava ×0.75/×0.8 anche a un
+//                    completamento perfetto: un atleta presente a tutte le
+//                    sedute programmate e con diario compilato al 100%
+//                    finiva con un cerchio Allenamento ingiustamente basso
+//                    solo perché non aveva progredito sul carico — bug
+//                    segnalato direttamente dall'uso reale dell'app.
 //
 // Se non c'è MAI stato nulla assegnato (nessuna sessione trovata), torna
 // status "neutral" con pct null — mai 0% (sembrerebbe un allarme) né 100%
@@ -1186,15 +1277,11 @@ function trainingComplianceFromRows(assignedRows, setsJoined, currentDates, prio
     else if (improved > 0) progression = "positive";
   }
 
-  // Tre livelli distinti, non solo "penalità se regredisce": chi progredisce
-  // sul carico mantenendo la costanza merita il punteggio pieno (bonus sopra
-  // il solo completamento), chi mantiene le prestazioni resta al punteggio
-  // di completamento così com'è, chi regredisce ma continua ad allenarsi
-  // resta comunque premiato per la costanza — solo un po' meno di chi
-  // mantiene o migliora, mai una bocciatura netta.
-  const pct = progression === "positive" ? Math.min(100, completionPct + 10)
-    : progression === "negative" ? Math.round(completionPct * 0.8)
-    : completionPct;
+  // Solo un bonus per chi progredisce, MAI una penalità per chi non lo fa:
+  // presenza e registrazione complete sono il segnale primario di essersi
+  // allenati davvero, la progressione del carico è un extra, non un
+  // requisito — vedi nota sopra la funzione.
+  const pct = progression === "positive" ? Math.min(100, completionPct + 10) : completionPct;
   return { status: "ok", pct, completionPct, progression };
 }
 export async function computeTrainingCompliance(supabase, userId) {
@@ -1203,23 +1290,45 @@ export async function computeTrainingCompliance(supabase, userId) {
   // abbondante anche per chi si allena 6 volte a settimana da un anno) e
   // dedup lato client — l'ordine desc si preserva perché un Set mantiene
   // l'ordine di primo inserimento.
-  // lt(oggi), non lte: il coach può programmare settimane future in anticipo
-  // (MAX_FORWARD_WEEKS in 09_CoachDashboard.jsx) — senza questo taglio,
-  // "le date più recenti" pescherebbe sessioni future mai ancora svolte al
-  // posto delle ultime 7 sedute REALMENTE fatte, falsando il cerchio. Oggi
-  // stesso è escluso anche se una sessione è già stata assegnata per oggi:
-  // finché la giornata non è finita non ha ancora "fallito" solo perché non
-  // ancora registrata, non deve poter abbassare la percentuale a metà giornata.
+  // lte(oggi), non lt: oggi può entrare nella finestra (vedi sotto) — ma solo
+  // se il cliente ha GIÀ registrato qualcosa oggi stesso, altrimenti verrebbe
+  // subito escluso di nuovo qui sotto. Il coach può comunque programmare
+  // settimane future in anticipo (MAX_FORWARD_WEEKS in 09_CoachDashboard.jsx):
+  // quelle restano fuori perché sempre > oggi.
+  const todayISO = toLocalISODate();
   const { data: recentLogs, error: recentError } = await supabase
     .from("workout_logs")
     .select("date")
     .eq("user_id", userId)
-    .lt("date", toLocalISODate())
+    .lte("date", todayISO)
     .order("date", { ascending: false })
     .limit(250);
   if (recentError) throw recentError;
 
-  const distinctDates = [...new Set((recentLogs ?? []).map((r) => r.date))];
+  const distinctDatesDesc = [...new Set((recentLogs ?? []).map((r) => r.date))];
+  if (distinctDatesDesc.length === 0) {
+    return { status: "neutral", pct: null, completionPct: null, progression: "neutral" };
+  }
+
+  // Reattività richiesta: il cerchio si deve muovere SUBITO quando si
+  // registra qualcosa, non aspettare la mezzanotte — ma un giorno ancora in
+  // corso senza NULLA registrato non deve ancora "fallire" solo perché non è
+  // finito. Se oggi è la data più recente assegnata, resta nella finestra
+  // solo se ha già almeno una serie loggata; altrimenti si esclude come
+  // prima (comportamento identico a quando la query filtrava lt(oggi)).
+  let distinctDates = distinctDatesDesc;
+  if (distinctDatesDesc[0] === todayISO) {
+    const { data: todaySets, error: todayError } = await supabase
+      .from("workout_sets")
+      .select("id, workout_logs!inner(date, user_id)")
+      .eq("workout_logs.user_id", userId)
+      .eq("workout_logs.date", todayISO)
+      .limit(1);
+    if (todayError) throw todayError;
+    if (!todaySets || todaySets.length === 0) {
+      distinctDates = distinctDatesDesc.filter((d) => d !== todayISO);
+    }
+  }
   if (distinctDates.length === 0) {
     return { status: "neutral", pct: null, completionPct: null, progression: "neutral" };
   }
@@ -1252,11 +1361,12 @@ export async function computeBatchTrainingCompliance(supabase, userIds) {
   const results = new Map();
   if (!userIds || userIds.length === 0) return results;
 
+  const todayISO = toLocalISODate();
   const { data: allLogs, error: logsError } = await supabase
     .from("workout_logs")
     .select("user_id, date, sets_count")
     .in("user_id", userIds)
-    .lt("date", toLocalISODate())
+    .lte("date", todayISO)
     .order("date", { ascending: false })
     .limit(5000);
   if (logsError) throw logsError;
@@ -1266,6 +1376,22 @@ export async function computeBatchTrainingCompliance(supabase, userIds) {
     if (rowsByUser.has(row.user_id)) rowsByUser.get(row.user_id).push(row);
   }
 
+  // Stessa reattività della versione singolo-cliente: chi ha oggi come data
+  // più recente assegnata la mantiene nella finestra solo se ha già loggato
+  // almeno una serie oggi — un'unica query per tutto il roster, non una per
+  // cliente.
+  const usersWithTodayAssigned = userIds.filter((id) => (rowsByUser.get(id) ?? []).some((r) => r.date === todayISO));
+  const usersWithTodayLogged = new Set();
+  if (usersWithTodayAssigned.length > 0) {
+    const { data: todaySets, error: todayError } = await supabase
+      .from("workout_sets")
+      .select("workout_logs!inner(date, user_id)")
+      .in("workout_logs.user_id", usersWithTodayAssigned)
+      .eq("workout_logs.date", todayISO);
+    if (todayError) throw todayError;
+    (todaySets ?? []).forEach((r) => { if (r.workout_logs?.user_id) usersWithTodayLogged.add(r.workout_logs.user_id); });
+  }
+
   const perUserDates = new Map();
   const allDatesGlobal = new Set();
   for (const userId of userIds) {
@@ -1273,7 +1399,10 @@ export async function computeBatchTrainingCompliance(supabase, userIds) {
     // rowsByUser preserva l'ordine desc di allLogs (filtro, non risort):
     // il primo elemento di ogni Set è la data più recente, come nella
     // versione singolo-cliente.
-    const distinctDates = [...new Set(rows.map((r) => r.date))];
+    let distinctDates = [...new Set(rows.map((r) => r.date))];
+    if (distinctDates[0] === todayISO && !usersWithTodayLogged.has(userId)) {
+      distinctDates = distinctDates.filter((d) => d !== todayISO);
+    }
     const currentDates = distinctDates.slice(0, 7);
     const priorDates = distinctDates.slice(7, 14);
     perUserDates.set(userId, { currentDates, priorDates });

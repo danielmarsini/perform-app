@@ -74,10 +74,17 @@ describe("dayNutritionScore", () => {
     const target = { kcal: 2000, p: 150, c: 200, f: 60 };
     expect(dayNutritionScore({ ...target }, target)).toBe(100);
   });
-  it("scostamento sotto e sopra target penalizzano allo stesso modo (simmetrico)", () => {
+  it("dentro la tolleranza del 12% => punteggio pieno (nessuno lo rispetta al millimetro)", () => {
     const target = { kcal: 2000, p: 150, c: 200, f: 60 };
-    const under = dayNutritionScore({ kcal: 1800, p: 150, c: 200, f: 60 }, target);
-    const over = dayNutritionScore({ kcal: 2200, p: 150, c: 200, f: 60 }, target);
+    const under = dayNutritionScore({ kcal: 1800, p: 150, c: 200, f: 60 }, target); // -10%
+    const over = dayNutritionScore({ kcal: 2200, p: 150, c: 200, f: 60 }, target); // +10%
+    expect(under).toBe(100);
+    expect(over).toBe(100);
+  });
+  it("scostamento sotto e sopra target OLTRE la tolleranza penalizzano allo stesso modo (simmetrico)", () => {
+    const target = { kcal: 2000, p: 150, c: 200, f: 60 };
+    const under = dayNutritionScore({ kcal: 1400, p: 150, c: 200, f: 60 }, target); // -30%
+    const over = dayNutritionScore({ kcal: 2600, p: 150, c: 200, f: 60 }, target); // +30%
     expect(under).toBe(over);
     expect(under).toBeLessThan(100);
   });
@@ -352,6 +359,104 @@ describe("computeBatchTrainingCompliance vs computeTrainingCompliance", () => {
     const batch = await computeBatchTrainingCompliance(supabase, ["u9"]);
     expect(single.status).toBe("neutral");
     expect(batch.get("u9")).toEqual(single);
+  });
+});
+
+// Redesign richiesto dall'uso reale: chi va in palestra a tutte le sedute
+// programmate e registra tutto (carichi, ripetizioni, sensazioni) si è
+// allenato, punto — anche se il carico non è salito quella settimana. Prima
+// una progressione negativa applicava una penalità (×0.8) anche a un
+// completamento perfetto, facendo scendere il cerchio ingiustamente.
+// Blocco "current" di 7 sedute (posizioni 1-7) tutte completate al 100%
+// sullo stesso esercizio, più UNA seduta "prior" (posizione 8) con un carico
+// diverso per far scattare la progressione — così completionPct resta
+// sempre 100 ed è isolata solo la progressione.
+function fullyLoggedTrainingWeek(userId, priorLoadKg) {
+  const workout_logs = [];
+  const workout_sets = [];
+  for (let i = 1; i <= 7; i++) {
+    workout_logs.push({ user_id: userId, date: daysAgoISO(i), sets_count: 3 });
+    for (let s = 0; s < 3; s++) {
+      workout_sets.push({ load_kg: 50, workout_logs: { date: daysAgoISO(i), exercise_name: "Squat bilanciere", user_id: userId } });
+    }
+  }
+  workout_logs.push({ user_id: userId, date: daysAgoISO(8), sets_count: 3 });
+  workout_sets.push({ load_kg: priorLoadKg, workout_logs: { date: daysAgoISO(8), exercise_name: "Squat bilanciere", user_id: userId } });
+  return { workout_logs, workout_sets };
+}
+describe("Allenamento: costanza premiata, nessuna penalità per mancata progressione", () => {
+  it("completamento pieno con carico in calo non subisce più alcuna penalità", async () => {
+    const tables = fullyLoggedTrainingWeek("uP", 80); // prior più pesante del blocco corrente (50kg) => progressione negativa
+    const supabase = makeMockSupabase(tables);
+    const result = await computeTrainingCompliance(supabase, "uP");
+    expect(result.completionPct).toBe(100);
+    expect(result.progression).toBe("negative");
+    expect(result.pct).toBe(100); // prima sarebbe stato 80 (×0.8) — ora nessuna penalità
+  });
+  it("progressione positiva resta un bonus (fino a +10, mai oltre 100)", async () => {
+    const tables = fullyLoggedTrainingWeek("uQ", 30); // prior più leggero del blocco corrente (50kg) => progressione positiva
+    const supabase = makeMockSupabase(tables);
+    const result = await computeTrainingCompliance(supabase, "uQ");
+    expect(result.completionPct).toBe(100);
+    expect(result.progression).toBe("positive");
+    expect(result.pct).toBe(100); // completionPct 100 + bonus, cappato a 100
+  });
+});
+
+// Reattività richiesta: i 3 cerchi si devono muovere SUBITO quando si
+// registra qualcosa, non aspettare la mezzanotte — ma una giornata ancora
+// in corso e completamente vuota non deve ancora "fallire".
+describe("Reattività oggi: il cerchio si muove appena si registra qualcosa", () => {
+  it("Allenamento: oggi entra nella finestra solo dopo la prima serie registrata", async () => {
+    const tables = {
+      workout_logs: [{ user_id: "uT", date: daysAgoISO(0), sets_count: 3 }],
+      workout_sets: [],
+    };
+    const supabase = makeMockSupabase(tables);
+    const beforeLog = await computeTrainingCompliance(supabase, "uT");
+    expect(beforeLog.status).toBe("neutral");
+
+    tables.workout_sets.push(
+      { load_kg: 50, workout_logs: { date: daysAgoISO(0), exercise_name: "Squat bilanciere", user_id: "uT" } },
+      { load_kg: 50, workout_logs: { date: daysAgoISO(0), exercise_name: "Squat bilanciere", user_id: "uT" } },
+      { load_kg: 50, workout_logs: { date: daysAgoISO(0), exercise_name: "Squat bilanciere", user_id: "uT" } },
+    );
+    const afterLog = await computeTrainingCompliance(supabase, "uT");
+    expect(afterLog.status).toBe("ok");
+    expect(afterLog.pct).toBe(100);
+  });
+  it("Alimentazione: oggi entra nella finestra solo dopo il primo pasto registrato", async () => {
+    const tables = {
+      profiles: [{ id: "uN", created_at: new Date().toISOString() }],
+      nutrition_logs: [],
+      nutrition_targets: [
+        { user_id: "uN", day_type: "off", kcal: 2000, protein: 150, carbs: 200, fat: 60, effective_from: "2020-01-01" },
+      ],
+      workout_logs: [],
+    };
+    const supabase = makeMockSupabase(tables);
+    const beforeLog = await computeNutritionCompliance(supabase, "uN");
+    expect(beforeLog.status).toBe("neutral");
+
+    tables.nutrition_logs.push({ user_id: "uN", date: daysAgoISO(0), kcal: 2000, protein: 150, carbs: 200, fat: 60 });
+    const afterLog = await computeNutritionCompliance(supabase, "uN");
+    expect(afterLog.status).toBe("ok");
+    expect(afterLog.pct).toBe(100);
+    expect(afterLog.daysScored).toBe(1);
+  });
+  it("Recupero: oggi entra nella finestra solo dopo il primo dato di sonno/passi", async () => {
+    const tables = {
+      profiles: [{ id: "uR", created_at: new Date().toISOString() }],
+      daily_metrics: [],
+    };
+    const supabase = makeMockSupabase(tables);
+    const beforeLog = await computeRecoveryCompliance(supabase, "uR");
+    expect(beforeLog.status).toBe("neutral");
+
+    tables.daily_metrics.push({ user_id: "uR", date: daysAgoISO(0), sleep_hours: 7, steps: 8000 });
+    const afterLog = await computeRecoveryCompliance(supabase, "uR");
+    expect(afterLog.status).toBe("ok");
+    expect(afterLog.windowDays).toBe(1);
   });
 });
 
