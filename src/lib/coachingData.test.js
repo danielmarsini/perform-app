@@ -462,6 +462,15 @@ describe("computeCrewStreak", () => {
     expect(streak).toBe(7);
   });
 
+  it("una crew rimasta con un solo membro non regala uno streak gratuito nei giorni senza attività", () => {
+    // BUG PRESO: Math.max(0, 1 - CREW_DAY_MAX_MISSING) dava minComplete = 0,
+    // che rendeva OGNI giorno "completo per la crew" indipendentemente
+    // dall'attività reale dell'unico membro rimasto.
+    const weekly = new Map([["u1", makeEntry(4)]]); // completo solo negli ultimi 3 giorni
+    const { streak } = computeCrewStreak(weekly, today);
+    expect(streak).toBe(3);
+  });
+
   it("due giorni di fila sotto soglia rompono lo streak di gruppo oltre la finestra di grazia", () => {
     // 4 membri: u2 e u3 mancano ENTRAMBI 2 giorni fa e ieri (indici 4 e 5) —
     // 2 presenti su 4 quel giorno, sotto la soglia (max 1 assente su 4). La

@@ -2044,7 +2044,13 @@ export function computeCrewStreak(weeklyActivityByUser, todayIso) {
   if (entries.length === 0) return { streak: 0, dayCompleteByDate: new Map() };
 
   const days = entries[0].days;
-  const minComplete = Math.max(0, entries.length - CREW_DAY_MAX_MISSING);
+  // BUG PRESO: con crew.length === 1 (leaveCrew non impone un minimo di
+  // membri: si può restare da soli), Math.max(0, 1 - 1) dava minComplete = 0
+  // — QUALSIASI giorno risultava "completo per la crew" a prescindere
+  // dall'attività reale, regalando uno streak automatico e privo di sforzo
+  // all'ultimo membro rimasto. Il minimo va bloccato a 1: anche una crew di
+  // una sola persona deve comunque essersi davvero allenata quel giorno.
+  const minComplete = Math.max(1, entries.length - CREW_DAY_MAX_MISSING);
   const dayCompleteByDate = new Map(days.map((d, i) => [d, entries.filter((e) => e.dayFlags[i]).length >= minComplete]));
 
   let streak = 0;
