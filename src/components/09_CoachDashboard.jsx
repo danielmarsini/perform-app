@@ -91,7 +91,7 @@ import {
   fetchCustomExerciseLibraryRows, updateExerciseLibraryEntry, deleteExerciseFromLibrary,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage,
-  fetchReferrals, REAL_COACHING_PLANS_DB,
+  fetchReferrals, REAL_COACHING_PLANS_DB, awardXpBonus,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -3674,6 +3674,37 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
     }
   };
 
+  // BUG PRESO: awardXpBonus esisteva già in coachingData.js e xp_bonuses è
+  // già sommata da computeRealXpAndStreak — mancava solo il pulsante per
+  // usarla. "Bonus XP manuale" per riconoscere un traguardo (obiettivo di
+  // mesociclo raggiunto, costanza fuori dal comune) senza dover falsificare
+  // lo storico di allenamento/alimentazione per farlo salire.
+  const [awardingXp, setAwardingXp] = useState(false);
+  const [xpAmount, setXpAmount] = useState("");
+  const [xpReason, setXpReason] = useState("");
+  const [xpBusy, setXpBusy] = useState(false);
+  const [xpError, setXpError] = useState("");
+  const [xpJustAwarded, setXpJustAwarded] = useState(false);
+  const doAwardXp = async () => {
+    const amount = Math.round(Number(xpAmount));
+    if (!amount || amount <= 0) { setXpError("Inserisci un numero di XP maggiore di zero."); return; }
+    setXpBusy(true);
+    setXpError("");
+    try {
+      await awardXpBonus(supabase, { userId: client.id, coachId, amount, reason: xpReason.trim() || null });
+      setAwardingXp(false);
+      setXpAmount("");
+      setXpReason("");
+      setXpJustAwarded(true);
+      setTimeout(() => setXpJustAwarded(false), 3000);
+    } catch (err) {
+      console.error("PERFORM: errore assegnazione bonus XP", err);
+      setXpError("Non sono riuscito a salvare il bonus. Riprova.");
+    } finally {
+      setXpBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-5">
@@ -3728,6 +3759,31 @@ function ClientDetail({ client, onBack, quickTargets, setQuickTargets, initialTa
                 </button>
               )
             )}
+            {awardingXp ? (
+              <div className="flex flex-col gap-1.5 w-full">
+                <p className="c-muted text-xs">Bonus XP manuale (es. "Obiettivo di mesociclo raggiunto"):</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  <input type="number" min="1" value={xpAmount} onChange={(e) => setXpAmount(e.target.value)}
+                    placeholder="XP" className="t-input w-20 text-xs rounded-lg px-2.5 py-2" />
+                  <input type="text" value={xpReason} onChange={(e) => setXpReason(e.target.value)}
+                    placeholder="Motivo (facoltativo)" className="t-input flex-1 min-w-[140px] text-xs rounded-lg px-2.5 py-2" />
+                </div>
+                <div className="flex gap-2 items-center">
+                  <button type="button" onClick={doAwardXp} disabled={xpBusy} className="c-btn px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50">
+                    {xpBusy ? "…" : "Assegna"}
+                  </button>
+                  <button type="button" onClick={() => { setAwardingXp(false); setXpError(""); }} disabled={xpBusy} className="text-xs" style={{ color: "var(--ink-soft)" }}>
+                    Annulla
+                  </button>
+                </div>
+                {xpError && <p className="text-xs" style={{ color: "#DC2626" }}>{xpError}</p>}
+              </div>
+            ) : (
+              <button onClick={() => setAwardingXp(true)} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium">
+                Assegna XP bonus
+              </button>
+            )}
+            {xpJustAwarded && <span className="text-xs font-medium" style={{ color: "#047857" }}>✓ Bonus assegnato</span>}
           </div>
         )}
       </div>
