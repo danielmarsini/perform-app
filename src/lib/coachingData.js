@@ -1502,6 +1502,7 @@ export async function saveWeekSupplements(supabase, coachId, clientId, sections)
       rows.push({ user_id: clientId, coach_id: coachId, moment, name: it.name.trim(), dose: it.dose || null, sort_order: i, day_type: it.dayType || "all" });
     });
   });
+  await markSectionUpdated(supabase, clientId, "supplements");
   if (rows.length === 0) return;
 
   const { error: insertError } = await supabase.from("prescribed_supplements").insert(rows);
@@ -1519,6 +1520,7 @@ export async function assignNutritionTarget(supabase, {
     set_by: coachId,
   });
   if (error) throw error;
+  await markSectionUpdated(supabase, clientId, "nutrition");
 }
 
 // Lunedì di partenza (weekStartDateISO, 'YYYY-MM-DD') → i 7 giorni di quella
@@ -1716,6 +1718,7 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
       }
     }
   }
+  await markSectionUpdated(supabase, userId, "workout");
 }
 
 // Clona una settimana di allenamento su un'altra: legge le righe della
@@ -3386,4 +3389,52 @@ export async function publishTeamPost(supabase, { eyebrow, title, body }) {
 export async function deleteTeamPost(supabase, postId) {
   const { error } = await supabase.from("coach_news_tips").delete().eq("id", postId);
   if (error) throw error;
+}
+
+/* ---------------------------------------------------------------------------
+   NOVITÀ PER SEZIONE (SCHEMA_v80) — pallino rosso pulsante su Allenamento/
+   Alimentazione/Integrazione in Home quando il coach ha aggiornato quella
+   sezione dopo l'ultima visita del cliente. Stesso principio di
+   last_seen_announcements_at (ora ritirato): un timestamp "aggiornato" (scritto
+   dalle funzioni di scrittura coach — saveWeekWorkout/assignNutritionTarget/
+   saveWeekSupplements) confrontato con un timestamp "visto" (scritto quando
+   il cliente apre quella sezione in Home).
+   ------------------------------------------------------------------------- */
+
+const SECTION_COLUMNS = {
+  workout: { updated: "workout_updated_at", seen: "workout_seen_at" },
+  nutrition: { updated: "nutrition_updated_at", seen: "nutrition_seen_at" },
+  supplements: { updated: "supplements_updated_at", seen: "supplements_seen_at" },
+};
+
+// Chiamata dalle funzioni di scrittura del coach qui sopra — mai dal client
+// per la propria scheda: è il coach a "creare novità", mai il cliente.
+async function markSectionUpdated(supabase, userId, section) {
+  const { error } = await supabase.from("profiles")
+    .update({ [SECTION_COLUMNS[section].updated]: new Date().toISOString() }).eq("id", userId);
+  if (error) console.error("PERFORM: errore aggiornamento novità sezione", section, userId, error);
+}
+
+// Chiamata dalla Home quando il cliente apre la sezione: azzera il pallino
+// finché il coach non tocca di nuovo quella sezione.
+export async function markSectionSeen(supabase, userId, section) {
+  const { error } = await supabase.from("profiles")
+    .update({ [SECTION_COLUMNS[section].seen]: new Date().toISOString() }).eq("id", userId);
+  if (error) console.error("PERFORM: errore aggiornamento visto sezione", section, userId, error);
+}
+
+// { workout: bool, nutrition: bool, supplements: bool } — true se il coach ha
+// aggiornato quella sezione DOPO l'ultima visita del cliente (mai vista =
+// qualunque aggiornamento esistente è "nuovo").
+export async function fetchSectionNovelty(supabase, userId) {
+  const { data, error } = await supabase.from("profiles")
+    .select("workout_updated_at, workout_seen_at, nutrition_updated_at, nutrition_seen_at, supplements_updated_at, supplements_seen_at")
+    .eq("id", userId).maybeSingle();
+  if (error) throw error;
+  const isNew = (updated, seen) => !!updated && (!seen || new Date(updated) > new Date(seen));
+  return {
+    workout: isNew(data?.workout_updated_at, data?.workout_seen_at),
+    nutrition: isNew(data?.nutrition_updated_at, data?.nutrition_seen_at),
+    supplements: isNew(data?.supplements_updated_at, data?.supplements_seen_at),
+  };
 }
