@@ -11,7 +11,16 @@ import LandingIntro from "./components/LandingIntro.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange } from "./lib/coachingData.js";
+
+// Anteprima leggibile del messaggio appena inviato, per il push — mai il
+// body grezzo se manca (solo un allegato): un push senza testo sembrerebbe
+// vuoto/rotto sulla schermata di blocco.
+function chatPushPreview(message) {
+  if (message.body) return message.body.length > 120 ? `${message.body.slice(0, 117)}…` : message.body;
+  const label = { image: "una foto", video: "un video", audio: "un vocale" }[message.attachment_type] || "un file";
+  return `Ti ha inviato ${label}`;
+}
 
 /* Schermata Chat a schermo intero, dietro il tab di navigazione dedicato —
    include anche il video-check tecnica (invio video esercizi dentro la
@@ -73,7 +82,10 @@ function CoachChatInboxScreen({ supabase, coachId, accent, gender }) {
         </div>
         <div className="flex-1 min-h-0">
           <ChatThread supabase={supabase} clientId={openClient.id} meId={coachId} accent={accent} gender={gender}
-            emptyText={`Nessun messaggio ancora con ${openClient.name} — scrivi il primo.`} />
+            emptyText={`Nessun messaggio ancora con ${openClient.name} — scrivi il primo.`}
+            onSent={(msg) => notifyClientPlanChange(supabase, openClient.id, {
+              title: "Nuovo messaggio dal tuo coach", body: chatPushPreview(msg), url: "/",
+            })} />
         </div>
       </div>
     );
