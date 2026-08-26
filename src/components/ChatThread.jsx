@@ -26,6 +26,27 @@ function kindForFile(file) {
   return "file";
 }
 
+// BUG PRESO: ogni messaggio mostrava SOLO l'ora (es. "14:32"), mai la data —
+// per una chat coach<->cliente che nella Scheda Personalizzata/Coaching
+// Allenamento resta aperta per mesi, scorrendo indietro nella cronologia
+// ogni giorno si somigliava: impossibile capire se un messaggio era di ieri
+// o di 3 settimane fa senza contare i divisori. Un separatore "Oggi/Ieri/
+// GG.MM" prima del primo messaggio di ogni giornata (stesso pattern delle
+// chat consumer) risolve l'ambiguità senza aggiungere alcuna informazione
+// nuova — solo la data che created_at già porta con sé, resa leggibile.
+function dayDivider(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return "Oggi";
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Ieri";
+  return d.toLocaleDateString("it-IT", {
+    day: "2-digit", month: "2-digit",
+    year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
 export default function ChatThread({ supabase, clientId, meId, accent, emptyText, gender = "M" }) {
   const [messages, setMessages] = useState(null); // null = non ancora caricato
   const [draft, setDraft] = useState("");
@@ -230,35 +251,51 @@ export default function ChatThread({ supabase, clientId, meId, accent, emptyText
         {messages.length === 0 && (
           <p className="meta text-center mt-8">{emptyText || "Nessun messaggio ancora — scrivi il primo."}</p>
         )}
-        {messages.map((m) => {
-          const mine = m.sender_id === meId;
-          const hasAttachment = !!m.attachment_path;
-          const bodyEl = m.body && (
-            <p className="text-sm" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", color: mine ? undefined : "var(--ink)" }}>
-              {mine ? <span className={`chat-shine ${shineClass}`}>{m.body}</span> : m.body}
-            </p>
-          );
-          return (
-            <div key={m.id} className="flex" style={{ justifyContent: mine ? "flex-end" : "flex-start" }}>
-              <div className="flex flex-col" style={{ maxWidth: "78%", alignItems: mine ? "flex-end" : "flex-start", gap: 6 }}>
-                {hasAttachment ? (
-                  <>
-                    {renderAttachment(m)}
-                    {bodyEl && <div className="px-1">{bodyEl}</div>}
-                  </>
-                ) : (
-                  <div className="rounded-2xl px-3.5 py-2.5"
-                       style={mine ? { backgroundColor: "rgba(0,0,0,0.62)" } : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-                    {bodyEl}
+        {(() => {
+          let lastDayKey = null;
+          return messages.map((m) => {
+            const created = new Date(m.created_at);
+            const dayKey = created.toDateString();
+            const showDivider = dayKey !== lastDayKey;
+            lastDayKey = dayKey;
+            const mine = m.sender_id === meId;
+            const hasAttachment = !!m.attachment_path;
+            const bodyEl = m.body && (
+              <p className="text-sm" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", color: mine ? undefined : "var(--ink)" }}>
+                {mine ? <span className={`chat-shine ${shineClass}`}>{m.body}</span> : m.body}
+              </p>
+            );
+            return (
+              <React.Fragment key={m.id}>
+                {showDivider && (
+                  <div className="flex justify-center my-1">
+                    <span className="font-data uppercase" style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.04em", color: "var(--ink-2)" }}>
+                      {dayDivider(m.created_at)}
+                    </span>
                   </div>
                 )}
-                <p className="px-1" style={{ fontSize: "0.62rem", color: "var(--ink-2)" }}>
-                  {new Date(m.created_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
-                </p>
-              </div>
-            </div>
-          );
-        })}
+                <div className="flex" style={{ justifyContent: mine ? "flex-end" : "flex-start" }}>
+                  <div className="flex flex-col" style={{ maxWidth: "78%", alignItems: mine ? "flex-end" : "flex-start", gap: 6 }}>
+                    {hasAttachment ? (
+                      <>
+                        {renderAttachment(m)}
+                        {bodyEl && <div className="px-1">{bodyEl}</div>}
+                      </>
+                    ) : (
+                      <div className="rounded-2xl px-3.5 py-2.5"
+                           style={mine ? { backgroundColor: "rgba(0,0,0,0.62)" } : { backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+                        {bodyEl}
+                      </div>
+                    )}
+                    <p className="px-1" style={{ fontSize: "0.62rem", color: "var(--ink-2)" }}>
+                      {created.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              </React.Fragment>
+            );
+          });
+        })()}
       </div>
 
       {attachError && <p className="text-xs mb-1.5 px-1" style={{ color: "#DC2626" }}>{attachError}</p>}
