@@ -72,8 +72,12 @@ Deno.serve(async (req) => {
     const { body } = await req.json().catch(() => ({}));
     if (!body) return new Response(JSON.stringify({ error: "body è obbligatorio" }), { status: 400, headers: CORS_HEADERS });
 
+    // Titolo breve stile WhatsApp: solo il nickname sopra, il messaggio sotto
+    // come body — non più "Nuovo messaggio da X", che sommato alla scritta
+    // "from Perform" che iOS/Android aggiungono da soli al push rendeva la
+    // prima riga troppo lunga da leggere al volo sulla lock screen.
     const { data: sender } = await admin.from("profiles").select("nickname").eq("id", user.id).maybeSingle();
-    const title = `Nuovo messaggio da ${sender?.nickname || "un cliente"}`;
+    const title = sender?.nickname || "Un cliente";
 
     const { data: coach, error: coachError } = await admin.from("profiles").select("id").ilike("email", COACH_EMAIL).maybeSingle();
     if (coachError || !coach) return new Response(JSON.stringify({ error: "coach non trovato" }), { status: 500, headers: CORS_HEADERS });
