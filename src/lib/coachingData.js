@@ -2270,8 +2270,11 @@ export async function fetchClientRoster(supabase) {
 
 // Piani assegnabili dal coach tramite "Prendi in gestione" / "Cambia
 // abbonamento": solo i tre a coaching reale (Free e Premium restano
-// scelte autogestite del cliente, mai imposte dal coach da qui).
-const COACHING_PLANS = ["scheda_personalizzata", "training", "full"];
+// scelte autogestite del cliente, mai imposte dal coach da qui). Stesso
+// dominio di REAL_COACHING_PLANS_DB più sopra, qui come array perché
+// activateClient/whitelistClient usano .includes()/.join() — non una
+// terza lista hardcoded degli stessi 3 valori.
+const COACHING_PLANS = [...REAL_COACHING_PLANS_DB];
 
 // `plan` è obbligatorio: client_status e plan si scrivono sempre insieme,
 // nello stesso update — mai un cliente "attivo" senza un piano coerente, o
@@ -2311,8 +2314,11 @@ const WHITELISTABLE_PLANS = ["free", "performance_pack", "scheda_personalizzata"
 // stesse seguendo personalmente con una Scheda Personalizzata mai comprata.
 // Free e Premium sono piani AUTOGESTITI (vivono solo in Hub Utenti, mai in
 // Hub Atleti) esattamente come per un pagamento Stripe vero — vedi la stessa
-// distinzione già presente in stripe-webhook (client_status:"active" solo se
-// COACHING_PLANS.has(planDb)) e in activateClient qui sopra.
+// distinzione già presente nelle Edge Function stripe-webhook e
+// process-referral-rewards (ognuna con la propria copia di COACHING_PLANS,
+// stessi 3 valori — un Deno Edge Function non può importare da questo file,
+// quindi non è consolidabile in un'unica fonte come REAL_COACHING_PLANS_DB
+// sopra) e in activateClient qui sopra.
 export async function whitelistClient(supabase, clientId, plan, months, skipAnamnesis = true) {
   if (!WHITELISTABLE_PLANS.includes(plan)) {
     throw new Error(`piano non valido per la whitelist: "${plan}"`);
@@ -2753,7 +2759,7 @@ export async function fetchCoachChatInbox(supabase, coachId) {
     .from("profiles")
     .select("id, nickname, full_name")
     .eq("role", "user")
-    .in("plan", ["scheda_personalizzata", "training", "full"]);
+    .in("plan", [...REAL_COACHING_PLANS_DB]);
   if (error) throw error;
   if (!profiles || profiles.length === 0) return [];
 

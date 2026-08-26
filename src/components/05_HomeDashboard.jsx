@@ -35,7 +35,7 @@ import { playSound } from "../lib/sounds.js";
 import { isMapboxConfigured, snapRouteToRoads, generateLoopRoute } from "../lib/mapbox.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
-import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected } from "../lib/googleFit.js";
+import { isAndroid, isGoogleFitConfigured, syncTodayStepsFromGoogleFit, isGoogleFitConnected, disconnectGoogleFit } from "../lib/googleFit.js";
 // Leaflet + OpenStreetMap: mappa del percorso reale, gratuita e senza
 // chiave API (nessun account Google Maps da pagare/gestire) — stesso
 // principio già scelto per Open Food Facts e PubMed in questa app. Il CSS
@@ -522,6 +522,18 @@ function GoogleFitStepsSync({ accent, onSetSteps }) {
           {connected ? "Collegato — tocca per aggiornare i passi di oggi" : "Un tap per leggere i passi di oggi, senza inserirli a mano"}
         </p>
         {error && <p className="mt-1" style={{ fontSize: "0.72rem", color: "#B91C1C" }}>{error}</p>}
+        {/* BUG PRESO: non esisteva NESSUN modo di scollegare Google Fit una
+            volta collegato — la funzione disconnectGoogleFit c'era già in
+            googleFit.js ma non era mai richiamata da un pulsante. */}
+        {connected && (
+          <button
+            onClick={() => { disconnectGoogleFit(); setConnected(false); }}
+            className="mt-1 text-xs underline"
+            style={{ color: "var(--ink-2)" }}
+          >
+            Scollega
+          </button>
+        )}
       </div>
       <button onClick={doSync} disabled={syncing}
               className="shrink-0 rounded-full px-3.5 py-2 text-xs disabled:opacity-60"
