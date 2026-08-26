@@ -37,8 +37,10 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   User, Camera, Pencil, Check, X, ChevronDown, ChevronUp,
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video, Share2,
+  ClipboardList,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, isRealCoachingPlan } from "../lib/coachingData.js";
+import { GlobalStyle as AnamGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./AnamnesisShared.jsx";
 import { shareWrappedStory } from "../lib/wrappedShare.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
@@ -1117,6 +1119,80 @@ function Section({ id, icon: Icon, title, sub, openId, setOpenId, children, badg
   );
 }
 
+// BUG PRESO (segnalato da un cliente pagante): l'anamnesi si compilava UNA
+// SOLA VOLTA in fase di onboarding (11_OnboardingFlow.jsx) e non era più
+// raggiungibile da nessuna parte dopo — un cliente Coaching Allenamento (50
+// euro/mese) non l'ha mai più rivista né potuta correggere. Stessa
+// AnamAreaSection/ANAM_QUESTIONS già usate nell'onboarding e nel pannello
+// coach (AnamnesisShared.jsx): stessa fonte di verità, mai una terza copia.
+// Autosalvataggio debounced (900ms), stesso identico pattern già in uso e
+// verificato lato coach (AnamnesisPanel, 09_CoachDashboard.jsx).
+function AnamnesisSection({ supabase, userId, dark }) {
+  const [answers, setAnswers] = useState(null); // null = non ancora caricata
+  const [loadError, setLoadError] = useState("");
+  const [saveState, setSaveState] = useState(null); // null | 'saving' | 'saved' | 'error'
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAnamnesis(supabase, userId)
+      .then((a) => { if (!cancelled) setAnswers(a); })
+      .catch((err) => {
+        console.error("PERFORM: errore caricamento anamnesi", err);
+        if (!cancelled) setLoadError("Non sono riuscito a caricare la tua anamnesi.");
+      });
+    return () => { cancelled = true; };
+  }, [supabase, userId]);
+
+  const setField = (k, v) => setAnswers((a) => ({ ...(a ?? {}), [k]: v }));
+
+  useEffect(() => {
+    if (answers === null) return undefined; // niente ancora da salvare (caricamento in corso, o fallito)
+    setSaveState("saving");
+    const t = setTimeout(() => {
+      saveAnamnesis(supabase, userId, answers)
+        .then(() => setSaveState("saved"))
+        .catch((err) => { console.error("PERFORM: errore salvataggio anamnesi", err); setSaveState("error"); });
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers]);
+
+  if (answers === null) {
+    return loadError
+      ? <p className="text-xs" style={{ color: "#DC2626" }}>{loadError}</p>
+      : <p className="meta">Carico la tua anamnesi…</p>;
+  }
+
+  const fillable = ANAM_QUESTIONS.filter((q) => q.t !== "photos");
+  const filled = fillable.filter((q) => String(answers[q.k] ?? "").trim() !== "").length;
+  const pct = Math.round((filled / fillable.length) * 100);
+
+  return (
+    <div className={`coach-root${dark ? " dark" : ""}`}>
+      <AnamGlobalStyle />
+      <div className="flex items-center justify-between mb-3">
+        <p className="c-muted text-xs">Le stesse 56 domande date al coach — aggiornale quando cambia qualcosa.</p>
+        <span className="font-data text-xs font-bold shrink-0 ml-2" style={{ color: pct >= 90 ? "#10B981" : pct >= 50 ? "#F0A020" : "var(--ink-soft)" }}>
+          {pct}%
+        </span>
+      </div>
+      <div className="space-y-3">
+        {Object.entries(ANAM_AREAS).map(([areaId, label]) => (
+          <AnamAreaSection key={areaId} areaId={areaId} label={label}
+            questions={ANAM_QUESTIONS.filter((q) => q.area === areaId && q.t !== "photos")}
+            answers={answers} onChange={setField} />
+        ))}
+      </div>
+      <p className="c-muted text-xs mt-3 px-1">
+        {saveState === "saving" && "Salvataggio in corso…"}
+        {saveState === "saved" && "✓ Modifiche salvate."}
+        {saveState === "error" && "Errore nel salvataggio — controlla la connessione, riprova a modificare un campo."}
+        {!saveState && "Ogni modifica si salva da sola."}
+      </p>
+    </div>
+  );
+}
+
 /* ============================================================================
    3 · PROFILO ATLETA — vista unica per chiunque apra l'app
    ========================================================================== */
@@ -1128,8 +1204,10 @@ export function ClientProfileView({
   checkPhotos, weightPoints, circPoints,
   onSaveProfile, onOpenSettings, nicknameTaken,
   onOpenManualCheck,   // se passato, mostra il pulsante "Registra ora" nell'Archivio Check
-  supabase, userId,    // solo per "Vai in vacanza / chiedi riposo forzato" (PauseSection)
+  supabase, userId,    // solo per "Vai in vacanza / chiedi riposo forzato" (PauseSection) e anamnesi
   plan,                // id STRIPE_PLANS ("free"/"performance"/"scheda"/"training"/"full") — gate PauseSection
+  dark,                // per la sezione Anamnesi (AnamnesisShared.jsx usa .coach-root/.coach-root.dark)
+  showAnamnesis,       // true per chi ha un piano a coaching reale — vedi nota nel chiamante
 }) {
   const t = translations[lang] || translations.it;
   const [editing, setEditing] = useState(false);
@@ -1415,6 +1493,17 @@ export function ClientProfileView({
         <TrophyShelf level={level} streak={streak} checkinsCount={checkinsCount}
                      weightPoints={weightPoints} circPoints={circPoints} userId={userId} />
       </Section>
+
+      {/* Anamnesi: sempre raggiungibile e modificabile da qui, non solo una
+          volta in fase di onboarding — vedi commento su AnamnesisSection. */}
+      {showAnamnesis && supabase && userId && (
+        <Section id="anamnesi" icon={ClipboardList}
+                 title="La tua anamnesi"
+                 sub="Rivedi o aggiorna le informazioni date al tuo coach"
+                 openId={openSection} setOpenId={setOpenSection}>
+          <AnamnesisSection supabase={supabase} userId={userId} dark={dark} />
+        </Section>
+      )}
 
       {/* Pausa (vacanza/riposo forzato): in fondo a tutta la pagina, sotto
           ogni altra sezione — solo Coaching Allenamento/Full Coaching (non
@@ -2451,7 +2540,17 @@ export default function ClientProfileViewPreview({
           nicknameTaken={(n) => ["SaraSteel", "LucaE"].some((x) => x.toLowerCase() === n.toLowerCase())}
           onOpenManualCheck={isRealMode ? () => setShowManualCheck(true) : undefined}
           supabase={isRealMode ? supabase : undefined} userId={isRealMode ? userId : undefined}
-          plan={plan}
+          plan={plan} dark={dark}
+          // Gate separato per l'anamnesi (vedi AnamnesisSection più sotto):
+          // usa userPlan (il valore REALE da App.jsx: "scheda_personalizzata"/
+          // "training"/"full"/"full_coaching"/"performance_pack"/"free") invece
+          // di `plan` qui sopra — `plan` è rimappato da uno useState iniziale
+          // che, per userPlan "scheda_personalizzata"/"training", ricade nel suo
+          // ramo finale ("full"): un cliente Scheda Personalizzata o Coaching
+          // Allenamento vedrebbe stato interno "full", sbagliato per un gate
+          // preciso. Non tocco quel mapping qui (rischio non necessario, fuori
+          // scopo) — l'anamnesi usa la sua fonte di verità indipendente.
+          showAnamnesis={isRealMode && isRealCoachingPlan(userPlan)}
         />
       </main>
 
