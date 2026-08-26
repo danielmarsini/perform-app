@@ -2445,6 +2445,16 @@ export async function touchLastActivity(supabase, userId) {
 // prs, evening) restano a un valore neutro di default — NON sono inventati,
 // sono segnalati come 0/vuoto finché non viene costruita la fonte dati vera
 // (checkins serali, calcolo aderenza da workout_sets, PR da workout_sets).
+// BUG PRESO (N+1, trovato dall'audit UX/logica): 2 query per profilo (ultimi
+// checkin + anamnesi) ad ogni apertura/refresh di Hub Atleti — su TUTTI i
+// profili "user", non solo i clienti a coaching attivo. Ora 2 query totali
+// per l'intero roster. "Ultimi 8 checkin per utente" non è esprimibile in
+// una sola query senza una funzione RPC dedicata (l'API non supporta LIMIT
+// per gruppo): si prende un LIMIT globale generosissimo (stesso principio
+// già accettato per fetchCoachChatInbox e computeBatchTrainingCompliance
+// qui sopra) e si tengono i primi 8 per utente scorrendo l'elenco già
+// ordinato dal più recente — realisticamente mai un checkin perso per un
+// roster di qualunque dimensione plausibile.
 export async function fetchClientRoster(supabase) {
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
@@ -2454,14 +2464,26 @@ export async function fetchClientRoster(supabase) {
   if (profilesError) throw profilesError;
   if (!profiles || profiles.length === 0) return [];
 
-  const roster = await Promise.all(
-    profiles.map(async (p) => {
-      const [{ data: checkins }, answers] = await Promise.all([
-        supabase.from("checkins").select("date, weight, chest, arm, thigh").eq("user_id", p.id).order("date", { ascending: false }).limit(8),
-        fetchAnamnesis(supabase, p.id).catch(() => ({})),
-      ]);
-      const ordered = (checkins ?? []).slice().reverse(); // dal più vecchio al più recente, come si aspetta il grafico
+  const ids = profiles.map((p) => p.id);
+  const [{ data: allCheckins, error: checkinsError }, { data: anamRows, error: anamError }] = await Promise.all([
+    supabase.from("checkins").select("user_id, date, weight, chest, arm, thigh")
+      .in("user_id", ids).order("date", { ascending: false }).limit(5000),
+    supabase.from("anamnesis_responses").select("user_id, answers").in("user_id", ids),
+  ]);
+  if (checkinsError) throw checkinsError;
+  if (anamError) throw anamError;
+
+  const checkinsByUser = new Map(ids.map((id) => [id, []]));
+  (allCheckins ?? []).forEach((c) => {
+    const list = checkinsByUser.get(c.user_id);
+    if (list && list.length < 8) list.push(c); // già ordinati per data desc: i primi 8 raccolti sono i più recenti
+  });
+  const answersByUser = new Map((anamRows ?? []).map((r) => [r.user_id, r.answers || {}]));
+
+  const roster = profiles.map((p) => {
+      const ordered = (checkinsByUser.get(p.id) ?? []).slice().reverse(); // dal più vecchio al più recente, come si aspetta il grafico
       const last = ordered[ordered.length - 1];
+      const answers = answersByUser.get(p.id) || {};
 
       return {
         id: p.id,
@@ -2498,8 +2520,7 @@ export async function fetchClientRoster(supabase) {
         rings: { allenamento: 0, alimentazione: 0, recupero: 0 },
         _anamnesisAnswers: answers, // portato dietro per AnamnesisPanel, non per la roster card
       };
-    })
-  );
+  });
   return roster;
 }
 
@@ -2989,6 +3010,17 @@ export async function sendChatMessage(supabase, clientId, senderId, body, attach
 // una conversazione), con l'ultimo messaggio e il conteggio dei non letti,
 // stile WhatsApp. Il coach non ha "una" conversazione come il cliente: ne
 // ha una per ciascuno, qui elencate tutte insieme.
+// BUG PRESO (N+1, trovato dall'audit UX/logica): faceva 2 query per cliente
+// (ultimo messaggio + conteggio non letti), richiamata ogni 20s dal polling
+// dell'inbox (App.jsx) — con un roster in crescita, decine di round-trip
+// Supabase in parallelo ogni 20 secondi. Ora 2 query totali per l'intera
+// inbox, stesso principio già in uso per computeBatch*Compliance qui sopra.
+// L'API Supabase non supporta "ultima riga per gruppo" in una sola query
+// senza una funzione RPC dedicata: il LIMIT qui sotto è quindi globale (non
+// per-cliente) ma generosissimo rispetto ai volumi reali di una chat 1:1
+// coach<->cliente — nessun "ultimo messaggio" resta realisticamente fuori,
+// stessa approssimazione accettata (e commentata) in
+// computeBatchTrainingCompliance più sopra.
 export async function fetchCoachChatInbox(supabase, coachId) {
   const { data: profiles, error } = await supabase
     .from("profiles")
@@ -2998,23 +3030,35 @@ export async function fetchCoachChatInbox(supabase, coachId) {
   if (error) throw error;
   if (!profiles || profiles.length === 0) return [];
 
-  const rows = await Promise.all(profiles.map(async (p) => {
-    const [{ data: lastRows }, { count: unreadCount }] = await Promise.all([
-      supabase.from("chat_messages").select("body, attachment_type, sender_id, created_at")
-        .eq("client_id", p.id).order("created_at", { ascending: false }).limit(1),
-      supabase.from("chat_messages").select("id", { count: "exact", head: true })
-        .eq("client_id", p.id).neq("sender_id", coachId).is("read_at", null),
-    ]);
-    const last = lastRows?.[0] || null;
+  const ids = profiles.map((p) => p.id);
+  const [{ data: recentMessages, error: msgErr }, { data: unreadRows, error: unreadErr }] = await Promise.all([
+    supabase.from("chat_messages").select("client_id, body, attachment_type, sender_id, created_at")
+      .in("client_id", ids).order("created_at", { ascending: false }).limit(2000),
+    supabase.from("chat_messages").select("client_id")
+      .in("client_id", ids).neq("sender_id", coachId).is("read_at", null),
+  ]);
+  if (msgErr) throw msgErr;
+  if (unreadErr) throw unreadErr;
+
+  // Righe già ordinate dalla più recente: la prima volta che un client_id
+  // compare È il suo ultimo messaggio.
+  const lastByClient = new Map();
+  (recentMessages ?? []).forEach((m) => { if (!lastByClient.has(m.client_id)) lastByClient.set(m.client_id, m); });
+
+  const unreadCountByClient = new Map();
+  (unreadRows ?? []).forEach((r) => unreadCountByClient.set(r.client_id, (unreadCountByClient.get(r.client_id) ?? 0) + 1));
+
+  const rows = profiles.map((p) => {
+    const last = lastByClient.get(p.id) || null;
     return {
       id: p.id,
       name: p.full_name || p.nickname || "Atleta",
       lastMessage: last ? (last.body || (last.attachment_type ? "📎 Allegato" : null)) : null,
       lastMessageAt: last?.created_at || null,
       lastMessageMine: last ? last.sender_id === coachId : false,
-      unreadCount: unreadCount || 0,
+      unreadCount: unreadCountByClient.get(p.id) ?? 0,
     };
-  }));
+  });
 
   // Più recente prima (stile WhatsApp); chi non ha ancora scritto niente in fondo, per nome.
   return rows.sort((a, b) => {
