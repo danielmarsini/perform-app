@@ -2825,6 +2825,13 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
 
   return (
     <div>
+      {/* Con un solo piano allenamento-only (trainingOnlyPlan) sectionTabs ha
+          una sola voce, sempre attiva: una fila di tab tutta nera, larga
+          quanto lo schermo, che non fa niente al tocco (non c'è una seconda
+          scheda su cui passare) — solo ingombro visivo che lascia intuire
+          scelte che non esistono per questo cliente. La mostriamo solo
+          quando c'è davvero più di una sezione tra cui scegliere. */}
+      {sectionTabs.length > 1 && (
       <div className="grid gap-1.5 mb-5" style={{ gridTemplateColumns: `repeat(${sectionTabs.length}, 1fr)` }}>
         {sectionTabs.map(([id, lab, Ico]) => {
           const on = section === id;
@@ -2837,6 +2844,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
           );
         })}
       </div>
+      )}
 
       {showWeekManager && (
       <>
