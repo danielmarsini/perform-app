@@ -22,37 +22,51 @@ const COACH_EMAIL = "danielmarsini@coach.com";
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
+// BUG PRESO: chiamata dal browser (supabase.functions.invoke) da un'origine
+// diversa da *.supabase.co — senza questi header il browser blocca la
+// richiesta già alla preflight OPTIONS (che riceveva 405 qui), la vera POST
+// non partiva mai e il push non veniva mai inviato — root cause reale della
+// segnalazione "attivo le notifiche ma non arriva nulla". Stesso pattern già
+// stabilito in create-checkout-session, ripetuto (per errore) anche in
+// notify-client: da riusare sempre in ogni function chiamata da browser.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405 });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
+  if (req.method !== "POST") return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: CORS_HEADERS });
 
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (!token) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  if (!token) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
-  if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+  if (authError || !user) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS_HEADERS });
 
   // Il coach che scrive nella propria self-chat non deve mandarsi un push.
   if ((user.email || "").trim().toLowerCase() === COACH_EMAIL) {
-    return new Response(JSON.stringify({ sent: 0, reason: "sender-is-coach" }));
+    return new Response(JSON.stringify({ sent: 0, reason: "sender-is-coach" }), { headers: CORS_HEADERS });
   }
 
   const { body } = await req.json().catch(() => ({}));
-  if (!body) return new Response(JSON.stringify({ error: "body è obbligatorio" }), { status: 400 });
+  if (!body) return new Response(JSON.stringify({ error: "body è obbligatorio" }), { status: 400, headers: CORS_HEADERS });
 
   const { data: sender } = await admin.from("profiles").select("nickname").eq("id", user.id).maybeSingle();
   const title = `Nuovo messaggio da ${sender?.nickname || "un cliente"}`;
 
   const { data: coach, error: coachError } = await admin.from("profiles").select("id").ilike("email", COACH_EMAIL).maybeSingle();
-  if (coachError || !coach) return new Response(JSON.stringify({ error: "coach non trovato" }), { status: 500 });
+  if (coachError || !coach) return new Response(JSON.stringify({ error: "coach non trovato" }), { status: 500, headers: CORS_HEADERS });
 
   const { data: subs, error: subsError } = await admin
     .from("push_subscriptions")
     .select("id, endpoint, p256dh, auth_key")
     .eq("user_id", coach.id);
-  if (subsError) return new Response(JSON.stringify({ error: subsError.message }), { status: 500 });
-  if (!subs || subs.length === 0) return new Response(JSON.stringify({ sent: 0, reason: "no-subscriptions" }));
+  if (subsError) return new Response(JSON.stringify({ error: subsError.message }), { status: 500, headers: CORS_HEADERS });
+  if (!subs || subs.length === 0) return new Response(JSON.stringify({ sent: 0, reason: "no-subscriptions" }), { headers: CORS_HEADERS });
 
   const payload = JSON.stringify({ title, body, url: "/" });
   let sent = 0;
@@ -69,5 +83,5 @@ Deno.serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ sent }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ sent }), { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
 });
