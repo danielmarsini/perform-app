@@ -4866,12 +4866,25 @@ function PastSetRow({ workoutLogId, set, supabase, userId }) {
 }
 
 /* Una sessione passata intera: data + tutte le serie (non solo il top set),
-   ognuna modificabile singolarmente via PastSetRow. */
-function PastSessionCard({ session, supabase, userId }) {
+   ognuna modificabile singolarmente via PastSetRow.
+   missed=true: giorno assegnato ma mai registrato (nessuna serie salvata
+   finora, vedi missedByExerciseName in coachingData.js) — le stesse righe
+   PastSetRow partono vuote invece che precompilate, e lo stesso
+   logWorkoutSet le CREA alla prima modifica invece di correggerle: nessuna
+   distinzione di codice serve tra "correggi" e "registra da zero", solo
+   un'etichetta diversa per far capire all'atleta perché è tutto vuoto. */
+function PastSessionCard({ session, supabase, userId, missed = false }) {
   const label = new Date(`${session.date}T00:00:00`).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
   return (
     <div className="inner px-3.5 py-3">
-      <p className="meta mb-2" style={{ fontWeight: 700 }}>{label}</p>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="meta" style={{ fontWeight: 700 }}>{label}</p>
+        {missed && (
+          <span className="text-xs" style={{ fontWeight: 700, color: "#D97706" }}>
+            Mai registrato
+          </span>
+        )}
+      </div>
       <div className="space-y-1.5">
         {session.sets.map((s) => (
           <PastSetRow key={s.setNumber} workoutLogId={session.workoutLogId} set={s} supabase={supabase} userId={userId} />
@@ -5149,8 +5162,13 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
 
       {/* Sessioni precedenti: non solo il top set (com'era prima) ma OGNI
           serie svolta, modificabile — utile per correggere un carico/reps che
-          ci si è scordati di segnare al momento (richiesta esplicita). */}
-      {ex.setHistory && ex.setHistory.length > 0 && supabase && userId && (
+          ci si è scordati di segnare al momento (richiesta esplicita).
+          Include anche i giorni assegnati ma MAI registrati (missedSessions,
+          status "missed" mai toccato): capita di allenarsi davvero e
+          scordarsi di segnarlo in app — qui si recupera invece di perderlo
+          per sempre, con le stesse righe usate per correggere una sessione
+          già fatta (vedi nota su PastSessionCard). */}
+      {((ex.setHistory && ex.setHistory.length > 0) || (ex.missedSessions && ex.missedSessions.length > 0)) && supabase && userId && (
         <div className="mt-3">
           <button onClick={() => setHistoryOpen((v) => !v)}
                   className="w-full flex items-center justify-between rounded-2xl px-3.5 py-2.5 transition-all duration-300"
@@ -5158,11 +5176,24 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
             <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
               <History size={13} style={{ color: "var(--ink-2)" }} />
               Sessioni precedenti
+              {ex.missedSessions && ex.missedSessions.length > 0 && ` (${ex.missedSessions.length} da recuperare)`}
             </span>
             {historyOpen ? <ChevronUp size={14} style={{ color: "var(--ink-2)" }} /> : <ChevronDown size={14} style={{ color: "var(--ink-2)" }} />}
           </button>
           {historyOpen && (
             <div className="spring-in mt-2 space-y-2">
+              {(ex.missedSessions ?? []).map((m) => (
+                <PastSessionCard
+                  key={m.workoutLogId}
+                  missed
+                  session={{
+                    workoutLogId: m.workoutLogId,
+                    date: m.date,
+                    sets: Array.from({ length: m.setsCount || 1 }, (_, i) => ({ setNumber: i + 1, kg: null, reps: null, rir: null })),
+                  }}
+                  supabase={supabase} userId={userId}
+                />
+              ))}
               {ex.setHistory.map((session) => (
                 <PastSessionCard key={session.workoutLogId} session={session} supabase={supabase} userId={userId} />
               ))}
@@ -10647,7 +10678,7 @@ export default function HomePreview({
         // workout_sets. Con 15-20 esercizi in una settimana, decine di
         // round-trip solo per caricare la Home. fetchWeekExerciseHistories
         // fa lo stesso lavoro con 2 query totali (vedi coachingData.js).
-        const { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId } =
+        const { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId, missedByExerciseName } =
           await fetchWeekExerciseHistories(supabaseProp, userId, rows);
 
         // Serie già registrate (workout_sets) da precompilare in `sets`, per
@@ -10683,6 +10714,7 @@ export default function HomePreview({
               rests: Array.from({ length: r.sets_count ?? 3 }, () => r.rest_seconds ?? 120),
               history: historyByExerciseName.get(r.exercise_name) ?? [],
               setHistory: setHistoryByExerciseName.get(r.exercise_name) ?? [], // [{workoutLogId, date, sets:[{setNumber, kg, reps}]}] — sessioni passate modificabili
+              missedSessions: missedByExerciseName.get(r.exercise_name) ?? [], // [{workoutLogId, date, setsCount}] — giorni assegnati mai registrati, recuperabili
               splitLabel: r.split_label,
               // BUG PRESO: mancavano qui — computeVolume(weekPlan) per un
               // esercizio custom non ancora nella libreria condivisa si
