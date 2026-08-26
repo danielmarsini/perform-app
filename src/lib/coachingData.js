@@ -659,19 +659,23 @@ export async function fetchFoodUsageStats(supabase, userId, sinceDays = 90) {
 // nella media, vedi dayNutritionScore. Se in NESSUNo dei giorni della
 // finestra c'è un target attivo, torna neutro esplicito.
 //
-// TOLLERANZA (non più scostamento millimetrico): dentro il 12% dal target su
-// ciascuna macro il giorno vale punteggio pieno — nessun atleta reale becca
-// kcal/macro esatti tutti i giorni, e pretenderlo avrebbe reso il cerchio
-// impossibile da tenere alto anche per chi si segna tutto e mangia bene.
-// Oltre quel 12% la penalità cresce in modo lineare, mai negativa.
-const NUTRITION_TOLERANCE = 0.12;
+// TOLLERANZA (non più scostamento millimetrico): dentro il 5% dal target sulle
+// kcal e dentro il 10% su ciascun macro preso singolarmente il giorno vale
+// punteggio pieno su quella dimensione — nessun atleta reale becca kcal/macro
+// esatti tutti i giorni, e pretenderlo avrebbe reso il cerchio impossibile da
+// tenere alto anche per chi si segna tutto e mangia bene. Oltre la soglia la
+// penalità cresce in modo lineare, mai negativa. Le kcal hanno una tolleranza
+// più stretta dei singoli macro perché sono la somma di tutti e tre: un
+// margine identico ai macro le avrebbe rese di fatto ininfluenti nel calcolo.
+const NUTRITION_TOLERANCE = { kcal: 0.05, p: 0.10, c: 0.10, f: 0.10 };
 export function dayNutritionScore(logsTotals, target) {
   if (!target) return null; // nessun target attivo quel giorno: non giudicabile
   const dims = ["kcal", "p", "c", "f"];
   const devs = dims.map((d) => {
     if (!(target[d] > 0)) return 0;
+    const tolerance = NUTRITION_TOLERANCE[d];
     const relDev = Math.abs(logsTotals[d] - target[d]) / target[d];
-    return Math.max(0, Math.min(1, (relDev - NUTRITION_TOLERANCE) / (1 - NUTRITION_TOLERANCE)));
+    return Math.max(0, Math.min(1, (relDev - tolerance) / (1 - tolerance)));
   });
   return Math.max(0, Math.min(100, Math.round((1 - devs.reduce((a, b) => a + b, 0) / dims.length) * 100)));
 }
@@ -1848,25 +1852,25 @@ export function levelMinXp(level) {
 }
 
 // Nomi raggruppati in "tier" da 5 sotto-livelli ciascuno (Principiante 1..5,
-// Amatore 1..5, ...); una volta esaurito l'ultimo tier (Leggenda del Ferro)
-// il numero continua a crescere all'infinito invece di richiedere un nome
-// nuovo per ogni livello possibile — è così che restano davvero infiniti.
+// Neofita 1..5, ...); una volta esaurito l'ultimo tier (Master) il numero
+// continua a crescere all'infinito invece di richiedere un nome nuovo per
+// ogni livello possibile — è così che restano davvero infiniti.
 // Esportati (non più solo interni a xpToLevelInfo): la Bacheca Trofei del
-// Profilo li riusa per i trofei "livello raggiunto", stessi nomi/icone del
+// Profilo li riusa per i trofei "livello raggiunto", stessi nomi del
 // livello reale mostrato altrove — mai una seconda nomenclatura duplicata.
-// Nomi ancorati al mondo reale di palestra/bodybuilding (non più un
-// generico tier militare/RPG): la stessa scala di classificazione che
-// userebbe un coach — principiante → amatore → intermedio → avanzato →
-// atleta → bodybuilder → mostro natural → leggenda del ferro.
+// Nomi ancorati al mondo reale di palestra/fitness/bodybuilding, tono serio
+// e non gamificato (niente icone/emoji, niente nomi da RPG): la stessa scala
+// di classificazione che userebbe un coach — neofita → intermedio →
+// avanzato → atleta → professionista → elite → veterano → master.
 export const LEVEL_TIERS = [
-  { title: "Principiante", icon: "🌱" },
-  { title: "Amatore", icon: "🏋️" },
-  { title: "Intermedio", icon: "💪" },
-  { title: "Avanzato", icon: "🔥" },
-  { title: "Atleta", icon: "🥇" },
-  { title: "Bodybuilder", icon: "🦍" },
-  { title: "Natural Monster", icon: "👹" },
-  { title: "Leggenda del Ferro", icon: "⚡" },
+  { title: "Neofita", icon: "" },
+  { title: "Intermedio", icon: "" },
+  { title: "Avanzato", icon: "" },
+  { title: "Atleta", icon: "" },
+  { title: "Professionista", icon: "" },
+  { title: "Elite", icon: "" },
+  { title: "Veterano", icon: "" },
+  { title: "Master", icon: "" },
 ];
 export const LEVELS_PER_TIER = 5;
 function levelTitleAndIcon(level) {

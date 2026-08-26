@@ -1071,7 +1071,7 @@ function nutritionPrecision(target, consumed) {
    normale, ed etichetta di stato in maiuscolo piccolo sotto la percentuale —
    nessuna emoji, nessun elemento giocoso: deve leggersi come lo strumento
    che misura le prestazioni di un atleta serio, non come un badge. */
-function ComplianceCircle({ pct, size = 76, stroke = 8, subLabel }) {
+function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   // pct === null → nulla da misurare questa settimana (es. niente assegnato):
   // stato neutro esplicito, non un 0% (allarme) né un 100% (falso completo).
   const isNeutral = pct == null;
@@ -1140,11 +1140,6 @@ function ComplianceCircle({ pct, size = 76, stroke = 8, subLabel }) {
         <span className="font-data" style={{ fontSize: size > 60 ? "1.05rem" : "0.85rem", fontWeight: 700, color: isNeutral ? "var(--ink-2)" : "var(--ink)", transition: "color 0.3s ease", lineHeight: 1 }}>
           {isNeutral ? "n/d" : `${pct}%`}
         </span>
-        {subLabel && (
-          <span style={{ fontSize: "0.5rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-2)", marginTop: 2 }}>
-            {subLabel}
-          </span>
-        )}
       </div>
     </div>
   );
@@ -1156,13 +1151,12 @@ function ComplianceRings({ rings, onSelect }) {
   return (
     <div className="grid grid-cols-3 gap-3">
       {rings.map((r) => {
-        const tier = r.pct == null ? { color: "var(--ink-2)", label: "n/d" } : complianceTier(r.pct);
         return (
           <button key={r.id} onClick={() => onSelect(r.id)}
                   className="flex flex-col items-center gap-2 transition-transform active:scale-95">
-            <ComplianceCircle pct={r.pct} subLabel={r.pct == null ? null : tier.label} />
-            <span className="text-xs flex items-center gap-1 text-center" style={{ color: "var(--ink-2)", fontWeight: 700 }}>
-              <r.icon size={11} style={{ color: tier.color }} /> {r.label}
+            <ComplianceCircle pct={r.pct} />
+            <span className="text-xs text-center" style={{ color: "var(--ink-2)", fontWeight: 700, opacity: 0.7 }}>
+              {r.label}
             </span>
           </button>
         );
@@ -1266,7 +1260,6 @@ function LevelRoadmapModal({ currentXp, onClose }) {
                 <div key={tier.title} className="inner flex items-center justify-between gap-3 px-4 py-3"
                      style={isCurrent ? { border: `1.5px solid var(--ink)` } : undefined}>
                   <span className="flex items-center gap-2.5 min-w-0">
-                    <span style={{ fontSize: "1.15rem" }} aria-hidden="true">{tier.icon}</span>
                     <span className="text-sm truncate" style={{ color: isPast || isCurrent ? "var(--ink)" : "var(--ink-2)", fontWeight: isCurrent ? 700 : 500 }}>
                       {tier.title}{isCurrent ? ` ${currentInfo.level - i * LEVELS_PER_TIER + 1}` : ""}
                     </span>

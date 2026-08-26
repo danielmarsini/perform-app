@@ -339,6 +339,7 @@ function PodiumCard({ athlete: a, position, delay, onSelect, isMe }) {
       </div>
       <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-podium" />
       <div className={`pc-podium-nick pc-nick-metal pc-nick-${metal}`}>{a.nickname}</div>
+      <div className="pc-level-badge pc-shine-text">{a.level}</div>
       <div className="pc-podium-xp pc-shine-text pc-nowrap-ellipsis">
         {formatXP(a.xp)} <span className="pc-xp-unit">XP</span>
       </div>
@@ -360,6 +361,7 @@ function LeaderboardRow({ athlete: a, maxXP, onSelect, isMe }) {
       <div className="pc-row-main">
         <div className="pc-row-top">
           <span className="pc-row-nick">{a.nickname}{isMe ? ' · Tu' : ''}</span>
+          <span className="pc-level-badge pc-level-badge-sm pc-shine-text">{a.level}</span>
         </div>
         <div className="pc-row-track">
           <div className="pc-row-fill" style={{ width: `${barWidth}%` }} />
@@ -395,6 +397,7 @@ function AthleteDetailModal({ athlete: a, onClose }) {
           <button type="button" className="pc-drawer-close pc-detail-close" onClick={onClose} aria-label="Chiudi">✕</button>
           <AvatarCircle avatarUrl={a.avatarUrl} className="pc-avatar-detail" />
           <div className="pc-detail-nick">{a.nickname}</div>
+          <div className="pc-level-badge pc-shine-text" style={{ marginTop: 4 }}>{a.level}</div>
           {a.bio && <p className="pc-detail-bio">{a.bio}</p>}
           <div className="pc-detail-stats">
             <div className="pc-detail-stat">
