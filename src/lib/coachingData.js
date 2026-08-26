@@ -888,85 +888,113 @@ export async function setSelfSupplementTaken(supabase, userId, selfSupplementId,
   }
 }
 
-// Storico di un esercizio specifico (per il grafico/cronologia in HomeDashboard
-// e per il rilevamento PR), solo le sessioni realmente svolte (status='done'),
-// più recenti prima. Un punto per sessione: il TOP SET reale (carico massimo
-// tra le serie svolte quel giorno), letto da workout_sets.
-// BUG PRESO: prima leggeva workout_logs.load_kg/reps_completed, ma
-// logWorkoutSet lo sovrascrive ad OGNI serie salvata — quel valore finiva per
-// essere "l'ultima serie inserita", non il top set, e nemmeno sempre l'ultima
-// in ordine cronologico se l'utente correggeva una serie precedente dopo.
-export async function fetchExerciseHistory(supabase, userId, exerciseName, limit = 8) {
-  const { data: logs, error: logsError } = await supabase
-    .from("workout_logs")
-    .select("id, date")
-    .eq("user_id", userId)
-    .eq("exercise_name", exerciseName)
-    .eq("status", "done")
-    .order("date", { ascending: false })
-    .limit(limit);
-  if (logsError) throw logsError;
-  if (!logs?.length) return [];
+// Storico di TUTTI gli esercizi assegnati in una settimana, in un colpo
+// solo — usata da HomeDashboard al caricamento della settimana corrente.
+// BUG PRESO (perf): prima, per OGNI esercizio del piano, 3 chiamate quasi
+// indipendenti (fetchExerciseHistory/fetchWorkoutSets/fetchExerciseSetHistory,
+// oggi rimosse): le prime due rifacevano per giunta la STESSA query su
+// workout_logs, solo con colonne diverse su workout_sets. Con 15-20
+// esercizi in una settimana, decine di query solo per aprire la Home.
+// Qui: 1 query workout_logs (tutte le sessioni "done" di questi esercizi,
+// scope singolo cliente — non un roster, quindi un limite generoso e
+// GLOBALE invece che per-esercizio è una semplificazione accettabile) + 1
+// query workout_sets (unione delle serie storiche + di quelle della
+// settimana corrente), poi tutto il resto è raggruppamento lato client.
+// Ritorna 3 mappe:
+//   historyByExerciseName  — come il vecchio fetchExerciseHistory: un punto
+//                            per sessione (TOP SET reale), max 8 sessioni,
+//                            più vecchia prima.
+//   setHistoryByExerciseName — come il vecchio fetchExerciseSetHistory:
+//                            TUTTE le serie di ogni sessione, max 6 sessioni.
+//   loggedSetsByLogId      — come il vecchio fetchWorkoutSets: le serie già
+//                            registrate per la riga workout_logs di
+//                            QUESTA settimana (per precompilare i campi
+//                            kg/reps), indipendentemente da status/esercizio.
+export async function fetchWeekExerciseHistories(supabase, userId, thisWeekRows) {
+  const historyByExerciseName = new Map();
+  const setHistoryByExerciseName = new Map();
+  const loggedSetsByLogId = new Map();
 
-  const logIds = logs.map((l) => l.id);
-  const { data: sets, error: setsError } = await supabase
-    .from("workout_sets")
-    .select("workout_log_id, load_kg, reps_completed")
-    .in("workout_log_id", logIds)
-    .not("load_kg", "is", null);
-  if (setsError) throw setsError;
+  const exerciseNames = [...new Set((thisWeekRows ?? []).map((r) => r.exercise_name))];
+  const thisWeekLogIds = (thisWeekRows ?? []).map((r) => r.id);
+  if (exerciseNames.length === 0) {
+    return { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId };
+  }
+
+  const { data: pastLogs, error: pastLogsError } = await supabase
+    .from("workout_logs")
+    .select("id, date, exercise_name")
+    .eq("user_id", userId)
+    .eq("status", "done")
+    .in("exercise_name", exerciseNames)
+    .order("date", { ascending: false })
+    .limit(300);
+  if (pastLogsError) throw pastLogsError;
+
+  const logsByExercise = new Map();
+  (pastLogs ?? []).forEach((l) => {
+    if (!logsByExercise.has(l.exercise_name)) logsByExercise.set(l.exercise_name, []);
+    logsByExercise.get(l.exercise_name).push(l); // già in ordine desc (query globale ordinata per data)
+  });
+
+  const allLogIds = new Set(thisWeekLogIds);
+  (pastLogs ?? []).forEach((l) => allLogIds.add(l.id));
+
+  let sets = [];
+  if (allLogIds.size > 0) {
+    const { data, error: setsError } = await supabase
+      .from("workout_sets")
+      .select("workout_log_id, set_number, load_kg, reps_completed, rir")
+      .in("workout_log_id", [...allLogIds])
+      .order("set_number", { ascending: true });
+    if (setsError) throw setsError;
+    sets = data ?? [];
+  }
 
   const setsByLog = new Map();
-  (sets ?? []).forEach((s) => {
+  sets.forEach((s) => {
     if (!setsByLog.has(s.workout_log_id)) setsByLog.set(s.workout_log_id, []);
     setsByLog.get(s.workout_log_id).push(s);
   });
 
-  return logs
-    .filter((l) => setsByLog.has(l.id))
-    .reverse()
-    .map((l) => {
-      const top = setsByLog.get(l.id).reduce((a, b) => (Number(b.load_kg) > Number(a.load_kg) ? b : a));
-      return { kg: Number(top.load_kg), reps: top.reps_completed };
-    });
-}
-
-// Come fetchExerciseHistory ma con TUTTE le serie di ogni sessione (non solo
-// il top set) — per mostrare/correggere lo storico completo di un esercizio
-// invece del solo massimale. Una riga per sessione, con l'array di serie
-// nell'ordine in cui sono state svolte (set_number crescente).
-export async function fetchExerciseSetHistory(supabase, userId, exerciseName, sessionLimit = 6) {
-  const { data: logs, error: logsError } = await supabase
-    .from("workout_logs")
-    .select("id, date")
-    .eq("user_id", userId)
-    .eq("exercise_name", exerciseName)
-    .eq("status", "done")
-    .order("date", { ascending: false })
-    .limit(sessionLimit);
-  if (logsError) throw logsError;
-  if (!logs?.length) return [];
-
-  const logIds = logs.map((l) => l.id);
-  const { data: sets, error: setsError } = await supabase
-    .from("workout_sets")
-    .select("workout_log_id, set_number, load_kg, reps_completed, rir")
-    .in("workout_log_id", logIds)
-    .order("set_number", { ascending: true });
-  if (setsError) throw setsError;
-
-  const setsByLog = new Map();
-  (sets ?? []).forEach((s) => {
-    if (!setsByLog.has(s.workout_log_id)) setsByLog.set(s.workout_log_id, []);
-    // rir incluso solo per PRESERVARLO quando si corregge kg/reps di una
-    // serie passata (PastSetRow in 05_HomeDashboard.jsx) — senza, la
-    // correzione lo azzererebbe silenziosamente pur non toccandolo mai in UI.
-    setsByLog.get(s.workout_log_id).push({ setNumber: s.set_number, kg: s.load_kg != null ? Number(s.load_kg) : null, reps: s.reps_completed, rir: s.rir });
+  thisWeekLogIds.forEach((logId) => {
+    loggedSetsByLogId.set(logId, setsByLog.get(logId) ?? []);
   });
 
-  return logs
-    .filter((l) => setsByLog.has(l.id))
-    .map((l) => ({ workoutLogId: l.id, date: l.date, sets: setsByLog.get(l.id) }));
+  exerciseNames.forEach((name) => {
+    const logs = logsByExercise.get(name) ?? [];
+
+    // Equivalente di fetchExerciseHistory: top-8 sessioni, un punto per
+    // sessione (il TOP SET reale — mai workout_logs.load_kg, sovrascritto
+    // a ogni serie salvata), più vecchia prima.
+    const history = logs
+      .slice(0, 8)
+      .filter((l) => (setsByLog.get(l.id) ?? []).some((s) => s.load_kg != null))
+      .reverse()
+      .map((l) => {
+        const withLoad = setsByLog.get(l.id).filter((s) => s.load_kg != null);
+        const top = withLoad.reduce((a, b) => (Number(b.load_kg) > Number(a.load_kg) ? b : a));
+        return { kg: Number(top.load_kg), reps: top.reps_completed };
+      });
+    historyByExerciseName.set(name, history);
+
+    // Equivalente di fetchExerciseSetHistory: top-6 sessioni, TUTTE le serie.
+    const setHistory = logs
+      .slice(0, 6)
+      .filter((l) => setsByLog.has(l.id))
+      .map((l) => ({
+        workoutLogId: l.id,
+        date: l.date,
+        // rir incluso solo per PRESERVARLO quando si corregge kg/reps di
+        // una serie passata (PastSetRow in 05_HomeDashboard.jsx) — senza,
+        // la correzione lo azzererebbe silenziosamente pur non toccandolo
+        // mai in UI.
+        sets: (setsByLog.get(l.id) ?? []).map((s) => ({ setNumber: s.set_number, kg: s.load_kg != null ? Number(s.load_kg) : null, reps: s.reps_completed, rir: s.rir })),
+      }));
+    setHistoryByExerciseName.set(name, setHistory);
+  });
+
+  return { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId };
 }
 
 // "I Miei Traguardi" (profilo): storico REALE di ogni esercizio mai svolto
@@ -1039,17 +1067,6 @@ export async function logWorkoutSet(supabase, workoutLogId, userId, setNumber, {
   if (logError) throw logError;
 }
 
-// Storico completo delle serie di un esercizio assegnato, per il coach (o per
-// il cliente stesso): ogni riga è UNA serie realmente svolta, non l'ultima soltanto.
-export async function fetchWorkoutSets(supabase, workoutLogId) {
-  const { data, error } = await supabase
-    .from("workout_sets")
-    .select("set_number, reps_completed, load_kg, rir, completed_at")
-    .eq("workout_log_id", workoutLogId)
-    .order("set_number", { ascending: true });
-  if (error) throw error;
-  return data ?? [];
-}
 
 // Tutte le serie svolte da un cliente in un intervallo di date, con il nome
 // esercizio incluso (join lato client su workout_logs) — utile per il coach
