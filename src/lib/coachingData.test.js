@@ -18,6 +18,7 @@ import {
   fetchWeekExerciseHistories,
   computeCrewWeeklyActivity, computeCrewStreak,
   fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
+  hasUnseenAnnouncements,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -230,6 +231,7 @@ function makeMockSupabase(tables) {
         eq(col, val) { rows = rows.filter((r) => getPath(r, col) === val); return builder; },
         in(col, vals) { rows = rows.filter((r) => vals.includes(getPath(r, col))); return builder; },
         gte(col, val) { rows = rows.filter((r) => getPath(r, col) >= val); return builder; },
+        gt(col, val) { rows = rows.filter((r) => getPath(r, col) > val); return builder; },
         lte(col, val) { rows = rows.filter((r) => getPath(r, col) <= val); return builder; },
         lt(col, val) { rows = rows.filter((r) => getPath(r, col) < val); return builder; },
         neq(col, val) { rows = rows.filter((r) => getPath(r, col) !== val); return builder; },
@@ -731,5 +733,36 @@ describe("fetchClientRoster", () => {
     expect(roster[0].lastCheck).toEqual({ weight: null });
     expect(roster[0].weightHistory).toEqual([]);
     expect(roster[0].goal).toBeNull();
+  });
+});
+
+describe("hasUnseenAnnouncements", () => {
+  it("mai visitato + almeno un annuncio esistente => true", async () => {
+    const supabase = makeMockSupabase({
+      profiles: [{ id: "u1", last_seen_announcements_at: null }],
+      team_announcements: [{ id: "a1", created_at: daysAgoISO(1) }],
+    });
+    expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(true);
+  });
+  it("nessun annuncio pubblicato ancora => false", async () => {
+    const supabase = makeMockSupabase({
+      profiles: [{ id: "u1", last_seen_announcements_at: null }],
+      team_announcements: [],
+    });
+    expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(false);
+  });
+  it("annuncio pubblicato PRIMA dell'ultima visita => false (già visto)", async () => {
+    const supabase = makeMockSupabase({
+      profiles: [{ id: "u1", last_seen_announcements_at: daysAgoISO(0) }],
+      team_announcements: [{ id: "a1", created_at: daysAgoISO(3) }],
+    });
+    expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(false);
+  });
+  it("annuncio pubblicato DOPO l'ultima visita => true (nuovo)", async () => {
+    const supabase = makeMockSupabase({
+      profiles: [{ id: "u1", last_seen_announcements_at: daysAgoISO(3) }],
+      team_announcements: [{ id: "a1", created_at: daysAgoISO(0) }],
+    });
+    expect(await hasUnseenAnnouncements(supabase, "u1")).toBe(true);
   });
 });

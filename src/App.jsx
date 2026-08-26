@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, Suspense, lazy } from "react";
 import { ArrowLeft, Lock } from "lucide-react";
 
 import { supabase, makeAuth, AuthScreen } from "./components/03_AuthView.jsx";
-import { AppShell, COACH_EMAIL, accentFor, SplashScreen } from "./components/04_AppShell.jsx";
+import { AppShell, COACH_EMAIL, accentFor, SplashScreen, AnnouncementsModal } from "./components/04_AppShell.jsx";
 import HomeScreen from "./components/05_HomeDashboard.jsx";
 import { NewsTipsView, NewsTipsViewStyles } from "./components/06_NewsTipsView.jsx";
 import ProfileScreen, { SettingsDrawer } from "./components/08_ClientProfileView.jsx";
@@ -11,7 +11,7 @@ import LandingIntro from "./components/LandingIntro.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, hasUnseenAnnouncements as checkHasUnseenAnnouncements } from "./lib/coachingData.js";
 
 // Anteprima leggibile del messaggio appena inviato, per il push — mai il
 // body grezzo se manca (solo un allegato): un push senza testo sembrerebbe
@@ -307,6 +307,23 @@ export default function App() {
   const [settingsInitialTab, setSettingsInitialTab] = useState(undefined);
   const openUpgradeSettings = () => { setSettingsInitialTab("piano"); setSettingsOpen(true); };
 
+  // Avvisi Team (SCHEMA_v77): pallino rosso sull'icona a megafono in header
+  // finché esiste almeno un annuncio pubblicato dopo l'ultima visita
+  // dell'utente — controllato all'apertura dell'app e ogni volta che si
+  // torna sulla tab Home (copre il caso "il coach ha pubblicato mentre ero
+  // su un'altra schermata"), senza bisogno di un poll continuo.
+  const [announcementsOpen, setAnnouncementsOpen] = useState(false);
+  const [hasUnseenAnnouncements, setHasUnseenAnnouncements] = useState(false);
+  useEffect(() => {
+    if (!supabase || !session?.user?.id) return;
+    let cancelled = false;
+    checkHasUnseenAnnouncements(supabase, session.user.id)
+      .then((v) => { if (!cancelled) setHasUnseenAnnouncements(v); })
+      .catch((err) => console.error("PERFORM: errore controllo avvisi team non letti", err));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, session?.user?.id, tab]);
+
   // --- Bootstrap sessione Supabase --------------------------------------------
   useEffect(() => {
     let mounted = true;
@@ -514,6 +531,8 @@ export default function App() {
         tab={tab}
         onTabChange={setTab}
         onOpenSettings={() => { setSettingsInitialTab(undefined); setSettingsOpen(true); }}
+        onOpenAnnouncements={() => setAnnouncementsOpen(true)}
+        hasUnseenAnnouncements={hasUnseenAnnouncements}
         screens={{
           home: (
             <HomeScreen
@@ -653,6 +672,17 @@ export default function App() {
           }}
         />
       </div>
+
+      {announcementsOpen && (
+        <div className="app-root" data-theme={dark ? "dark" : "light"}>
+          <AnnouncementsModal
+            supabase={supabase}
+            userId={session.user.id}
+            isCoach={isCoach}
+            onClose={() => { setAnnouncementsOpen(false); setHasUnseenAnnouncements(false); }}
+          />
+        </div>
+      )}
     </>
   );
 }
