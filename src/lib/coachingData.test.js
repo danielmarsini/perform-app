@@ -15,6 +15,7 @@ import {
   computeRecoveryCompliance, computeBatchRecoveryCompliance,
   computeNutritionCompliance, computeBatchNutritionCompliance,
   computeTrainingCompliance, computeBatchTrainingCompliance,
+  fetchWeekExerciseHistories,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -343,5 +344,62 @@ describe("computeBatchTrainingCompliance vs computeTrainingCompliance", () => {
     const batch = await computeBatchTrainingCompliance(supabase, ["u9"]);
     expect(single.status).toBe("neutral");
     expect(batch.get("u9")).toEqual(single);
+  });
+});
+
+describe("fetchWeekExerciseHistories", () => {
+  it("costruisce storico (top set) e set-history da un'unica coppia di query, per più esercizi insieme", async () => {
+    const thisWeekRows = [
+      { id: "log_today_panca", exercise_name: "Panca piana bilanciere" },
+      { id: "log_today_squat", exercise_name: "Squat bilanciere" },
+    ];
+    const tables = {
+      workout_logs: [
+        { id: "log_past_panca_1", date: daysAgoISO(2), exercise_name: "Panca piana bilanciere", user_id: "u1", status: "done" },
+        { id: "log_past_panca_2", date: daysAgoISO(9), exercise_name: "Panca piana bilanciere", user_id: "u1", status: "done" },
+        { id: "log_past_squat_1", date: daysAgoISO(4), exercise_name: "Squat bilanciere", user_id: "u1", status: "done" },
+      ],
+      workout_sets: [
+        { workout_log_id: "log_past_panca_1", set_number: 1, load_kg: 80, reps_completed: 8, rir: 2 },
+        { workout_log_id: "log_past_panca_1", set_number: 2, load_kg: 82.5, reps_completed: 6, rir: 1 },
+        { workout_log_id: "log_past_panca_2", set_number: 1, load_kg: 77.5, reps_completed: 8, rir: 2 },
+        { workout_log_id: "log_past_squat_1", set_number: 1, load_kg: 100, reps_completed: 5, rir: 2 },
+        // serie già registrate OGGI per la riga di questa settimana (usate per precompilare i campi kg/reps)
+        { workout_log_id: "log_today_panca", set_number: 1, load_kg: 85, reps_completed: 5, rir: 1 },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId } =
+      await fetchWeekExerciseHistories(supabase, "u1", thisWeekRows);
+
+    // history: top set per sessione, più vecchia prima (2 sessioni passate di panca)
+    const panchaHistory = historyByExerciseName.get("Panca piana bilanciere");
+    expect(panchaHistory).toEqual([
+      { kg: 77.5, reps: 8 },  // sessione più vecchia (9 giorni fa)
+      { kg: 82.5, reps: 6 },  // sessione più recente (2 giorni fa), top set tra le 2 serie
+    ]);
+    expect(historyByExerciseName.get("Squat bilanciere")).toEqual([{ kg: 100, reps: 5 }]);
+
+    // setHistory: tutte le serie, sessione più recente prima
+    const panchaSetHistory = setHistoryByExerciseName.get("Panca piana bilanciere");
+    expect(panchaSetHistory[0].workoutLogId).toBe("log_past_panca_1");
+    expect(panchaSetHistory[0].sets).toEqual([
+      { setNumber: 1, kg: 80, reps: 8, rir: 2 },
+      { setNumber: 2, kg: 82.5, reps: 6, rir: 1 },
+    ]);
+
+    // loggedSetsByLogId: solo per le righe DI QUESTA settimana (precompilazione kg/reps)
+    expect(loggedSetsByLogId.get("log_today_panca")).toEqual([
+      { workout_log_id: "log_today_panca", set_number: 1, load_kg: 85, reps_completed: 5, rir: 1 },
+    ]);
+    expect(loggedSetsByLogId.get("log_today_squat")).toEqual([]); // nessuna serie registrata oggi per lo squat
+  });
+
+  it("nessun esercizio assegnato questa settimana => mappe vuote, mai un errore", async () => {
+    const supabase = makeMockSupabase({ workout_logs: [], workout_sets: [] });
+    const result = await fetchWeekExerciseHistories(supabase, "u1", []);
+    expect(result.historyByExerciseName.size).toBe(0);
+    expect(result.setHistoryByExerciseName.size).toBe(0);
+    expect(result.loggedSetsByLogId.size).toBe(0);
   });
 });

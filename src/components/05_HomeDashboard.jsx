@@ -24,7 +24,7 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check, Navigation, Trophy,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchExerciseHistory, fetchExerciseSetHistory, fetchWorkoutSets, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
+import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
@@ -4838,7 +4838,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const best = historyEntries.length ? Math.max(...historyEntries.map((h) => h.kg)) : 0;
   // Scorsa sessione per intero (TUTTE le serie, non solo la prima o il top
   // set): ex.setHistory è già ordinato dal più recente (vedi
-  // fetchExerciseSetHistory in coachingData.js), quindi [0] è l'ultima volta.
+  // fetchWeekExerciseHistories in coachingData.js), quindi [0] è l'ultima volta.
   const lastSession = ex.setHistory && ex.setHistory.length > 0 ? ex.setHistory[0] : null;
   const lastSessionSets = lastSession ? lastSession.sets.filter((s) => s.kg != null && s.kg > 0) : [];
 
@@ -10514,6 +10514,16 @@ export default function HomePreview({
           if (!byDate.has(r.date)) byDate.set(r.date, []);
           byDate.get(r.date).push(r);
         });
+        // BUG PRESO (perf): prima, per OGNI esercizio della settimana, 3
+        // chiamate quasi indipendenti (fetchExerciseHistory, fetchWorkoutSets,
+        // fetchExerciseSetHistory) — le prime due rifacevano per giunta la
+        // STESSA query su workout_logs, solo con colonne diverse su
+        // workout_sets. Con 15-20 esercizi in una settimana, decine di
+        // round-trip solo per caricare la Home. fetchWeekExerciseHistories
+        // fa lo stesso lavoro con 2 query totali (vedi coachingData.js).
+        const { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId } =
+          await fetchWeekExerciseHistories(supabaseProp, userId, rows);
+
         // Serie già registrate (workout_sets) da precompilare in `sets`, per
         // esercizio: senza questo il salvataggio funziona ma riaprendo l'app
         // i campi kg/reps/rir risultano vuoti — i dati ci sono nel DB, la UI
@@ -10524,15 +10534,11 @@ export default function HomePreview({
         // iniziale delle checkbox "serie completata" — un tick dopo sarebbe
         // troppo tardi, l'useState di ExerciseCard non si aggiorna da solo.
         const setsPatch = {};
-        const week = await Promise.all(weekDates.map(async (date) => {
+        const week = weekDates.map((date) => {
           const dayRows = byDate.get(date);
           if (!dayRows || dayRows.length === 0) return null;
-          const exercisesForDay = await Promise.all(dayRows.map(async (r) => {
-            const [history, loggedSets, setHistory] = await Promise.all([
-              fetchExerciseHistory(supabaseProp, userId, r.exercise_name),
-              fetchWorkoutSets(supabaseProp, r.id),
-              fetchExerciseSetHistory(supabaseProp, userId, r.exercise_name),
-            ]);
+          const exercisesForDay = dayRows.map((r) => {
+            const loggedSets = loggedSetsByLogId.get(r.id) ?? [];
             if (loggedSets.length > 0) {
               setsPatch[r.id] = Array.from({ length: r.sets_count ?? 3 }, (_, i) => {
                 const logged = loggedSets.find((s) => s.set_number === i + 1);
@@ -10549,8 +10555,8 @@ export default function HomePreview({
               rirTarget: r.rir_target || "—",   // prescrizione del coach (SCHEMA_v21); "—" solo se davvero non impostato
               technique: r.intensity_technique || "",
               rests: Array.from({ length: r.sets_count ?? 3 }, () => r.rest_seconds ?? 120),
-              history,
-              setHistory, // [{workoutLogId, date, sets:[{setNumber, kg, reps}]}] — sessioni passate modificabili
+              history: historyByExerciseName.get(r.exercise_name) ?? [],
+              setHistory: setHistoryByExerciseName.get(r.exercise_name) ?? [], // [{workoutLogId, date, sets:[{setNumber, kg, reps}]}] — sessioni passate modificabili
               splitLabel: r.split_label,
               // BUG PRESO: mancavano qui — computeVolume(weekPlan) per un
               // esercizio custom non ancora nella libreria condivisa si
@@ -10562,9 +10568,9 @@ export default function HomePreview({
               muscleTarget: r.muscle_target || null,
               synergists: r.synergist_targets || [],
             };
-          }));
+          });
           return { label: dayRows[0].split_label || "Scheda di oggi", exercises: exercisesForDay };
-        }));
+        });
         if (cancelled) return;
         setAssignedWeek(week);
         if (Object.keys(setsPatch).length > 0) setSets((prev) => ({ ...setsPatch, ...prev }));
