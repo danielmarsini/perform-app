@@ -4991,6 +4991,12 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const ringR = 27, ringC = 2 * Math.PI * ringR;
   const ringOffset = timer ? ringC * (1 - timer.remaining / timer.total) : 0;
 
+  // Entry point per correggere/recuperare serie passate: si clicca il nome
+  // dell'esercizio stesso, non più un pannello separato più in basso —
+  // richiesta esplicita, e più naturale: "voglio sistemare QUESTO esercizio"
+  // parte proprio dal suo nome.
+  const canRecoverHistory = Boolean(((ex.setHistory && ex.setHistory.length > 0) || (ex.missedSessions && ex.missedSessions.length > 0)) && supabase && userId);
+
   return (
     <div className="card">
       <div className="flex flex-wrap items-center gap-1.5 mb-2">
@@ -5009,7 +5015,21 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
         )}
       </div>
 
-      <p className="h2">{ex.name}</p>
+      {canRecoverHistory ? (
+        <button onClick={() => setHistoryOpen((v) => !v)} className="flex items-center gap-1.5 text-left">
+          <span className="h2" style={{ textDecoration: "underline", textDecorationStyle: "dotted", textDecorationColor: "var(--ink-2)", textUnderlineOffset: 3 }}>
+            {ex.name}
+          </span>
+          <History size={13} style={{ color: "var(--ink-2)" }} />
+          {ex.missedSessions && ex.missedSessions.length > 0 && (
+            <span className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+              ({ex.missedSessions.length} da recuperare)
+            </span>
+          )}
+        </button>
+      ) : (
+        <p className="h2">{ex.name}</p>
+      )}
       <p className="meta mt-0.5">
         {hasPerSetTargets
           ? repsTargets.map((t, i) => `S${i + 1}: ${t}`).join(" · ")
@@ -5160,19 +5180,10 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
           status "missed" mai toccato): capita di allenarsi davvero e
           scordarsi di segnarlo in app — qui si recupera invece di perderlo
           per sempre, con le stesse righe usate per correggere una sessione
-          già fatta (vedi nota su PastSessionCard). */}
-      {((ex.setHistory && ex.setHistory.length > 0) || (ex.missedSessions && ex.missedSessions.length > 0)) && supabase && userId && (
+          già fatta (vedi nota su PastSessionCard). Si apre/chiude cliccando
+          il nome dell'esercizio qui sopra, non più un pannello a sé. */}
+      {canRecoverHistory && (
         <div className="mt-3">
-          <button onClick={() => setHistoryOpen((v) => !v)}
-                  className="w-full flex items-center justify-between rounded-2xl px-3.5 py-2.5 transition-all duration-300"
-                  style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-            <span className="text-xs flex items-center gap-1.5" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-              <History size={13} style={{ color: "var(--ink-2)" }} />
-              Sessioni precedenti
-              {ex.missedSessions && ex.missedSessions.length > 0 && ` (${ex.missedSessions.length} da recuperare)`}
-            </span>
-            {historyOpen ? <ChevronUp size={14} style={{ color: "var(--ink-2)" }} /> : <ChevronDown size={14} style={{ color: "var(--ink-2)" }} />}
-          </button>
           {historyOpen && (
             <div className="spring-in mt-2 space-y-2">
               {(ex.missedSessions ?? []).map((m) => (
