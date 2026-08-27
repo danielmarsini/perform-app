@@ -52,7 +52,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Heart, Bookmark, Lock, Newspaper, ArrowLeft } from "lucide-react";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
-import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel, publishTeamPost, deleteTeamPost } from "../lib/coachingData.js";
+import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel, publishTeamPost, deleteTeamPost, notifyTeamPost, markTeamSeen } from "../lib/coachingData.js";
 
 /* ============================================================================
    1 · UTILITÀ
@@ -751,7 +751,10 @@ function TeamComposer({ supabase }) {
     setPosting(true);
     setError(null);
     publishTeamPost(supabase, { eyebrow, title, body })
-      .then(() => { setTitle(""); setBody(""); })
+      .then(() => {
+        setTitle(""); setBody("");
+        notifyTeamPost(supabase, { title, body });
+      })
       .catch((err) => {
         console.error("PERFORM: errore pubblicazione avviso team", err);
         setError("Pubblicazione non riuscita, riprova.");
@@ -841,7 +844,7 @@ function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave
    9 · CONTENITORE PRINCIPALE
    ========================================================================== */
 
-export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride, isCoach = false }) {
+export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride, isCoach = false, onTeamSeen }) {
   const [active, setActive] = useState("news");
   const [expanded, setExpanded] = useState(null);          // { channel, id } | null
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -879,6 +882,15 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
 
   const fetchedPlan = useUserPlan({ supabase, meId, fallback: "free" });
   const plan = planOverride || fetchedPlan;
+
+  // Azzera il pallino "novità" avvisi team appena il cliente apre quel tab
+  // (SCHEMA_v81) — non per il coach, che pubblica ma non "riceve" l'avviso.
+  useEffect(() => {
+    if (!real || isCoach || active !== "team") return;
+    markTeamSeen(supabase, meId)
+      .then(() => onTeamSeen?.())
+      .catch((err) => console.error("PERFORM: errore visto avvisi team", err));
+  }, [real, isCoach, active, supabase, meId, onTeamSeen]);
 
   const feedNews = useNewsFeed({ supabase, meId, channel: "news", seedPool: seeds.news });
   const feedTips = useNewsFeed({ supabase, meId, channel: "tips", seedPool: seeds.tips });

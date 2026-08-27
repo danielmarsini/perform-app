@@ -2696,13 +2696,30 @@ export async function fetchClientRoster(supabase) {
   if (!profiles || profiles.length === 0) return [];
 
   const ids = profiles.map((p) => p.id);
-  const [{ data: allCheckins, error: checkinsError }, { data: anamRows, error: anamError }] = await Promise.all([
+  // hasWorkout/NutritionAssigned/SupplementsAssigned: servono a deptOf
+  // (09_CoachDashboard.jsx) per distinguere "In attesa" da "Attivi" — un
+  // pagamento Stripe scrive client_status:'active' nell'istante stesso in
+  // cui arriva (vedi stripe-webhook), MOLTO prima che il coach abbia
+  // davvero costruito scheda/dieta/integratori: usare solo client_status
+  // per quella distinzione faceva sparire il cliente dalla coda "In attesa"
+  // ancor prima di essere seguito per davvero. Qui basta sapere SE esiste
+  // almeno una riga assegnata per utente, non quale — .limit(ids.length*2)
+  // generoso, stesso principio già accettato sopra per i checkin.
+  const [{ data: allCheckins, error: checkinsError }, { data: anamRows, error: anamError },
+    { data: workoutRows, error: workoutError }, { data: nutritionRows, error: nutritionError },
+    { data: supplementRows, error: supplementError }] = await Promise.all([
     supabase.from("checkins").select("user_id, date, weight, chest, arm, thigh")
       .in("user_id", ids).order("date", { ascending: false }).limit(5000),
     supabase.from("anamnesis_responses").select("user_id, answers").in("user_id", ids),
+    supabase.from("workout_logs").select("user_id").in("user_id", ids).limit(ids.length * 2),
+    supabase.from("nutrition_targets").select("user_id").in("user_id", ids).limit(ids.length * 2),
+    supabase.from("prescribed_supplements").select("user_id").in("user_id", ids).limit(ids.length * 2),
   ]);
   if (checkinsError) throw checkinsError;
   if (anamError) throw anamError;
+  if (workoutError) throw workoutError;
+  if (nutritionError) throw nutritionError;
+  if (supplementError) throw supplementError;
 
   const checkinsByUser = new Map(ids.map((id) => [id, []]));
   (allCheckins ?? []).forEach((c) => {
@@ -2710,6 +2727,9 @@ export async function fetchClientRoster(supabase) {
     if (list && list.length < 8) list.push(c); // già ordinati per data desc: i primi 8 raccolti sono i più recenti
   });
   const answersByUser = new Map((anamRows ?? []).map((r) => [r.user_id, r.answers || {}]));
+  const hasWorkoutSet = new Set((workoutRows ?? []).map((r) => r.user_id));
+  const hasNutritionSet = new Set((nutritionRows ?? []).map((r) => r.user_id));
+  const hasSupplementsSet = new Set((supplementRows ?? []).map((r) => r.user_id));
 
   const roster = profiles.map((p) => {
       const ordered = (checkinsByUser.get(p.id) ?? []).slice().reverse(); // dal più vecchio al più recente, come si aspetta il grafico
@@ -2746,6 +2766,9 @@ export async function fetchClientRoster(supabase) {
         weightHistory: ordered.map((c) => Number(c.weight)).filter((n) => !Number.isNaN(n)),
         waistCm: null,
         billingStatus: p.plan && p.plan !== "free" ? "active" : "pending",
+        hasWorkoutAssigned: hasWorkoutSet.has(p.id),
+        hasNutritionAssigned: hasNutritionSet.has(p.id),
+        hasSupplementsAssigned: hasSupplementsSet.has(p.id),
         prs: {},
         evening: { energia: null, digestione: null, sonno: null, doloreGrado: 0, doloreNota: "" },
         rings: { allenamento: 0, alimentazione: 0, recupero: 0 },
@@ -3312,22 +3335,23 @@ export async function markChatMessagesRead(supabase, clientId, readerId) {
   if (error) throw error;
 }
 
-// Pallino rosso sull'icona Chat del cliente: true se esiste almeno un
-// messaggio dell'ALTRA parte (il coach) ancora non letto. Stessa logica di
-// markChatMessagesRead sopra (neq sender_id + read_at is null), qui in sola
-// lettura — ChatThread.jsx già segna tutto come letto non appena il thread
-// viene aperto, questa funzione serve solo a decidere se mostrare il
-// pallino PRIMA di entrarci.
-export async function hasUnreadChatMessages(supabase, clientId, readerId) {
+// Pallino rosso sull'icona Chat del cliente: quanti messaggi dell'ALTRA
+// parte (il coach) sono ancora non letti — non più solo un booleano, il
+// numero stesso compare dentro il pallino (richiesta esplicita: "così non
+// si perdono nessuna indicazione"). Stessa logica di markChatMessagesRead
+// sopra (neq sender_id + read_at is null), qui in sola lettura —
+// ChatThread.jsx già segna tutto come letto non appena il thread viene
+// aperto, questa funzione serve solo a decidere cosa mostrare PRIMA di
+// entrarci.
+export async function countUnreadChatMessages(supabase, clientId, readerId) {
   const { data, error } = await supabase
     .from("chat_messages")
     .select("id")
     .eq("client_id", clientId)
     .neq("sender_id", readerId)
-    .is("read_at", null)
-    .limit(1);
+    .is("read_at", null);
   if (error) throw error;
-  return (data ?? []).length > 0;
+  return (data ?? []).length;
 }
 
 // Allegati chat (SCHEMA_v50): bucket privato "chat-attachments", stesso
@@ -3442,6 +3466,48 @@ export async function publishTeamPost(supabase, { eyebrow, title, body }) {
 export async function deleteTeamPost(supabase, postId) {
   const { error } = await supabase.from("coach_news_tips").delete().eq("id", postId);
   if (error) throw error;
+}
+
+// Push a tutti i clienti quando il coach pubblica un avviso team — invocata
+// dal composer subito dopo publishTeamPost, stesso pattern try/catch "non
+// bloccante" di notifyClientPlanChange/notifyCoachNewMessage: se il push
+// fallisce il post resta comunque pubblicato, non si blocca il coach.
+export async function notifyTeamPost(supabase, { title, body }) {
+  try {
+    await supabase.functions.invoke("notify-team", { body: { title, body } });
+  } catch (err) {
+    console.error("PERFORM: errore invio notifica push avviso team", err);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   NOVITÀ AVVISI TEAM (SCHEMA_v81) — pallino rosso sul tab News quando il
+   coach ha pubblicato un post team dopo l'ultima visita del cliente a quel
+   canale. Stesso principio di markSectionSeen/fetchSectionNovelty qui sotto,
+   ma confrontato con created_at dell'ultimo post invece di un updated_at su
+   profiles: i post team hanno già il proprio timestamp.
+   ------------------------------------------------------------------------- */
+
+// Chiamata dalla NewsTipsView quando il cliente apre il tab "team": azzera il
+// pallino finché il coach non pubblica un nuovo post.
+export async function markTeamSeen(supabase, userId) {
+  const { error } = await supabase.from("profiles")
+    .update({ team_seen_at: new Date().toISOString() }).eq("id", userId);
+  if (error) console.error("PERFORM: errore aggiornamento visto avvisi team", userId, error);
+}
+
+// true se esiste un post team pubblicato dopo l'ultima visita del cliente
+// (mai visitato = qualunque post esistente è "nuovo").
+export async function hasUnseenTeamPost(supabase, userId) {
+  const [{ data: profile, error: profileError }, { data: lastPost, error: postError }] = await Promise.all([
+    supabase.from("profiles").select("team_seen_at").eq("id", userId).maybeSingle(),
+    supabase.from("coach_news_tips").select("created_at").eq("channel", "team")
+      .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  if (profileError) throw profileError;
+  if (postError) throw postError;
+  if (!lastPost?.created_at) return false;
+  return !profile?.team_seen_at || new Date(lastPost.created_at) > new Date(profile.team_seen_at);
 }
 
 /* ---------------------------------------------------------------------------

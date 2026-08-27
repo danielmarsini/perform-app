@@ -11,7 +11,7 @@ import LandingIntro from "./components/LandingIntro.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, hasUnreadChatMessages } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, countUnreadChatMessages, hasUnseenTeamPost } from "./lib/coachingData.js";
 
 // Anteprima leggibile del messaggio appena inviato, per il push — mai il
 // body grezzo se manca (solo un allegato): un push senza testo sembrerebbe
@@ -424,20 +424,36 @@ export default function App() {
   // altre due checks "non letto" in questo file: controllato all'apertura e
   // ogni cambio tab (copre "il coach mi ha scritto mentre ero altrove"),
   // ChatThread.jsx segna già tutto come letto appena il thread si apre.
-  const [chatHasUnread, setChatHasUnread] = useState(false);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
   useEffect(() => {
     if (!supabase || !session?.user?.id || isCoach || !hasCoachChat) return;
     // Aprire il tab Chat segna già tutto come letto (ChatThread.jsx) — niente
     // da controllare, il pallino sparisce subito invece di aspettare il
     // prossimo cambio tab per rifare la query.
-    if (tab === "chat") { setChatHasUnread(false); return; }
+    if (tab === "chat") { setChatUnreadCount(0); return; }
     let cancelled = false;
-    hasUnreadChatMessages(supabase, session.user.id, session.user.id)
-      .then((v) => { if (!cancelled) setChatHasUnread(v); })
+    countUnreadChatMessages(supabase, session.user.id, session.user.id)
+      .then((n) => { if (!cancelled) setChatUnreadCount(n); })
       .catch((err) => console.error("PERFORM: errore controllo chat non letta", err));
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase, session?.user?.id, isCoach, hasCoachChat, tab]);
+
+  // Pallino rosso sul tab News: solo lato cliente (il coach pubblica gli
+  // avvisi, non li "riceve"). Il tab News ha più canali (news/tips/team) e
+  // non solo "team", quindi aprire il tab non basta da solo a segnare
+  // l'avviso come visto — è NewsTipsView (onTeamSeen) ad azzerarlo davvero
+  // quando il cliente apre proprio il canale team. Qui si ricontrolla solo
+  // ad ogni cambio tab, per coprire "il coach ha pubblicato mentre ero altrove".
+  const [newsHasUnseen, setNewsHasUnseen] = useState(false);
+  useEffect(() => {
+    if (!supabase || !session?.user?.id || isCoach) return;
+    let cancelled = false;
+    hasUnseenTeamPost(supabase, session.user.id)
+      .then((v) => { if (!cancelled) setNewsHasUnseen(v); })
+      .catch((err) => console.error("PERFORM: errore controllo avvisi team non letti", err));
+    return () => { cancelled = true; };
+  }, [supabase, session?.user?.id, isCoach, tab]);
 
   const stripePlanId =
     userPlan === "full_coaching" ? "full" : userPlan === "performance_pack" ? "performance" : "free";
@@ -535,7 +551,8 @@ export default function App() {
         tab={tab}
         onTabChange={setTab}
         onOpenSettings={() => { setSettingsInitialTab(undefined); setSettingsOpen(true); }}
-        chatHasUnread={chatHasUnread}
+        chatUnreadCount={chatUnreadCount}
+        newsHasUnseen={newsHasUnseen}
         screens={{
           home: (
             <HomeScreen
@@ -568,6 +585,7 @@ export default function App() {
               genderOverride={gender}
               planOverride={isCoach ? "full_coaching" : userPlan}
               isCoach={isCoach}
+              onTeamSeen={() => setNewsHasUnseen(false)}
             />
           ),
           // CoachDashboard non ha ancora una prop surface: resta un'isola

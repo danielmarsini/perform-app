@@ -18,7 +18,7 @@ import {
   fetchWeekExerciseHistories,
   computeCrewWeeklyActivity, computeCrewStreak,
   fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
-  hasUnreadChatMessages, streakXpMultiplier,
+  countUnreadChatMessages, streakXpMultiplier,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -806,29 +806,63 @@ describe("fetchClientRoster", () => {
     expect(roster[0].weightHistory).toEqual([]);
     expect(roster[0].goal).toBeNull();
   });
+
+  it("segnala se scheda/dieta/integratori sono già stati assegnati (per distinguere In attesa da Attivi)", async () => {
+    const supabase = makeMockSupabase({
+      profiles: [
+        // ha appena pagato Full Coaching (client_status:'active' scritto dal webhook Stripe), ma non ha ancora nulla
+        { id: "u1", role: "user", full_name: "Nuovo Pagante", nickname: "Nuovo", email: "n@x.it", gender: "male", xp_total: 0, current_streak: 0, plan: "full", client_status: "active", last_activity: null, created_at: "2026-01-01", whitelisted_until: null },
+        // ha tutto assegnato
+        { id: "u2", role: "user", full_name: "Seguito Bene", nickname: "Seguito", email: "s@x.it", gender: "male", xp_total: 0, current_streak: 0, plan: "full", client_status: "active", last_activity: null, created_at: "2026-01-01", whitelisted_until: null },
+      ],
+      checkins: [], anamnesis_responses: [],
+      workout_logs: [{ user_id: "u2", date: "2026-08-01" }],
+      nutrition_targets: [{ user_id: "u2" }],
+      prescribed_supplements: [{ user_id: "u2" }],
+    });
+    const roster = await fetchClientRoster(supabase);
+    const u1 = roster.find((r) => r.id === "u1");
+    expect(u1.hasWorkoutAssigned).toBe(false);
+    expect(u1.hasNutritionAssigned).toBe(false);
+    expect(u1.hasSupplementsAssigned).toBe(false);
+    const u2 = roster.find((r) => r.id === "u2");
+    expect(u2.hasWorkoutAssigned).toBe(true);
+    expect(u2.hasNutritionAssigned).toBe(true);
+    expect(u2.hasSupplementsAssigned).toBe(true);
+  });
 });
 
-describe("hasUnreadChatMessages", () => {
-  it("messaggio dell'altra parte non ancora letto => true", async () => {
+describe("countUnreadChatMessages", () => {
+  it("un messaggio dell'altra parte non ancora letto => 1", async () => {
     const supabase = makeMockSupabase({
       chat_messages: [{ id: "m1", client_id: "u1", sender_id: "coach1", read_at: null }],
     });
-    expect(await hasUnreadChatMessages(supabase, "u1", "u1")).toBe(true);
+    expect(await countUnreadChatMessages(supabase, "u1", "u1")).toBe(1);
   });
-  it("nessun messaggio => false", async () => {
+  it("più messaggi non letti => il conteggio esatto, non solo un booleano", async () => {
+    const supabase = makeMockSupabase({
+      chat_messages: [
+        { id: "m1", client_id: "u1", sender_id: "coach1", read_at: null },
+        { id: "m2", client_id: "u1", sender_id: "coach1", read_at: null },
+        { id: "m3", client_id: "u1", sender_id: "coach1", read_at: null },
+      ],
+    });
+    expect(await countUnreadChatMessages(supabase, "u1", "u1")).toBe(3);
+  });
+  it("nessun messaggio => 0", async () => {
     const supabase = makeMockSupabase({ chat_messages: [] });
-    expect(await hasUnreadChatMessages(supabase, "u1", "u1")).toBe(false);
+    expect(await countUnreadChatMessages(supabase, "u1", "u1")).toBe(0);
   });
-  it("messaggio già letto (read_at valorizzato) => false", async () => {
+  it("messaggio già letto (read_at valorizzato) => 0", async () => {
     const supabase = makeMockSupabase({
       chat_messages: [{ id: "m1", client_id: "u1", sender_id: "coach1", read_at: "2026-01-01T00:00:00Z" }],
     });
-    expect(await hasUnreadChatMessages(supabase, "u1", "u1")).toBe(false);
+    expect(await countUnreadChatMessages(supabase, "u1", "u1")).toBe(0);
   });
-  it("messaggio scritto da me stesso (mai da segnare non letto) => false", async () => {
+  it("messaggio scritto da me stesso (mai da segnare non letto) => 0", async () => {
     const supabase = makeMockSupabase({
       chat_messages: [{ id: "m1", client_id: "u1", sender_id: "u1", read_at: null }],
     });
-    expect(await hasUnreadChatMessages(supabase, "u1", "u1")).toBe(false);
+    expect(await countUnreadChatMessages(supabase, "u1", "u1")).toBe(0);
   });
 });
