@@ -152,14 +152,20 @@ Deno.serve(async (req) => {
 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-5",
-      max_tokens: 4000,
+      max_tokens: 8000,
       system: isImport ? IMPORT_SYSTEM_PROMPT : GENERATE_SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
     });
 
     const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("risposta senza JSON valido");
+    if (!match) {
+      throw new Error(
+        response.stop_reason === "max_tokens"
+          ? "risposta troncata (scheda troppo lunga) — riprova con note più semplici o dividendo l'import in due parti"
+          : "risposta senza JSON valido",
+      );
+    }
     const parsed = JSON.parse(match[0]);
     if (!Array.isArray(parsed.days) || parsed.days.length !== 7 || !parsed.days.every(isValidDay)) {
       throw new Error("struttura settimana non valida");
