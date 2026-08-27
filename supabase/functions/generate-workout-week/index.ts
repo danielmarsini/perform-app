@@ -13,6 +13,16 @@
 // (7 giorni, muscleTarget da un vocabolario fisso) invece di consiglio
 // testuale libero — Master Prompt Allenamento condensato + contratto JSON,
 // duplicati qui (non importati dal client) per restare "blindati".
+//
+// Due modalità (stesso contratto di output in entrambe):
+//   1. GENERAZIONE — clientContext (obiettivo/livello/dolori/PR) + notes,
+//      nessuna sorgente: l'AI progetta la settimana da zero sui Master Prompt.
+//   2. IMPORT — il coach ha già scritto la scheda a mano o in un PDF
+//      (sourceText e/o sourcePdfBase64): l'AI TRASCRIVE fedelmente quello che
+//      c'è scritto nel contratto JSON dell'editor (stessi esercizi/serie/
+//      ripetizioni/recupero), mappando solo la terminologia libera del coach
+//      sul vocabolario fisso muscleTarget/technique — non inventa né
+//      "migliora" un allenamento che il coach ha già deciso lui stesso.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk@0.32";
@@ -34,19 +44,27 @@ const MUSCLE_TARGETS = [
 ];
 const TECHNIQUES = ["Nessuna", "Rest-Pause", "Drop-set", "Stripping", "Super-set"];
 
-const SYSTEM_PROMPT = `Sei un luminare in chinesiologia, biomeccanica e metodologia dell'allenamento per Bodybuilding, Powerlifting, Fitness e recupero infortuni. Il tuo compito è generare la BOZZA di una settimana di allenamento (7 giorni, lunedì-domenica) per un cliente di coaching, seguendo queste regole non negoziabili:
+const JSON_CONTRACT = `Rispondi SOLO con un oggetto JSON valido, nessun altro testo, con questa struttura esatta:
+{"days": [null|{"label": "nome del giorno, es. Push A — Petto/Spalle/Tricipiti", "exercises": [{"name": "...", "muscleTarget": "...", "synergists": [...], "sets": 4, "reps": "8-10", "rest": 120, "rirTarget": "2", "technique": "Nessuna"}]}, ...]}
+
+L'array "days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica. Usa ESCLUSIVAMENTE questi valori per "muscleTarget", verbatim, mai un sinonimo o una variante: ${MUSCLE_TARGETS.join(", ")}. "synergists" è un array (anche vuoto) di distretti sinergici tra gli stessi valori sopra — mai il distretto primario ripetuto lì dentro. Usa ESCLUSIVAMENTE questi valori per "technique": ${TECHNIQUES.join(", ")}. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero (numero), "sets" è il numero di serie dirette (numero), "rirTarget" è una stringa (es. "2") o stringa vuota se non applicabile.`;
+
+const GENERATE_SYSTEM_PROMPT = `Sei un luminare in chinesiologia, biomeccanica e metodologia dell'allenamento per Bodybuilding, Powerlifting, Fitness e recupero infortuni. Il tuo compito è generare la BOZZA di una settimana di allenamento (7 giorni, lunedì-domenica) per un cliente di coaching, seguendo queste regole non negoziabili:
 
 1. Analizza obiettivo, livello, sessioni settimanali, dolori/infortuni segnalati e PR forniti nel contesto prima di scegliere un solo esercizio — mai un esercizio a rischio per una zona dolente segnalata, qualunque sia il livello dichiarato.
 2. Distribuisci il numero di sessioni allenanti richiesto sui 7 giorni (gli altri restano giorni di riposo, "day": null), con una progressione di volume/intensità sensata per il livello dichiarato.
-3. Usa ESCLUSIVAMENTE questi valori per "muscleTarget" (il distretto primario dell'esercizio), verbatim, mai un sinonimo o una variante: ${MUSCLE_TARGETS.join(", ")}.
-4. "synergists" è un array (anche vuoto) di distretti sinergici tra gli stessi valori sopra — mai il distretto primario ripetuto lì dentro.
-5. Usa ESCLUSIVAMENTE questi valori per "technique": ${TECHNIQUES.join(", ")} — tecniche avanzate (Rest-Pause, Drop-set, Stripping, Super-set) solo per livelli intermedio/avanzato, mai su un principiante.
-6. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero (numero), "sets" è il numero di serie dirette (numero), "rirTarget" è una stringa (es. "2") o stringa vuota se non applicabile.
+3. Tecniche avanzate (Rest-Pause, Drop-set, Stripping, Super-set) solo per livelli intermedio/avanzato, mai su un principiante.
 
-Rispondi SOLO con un oggetto JSON valido, nessun altro testo, con questa struttura esatta:
-{"days": [null|{"label": "nome del giorno, es. Push A — Petto/Spalle/Tricipiti", "exercises": [{"name": "...", "muscleTarget": "...", "synergists": [...], "sets": 4, "reps": "8-10", "rest": 120, "rirTarget": "2", "technique": "Nessuna"}]}, ...]}
+${JSON_CONTRACT}`;
 
-L'array "days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica.`;
+const IMPORT_SYSTEM_PROMPT = `Il coach ti ha già scritto (a mano, o in un PDF/foto) una scheda di allenamento completa. Il tuo compito è TRASCRIVERLA fedelmente nel contratto JSON dell'editor — NON è una generazione da zero:
+
+1. Riporta esattamente gli esercizi, l'ordine dei giorni, le serie, le ripetizioni e i recuperi così come scritti dal coach — mai inventare, aggiungere, togliere o "migliorare" un esercizio che non c'è nel testo/PDF originale.
+2. Se un giorno del testo originale non specifica un dato (es. recupero non scritto), usa un valore di buon senso per quel tipo di esercizio invece di inventare un numero a caso, ma SOLO per riempire un vuoto — mai per sovrascrivere un numero che il coach ha già scritto.
+3. Il testo del coach userà quasi certamente nomi di gruppi muscolari o terminologia diversa dal vocabolario fisso dell'app — mappa ogni esercizio al valore più corretto tra quelli consentiti, non lasciare mai "muscleTarget" fuori vocabolario.
+4. Se un giorno del testo/PDF è esplicitamente un giorno di riposo (o non è menzionato), quel giorno è "null" nell'array.
+
+${JSON_CONTRACT}`;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -59,6 +77,7 @@ const COST_PER_INPUT_TOKEN = 2 / 1_000_000;
 const COST_PER_OUTPUT_TOKEN = 10 / 1_000_000;
 const SAFETY_CAP_USD = 10.0;
 const MAX_NOTES_CHARS = 1000;
+const MAX_SOURCE_TEXT_CHARS = 12000;
 
 function currentMonthKey() {
   const d = new Date();
@@ -91,8 +110,10 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "forbidden — solo il coach può usare l'editor AI" }), { status: 403, headers: CORS_HEADERS });
   }
 
-  const { clientContext, notes } = await req.json().catch(() => ({}));
+  const { clientContext, notes, sourceText, sourcePdfBase64 } = await req.json().catch(() => ({}));
   const trimmedNotes = typeof notes === "string" ? notes.slice(0, MAX_NOTES_CHARS) : "";
+  const trimmedSourceText = typeof sourceText === "string" ? sourceText.slice(0, MAX_SOURCE_TEXT_CHARS) : "";
+  const isImport = !!trimmedSourceText || !!sourcePdfBase64;
 
   const month = currentMonthKey();
   const { data: usageRow } = await admin.from("ai_usage_monthly").select("cost_usd, requests").eq("user_id", user.id).eq("month", month).maybeSingle();
@@ -102,14 +123,21 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Import: il PDF (se c'è) va PRIMA del testo nel content array — stessa
+    // convenzione richiesta dall'API per i blocchi "document". Generazione
+    // da zero: nessun documento, solo il contesto cliente come oggi.
+    const userContent = isImport
+      ? [
+          ...(sourcePdfBase64 ? [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: sourcePdfBase64 } }] : []),
+          { type: "text", text: `${trimmedSourceText ? `Testo della scheda scritto dal coach:\n${trimmedSourceText}\n\n` : ""}Note aggiuntive del coach: ${trimmedNotes || "(nessuna)"}` },
+        ]
+      : `Dati reali del cliente:\n${JSON.stringify(clientContext ?? {}, null, 2)}\n\nNote aggiuntive del coach: ${trimmedNotes || "(nessuna)"}`;
+
     const response = await anthropic.messages.create({
       model: "claude-sonnet-5",
       max_tokens: 3000,
-      system: SYSTEM_PROMPT,
-      messages: [{
-        role: "user",
-        content: `Dati reali del cliente:\n${JSON.stringify(clientContext ?? {}, null, 2)}\n\nNote aggiuntive del coach: ${trimmedNotes || "(nessuna)"}`,
-      }],
+      system: isImport ? IMPORT_SYSTEM_PROMPT : GENERATE_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userContent }],
     });
 
     const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
