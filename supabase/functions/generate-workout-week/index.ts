@@ -57,7 +57,9 @@ const JSON_CONTRACT = `Rispondi SOLO con un oggetto JSON valido, nessun altro te
 
 L'array "days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica. Usa ESCLUSIVAMENTE questi valori per "muscleTarget", verbatim, mai un sinonimo o una variante: ${MUSCLE_TARGETS.join(", ")}. "synergists" è un array (anche vuoto) di distretti sinergici tra gli stessi valori sopra — mai il distretto primario ripetuto lì dentro. Usa ESCLUSIVAMENTE questi valori per "technique": ${TECHNIQUES.join(", ")}. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero (numero), "sets" è il numero di serie dirette (numero), "rirTarget" è una stringa (es. "2") o stringa vuota se non applicabile.
 
-"warmup" e "stretching" sono testo libero (poche righe, non un oggetto strutturato), scritti in base agli esercizi/gruppi muscolari di QUEL giorno specifico — mai generici, mai identici tra un giorno gambe e un giorno spalle. "warmup" è la mobilità articolare e l'attivazione da fare PRIMA della sessione (es. "Cyclette leggera 5', Hip circles 2x10 per lato, Band pull-apart 2x15"); "stretching" sono gli allungamenti statici da fare a fine sessione sui gruppi appena allenati (es. "Stretching quadricipiti 2x30 sec per lato, Stretching flessori dell'anca 2x30 sec"). Includi sempre serie/ripetizioni o una durata quando ha senso, ma resta un testo discorsivo, non un altro array JSON. Un giorno di riposo ("null") non ha né warmup né stretching. MAI includere sessioni di cardio in "exercises" o altrove: il cardio lo assegna il coach a parte, non è compito tuo.`;
+"warmup" e "stretching" sono testo libero (poche righe, non un oggetto strutturato), scritti in base agli esercizi/gruppi muscolari di QUEL giorno specifico — mai generici, mai identici tra un giorno gambe e un giorno spalle. "warmup" è la mobilità articolare e l'attivazione da fare PRIMA della sessione (es. "Cyclette leggera 5 minuti, Hip circles 2x10 per lato, Band pull-apart 2x15"); "stretching" sono gli allungamenti statici da fare a fine sessione sui gruppi appena allenati (es. "Stretching quadricipiti 2x30 sec per lato, Stretching flessori dell'anca 2x30 sec"). Includi sempre serie/ripetizioni o una durata quando ha senso, ma resta un testo discorsivo su UN'UNICA RIGA (separa i vari punti con virgole o " — ", mai un vero a capo dentro il valore), non un altro array JSON. Un giorno di riposo ("null") non ha né warmup né stretching. MAI includere sessioni di cardio in "exercises" o altrove: il cardio lo assegna il coach a parte, non è compito tuo.
+
+REGOLA CRITICA DI VALIDITÀ JSON: nessun valore stringa (label, warmup, stretching, name) deve MAI contenere il carattere virgolette doppie (") al suo interno, nemmeno per indicare pollici/misure — scrivi "pollici" o ometti l'unità invece di usare il simbolo ("), altrimenti il JSON diventa invalido e la richiesta fallisce. Allo stesso modo, nessun valore stringa deve contenere un vero ritorno a capo — se il testo ha più punti, uniscili sulla stessa riga con virgole.`;
 
 const GENERATE_SYSTEM_PROMPT = `Sei un luminare in chinesiologia, biomeccanica e metodologia dell'allenamento per Bodybuilding, Powerlifting, Fitness e recupero infortuni. Il tuo compito è generare la BOZZA di una settimana di allenamento (7 giorni, lunedì-domenica) per un cliente di coaching, seguendo queste regole non negoziabili:
 
@@ -90,6 +92,34 @@ const COST_PER_OUTPUT_TOKEN = 10 / 1_000_000;
 const SAFETY_CAP_USD = 10.0;
 const MAX_NOTES_CHARS = 1000;
 const MAX_SOURCE_TEXT_CHARS = 12000;
+
+// Rete di sicurezza per JSON "quasi valido" scritto dal modello: un vero
+// ritorno a capo o tab non "scappato" dentro una stringa rende l'intero JSON
+// invalido (JSON.parse fallisce con "Expected ',' or ']'/'}'..."), anche se
+// il prompt ora lo vieta esplicitamente. Passata rapida carattere per
+// carattere: dentro una stringa, sostituisce i control character letterali
+// con la forma scappata — non tocca nient'altro (chiavi, numeri, struttura).
+function sanitizeJsonText(text) {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) { out += ch; escaped = false; continue; }
+      if (ch === "\\") { out += ch; escaped = true; continue; }
+      if (ch === '"') { out += ch; inString = false; continue; }
+      if (ch === "\n") { out += "\\n"; continue; }
+      if (ch === "\r") { out += "\\r"; continue; }
+      if (ch === "\t") { out += "\\t"; continue; }
+      out += ch;
+    } else {
+      if (ch === '"') { inString = true; out += ch; continue; }
+      out += ch;
+    }
+  }
+  return out;
+}
 
 function currentMonthKey() {
   const d = new Date();
@@ -179,7 +209,20 @@ Deno.serve(async (req) => {
           : "risposta senza JSON valido",
       );
     }
-    const parsed = JSON.parse(match[0]);
+    // Prima un parse diretto; solo se fallisce (es. un vero a capo/tab
+    // sfuggito dentro una stringa nonostante il prompt lo vieti) si ritenta
+    // con la sanificazione — evita di "correggere" inutilmente un JSON già
+    // valido.
+    let parsed;
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch (firstErr) {
+      try {
+        parsed = JSON.parse(sanitizeJsonText(match[0]));
+      } catch {
+        throw firstErr;
+      }
+    }
     if (!Array.isArray(parsed.days) || parsed.days.length !== 7 || !parsed.days.every(isValidDay)) {
       throw new Error("struttura settimana non valida");
     }
