@@ -9,20 +9,24 @@
 // il coach la rivede/corregge e la salva lui stesso con "Salva" — questa
 // funzione non scrive mai su workout_logs.
 //
-// Diverso da generate-plan: qui la risposta DEVE essere JSON strutturato
+// Diverso da generate-plan: qui la risposta DEVE essere dati strutturati
 // (7 giorni, muscleTarget da un vocabolario fisso) invece di consiglio
-// testuale libero — Master Prompt Allenamento condensato + contratto JSON,
-// duplicati qui (non importati dal client) per restare "blindati".
+// testuale libero — ottenuta con TOOL CALLING (vedi WORKOUT_TOOL sotto), non
+// chiedendo al modello di scrivere JSON come testo libero da fare regex+parse
+// a mano: quest'ultimo approccio (usato fino a questa versione) falliva
+// realisticamente ogni volta che il testo/PDF del coach conteneva un
+// carattere " non scappato (es. una misura in pollici) — l'API costruisce
+// l'input dello strumento con l'escaping corretto, il modello non "scrive"
+// mai i caratteri speciali a mano.
 //
 // Due modalità (stesso contratto di output in entrambe):
 //   1. GENERAZIONE — clientContext (obiettivo/livello/dolori/PR) + notes,
 //      nessuna sorgente: l'AI progetta la settimana da zero sui Master Prompt.
 //   2. IMPORT — il coach ha già scritto la scheda a mano o in un PDF
 //      (sourceText e/o sourcePdfBase64): l'AI TRASCRIVE fedelmente quello che
-//      c'è scritto nel contratto JSON dell'editor (stessi esercizi/serie/
-//      ripetizioni/recupero), mappando solo la terminologia libera del coach
-//      sul vocabolario fisso muscleTarget/technique — non inventa né
-//      "migliora" un allenamento che il coach ha già deciso lui stesso.
+//      c'è scritto, mappando solo la terminologia libera del coach sul
+//      vocabolario fisso muscleTarget/technique — non inventa né "migliora"
+//      un allenamento che il coach ha già deciso lui stesso.
 //
 // Ogni giorno di allenamento include anche "warmup" (mobilità/attivazione
 // pre-sessione) e "stretching" (allungamenti di fine sessione), testo libero
@@ -43,7 +47,8 @@ const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 // Stesso vocabolario di MUSCLE_TARGETS (src/lib/coachingData.js) — il check
 // costraint reale su workout_logs.muscle_target. Un valore fuori da questa
 // lista viene scartato dal salvataggio lato coach (saveWeekWorkout), quindi
-// va imposto qui, non lasciato all'estro del modello.
+// va imposto qui (nell'enum dello schema E nel controllo isValidDay sotto),
+// non lasciato all'estro del modello.
 const MUSCLE_TARGETS = [
   "Pettorali", "Gran Dorsale", "Lombari", "Trapezio",
   "Deltoide Anteriore", "Deltoide Laterale", "Deltoide Posteriore",
@@ -52,33 +57,82 @@ const MUSCLE_TARGETS = [
 ];
 const TECHNIQUES = ["Nessuna", "Rest-Pause", "Drop-set", "Stripping", "Super-set"];
 
-const JSON_CONTRACT = `Rispondi SOLO con un oggetto JSON valido, nessun altro testo, con questa struttura esatta:
-{"days": [null|{"label": "nome del giorno, es. Push A — Petto/Spalle/Tricipiti", "warmup": "...", "stretching": "...", "exercises": [{"name": "...", "muscleTarget": "...", "synergists": [...], "sets": 4, "reps": "8-10", "rest": 120, "rirTarget": "2", "technique": "Nessuna"}]}, ...]}
+// Contenuto del vecchio JSON_CONTRACT, spogliato delle istruzioni "scrivi
+// JSON come testo" (non più necessarie: la struttura è imposta dallo schema
+// dello strumento, non dal prompt) — resta solo la guida sul CONTENUTO che
+// lo schema da solo non può imporre (conteggio giorni, stile di warmup/
+// stretching, esclusione cardio).
+const CONTENT_RULES = `Chiama SEMPRE ed ESCLUSIVAMENTE lo strumento "report_workout_week" con l'intera settimana — non rispondere mai a parole, nemmeno per spiegazioni o dubbi.
 
-L'array "days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica. Usa ESCLUSIVAMENTE questi valori per "muscleTarget", verbatim, mai un sinonimo o una variante: ${MUSCLE_TARGETS.join(", ")}. "synergists" è un array (anche vuoto) di distretti sinergici tra gli stessi valori sopra — mai il distretto primario ripetuto lì dentro. Usa ESCLUSIVAMENTE questi valori per "technique": ${TECHNIQUES.join(", ")}. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero (numero), "sets" è il numero di serie dirette (numero), "rirTarget" è una stringa (es. "2") o stringa vuota se non applicabile.
+"days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica (un giorno di riposo è null). "synergists" sono distretti sinergici tra gli stessi valori di "muscleTarget" — mai il distretto primario ripetuto lì dentro. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero, "sets" è il numero di serie dirette, "rirTarget" è una stringa (es. "2") o stringa vuota se non applicabile.
 
-"warmup" e "stretching" sono testo libero (poche righe, non un oggetto strutturato), scritti in base agli esercizi/gruppi muscolari di QUEL giorno specifico — mai generici, mai identici tra un giorno gambe e un giorno spalle. "warmup" è la mobilità articolare e l'attivazione da fare PRIMA della sessione (es. "Cyclette leggera 5 minuti, Hip circles 2x10 per lato, Band pull-apart 2x15"); "stretching" sono gli allungamenti statici da fare a fine sessione sui gruppi appena allenati (es. "Stretching quadricipiti 2x30 sec per lato, Stretching flessori dell'anca 2x30 sec"). Includi sempre serie/ripetizioni o una durata quando ha senso, ma resta un testo discorsivo su UN'UNICA RIGA (separa i vari punti con virgole o " — ", mai un vero a capo dentro il valore), non un altro array JSON. Un giorno di riposo ("null") non ha né warmup né stretching. MAI includere sessioni di cardio in "exercises" o altrove: il cardio lo assegna il coach a parte, non è compito tuo.
-
-REGOLA CRITICA DI VALIDITÀ JSON: nessun valore stringa (label, warmup, stretching, name) deve MAI contenere il carattere virgolette doppie (") al suo interno, nemmeno per indicare pollici/misure — scrivi "pollici" o ometti l'unità invece di usare il simbolo ("), altrimenti il JSON diventa invalido e la richiesta fallisce. Allo stesso modo, nessun valore stringa deve contenere un vero ritorno a capo — se il testo ha più punti, uniscili sulla stessa riga con virgole.`;
+"warmup" e "stretching" sono testo libero SU UNA RIGA SOLA (poche frasi separate da virgole), scritti in base agli esercizi/gruppi muscolari di QUEL giorno specifico — mai generici, mai identici tra un giorno gambe e un giorno spalle. "warmup" è la mobilità articolare e l'attivazione da fare PRIMA della sessione (es. "Cyclette leggera 5 minuti, Hip circles 2x10 per lato, Band pull-apart 2x15"); "stretching" sono gli allungamenti statici da fare a fine sessione sui gruppi appena allenati (es. "Stretching quadricipiti 2x30 sec per lato, Stretching flessori dell'anca 2x30 sec"). Includi sempre serie/ripetizioni o una durata quando ha senso. Un giorno di riposo (null) non ha né warmup né stretching. MAI includere sessioni di cardio tra gli esercizi o altrove: il cardio lo assegna il coach a parte, non è compito tuo.`;
 
 const GENERATE_SYSTEM_PROMPT = `Sei un luminare in chinesiologia, biomeccanica e metodologia dell'allenamento per Bodybuilding, Powerlifting, Fitness e recupero infortuni. Il tuo compito è generare la BOZZA di una settimana di allenamento (7 giorni, lunedì-domenica) per un cliente di coaching, seguendo queste regole non negoziabili:
 
 1. Analizza obiettivo, livello, sessioni settimanali, dolori/infortuni segnalati e PR forniti nel contesto prima di scegliere un solo esercizio — mai un esercizio a rischio per una zona dolente segnalata, qualunque sia il livello dichiarato.
-2. Distribuisci il numero di sessioni allenanti richiesto sui 7 giorni (gli altri restano giorni di riposo, "day": null), con una progressione di volume/intensità sensata per il livello dichiarato.
+2. Distribuisci il numero di sessioni allenanti richiesto sui 7 giorni (gli altri restano giorni di riposo, null), con una progressione di volume/intensità sensata per il livello dichiarato.
 3. Tecniche avanzate (Rest-Pause, Drop-set, Stripping, Super-set) solo per livelli intermedio/avanzato, mai su un principiante.
 4. Per ogni giorno di allenamento scrivi anche "warmup" (mobilità/attivazione pre-sessione) e "stretching" (allungamenti di fine sessione) mirati sui gruppi muscolari che alleni quel giorno — mai lo stesso testo copiato su giorni diversi.
 
-${JSON_CONTRACT}`;
+${CONTENT_RULES}`;
 
-const IMPORT_SYSTEM_PROMPT = `Il coach ti ha già scritto (a mano, o in un PDF/foto) una scheda di allenamento completa. Il tuo compito è TRASCRIVERLA fedelmente nel contratto JSON dell'editor — NON è una generazione da zero:
+const IMPORT_SYSTEM_PROMPT = `Il coach ti ha già scritto (a mano, o in un PDF/foto) una scheda di allenamento completa. Il tuo compito è TRASCRIVERLA fedelmente nello strumento — NON è una generazione da zero:
 
 1. Riporta esattamente gli esercizi, l'ordine dei giorni, le serie, le ripetizioni e i recuperi così come scritti dal coach — mai inventare, aggiungere, togliere o "migliorare" un esercizio che non c'è nel testo/PDF originale.
 2. Se un giorno del testo originale non specifica un dato (es. recupero non scritto), usa un valore di buon senso per quel tipo di esercizio invece di inventare un numero a caso, ma SOLO per riempire un vuoto — mai per sovrascrivere un numero che il coach ha già scritto.
 3. Il testo del coach userà quasi certamente nomi di gruppi muscolari o terminologia diversa dal vocabolario fisso dell'app — mappa ogni esercizio al valore più corretto tra quelli consentiti, non lasciare mai "muscleTarget" fuori vocabolario.
-4. Se un giorno del testo/PDF è esplicitamente un giorno di riposo (o non è menzionato), quel giorno è "null" nell'array.
+4. Se un giorno del testo/PDF è esplicitamente un giorno di riposo (o non è menzionato), quel giorno è null.
 5. Se il testo/PDF originale scrive già un riscaldamento o uno stretching per un giorno, trascrivili fedelmente in "warmup"/"stretching" invece di inventarli. Se non li scrive, componili tu in base agli esercizi di quel giorno (stessa logica della generazione da zero) — non lasciarli mai vuoti su un giorno di allenamento.
 
-${JSON_CONTRACT}`;
+${CONTENT_RULES}`;
+
+// Tool calling invece di "scrivi un JSON come testo": l'API stessa costruisce
+// l'input dello strumento con l'escaping corretto (virgolette, a capo, ecc.),
+// eliminando la classe di bug per cui un carattere " non scappato dentro un
+// nome esercizio/misura rendeva l'intero JSON invalido lato parsing manuale.
+const DAY_SCHEMA = {
+  type: "object",
+  properties: {
+    label: { type: "string", description: "Nome del giorno, es. \"Push A — Petto/Spalle/Tricipiti\"." },
+    warmup: { type: "string", description: "Riscaldamento/mobilità pre-sessione, testo libero su una riga." },
+    stretching: { type: "string", description: "Stretching di fine sessione, testo libero su una riga." },
+    exercises: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          muscleTarget: { type: "string", enum: MUSCLE_TARGETS },
+          synergists: { type: "array", items: { type: "string", enum: MUSCLE_TARGETS } },
+          sets: { type: "number" },
+          reps: { type: "string" },
+          rest: { type: "number", description: "Secondi di recupero." },
+          rirTarget: { type: "string" },
+          technique: { type: "string", enum: TECHNIQUES },
+        },
+        required: ["name", "muscleTarget", "sets", "reps", "rest", "technique"],
+      },
+    },
+  },
+  required: ["label", "exercises"],
+};
+
+const WORKOUT_TOOL = {
+  name: "report_workout_week",
+  description: "Restituisce la bozza completa della settimana di allenamento (7 giorni, lunedì-domenica).",
+  input_schema: {
+    type: "object",
+    properties: {
+      days: {
+        type: "array",
+        description: "Esattamente 7 elementi, indice 0 = lunedì, indice 6 = domenica. null per un giorno di riposo.",
+        items: { anyOf: [{ type: "null" }, DAY_SCHEMA] },
+      },
+    },
+    required: ["days"],
+  },
+};
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -92,34 +146,6 @@ const COST_PER_OUTPUT_TOKEN = 10 / 1_000_000;
 const SAFETY_CAP_USD = 10.0;
 const MAX_NOTES_CHARS = 1000;
 const MAX_SOURCE_TEXT_CHARS = 12000;
-
-// Rete di sicurezza per JSON "quasi valido" scritto dal modello: un vero
-// ritorno a capo o tab non "scappato" dentro una stringa rende l'intero JSON
-// invalido (JSON.parse fallisce con "Expected ',' or ']'/'}'..."), anche se
-// il prompt ora lo vieta esplicitamente. Passata rapida carattere per
-// carattere: dentro una stringa, sostituisce i control character letterali
-// con la forma scappata — non tocca nient'altro (chiavi, numeri, struttura).
-function sanitizeJsonText(text) {
-  let out = "";
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (escaped) { out += ch; escaped = false; continue; }
-      if (ch === "\\") { out += ch; escaped = true; continue; }
-      if (ch === '"') { out += ch; inString = false; continue; }
-      if (ch === "\n") { out += "\\n"; continue; }
-      if (ch === "\r") { out += "\\r"; continue; }
-      if (ch === "\t") { out += "\\t"; continue; }
-      out += ch;
-    } else {
-      if (ch === '"') { inString = true; out += ch; continue; }
-      out += ch;
-    }
-  }
-  return out;
-}
 
 function currentMonthKey() {
   const d = new Date();
@@ -198,31 +224,22 @@ Deno.serve(async (req) => {
       max_tokens: 8000,
       system: isImport ? IMPORT_SYSTEM_PROMPT : GENERATE_SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
+      tools: [WORKOUT_TOOL],
+      tool_choice: { type: "tool", name: "report_workout_week" },
     });
 
-    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) {
+    // Con tool_choice forzato, la settimana arriva già come oggetto JS
+    // dentro il blocco tool_use — mai più testo libero da isolare con una
+    // regex e passare a JSON.parse a mano.
+    const toolUse = response.content.find((b) => b.type === "tool_use" && b.name === "report_workout_week");
+    if (!toolUse || !toolUse.input || typeof toolUse.input !== "object") {
       throw new Error(
         response.stop_reason === "max_tokens"
           ? "risposta troncata (scheda troppo lunga) — riprova con note più semplici o dividendo l'import in due parti"
-          : "risposta senza JSON valido",
+          : "risposta senza dati validi dallo strumento AI",
       );
     }
-    // Prima un parse diretto; solo se fallisce (es. un vero a capo/tab
-    // sfuggito dentro una stringa nonostante il prompt lo vieti) si ritenta
-    // con la sanificazione — evita di "correggere" inutilmente un JSON già
-    // valido.
-    let parsed;
-    try {
-      parsed = JSON.parse(match[0]);
-    } catch (firstErr) {
-      try {
-        parsed = JSON.parse(sanitizeJsonText(match[0]));
-      } catch {
-        throw firstErr;
-      }
-    }
+    const parsed = toolUse.input;
     if (!Array.isArray(parsed.days) || parsed.days.length !== 7 || !parsed.days.every(isValidDay)) {
       throw new Error("struttura settimana non valida");
     }
