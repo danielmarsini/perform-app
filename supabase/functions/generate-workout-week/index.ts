@@ -127,10 +127,23 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "forbidden — solo il coach può usare l'editor AI" }), { status: 403, headers: CORS_HEADERS });
   }
 
-  const { clientContext, notes, sourceText, sourcePdfBase64 } = await req.json().catch(() => ({}));
+  const { mode, clientContext, notes, sourceText, sourcePdfBase64 } = await req.json().catch(() => ({}));
   const trimmedNotes = typeof notes === "string" ? notes.slice(0, MAX_NOTES_CHARS) : "";
   const trimmedSourceText = typeof sourceText === "string" ? sourceText.slice(0, MAX_SOURCE_TEXT_CHARS) : "";
-  const isImport = !!trimmedSourceText || !!sourcePdfBase64;
+  const hasSource = !!trimmedSourceText || !!sourcePdfBase64;
+  // "mode" (inviato dal client) è la fonte di verità quando presente: se il
+  // coach ha scelto "Incolla o carica scheda" ma sourceText/sourcePdfBase64
+  // non sono arrivati integri al server (PDF troppo grande, intoppo di
+  // rete...), NON deve silenziosamente ripiegare su una generazione da zero
+  // con clientContext vuoto — il coach riceverebbe una bozza "inventata" che
+  // sembra valida ma non ha nulla a che fare col PDF che ha caricato. Meglio
+  // un errore chiaro. Fallback a "isImport = hasSource" solo se un client
+  // più vecchio (non ancora aggiornato) non invia ancora "mode".
+  const isImport = mode === "import" ? true : mode === "generate" ? false : hasSource;
+  console.log("PERFORM: generate-workout-week richiesta", { mode: mode ?? "(assente)", isImport, hasSourceText: !!trimmedSourceText, hasPdf: !!sourcePdfBase64, pdfSizeKB: sourcePdfBase64 ? Math.round((sourcePdfBase64.length * 0.75) / 1024) : 0 });
+  if (isImport && !hasSource) {
+    return new Response(JSON.stringify({ error: "Nessuna scheda sorgente ricevuta dal server (testo incollato o PDF) — il file potrebbe essere troppo grande o la connessione è caduta. Riprova, eventualmente con un PDF più leggero." }), { status: 400, headers: CORS_HEADERS });
+  }
 
   const month = currentMonthKey();
   const { data: usageRow } = await admin.from("ai_usage_monthly").select("cost_usd, requests").eq("user_id", user.id).eq("month", month).maybeSingle();
