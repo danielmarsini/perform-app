@@ -24,7 +24,7 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check, Navigation, Trophy,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchAssignedWorkouts, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
+import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
@@ -7388,13 +7388,17 @@ function NutritionTabs({
   // stretto di "qualunque piano a pagamento") — ma il bottone resta sempre
   // visibile (vedi tab === "subs" sotto), il contenuto è bloccato con una
   // spiegazione accattivante invece di sparire. Dieta Tipo, scritta dal
-  // coach, solo Full Coaching (fullAccess).
-  // BUG PRESO: il coach panel non ha (ancora) nessun modo di scrivere una
-  // dieta tipo pasto-per-pasto — solo macro/calorie (nutrition_targets) — ma
-  // questo tab mostrava comunque SEMPRE lo stesso mealGuide segnaposto fisso
-  // a ogni cliente Full Coaching, spacciandolo per "scritto dal coach": mai
-  // un dato inventato. Nascosto in modalità reale finché non esiste davvero
-  // una dieta tipo assegnata; resta visibile solo nell'anteprima demo.
+  // coach, solo Full Coaching (fullAccess). BUG PRESO (storico): questo tab
+  // mostrava SEMPRE lo stesso mealGuide segnaposto fisso a ogni cliente Full
+  // Coaching, spacciandolo per "scritto dal coach", perché il coach panel
+  // non aveva ancora modo di salvare i pasti stessi (solo macro/calorie,
+  // nutrition_targets) — mai un dato inventato. Ora che il coach può
+  // davvero salvare i pasti (diet_plans, SCHEMA_v83 — "Salva modifiche" in
+  // WeekDietEditor), in modalità reale il tab compare appena esiste almeno
+  // un pasto assegnato per il profilo ON/OFF di oggi (mealGuide reale, non
+  // più il segnaposto GUIDE); resta nascosto finché il coach non ha ancora
+  // compilato nulla.
+  const hasRealDietPlan = Array.isArray(mealGuide) && mealGuide.some((slot) => slot.items && slot.items.length > 0);
   const visibleTabs = pastDayMode ? [["diary", "Diario Libero"]] : [
     ["diary", "Diario Libero"],
     // Sostituzioni: bottone sempre visibile anche a chi non ha ancora il
@@ -7402,7 +7406,7 @@ function NutritionTabs({
     // una spiegazione accattivante invece di sparire, per invogliare
     // all'upgrade invece di nascondere che la funzione esiste.
     ["subs", "Sostituzioni"],
-    ...(fullAccess && !isRealMode ? [["plan", "Dieta Tipo"]] : []),
+    ...(fullAccess && (!isRealMode || hasRealDietPlan) ? [["plan", "Dieta Tipo"]] : []),
     // Wiki Alimentazione: bottone sempre visibile qui in alto (come Wiki
     // Allenamento tra i 3 di Allenamento Pesi/Cardio/Wiki) invece di stare
     // in fondo alla pagina sotto tutto il resto — il contenuto resta
@@ -7901,7 +7905,7 @@ function NutritionTabs({
 
       {/* ---------------- DIETA TIPO (solo Full Coaching, il tab
           stesso è nascosto agli altri piani — vedi visibleTabs sopra) ---------------- */}
-      {tab === "plan" && fullAccess && !isRealMode && (
+      {tab === "plan" && fullAccess && (!isRealMode || hasRealDietPlan) && (
         <div className="spring-in">
           <div className="card">
             <p className="label mb-1">Dieta scritta dal coach</p>
@@ -10693,6 +10697,19 @@ export default function HomePreview({
       .catch((err) => console.error("PERFORM: errore lettura nutrition_targets", err));
   }, [supabaseProp, userId]);
 
+  // Dieta tipo pasto-per-pasto assegnata dal coach (diet_plans, SCHEMA_v83) —
+  // fino a questa feature "Salva modifiche" lato coach scriveva SOLO il
+  // target sopra, mai i pasti stessi, quindi questo fetch non esisteva e il
+  // tab "Dieta Tipo" restava sempre nascosto in modalità reale (vedi
+  // NutritionTabs più sotto). null finché non caricato o non assegnato.
+  const [dietPlan, setDietPlan] = useState({ on: null, off: null });
+  useEffect(() => {
+    if (!supabaseProp || !userId) return;
+    fetchDietPlan(supabaseProp, userId)
+      .then(setDietPlan)
+      .catch((err) => console.error("PERFORM: errore lettura diet_plans", err));
+  }, [supabaseProp, userId]);
+
   // Scheda assegnata dal coach per l'INTERA settimana corrente (Lun→Dom, stesso
   // schema lunedì-domenica già usato da fetchWeekWorkout/weekDatesFrom lato
   // coach — vedi 09_CoachDashboard.jsx/coachingData.js), non più solo oggi:
@@ -11113,6 +11130,14 @@ export default function HomePreview({
   const isTrainingDay = isRealMode ? weekPlan[todayWeekdayIdx] != null : manualTrainingDay;
   const target = isTrainingDay ? targetOn : targetOff; // il target attivo "oggi" si sceglie da solo
 
+  // mealGuide reale per il tab "Dieta Tipo": i pasti del profilo ON/OFF
+  // attivo "oggi" (stessa scelta del target sopra), già in ordine di slot
+  // (colazione→prenanna, come li ha scritti il coach in WeekDietEditor).
+  // Uno slot senza un pasto assegnato in quella posizione resta vuoto invece
+  // di far crollare .map su un indice mancante.
+  const realDietProfile = isTrainingDay ? dietPlan.on : dietPlan.off;
+  const realMealGuide = MEAL_SLOTS.map((_, i) => realDietProfile?.meals?.[i] ?? { items: [], tot: { kcal: 0, p: 0, c: 0, f: 0 } });
+
   // Stesso principio di exercises/weekPlan qui sopra: in modalità reale niente
   // numeri inventati. isTraining/sessionLabel riflettono la scheda vera di
   // oggi; weekNumber/dayNumber/mesociclo/mesocicloWeeks restano null — non
@@ -11293,7 +11318,7 @@ export default function HomePreview({
           onSetTargetOff={(patch) => setTargetOff((t) => ({ ...t, ...patch }))}
           isTrainingDay={isTrainingDay} onToggleTrainingDay={isRealMode ? null : () => setManualTrainingDay((v) => !v)}
           streak={computeStreak("2026-07-19", 12, lastActivityDate)} level={4} xp={1840} xpInLevel={340} xpNeeded={590}
-          mealsBySlot={meals} foods={allFoods} mealGuide={GUIDE}
+          mealsBySlot={meals} foods={allFoods} mealGuide={isRealMode ? realMealGuide : GUIDE}
           exercises={exercises} setsFor={setsFor} onSetField={onSetField}
           sleep={sleep} steps={steps} water={water} waterTarget={waterTarget} autoSteps={autoSteps}
           onSetWaterTarget={setWaterTarget}

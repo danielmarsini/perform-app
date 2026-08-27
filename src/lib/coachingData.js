@@ -1523,6 +1523,43 @@ export async function assignNutritionTarget(supabase, {
   await markSectionUpdated(supabase, clientId, "nutrition");
 }
 
+// Scrive la dieta tipo pasto-per-pasto di un cliente (diet_plans, SCHEMA_v83):
+// mealsByProfile = { on: [...], off: [...] }, già una SNAPSHOT calcolata da
+// snapshotMeals (09_CoachDashboard.jsx) — kcal per alimento/pasto già
+// risolti da FOOD_DB lato coach, mai un foodKey grezzo, perché qui non esiste
+// un catalogo alimenti da cui ricalcolarli. Un profilo senza pasti cancella
+// la riga corrispondente invece di scrivere un array vuoto, così il cliente
+// non vede un "Dieta Tipo" fantasma per un giorno mai davvero compilato.
+export async function saveWeekDiet(supabase, coachId, clientId, mealsByProfile) {
+  await Promise.all(["on", "off"].map(async (dayType) => {
+    const meals = mealsByProfile?.[dayType] ?? [];
+    if (meals.length === 0) {
+      const { error } = await supabase.from("diet_plans").delete().eq("user_id", clientId).eq("day_type", dayType);
+      if (error) throw error;
+      return;
+    }
+    const { error } = await supabase.from("diet_plans").upsert(
+      { user_id: clientId, coach_id: coachId, day_type: dayType, meals, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,day_type" },
+    );
+    if (error) throw error;
+  }));
+}
+
+// Dieta tipo assegnata dal coach (diet_plans) — sola lettura lato cliente,
+// la scrittura vive solo in saveWeekDiet lato coach. Torna { on, off }, ognuno
+// null se il coach non ha ancora compilato quel profilo.
+export async function fetchDietPlan(supabase, userId) {
+  const { data, error } = await supabase
+    .from("diet_plans")
+    .select("day_type, meals")
+    .eq("user_id", userId);
+  if (error) throw error;
+  const byType = { on: null, off: null };
+  (data ?? []).forEach((row) => { byType[row.day_type] = { meals: row.meals || [] }; });
+  return byType;
+}
+
 // Lunedì di partenza (weekStartDateISO, 'YYYY-MM-DD') → i 7 giorni di quella
 // settimana come stringhe ISO. Corretto su entrambi i lati: in INGRESSO,
 // parsing con orario esplicito per restare in timezone locale ("YYYY-MM-DD"
