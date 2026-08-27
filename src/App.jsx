@@ -11,7 +11,7 @@ import LandingIntro from "./components/LandingIntro.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, countUnreadChatMessages, hasUnseenTeamPost } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, countUnreadChatMessages, hasUnseenTeamPost, updateUserLang } from "./lib/coachingData.js";
 
 // Anteprima leggibile del messaggio appena inviato, per il push — mai il
 // body grezzo se manca (solo un allegato): un push senza testo sembrerebbe
@@ -369,7 +369,7 @@ export default function App() {
     const loadProfile = (attempt = 0) => {
       supabase
         .from("profiles")
-        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon, scheda_addon_chat_until, scheda_addon_program_until")
+        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon, scheda_addon_chat_until, scheda_addon_program_until, lang")
         .eq("id", session.user.id)
         .single()
         .then(({ data, error }) => {
@@ -399,6 +399,7 @@ export default function App() {
           // stessa normalizzazione già applicata in SettingsDrawer.onChangePlan.
           setGender(data.gender === "female" ? "F" : "M");
           setUserPlan(data.plan === "full" ? "full_coaching" : data.plan || "free");
+          setLang(data.lang || "it");
           setProfile(data);
           setProfileLoading(false);
         });
@@ -424,6 +425,16 @@ export default function App() {
   // altre due checks "non letto" in questo file: controllato all'apertura e
   // ogni cambio tab (copre "il coach mi ha scritto mentre ero altrove"),
   // ChatThread.jsx segna già tutto come letto appena il thread si apre.
+  // Cambio lingua: aggiorna subito lo stato locale (UI reattiva) e persiste
+  // su profiles.lang (SCHEMA_v82) così la scelta sopravvive al prossimo
+  // login — prima restava solo in memoria e tornava sempre a 'it' al reload.
+  const changeLang = (l) => {
+    setLang(l);
+    if (supabase && session?.user?.id) {
+      updateUserLang(supabase, session.user.id, l).catch((err) => console.error("PERFORM: errore salvataggio lingua", err));
+    }
+  };
+
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   useEffect(() => {
     if (!supabase || !session?.user?.id || isCoach || !hasCoachChat) return;
@@ -586,6 +597,7 @@ export default function App() {
               planOverride={isCoach ? "full_coaching" : userPlan}
               isCoach={isCoach}
               onTeamSeen={() => setNewsHasUnseen(false)}
+              lang={lang}
             />
           ),
           // CoachDashboard non ha ancora una prop surface: resta un'isola
@@ -598,7 +610,7 @@ export default function App() {
               gender={gender}
               dark={dark}
               lang={lang}
-              onChangeLang={setLang}
+              onChangeLang={changeLang}
               userPlan={userPlan}
               onOpenSettings={() => { setSettingsInitialTab(undefined); setSettingsOpen(true); }}
               ownerEmail={COACH_EMAIL}
@@ -646,7 +658,7 @@ export default function App() {
           accentText={accent}
           gender={gender}
           lang={lang}
-          onChangeLang={setLang}
+          onChangeLang={changeLang}
           currentPlan={stripePlanId}
           planRenewsOn="2026-09-01"
           accountEmail={session.user.email || ""}

@@ -3448,6 +3448,30 @@ export async function markGuideTourCompleted(supabase, userId) {
 }
 
 /* ---------------------------------------------------------------------------
+   LINGUA + TRADUZIONE AUTOMATICA NEWS&TIPS (SCHEMA_v82) — profiles.lang
+   persiste la lingua scelta in Impostazioni → Aspetto (prima solo stato
+   React, resettata a 'it' ad ogni ricarica). translate-content traduce un
+   post di coach_news_tips (news/tips/team) nella lingua richiesta, con
+   cache lato server in coach_news_tips.translations — la Edge Function
+   stessa controlla la cache prima di chiamare Claude, qui non serve
+   duplicare quel controllo.
+   ------------------------------------------------------------------------- */
+
+export async function updateUserLang(supabase, userId, lang) {
+  const { error } = await supabase.from("profiles").update({ lang }).eq("id", userId);
+  if (error) throw error;
+}
+
+// Restituisce { eyebrow, title, body, body_extended } tradotti, o rilancia
+// se la Edge Function fallisce — il chiamante decide se tenere l'originale
+// italiano nel frattempo (mai bloccare la lettura in attesa della traduzione).
+export async function translateNewsTipsItem(supabase, itemId, targetLang) {
+  const { data, error } = await supabase.functions.invoke("translate-content", { body: { itemId, targetLang } });
+  if (error) throw error;
+  return data;
+}
+
+/* ---------------------------------------------------------------------------
    AVVISI TEAM — canale "team" già esistente in News & Tips (coach_news_tips,
    SCHEMA_v35): non una tabella/UI separata, solo la scrittura che mancava.
    L'RLS ("coach_news_tips_insert_team") già permette insert al coach su
