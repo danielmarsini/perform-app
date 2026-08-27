@@ -1442,7 +1442,7 @@ export function ClientProfileView({
 
       {/* ---------- Il Mio Archivio Check ---------- */}
       <Section id="archivio" icon={TrendingDown}
-               title={<>📈 <GradientText gender={gender}>{t.archive.title}</GradientText></>}
+               title={t.archive.title}
                openId={openSection} setOpenId={setOpenSection}
                sub={weightPoints?.length ? t.archive.subReady(weightPoints.length) : t.archive.subEmpty}>
         <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
@@ -1496,7 +1496,7 @@ export function ClientProfileView({
           registrati, ricomposizione) — più in basso nell'ordine delle
           sezioni, dopo l'Archivio Check. */}
       <Section id="trofei" icon={Trophy}
-               title={<>🏆 <GradientText gender={gender}>I tuoi trofei</GradientText></>}
+               title="I tuoi trofei"
                sub="Streak, livelli, check e altri traguardi"
                openId={openSection} setOpenId={setOpenSection}>
         <TrophyShelf level={level} streak={streak} checkinsCount={checkinsCount}

@@ -520,7 +520,8 @@ function goldStopsFor(boxIsBlack) {
 /* Un singolo pulsante di navigazione. Componente a parte (non una funzione
    inline nel .map) perché ha bisogno di useId per il proprio gradiente SVG:
    gli hook vanno chiamati dentro un vero componente, non in un callback. */
-function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isCoachTab, hasBadge }) {
+function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isCoachTab, badgeCount = 0, dot = false }) {
+  const badgeLabel = badgeCount > 9 ? "9+" : String(badgeCount);
   const uid = useId();
   const gradId = `navIconGrad-${uid}`;
   const boxIsBlack = !dark;
@@ -596,11 +597,22 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
               }}
             />
           )}
-          {hasBadge && (
-            <span aria-hidden="true" className="absolute rounded-full" style={{
-              top: -2, right: -2, width: 9, height: 9, backgroundColor: "#E5484D",
-              boxShadow: `0 0 0 2px ${boxIsBlack ? "#111111" : "#FFFFFF"}`,
-            }} />
+          {badgeCount > 0 && (
+            <span aria-hidden="true" className="absolute flex items-center justify-center rounded-full font-data"
+                  style={{
+                    top: -6, right: -8, minWidth: 15, height: 15, padding: "0 3px", backgroundColor: "#E5484D",
+                    color: "#FFFFFF", fontSize: "0.55rem", fontWeight: 700, lineHeight: 1,
+                    boxShadow: `0 0 0 2px ${boxIsBlack ? "#111111" : "#FFFFFF"}`,
+                  }}>
+              {badgeLabel}
+            </span>
+          )}
+          {badgeCount === 0 && dot && (
+            <span aria-hidden="true" className="absolute rounded-full"
+                  style={{
+                    top: -4, right: -6, width: 10, height: 10, backgroundColor: "#E5484D",
+                    boxShadow: `0 0 0 2px ${boxIsBlack ? "#111111" : "#FFFFFF"}`,
+                  }} />
           )}
         </span>
       ) : (
@@ -614,11 +626,22 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
               style={{ position: "absolute", top: 2, right: 2, color: idle }}
             />
           )}
-          {hasBadge && (
-            <span aria-hidden="true" className="absolute rounded-full" style={{
-              top: 4, right: 4, width: 9, height: 9, backgroundColor: "#E5484D",
-              boxShadow: `0 0 0 2px ${dark ? "rgba(20,20,20,0.9)" : "rgba(255,255,255,0.9)"}`,
-            }} />
+          {badgeCount > 0 && (
+            <span aria-hidden="true" className="absolute flex items-center justify-center rounded-full font-data"
+                  style={{
+                    top: 0, right: 0, minWidth: 15, height: 15, padding: "0 3px", backgroundColor: "#E5484D",
+                    color: "#FFFFFF", fontSize: "0.55rem", fontWeight: 700, lineHeight: 1,
+                    boxShadow: `0 0 0 2px ${dark ? "rgba(20,20,20,0.9)" : "rgba(255,255,255,0.9)"}`,
+                  }}>
+              {badgeLabel}
+            </span>
+          )}
+          {badgeCount === 0 && dot && (
+            <span aria-hidden="true" className="absolute rounded-full"
+                  style={{
+                    top: 2, right: 2, width: 9, height: 9, backgroundColor: "#E5484D",
+                    boxShadow: `0 0 0 2px ${dark ? "rgba(20,20,20,0.9)" : "rgba(255,255,255,0.9)"}`,
+                  }} />
           )}
         </span>
       )}
@@ -640,7 +663,7 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
   );
 }
 
-export function BottomBar({ active, onSelect, accent, dark, isCoach = false, chatHasUnread = false }) {
+export function BottomBar({ active, onSelect, accent, dark, isCoach = false, chatUnreadCount = 0, newsHasUnseen = false }) {
   const [burst, setBurst] = useState(null);
   const idle = dark ? "#71717A" : "#A1A1AA";
 
@@ -695,7 +718,8 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false, cha
             burst={burst}
             onPick={pick}
             isCoachTab={id === "coach"}
-            hasBadge={id === "chat" && chatHasUnread}
+            badgeCount={id === "chat" ? chatUnreadCount : 0}
+            dot={id === "news" ? newsHasUnseen : false}
           />
         ))}
       </div>
@@ -744,7 +768,8 @@ export function AppShell({
   tab,
   onTabChange,
   onOpenSettings,
-  chatHasUnread,
+  chatUnreadCount,
+  newsHasUnseen,
   screens = {},          // { home, news, ranking, profile, chat, coach }
 }) {
   const accent = accentFor(gender, dark);
@@ -868,7 +893,7 @@ export function AppShell({
           })}
         </main>
 
-        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} chatHasUnread={chatHasUnread} />
+        <BottomBar active={activeTab} onSelect={onTabChange} accent={accent} dark={dark} isCoach={isCoach} chatUnreadCount={chatUnreadCount} newsHasUnseen={newsHasUnseen} />
       </div>
     </div>
   );

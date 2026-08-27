@@ -177,13 +177,24 @@ const DEPTS = [
 // (REAL_COACHING_PLANS_DB in coachingData.js) — usato SOLO quando isRealMode
 // è false, mai un valore reale di profiles.plan.
 const REAL_COACHING_PLANS = new Set([...REAL_COACHING_PLANS_DB, "scheda"]);
+// BUG PRESO: "Attivi" si basava solo su client_status === "active", ma lo
+// stripe-webhook scrive quel valore nell'ISTANTE in cui il pagamento arriva
+// (vedi supabase/functions/stripe-webhook/index.ts) — molto prima che il
+// coach abbia costruito qualunque cosa. Un cliente appena pagante finiva
+// subito tra gli "Attivi" (nessuna modifica da fare) invece che tra "In
+// attesa" (aspetta la scheda). "Attivi" ora richiede davvero che non manchi
+// nulla da assegnare: la scheda per tutti i piani coaching, più
+// alimentazione e integrazione per Full Coaching specificamente.
 function deptOf(c) {
-  if (c.clientStatus === "active") return "active";
   if (c.clientStatus === "expired" || c.clientStatus === "paused") return "expired";
   if (c.billingStatus === "payment_failed") return "expired"; // solo dati demo, mai popolato dal roster reale
   if (c.status === "pending_approval" || c.status === "new" || c.status === "requires_renewal") return "pending"; // solo dati demo
-  if (REAL_COACHING_PLANS.has(c.plan)) return "pending"; // ha pagato un piano coaching, aspetta la presa in gestione
-  return null; // Free/Premium: non fa parte di questo roster
+  if (!REAL_COACHING_PLANS.has(c.plan)) return null; // Free/Premium: non fa parte di questo roster
+
+  const missingWorkout = !c.hasWorkoutAssigned;
+  const missingFullCoachingSetup = c.plan === "full" && (!c.hasNutritionAssigned || !c.hasSupplementsAssigned);
+  if (missingWorkout || missingFullCoachingSetup) return "pending"; // ha pagato, aspetta ancora che il coach gli costruisca qualcosa
+  return "active"; // tutto assegnato, in regola
 }
 
 

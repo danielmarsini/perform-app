@@ -10672,7 +10672,7 @@ export default function HomePreview({
   // presenti con array di zeri) — la seconda condizione è quella che deve
   // arrivare a fullHistory, mai un momentaneo array vuoto scambiato per dati.
   const [realHistory, setRealHistory] = useState(null); // null finché non caricato (solo isRealMode)
-  const [water, setWater] = useState(1500);
+  const [water, setWater] = useState(0);
   const [autoSteps, setAutoSteps] = useState(false);
   // isTrainingDay REALE si calcola più sotto da weekPlan (la scheda vera
   // assegnata dal coach) appena è disponibile — questo stato resta solo per
