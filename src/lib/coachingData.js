@@ -257,6 +257,8 @@ function computeVolume(dayList, lib) {
   };
   (dayList || []).filter(Boolean).forEach((day) => {
     (day.exercises || []).forEach((ex) => {
+      // Cardio (SCHEMA_v84): mai serie/muscolo, non contribuisce al volume.
+      if (ex.kind === "cardio") return;
       const sets = Number(ex.sets) || 0;
       const entry = activeLib[ex.name];
       if (entry) {
@@ -831,7 +833,7 @@ export async function computeBatchNutritionCompliance(supabase, userIds) {
 // Scheda assegnata dal coach per un intervallo di date: righe is_read_only=true.
 // Le raggruppa per data così da poter costruire il weekPlan di HomeDashboard.
 export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDateISO) {
-  const cols = "id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only";
+  const cols = "id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, reps_completed, load_kg, rir, intensity_technique, status, is_read_only, kind, duration_min";
   let { data, error } = await supabase
     .from("workout_logs")
     .select(`${cols}, sort_order`)
@@ -862,6 +864,24 @@ export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDat
   }
   if (error) throw error;
   return data ?? [];
+}
+
+// Riscaldamento/mobilità + stretching (workout_day_notes, SCHEMA_v84) per un
+// intervallo di date — sola lettura lato cliente, la scrittura vive solo in
+// saveWeekWorkout lato coach. Torna una Map(date -> {warmupText, stretchingText}).
+export async function fetchWorkoutDayNotes(supabase, userId, fromDateISO, toDateISO) {
+  const { data, error } = await supabase
+    .from("workout_day_notes")
+    .select("date, warmup_text, stretching_text")
+    .eq("user_id", userId)
+    .gte("date", fromDateISO)
+    .lte("date", toDateISO);
+  if (error) throw error;
+  const byDate = new Map();
+  (data ?? []).forEach((row) => {
+    byDate.set(row.date, { warmupText: row.warmup_text || "", stretchingText: row.stretching_text || "" });
+  });
+  return byDate;
 }
 
 // Protocollo integratori prescritto dal coach (prescribed_supplements),
@@ -1590,7 +1610,7 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
   const dates = weekDatesFrom(weekStartDateISO);
   const baseQuery = () => supabase
     .from("workout_logs")
-    .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, intensity_technique, sort_order")
+    .select("id, date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, intensity_technique, sort_order, kind, duration_min")
     .eq("user_id", userId)
     .in("date", dates)
     .order("date", { ascending: true })
@@ -1619,6 +1639,17 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
   }
   if (error) throw error;
 
+  // Riscaldamento/mobilità + stretching (workout_day_notes, SCHEMA_v84):
+  // testo libero per giorno, mai per esercizio. Fallimento qui (es. tabella
+  // non ancora migrata) resta silenzioso — notesData resta vuoto, i giorni
+  // si caricano comunque senza queste due note opzionali.
+  const { data: notesData } = await supabase
+    .from("workout_day_notes")
+    .select("date, warmup_text, stretching_text")
+    .eq("user_id", userId)
+    .in("date", dates);
+  const notesByDate = new Map((notesData ?? []).map((n) => [n.date, n]));
+
   const byDate = new Map();
   (data ?? []).forEach((row) => {
     if (!byDate.has(row.date)) byDate.set(row.date, []);
@@ -1628,12 +1659,16 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
   return dates.map((date) => {
     const rows = byDate.get(date);
     if (!rows || rows.length === 0) return null;
+    const notes = notesByDate.get(date);
     return {
       label: rows[0].split_label || "Sessione",
+      warmup: notes?.warmup_text || "",
+      stretching: notes?.stretching_text || "",
       exercises: rows.map((r) => ({
         id: r.id,
         name: r.exercise_name,
         custom: typeof isCustomExercise === "function" ? isCustomExercise(r.exercise_name) : false,
+        kind: r.kind || "strength",
         sets: r.sets_count,
         reps: r.reps_target || "",
         rest: r.rest_seconds ?? 0,
@@ -1641,9 +1676,30 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
         technique: r.intensity_technique || "Nessuna",
         muscleTarget: r.muscle_target,
         synergists: r.synergist_targets || [],
+        durationMin: r.duration_min ?? null,
       })),
     };
   });
+}
+
+// Scrive/cancella riscaldamento/mobilità + stretching di UN giorno
+// (workout_day_notes, SCHEMA_v84) — chiamata da saveWeekWorkout per ognuna
+// delle 7 date della settimana, mai da sola: è sempre parte dello stesso
+// salvataggio degli esercizi di quel giorno. Un giorno senza nessuno dei due
+// testi cancella la riga invece di lasciarne una vuota.
+async function saveWorkoutDayNotes(supabase, coachId, userId, date, warmupText, stretchingText) {
+  const warmup = (warmupText || "").trim();
+  const stretching = (stretchingText || "").trim();
+  if (!warmup && !stretching) {
+    const { error } = await supabase.from("workout_day_notes").delete().eq("user_id", userId).eq("date", date);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase.from("workout_day_notes").upsert(
+    { user_id: userId, coach_id: coachId || null, date, warmup_text: warmup || null, stretching_text: stretching || null, updated_at: new Date().toISOString() },
+    { onConflict: "user_id,date" },
+  );
+  if (error) throw error;
 }
 
 // Scrive l'allenamento di una settimana intera, giorno per giorno: per ogni
@@ -1664,7 +1720,7 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
 // created_at più recente di tutte le altre. fetchWeekWorkout ordina per
 // created_at: l'esercizio rinominato saltava sempre in fondo alla lista del
 // giorno, invece di restare dov'era.
-export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workoutArray) {
+export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workoutArray, coachId) {
   if (!Array.isArray(workoutArray) || workoutArray.length !== 7) {
     throw new Error("saveWeekWorkout: workoutArray deve avere 7 elementi (Lunedì→Domenica).");
   }
@@ -1673,9 +1729,16 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
   // Validazione preventiva su TUTTA la settimana prima di scrivere anche una
   // sola riga: un salvataggio parziale (metà settimana scritta, metà no per
   // un distretto mancante scoperto a metà) sarebbe peggio di un rifiuto secco.
+  // Le voci cardio (kind: "cardio", SCHEMA_v84) non hanno un muscleTarget —
+  // sono inserite dal coach come un esercizio in più ma senza serie/carichi
+  // da tracciare, mai generate dall'AI — richiedono solo un nome.
   const missing = [];
   workoutArray.forEach((day, i) => {
     (day?.exercises ?? []).forEach((ex) => {
+      if (ex.kind === "cardio") {
+        if (!ex.name || !ex.name.trim()) missing.push(`voce cardio senza nome (${dates[i]})`);
+        return;
+      }
       if (!MUSCLE_TARGETS.includes(ex.muscleTarget)) missing.push(`"${ex.name || "esercizio senza nome"}" (${dates[i]})`);
     });
   });
@@ -1708,9 +1771,25 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
       // riordinare (drag-to-reorder, vedi WeekWorkoutEditor/useDragReorder),
       // e QUELL'ordine è quello che si salva — mai dedotto da created_at,
       // che non cambia quando si sposta una riga già esistente.
-      const prescriptiveFields = {
+      const isCardio = ex.kind === "cardio";
+      const prescriptiveFields = isCardio ? {
         exercise_name: ex.name,
         split_label: day.label || null,
+        kind: "cardio",
+        duration_min: Number(ex.durationMin) || null,
+        muscle_target: null,
+        synergist_targets: null,
+        sets_count: null,
+        reps_target: null,
+        rest_seconds: null,
+        rir_target: null,
+        intensity_technique: null,
+        sort_order: exIdx,
+      } : {
+        exercise_name: ex.name,
+        split_label: day.label || null,
+        kind: "strength",
+        duration_min: null,
         muscle_target: ex.muscleTarget,
         synergist_targets: ex.synergists && ex.synergists.length > 0 ? ex.synergists : null,
         sets_count: ex.sets,
@@ -1734,6 +1813,8 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
         if (insertError) throw insertError;
       }
     }
+
+    await saveWorkoutDayNotes(supabase, coachId, userId, date, day?.warmup, day?.stretching);
   }
 
   // Add-on Scheda Personalizzata (SCHEMA_v68): la scheda resta "attiva"
@@ -1775,16 +1856,26 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
 // nuove (nascono senza, come sempre).
 // Se la settimana sorgente non ha nulla, non tocca la destinazione: un clic
 // su "Clona" da una settimana vuota non deve svuotare quella di arrivo.
-export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, targetWeekStartISO) {
+export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, targetWeekStartISO, coachId) {
   const sourceDates = weekDatesFrom(sourceWeekStartISO);
 
   const { data: sourceRows, error: fetchError } = await supabase
     .from("workout_logs")
-    .select("date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, intensity_technique")
+    .select("date, split_label, exercise_name, muscle_target, synergist_targets, sets_count, reps_target, rest_seconds, rir_target, intensity_technique, kind, duration_min")
     .eq("user_id", userId)
     .in("date", sourceDates);
   if (fetchError) throw fetchError;
   if (!sourceRows || sourceRows.length === 0) return;
+
+  // Riscaldamento/stretching (workout_day_notes) clonati insieme agli
+  // esercizi — stesso principio, un "Copia settimana" deve portarsi dietro
+  // tutto quello che il coach ha scritto per quel giorno, non solo le serie.
+  const { data: sourceNotes } = await supabase
+    .from("workout_day_notes")
+    .select("date, warmup_text, stretching_text")
+    .eq("user_id", userId)
+    .in("date", sourceDates);
+  const notesByDate = new Map((sourceNotes ?? []).map((n) => [n.date, n]));
 
   const byDate = new Map();
   sourceRows.forEach((row) => {
@@ -1795,10 +1886,14 @@ export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, tar
   const workoutArray = sourceDates.map((date) => {
     const rows = byDate.get(date);
     if (!rows || rows.length === 0) return null;
+    const notes = notesByDate.get(date);
     return {
       label: rows[0].split_label || "Sessione",
+      warmup: notes?.warmup_text || "",
+      stretching: notes?.stretching_text || "",
       exercises: rows.map((r) => ({
         name: r.exercise_name,
+        kind: r.kind || "strength",
         muscleTarget: r.muscle_target,
         synergists: r.synergist_targets || [],
         sets: r.sets_count,
@@ -1806,11 +1901,12 @@ export async function cloneWeekWorkout(supabase, userId, sourceWeekStartISO, tar
         rest: r.rest_seconds ?? 0,
         rirTarget: r.rir_target || "",
         technique: r.intensity_technique || "Nessuna",
+        durationMin: r.duration_min ?? null,
       })),
     };
   });
 
-  await saveWeekWorkout(supabase, userId, targetWeekStartISO, workoutArray);
+  await saveWeekWorkout(supabase, userId, targetWeekStartISO, workoutArray, coachId);
 }
 
 // Template di allenamento riutilizzabili (SCHEMA_v59): a differenza di
