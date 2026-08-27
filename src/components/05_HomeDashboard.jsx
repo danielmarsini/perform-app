@@ -7934,14 +7934,23 @@ function NutritionTabs({
                   || MEAL_SLOTS[i]?.icon || "🍽️";
                 return (
                   <div key={slot.name ? `${slot.name}-${i}` : MEAL_SLOTS[i].id} className="inner px-4 py-3.5">
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <p className="text-sm flex items-center gap-2" style={{ color: "var(--ink)", fontWeight: 500 }}>
-                        <span aria-hidden="true">{icon}</span>{label}
-                        {slot.time && <span className="font-data text-[10px] font-normal" style={{ color: "var(--ink-soft)" }}>· {slot.time}</span>}
-                      </p>
-                      <span className="meta font-data text-xs shrink-0">
-                        {slot.tot.kcal} kcal · P{slot.tot.p} / C{slot.tot.c} / G{slot.tot.f}
-                      </span>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span aria-hidden="true" className="text-sm leading-none">{icon}</span>
+                      <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 600 }}>{label}</p>
+                      {slot.time && (
+                        <span className="font-data text-[10px] ml-auto px-2 py-0.5 rounded-full shrink-0"
+                          style={{ backgroundColor: "var(--surface-2)", color: "var(--ink-soft)" }}>
+                          {slot.time}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 mb-2.5">
+                      {[["Kcal", Math.round(slot.tot.kcal), ""], ["Prot", slot.tot.p, "g"], ["Carb", slot.tot.c, "g"], ["Grassi", slot.tot.f, "g"]].map(([lab, val, unit]) => (
+                        <div key={lab} className="rounded-lg py-1.5 text-center" style={{ backgroundColor: "var(--surface-2)" }}>
+                          <p className="font-data" style={{ fontSize: "0.55rem", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--ink-soft)" }}>{lab}</p>
+                          <p className="font-data text-xs font-bold" style={{ color: "var(--ink)" }}>{val}{unit}</p>
+                        </div>
+                      ))}
                     </div>
                     {slot.items.map((it) => (
                       <p key={it.name} className="font-data text-xs flex justify-between py-0.5">
