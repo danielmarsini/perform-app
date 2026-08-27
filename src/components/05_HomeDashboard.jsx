@@ -7922,24 +7922,36 @@ function NutritionTabs({
               Genera la lista della spesa
             </button>
             <div className="space-y-3">
-              {mealGuide.map((slot, i) => (
-                <div key={MEAL_SLOTS[i].id} className="inner px-4 py-3.5">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-sm flex items-center gap-2" style={{ color: "var(--ink)", fontWeight: 500 }}>
-                      <span aria-hidden="true">{MEAL_SLOTS[i].icon}</span>{MEAL_SLOTS[i].label}
-                    </p>
-                    <span className="meta font-data text-xs shrink-0">
-                      {slot.tot.kcal} kcal · P{slot.tot.p} / C{slot.tot.c} / G{slot.tot.f}
-                    </span>
+              {mealGuide.map((slot, i) => {
+                // slot.name/slot.time sono il nome/orario REALI che il coach ha
+                // dato al pasto in WeekDietEditor (snapshotMeals) — quanti pasti
+                // vuole, chiamati come vuole, nell'ordine che vuole. MEAL_SLOTS
+                // resta solo un fallback per il segnaposto demo (GUIDE, che non
+                // ha name/time) e per trovare un'icona sensata quando il nome
+                // del coach coincide con una delle 6 fasce canoniche.
+                const label = slot.name || MEAL_SLOTS[i]?.label || "Pasto";
+                const icon = MEAL_SLOTS.find((s) => s.label.toLowerCase() === (slot.name || "").toLowerCase())?.icon
+                  || MEAL_SLOTS[i]?.icon || "🍽️";
+                return (
+                  <div key={slot.name ? `${slot.name}-${i}` : MEAL_SLOTS[i].id} className="inner px-4 py-3.5">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <p className="text-sm flex items-center gap-2" style={{ color: "var(--ink)", fontWeight: 500 }}>
+                        <span aria-hidden="true">{icon}</span>{label}
+                        {slot.time && <span className="font-data text-[10px] font-normal" style={{ color: "var(--ink-soft)" }}>· {slot.time}</span>}
+                      </p>
+                      <span className="meta font-data text-xs shrink-0">
+                        {slot.tot.kcal} kcal · P{slot.tot.p} / C{slot.tot.c} / G{slot.tot.f}
+                      </span>
+                    </div>
+                    {slot.items.map((it) => (
+                      <p key={it.name} className="font-data text-xs flex justify-between py-0.5">
+                        <span style={{ color: "var(--ink)" }}>{it.name}</span>
+                        <span style={{ color: accentText, fontWeight: 600 }}>{it.grams} g</span>
+                      </p>
+                    ))}
                   </div>
-                  {slot.items.map((it) => (
-                    <p key={it.name} className="font-data text-xs flex justify-between py-0.5">
-                      <span style={{ color: "var(--ink)" }}>{it.name}</span>
-                      <span style={{ color: accentText, fontWeight: 600 }}>{it.grams} g</span>
-                    </p>
-                  ))}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -11131,12 +11143,16 @@ export default function HomePreview({
   const target = isTrainingDay ? targetOn : targetOff; // il target attivo "oggi" si sceglie da solo
 
   // mealGuide reale per il tab "Dieta Tipo": i pasti del profilo ON/OFF
-  // attivo "oggi" (stessa scelta del target sopra), già in ordine di slot
-  // (colazione→prenanna, come li ha scritti il coach in WeekDietEditor).
-  // Uno slot senza un pasto assegnato in quella posizione resta vuoto invece
-  // di far crollare .map su un indice mancante.
+  // attivo "oggi" (stessa scelta del target sopra). BUG PRESO: mappare questi
+  // pasti sulle 6 fasce fisse di MEAL_SLOTS per POSIZIONE (colazione→prenanna)
+  // rietichettava a forza qualunque pasto il coach avesse scritto — con 5
+  // pasti invece di 6 tutto scalava di una posizione (es. "Pranzo" mostrato
+  // come "Spuntino 1"). Il coach nomina/ordina/conta i pasti come vuole in
+  // WeekDietEditor: qui si mostra esattamente quell'elenco (name/time propri
+  // di ogni pasto, vedi snapshotMeals in 09_CoachDashboard.jsx), niente
+  // corrispondenza posizionale con MEAL_SLOTS.
   const realDietProfile = isTrainingDay ? dietPlan.on : dietPlan.off;
-  const realMealGuide = MEAL_SLOTS.map((_, i) => realDietProfile?.meals?.[i] ?? { items: [], tot: { kcal: 0, p: 0, c: 0, f: 0 } });
+  const realMealGuide = realDietProfile?.meals ?? [];
 
   // Stesso principio di exercises/weekPlan qui sopra: in modalità reale niente
   // numeri inventati. isTraining/sessionLabel riflettono la scheda vera di
