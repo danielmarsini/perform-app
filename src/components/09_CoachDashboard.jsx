@@ -3111,7 +3111,23 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
             // Nessun id nella risposta dell'AI (ogni esercizio è "nuovo" per
             // saveWeekWorkout, stesso principio di cloneWeekWorkout): uid()
             // locale, mai un id reale finché il coach non preme "Salva".
-            const withIds = days.map((d) => d && { ...d, exercises: d.exercises.map((e) => ({ ...e, id: uid() })) });
+            // BUG PRESO: senza "custom" esplicito, ogni esercizio finiva nel
+            // <select> a vocabolario chiuso della libreria — se il nome
+            // scritto/trascritto dall'AI (fedele al PDF del coach, spesso
+            // fuori dalla libreria curata dell'app) non coincideva ESATTAMENTE
+            // con un'opzione, il browser mostrava semplicemente la PRIMA voce
+            // del menu per ogni riga ("Chest press" ovunque) e al salvataggio
+            // resolveDays azzerava muscleTarget a null per quei nomi
+            // sconosciuti alla libreria. Solo i nomi che combaciano ESATTAMENTE
+            // con una voce di libreria restano nel select; tutti gli altri
+            // diventano "esercizio libero" (testo libero), mantenendo nome e
+            // muscleTarget/synergists così come li ha scritti l'AI.
+            const withIds = days.map((d) => d && {
+              ...d,
+              exercises: d.exercises.map((e) => (e.kind === "cardio"
+                ? { ...e, id: uid() }
+                : { ...e, id: uid(), custom: !exerciseLib[e.name] })),
+            });
             setRealWorkout(withIds);
             setWorkoutSaved(false);
             setGenAIWorkoutOpen(false);
