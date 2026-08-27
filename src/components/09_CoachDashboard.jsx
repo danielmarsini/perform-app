@@ -3651,6 +3651,11 @@ function GenerateStarterPlanModal({ anamnesis, exerciseLib, onClose, onConfirm }
 // già in uso altrove nell'app per gli allegati (conversione lato client,
 // mai un upload a uno storage intermedio per un file che serve solo per
 // questa singola chiamata).
+// Sotto il limite di 32MB richiesta di Claude per i documenti e con margine
+// per l'overhead base64 (~33%) sul body JSON inviato all'Edge Function —
+// un PDF scansionato/fotografato dal telefono può superarlo facilmente.
+const MAX_PDF_UPLOAD_BYTES = 15 * 1024 * 1024;
+
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -3681,8 +3686,18 @@ function GenerateAIWorkoutModal({ client, anamnesis, hasExisting, onClose, onCon
     try {
       let result;
       if (mode === "import") {
+        // Un PDF scansionato/fotografato dal telefono può facilmente superare
+        // il limite di payload dell'Edge Function — se succede, senza questo
+        // controllo il coach non riceve un errore chiaro ma una bozza "a
+        // caso" (vedi guardia lato server più sotto). Meglio bloccare qui,
+        // prima della lenta conversione base64, con un messaggio azionabile.
+        if (pdfFile && pdfFile.size > MAX_PDF_UPLOAD_BYTES) {
+          setError(`Il PDF è troppo grande (${(pdfFile.size / 1024 / 1024).toFixed(1)} MB, limite ${MAX_PDF_UPLOAD_BYTES / 1024 / 1024} MB) — comprimilo o dividilo in due parti e riprova.`);
+          setLoading(false);
+          return;
+        }
         const sourcePdfBase64 = pdfFile ? await readFileAsBase64(pdfFile) : undefined;
-        result = await generateWorkoutWeekDraft(supabase, { sourceText: sourceText.trim(), sourcePdfBase64, notes });
+        result = await generateWorkoutWeekDraft(supabase, { mode: "import", sourceText: sourceText.trim(), sourcePdfBase64, notes });
       } else {
         const clientContext = {
           nome: client.fullName || client.name,
@@ -3694,7 +3709,7 @@ function GenerateAIWorkoutModal({ client, anamnesis, hasExisting, onClose, onCon
           prs: client.prs || null,
           piano: client.plan,
         };
-        result = await generateWorkoutWeekDraft(supabase, { clientContext, notes });
+        result = await generateWorkoutWeekDraft(supabase, { mode: "generate", clientContext, notes });
       }
       setDraft(result);
     } catch (e) {

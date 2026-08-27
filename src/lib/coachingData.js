@@ -3625,9 +3625,9 @@ export async function askCoachAssistant(supabase, { question, history, roster })
 // sourceText/sourcePdfBase64 (opzionali): quando presenti, la Edge Function
 // passa in modalità "import" — trascrive fedelmente la scheda che il coach
 // ha già scritto a mano o in un PDF, invece di generarne una da zero.
-export async function generateWorkoutWeekDraft(supabase, { clientContext, notes, sourceText, sourcePdfBase64 }) {
+export async function generateWorkoutWeekDraft(supabase, { mode, clientContext, notes, sourceText, sourcePdfBase64 }) {
   const { data, error } = await supabase.functions.invoke("generate-workout-week", {
-    body: { clientContext, notes, sourceText, sourcePdfBase64 },
+    body: { mode, clientContext, notes, sourceText, sourcePdfBase64 },
   });
   if (error) throw error;
   return data;
