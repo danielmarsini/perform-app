@@ -1491,9 +1491,9 @@ function levelTitle(lvl) {
 
 function getGreeting() {
   const h = new Date().getHours();
-  if (h >= 5 && h < 12) return { icon: "☀️", text: "Buongiorno" };
-  if (h >= 12 && h < 18) return { icon: "👋", text: "Buon pomeriggio" };
-  return { icon: "🌙", text: "Buonasera" };
+  if (h >= 5 && h < 12) return { text: "Buongiorno" };
+  if (h >= 12 && h < 18) return { text: "Buon pomeriggio" };
+  return { text: "Buonasera" };
 }
 
 /* Streak dinamico: cresce di un giorno ogni volta che si apre l'app in un
@@ -2886,8 +2886,7 @@ export function HomeDashboard({
             </svg>
 
             <div className="flex items-start justify-between gap-3">
-              <p className="greeting-text min-w-0" style={{ fontSize: "1.55rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
-                <span className="greeting-emoji">{greeting.icon}</span>{" "}
+              <p className="greeting-text min-w-0" style={{ fontSize: "1.55rem", fontWeight: 500, letterSpacing: "0.01em", lineHeight: 1.15 }}>
                 <span className="title-shine">{greeting.text} {firstName}</span>
               </p>
 
@@ -11246,11 +11245,9 @@ export default function HomePreview({
         @media (prefers-reduced-motion: reduce){.novelty-ping{animation:none;opacity:0}}
         .metallic-badge{background-size:220% auto;animation:performGlow 4s ease-in-out infinite}
         @media (prefers-reduced-motion: reduce){.metallic-badge{animation:none}}
-        @keyframes greetingWave{0%,100%{transform:rotate(0deg)}20%{transform:rotate(14deg)}40%{transform:rotate(-8deg)}60%{transform:rotate(14deg)}80%{transform:rotate(0deg)}}
-        .greeting-emoji{display:inline-block;transform-origin:70% 70%;animation:greetingWave 2.4s ease-in-out infinite}
         @keyframes greetingIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         .greeting-text{animation:greetingIn .6s cubic-bezier(.22,1,.36,1) both}
-        @media (prefers-reduced-motion: reduce){.greeting-emoji,.greeting-text{animation:none}}
+        @media (prefers-reduced-motion: reduce){.greeting-text{animation:none}}
         @keyframes iconFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
         .icon-float-1{animation:iconFloat 3.2s ease-in-out infinite}
         .icon-float-2{animation:iconFloat 3.2s ease-in-out .5s infinite}
