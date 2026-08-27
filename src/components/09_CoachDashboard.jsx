@@ -92,6 +92,7 @@ import {
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage,
   fetchReferrals, REAL_COACHING_PLANS_DB, awardXpBonus, askCoachAssistant, generateWorkoutWeekDraft,
+  generateNutritionWeekDraft, generateSupplementsPlanDraft,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -2158,6 +2159,7 @@ function WeekDietEditor({ week, onChange, client }) {
   const [dietSaving, setDietSaving] = useState(false);
   const [dietError, setDietError] = useState("");
   const [dietSaved, setDietSaved] = useState(false);
+  const [genNutritionOpen, setGenNutritionOpen] = useState(false);
   const saveDiet = async () => {
     if (!isRealMode) return;
     setDietSaving(true);
@@ -2298,9 +2300,33 @@ function WeekDietEditor({ week, onChange, client }) {
       <div className="space-y-3 mb-3">
         {current.meals.map((m, i) => <MealCard key={m.id} meal={m} onChange={(next) => updMeal(i, next)} onRemove={() => removeMeal(i)} />)}
       </div>
-      <button onClick={addMeal} className="c-btn w-full rounded-lg px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 mb-5">
-        <Plus size={14} /> Nuovo pasto (nome, orario, alimenti)
-      </button>
+      <div className="grid grid-cols-2 gap-2 mb-5">
+        <button onClick={addMeal} className="c-btn rounded-lg px-4 py-3 text-sm font-medium flex items-center justify-center gap-2">
+          <Plus size={14} /> Nuovo pasto
+        </button>
+        <button onClick={() => setGenNutritionOpen(true)} className="c-ghost rounded-lg px-4 py-3 text-sm font-medium flex items-center justify-center gap-1.5">
+          <Sparkles size={14} style={{ color: "#C5A059" }} /> Genera pasti con AI
+        </button>
+      </div>
+      {genNutritionOpen && (
+        <GenerateAINutritionModal client={client} week={week}
+          onClose={() => setGenNutritionOpen(false)}
+          onConfirm={(result) => {
+            const withIds = (profile) => (profile ? {
+              meals: profile.meals.map((m) => ({ ...m, id: uid(), items: m.items.map((it) => ({ ...it, id: uid() })) })),
+            } : null);
+            const nextOn = withIds(result.ON);
+            const nextOff = withIds(result.OFF);
+            onChange({
+              ...week,
+              diet: {
+                ON: nextOn ? { ...week.diet.ON, meals: nextOn.meals } : week.diet.ON,
+                OFF: nextOff ? { ...week.diet.OFF, meals: nextOff.meals } : week.diet.OFF,
+              },
+            });
+            setGenNutritionOpen(false);
+          }} />
+      )}
 
       {isRealMode && (
         <div className="c-card mb-5">
@@ -2357,6 +2383,7 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
   const [suppSaving, setSuppSaving] = useState(false);
   const [suppError, setSuppError] = useState("");
   const [suppSaved, setSuppSaved] = useState(false);
+  const [genSuppsOpen, setGenSuppsOpen] = useState(false);
   const saveSupplements = async () => {
     if (!isRealMode) return;
     setSuppSaving(true);
@@ -2439,8 +2466,16 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
         <button onClick={() => addSection(null)} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1">
           <Plus size={12} /> Altro momento
         </button>
+        <button onClick={() => setGenSuppsOpen(true)} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1">
+          <Sparkles size={12} style={{ color: "#C5A059" }} /> Genera con AI
+        </button>
       </div>
       </div>
+      {genSuppsOpen && (
+        <GenerateAISupplementsModal client={client} hasExisting={supplements.some((s) => s.items.length > 0)}
+          onClose={() => setGenSuppsOpen(false)}
+          onConfirm={(sections) => { onChange(sections); setGenSuppsOpen(false); }} />
+      )}
 
       {isRealMode && (
         <div className="c-card mt-5">
@@ -3525,28 +3560,56 @@ function GenerateStarterPlanModal({ anamnesis, exerciseLib, onClose, onConfirm }
 // Stesso principio "bozza modificabile, mai salvata da sola" del resto
 // dell'editor: onConfirm carica solo lo stato locale, il coach preme
 // "Salva" come per qualunque altra modifica manuale.
+// Legge un File come base64 puro (senza il prefisso "data:...;base64,"),
+// come richiesto dal blocco "document" dell'API Claude — stesso pattern
+// già in uso altrove nell'app per gli allegati (conversione lato client,
+// mai un upload a uno storage intermedio per un file che serve solo per
+// questa singola chiamata).
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function GenerateAIWorkoutModal({ client, anamnesis, hasExisting, onClose, onConfirm }) {
   const { supabase } = useContext(CoachDataContext);
+  // "generate" = da zero sui dati anamnesi/cliente (comportamento originale).
+  // "import" = il coach ha già scritto la scheda a mano o in un PDF: l'AI la
+  // trascrive nel formato dell'editor invece di progettarla lei stessa.
+  const [mode, setMode] = useState("generate");
   const [notes, setNotes] = useState("");
+  const [sourceText, setSourceText] = useState("");
+  const [pdfFile, setPdfFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState(null); // { days } una volta generata
+
+  const canGenerate = mode === "generate" || sourceText.trim() || pdfFile;
 
   const generate = async () => {
     setLoading(true);
     setError("");
     try {
-      const clientContext = {
-        nome: client.fullName || client.name,
-        obiettivo: client.goal || anamnesis?.obiettivoPrinc || null,
-        livello: anamnesis?.livello || null,
-        sessioniSettimanali: Number(anamnesis?.sessioni) || null,
-        doloreSegnalato: client.evening?.doloreGrado > 0
-          ? { grado: client.evening.doloreGrado, nota: client.evening.doloreNota || null } : null,
-        prs: client.prs || null,
-        piano: client.plan,
-      };
-      const result = await generateWorkoutWeekDraft(supabase, { clientContext, notes });
+      let result;
+      if (mode === "import") {
+        const sourcePdfBase64 = pdfFile ? await readFileAsBase64(pdfFile) : undefined;
+        result = await generateWorkoutWeekDraft(supabase, { sourceText: sourceText.trim(), sourcePdfBase64, notes });
+      } else {
+        const clientContext = {
+          nome: client.fullName || client.name,
+          obiettivo: client.goal || anamnesis?.obiettivoPrinc || null,
+          livello: anamnesis?.livello || null,
+          sessioniSettimanali: Number(anamnesis?.sessioni) || null,
+          doloreSegnalato: client.evening?.doloreGrado > 0
+            ? { grado: client.evening.doloreGrado, nota: client.evening.doloreNota || null } : null,
+          prs: client.prs || null,
+          piano: client.plan,
+        };
+        result = await generateWorkoutWeekDraft(supabase, { clientContext, notes });
+      }
       setDraft(result);
     } catch (e) {
       console.error("PERFORM: errore generazione bozza AI allenamento", e);
@@ -3571,21 +3634,49 @@ function GenerateAIWorkoutModal({ client, anamnesis, hasExisting, onClose, onCon
             <Sparkles size={16} style={{ color: "#C5A059" }} /> Genera bozza con AI
           </p>
           <p className="c-muted text-xs mb-4">
-            Basata su obiettivo, livello e dolori/infortuni segnalati per {client.fullName || client.name}.
+            {mode === "generate"
+              ? `Basata su obiettivo, livello e dolori/infortuni segnalati per ${client.fullName || client.name}.`
+              : "L'AI trascrive fedelmente la scheda che hai già scritto — non ne inventa una nuova."}
             {hasExisting ? " Sostituirà la scheda di questa settimana finché non premi \"Salva\"." : ""}
           </p>
 
           {!draft && (
             <>
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
-                placeholder="Note facoltative per l'AI (es. priorità su un distretto, attrezzatura disponibile, preferenze)…"
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <button onClick={() => setMode("generate")} className="rounded-lg px-3 py-2 text-xs font-medium"
+                  style={mode === "generate" ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+                  Genera da anamnesi
+                </button>
+                <button onClick={() => setMode("import")} className="rounded-lg px-3 py-2 text-xs font-medium"
+                  style={mode === "import" ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
+                  Incolla o carica scheda
+                </button>
+              </div>
+
+              {mode === "import" && (
+                <>
+                  <textarea value={sourceText} onChange={(e) => setSourceText(e.target.value)} rows={5}
+                    placeholder="Incolla qui la scheda scritta a mano (esercizi, serie, ripetizioni, recupero)…"
+                    className="w-full rounded-lg px-3 py-2.5 text-sm mb-2" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line-strong)", color: "var(--ink)" }} />
+                  <label className="c-ghost w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-medium mb-3 cursor-pointer">
+                    <FileText size={14} /> {pdfFile ? pdfFile.name : "…oppure carica un PDF"}
+                    <input type="file" accept="application/pdf" className="hidden"
+                      onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
+                  </label>
+                </>
+              )}
+
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={mode === "import" ? 2 : 3}
+                placeholder={mode === "import"
+                  ? "Note facoltative (es. \"il giorno 3 è nuovo, aggiungilo tu con lo stesso stile\")…"
+                  : "Note facoltative per l'AI (es. priorità su un distretto, attrezzatura disponibile, preferenze)…"}
                 className="w-full rounded-lg px-3 py-2.5 text-sm mb-3" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line-strong)", color: "var(--ink)" }} />
               {error && (
                 <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>{error}</p>
               )}
               <div className="flex gap-2">
                 <button onClick={onClose} disabled={loading} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Annulla</button>
-                <button onClick={generate} disabled={loading} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+                <button onClick={generate} disabled={loading || !canGenerate} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
                   {loading ? "Genero…" : "Genera"}
                 </button>
               </div>
@@ -3605,6 +3696,205 @@ function GenerateAIWorkoutModal({ client, anamnesis, hasExisting, onClose, onCon
               <div className="flex gap-2">
                 <button onClick={() => setDraft(null)} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Rigenera</button>
                 <button onClick={() => onConfirm(draft.days)} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+                  Carica nell'editor
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+// Bozza AI di pasti (WeekDietEditor, editor alimentazione): riempie i pasti
+// per raggiungere il target macro che il coach ha GIÀ impostato — mai
+// tocca il target stesso, solo i pasti. FOOD_DB (module-level, ~100 voci)
+// è il vocabolario alimenti consentito, passato all'Edge Function nel
+// corpo della richiesta.
+function GenerateAINutritionModal({ client, week, onClose, onConfirm }) {
+  const { supabase } = useContext(CoachDataContext);
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [draft, setDraft] = useState(null); // { ON, OFF }
+
+  const hasTargetOn = kcalFromMacros(week.diet.ON.target.p, week.diet.ON.target.c, week.diet.ON.target.f) > 0;
+  const hasTargetOff = kcalFromMacros(week.diet.OFF.target.p, week.diet.OFF.target.c, week.diet.OFF.target.f) > 0;
+  const canGenerate = hasTargetOn || hasTargetOff;
+
+  const generate = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const clientContext = {
+        nome: client.fullName || client.name,
+        cibiPreferiti: client.foodLikes || [],
+        cibiNonGraditi: client.foodDislikes || [],
+        targetOn: hasTargetOn ? week.diet.ON.target : null,
+        targetOff: hasTargetOff ? week.diet.OFF.target : null,
+      };
+      const result = await generateNutritionWeekDraft(supabase, { clientContext, notes, foodDb: FOOD_DB });
+      setDraft(result);
+    } catch (e) {
+      console.error("PERFORM: errore generazione bozza AI alimentazione", e);
+      let friendly = "Non sono riuscito a generare una bozza. Riprova tra poco.";
+      try {
+        const body = await e?.context?.json?.();
+        if (body?.error) friendly = body.error;
+      } catch { /* mantieni il messaggio generico */ }
+      setError(friendly);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+          <p className="c-heading font-display font-bold mb-1 flex items-center gap-2">
+            <Sparkles size={16} style={{ color: "#C5A059" }} /> Genera pasti con AI
+          </p>
+          <p className="c-muted text-xs mb-4">
+            Riempie i pasti per raggiungere il target macro già impostato (giorno ON e/o OFF), rispettando gusti e cibi non graditi.
+          </p>
+          {!canGenerate && (
+            <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(240,160,32,0.12)", color: "#92400E", fontWeight: 500 }}>
+              Imposta prima almeno un target (kcal/macro) qui sopra — serve un numero da raggiungere.
+            </p>
+          )}
+
+          {!draft && (
+            <>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+                placeholder='Note facoltative (es. "più carboidrati la sera", "pochi latticini")…'
+                className="w-full rounded-lg px-3 py-2.5 text-sm mb-3" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line-strong)", color: "var(--ink)" }} />
+              {error && (
+                <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>{error}</p>
+              )}
+              <div className="flex gap-2">
+                <button onClick={onClose} disabled={loading} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Annulla</button>
+                <button onClick={generate} disabled={loading || !canGenerate} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+                  {loading ? "Genero…" : "Genera"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {draft && (
+            <>
+              <div className="space-y-3 mb-4">
+                {["ON", "OFF"].filter((p) => draft[p]).map((p) => (
+                  <div key={p}>
+                    <p className="c-label mb-1.5">{p === "ON" ? "🏋️ Giorno ON" : "🧘 Giorno OFF"}</p>
+                    <div className="space-y-1.5">
+                      {draft[p].meals.map((m, i) => (
+                        <div key={i} className="t-inner px-3 py-2.5">
+                          <p className="text-sm font-semibold mb-0.5" style={{ color: "var(--ink)" }}>{m.name} <span className="c-muted font-normal">· {m.time}</span></p>
+                          <p className="c-muted text-xs">{m.items.map((it) => it.foodKey || it.customName).join(" · ")}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setDraft(null)} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Rigenera</button>
+                <button onClick={() => onConfirm(draft)} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+                  Carica nell'editor
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+// Bozza AI di protocollo integrazione (WeekSuppsEditor): il coach dà
+// un'istruzione libera, l'AI sceglie integratori/dosi/momenti in autonomia
+// nel vocabolario di SUPP_MOMENTS — SUPP_WIKI (05_HomeDashboard.jsx) è la
+// base di riferimento passata all'Edge Function per dosi/timing tipici.
+function GenerateAISupplementsModal({ client, hasExisting, onClose, onConfirm }) {
+  const { supabase } = useContext(CoachDataContext);
+  const [instruction, setInstruction] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [draft, setDraft] = useState(null); // { sections }
+
+  const generate = async () => {
+    if (!instruction.trim() || loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const clientContext = { nome: client.fullName || client.name, obiettivo: client.goal || null, piano: client.plan };
+      const result = await generateSupplementsPlanDraft(supabase, { instruction, clientContext, suppWiki: SUPP_WIKI });
+      setDraft(result);
+    } catch (e) {
+      console.error("PERFORM: errore generazione protocollo AI integrazione", e);
+      let friendly = "Non sono riuscito a generare un protocollo. Riprova tra poco.";
+      try {
+        const body = await e?.context?.json?.();
+        if (body?.error) friendly = body.error;
+      } catch { /* mantieni il messaggio generico */ }
+      setError(friendly);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirm = () => {
+    const sections = draft.sections.map((sec) => {
+      const moment = SUPP_MOMENTS.find((m) => m.id === sec.id_ref);
+      return { id: uid(), id_ref: sec.id_ref, title: moment?.label || sec.id_ref, items: sec.items.map((it) => ({ id: uid(), ...it })) };
+    });
+    onConfirm(sections);
+  };
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+          <p className="c-heading font-display font-bold mb-1 flex items-center gap-2">
+            <Sparkles size={16} style={{ color: "#C5A059" }} /> Genera integrazione con AI
+          </p>
+          <p className="c-muted text-xs mb-4">
+            Scrivi un'istruzione breve, l'AI sceglie integratori/dosi e li distribuisce nei momenti giusti della giornata.
+            {hasExisting ? " Sostituirà il protocollo attuale finché non premi \"Salva\"." : ""}
+          </p>
+
+          {!draft && (
+            <>
+              <input value={instruction} onChange={(e) => setInstruction(e.target.value)}
+                placeholder="Es. base per principianti, obiettivo massa"
+                className="w-full rounded-lg px-3 py-2.5 text-sm mb-3" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line-strong)", color: "var(--ink)" }} />
+              {error && (
+                <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>{error}</p>
+              )}
+              <div className="flex gap-2">
+                <button onClick={onClose} disabled={loading} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Annulla</button>
+                <button onClick={generate} disabled={loading || !instruction.trim()} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+                  {loading ? "Genero…" : "Genera"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {draft && (
+            <>
+              <div className="space-y-2 mb-4">
+                {draft.sections.map((sec, i) => (
+                  <div key={i} className="t-inner px-3 py-2.5">
+                    <p className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>{SUPP_MOMENTS.find((m) => m.id === sec.id_ref)?.label || sec.id_ref}</p>
+                    <p className="c-muted text-xs">{sec.items.map((it) => `${it.name} (${it.dose})`).join(" · ")}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setDraft(null)} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Rigenera</button>
+                <button onClick={confirm} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
                   Carica nell'editor
                 </button>
               </div>

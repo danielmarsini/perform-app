@@ -3489,8 +3489,37 @@ export async function askCoachAssistant(supabase, { question, history, roster })
 // del coach): restituisce { days } — 7 elementi (null = riposo), stessa forma
 // di week.workout — MAI salvata da sola, il coach la carica nell'editor,
 // la rifinisce e preme "Salva" come per qualunque altra modifica manuale.
-export async function generateWorkoutWeekDraft(supabase, { clientContext, notes }) {
-  const { data, error } = await supabase.functions.invoke("generate-workout-week", { body: { clientContext, notes } });
+// sourceText/sourcePdfBase64 (opzionali): quando presenti, la Edge Function
+// passa in modalità "import" — trascrive fedelmente la scheda che il coach
+// ha già scritto a mano o in un PDF, invece di generarne una da zero.
+export async function generateWorkoutWeekDraft(supabase, { clientContext, notes, sourceText, sourcePdfBase64 }) {
+  const { data, error } = await supabase.functions.invoke("generate-workout-week", {
+    body: { clientContext, notes, sourceText, sourcePdfBase64 },
+  });
+  if (error) throw error;
+  return data;
+}
+
+// Bozza AI di pasti per i profili ON/OFF già impostati (WeekDietEditor): il
+// coach ha già scritto il target macro, questa restituisce { ON, OFF } —
+// ognuno null o { meals: [...] } — MAI il target stesso, che resta quello
+// impostato dal coach. foodDb è il vocabolario FOOD_DB del client (non un
+// segreto, solo dati di riferimento) passato qui per vincolare le scelte.
+export async function generateNutritionWeekDraft(supabase, { clientContext, notes, foodDb }) {
+  const { data, error } = await supabase.functions.invoke("generate-nutrition-week", {
+    body: { clientContext, notes, foodDb },
+  });
+  if (error) throw error;
+  return data;
+}
+
+// Bozza AI di protocollo integrazione (WeekSuppsEditor): il coach dà
+// un'istruzione libera ("base per principianti"), restituisce { sections }
+// — stessa forma di week.supplements, il coach rivede e salva come sempre.
+export async function generateSupplementsPlanDraft(supabase, { instruction, clientContext, suppWiki }) {
+  const { data, error } = await supabase.functions.invoke("generate-supplements-plan", {
+    body: { instruction, clientContext, suppWiki },
+  });
   if (error) throw error;
   return data;
 }
