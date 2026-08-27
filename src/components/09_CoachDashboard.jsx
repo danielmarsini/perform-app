@@ -3,7 +3,7 @@ import {
   Users, Search, ChevronRight, ChevronDown, ChevronUp,
   Dumbbell, Salad, BedDouble, Pill, Copy, MessageCircle, Plus,
   Trash2, ArrowLeft, Wallet, Server, X, ShieldCheck, Check,
-  BarChart3, FileText, AlertTriangle, GripVertical,
+  BarChart3, FileText, AlertTriangle, GripVertical, Sparkles,
 } from "lucide-react";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -91,7 +91,7 @@ import {
   fetchCustomExerciseLibraryRows, updateExerciseLibraryEntry, deleteExerciseFromLibrary,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage,
-  fetchReferrals, REAL_COACHING_PLANS_DB, awardXpBonus,
+  fetchReferrals, REAL_COACHING_PLANS_DB, awardXpBonus, askCoachAssistant, generateWorkoutWeekDraft,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -2506,6 +2506,12 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   // voce sbagliata orfana a fianco di quella corretta.
   const [libraryManagerOpen, setLibraryManagerOpen] = useState(false);
 
+  // Bozza AI di settimana di allenamento (Edge Function generate-workout-week,
+  // GenerateAIWorkoutModal) — a differenza di "Genera prima scheda" (motore
+  // deterministico, solo su settimana vuota), funziona in qualunque momento
+  // per rifinire/rinnovare una scheda già esistente.
+  const [genAIWorkoutOpen, setGenAIWorkoutOpen] = useState(false);
+
   // Generazione automatica primo piano (SCHEMA n/a, solo lato client): letta
   // una volta sola l'anamnesi del cliente, per proporre un punto di partenza
   // quando non ha ancora nessuna scheda assegnata — mai per sovrascrivere
@@ -2947,6 +2953,9 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
                   🪄 Genera prima scheda da anamnesi
                 </button>
               )}
+              <button onClick={() => setGenAIWorkoutOpen(true)} className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium flex items-center gap-1.5">
+                <Sparkles size={14} style={{ color: "#C5A059" }} /> Genera bozza con AI
+              </button>
             </>
           )}
         </div>
@@ -2976,6 +2985,19 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         <GenerateStarterPlanModal anamnesis={anamnesis} exerciseLib={exerciseLib}
           onClose={() => setGenPlanOpen(false)}
           onConfirm={(generated) => { setRealWorkout(generated); setWorkoutSaved(false); setGenPlanOpen(false); }} />
+      )}
+      {genAIWorkoutOpen && (
+        <GenerateAIWorkoutModal client={client} anamnesis={anamnesis} hasExisting={!!realWorkout && !realWorkout.every((d) => !d)}
+          onClose={() => setGenAIWorkoutOpen(false)}
+          onConfirm={(days) => {
+            // Nessun id nella risposta dell'AI (ogni esercizio è "nuovo" per
+            // saveWeekWorkout, stesso principio di cloneWeekWorkout): uid()
+            // locale, mai un id reale finché il coach non preme "Salva".
+            const withIds = days.map((d) => d && { ...d, exercises: d.exercises.map((e) => ({ ...e, id: uid() })) });
+            setRealWorkout(withIds);
+            setWorkoutSaved(false);
+            setGenAIWorkoutOpen(false);
+          }} />
       )}
 
       {section === "allenamento" && (
@@ -3490,6 +3512,104 @@ function GenerateStarterPlanModal({ anamnesis, exerciseLib, onClose, onConfirm }
               Carica nell'editor
             </button>
           </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+// Bozza AI di settimana di allenamento (Edge Function generate-workout-week):
+// a differenza di GenerateStarterPlanModal (motore deterministico, solo per
+// la primissima scheda mai assegnata), questa chiama Claude e funziona in
+// qualunque momento — anche per rifinire/rinnovare una scheda già esistente.
+// Stesso principio "bozza modificabile, mai salvata da sola" del resto
+// dell'editor: onConfirm carica solo lo stato locale, il coach preme
+// "Salva" come per qualunque altra modifica manuale.
+function GenerateAIWorkoutModal({ client, anamnesis, hasExisting, onClose, onConfirm }) {
+  const { supabase } = useContext(CoachDataContext);
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [draft, setDraft] = useState(null); // { days } una volta generata
+
+  const generate = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const clientContext = {
+        nome: client.fullName || client.name,
+        obiettivo: client.goal || anamnesis?.obiettivoPrinc || null,
+        livello: anamnesis?.livello || null,
+        sessioniSettimanali: Number(anamnesis?.sessioni) || null,
+        doloreSegnalato: client.evening?.doloreGrado > 0
+          ? { grado: client.evening.doloreGrado, nota: client.evening.doloreNota || null } : null,
+        prs: client.prs || null,
+        piano: client.plan,
+      };
+      const result = await generateWorkoutWeekDraft(supabase, { clientContext, notes });
+      setDraft(result);
+    } catch (e) {
+      console.error("PERFORM: errore generazione bozza AI allenamento", e);
+      let friendly = "Non sono riuscito a generare una bozza. Riprova tra poco.";
+      try {
+        const body = await e?.context?.json?.();
+        if (body?.error) friendly = body.error;
+      } catch { /* mantieni il messaggio generico */ }
+      setError(friendly);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const trainingDays = (draft?.days || []).filter(Boolean);
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+          <p className="c-heading font-display font-bold mb-1 flex items-center gap-2">
+            <Sparkles size={16} style={{ color: "#C5A059" }} /> Genera bozza con AI
+          </p>
+          <p className="c-muted text-xs mb-4">
+            Basata su obiettivo, livello e dolori/infortuni segnalati per {client.fullName || client.name}.
+            {hasExisting ? " Sostituirà la scheda di questa settimana finché non premi \"Salva\"." : ""}
+          </p>
+
+          {!draft && (
+            <>
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+                placeholder="Note facoltative per l'AI (es. priorità su un distretto, attrezzatura disponibile, preferenze)…"
+                className="w-full rounded-lg px-3 py-2.5 text-sm mb-3" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line-strong)", color: "var(--ink)" }} />
+              {error && (
+                <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>{error}</p>
+              )}
+              <div className="flex gap-2">
+                <button onClick={onClose} disabled={loading} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Annulla</button>
+                <button onClick={generate} disabled={loading} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+                  {loading ? "Genero…" : "Genera"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {draft && (
+            <>
+              <div className="space-y-2 mb-4">
+                {trainingDays.map((day, i) => (
+                  <div key={i} className="t-inner px-3 py-2.5">
+                    <p className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>{day.label}</p>
+                    <p className="c-muted text-xs">{day.exercises.map((e) => e.name).join(" · ")}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setDraft(null)} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Rigenera</button>
+                <button onClick={() => onConfirm(draft.days)} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+                  Carica nell'editor
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </Portal>
@@ -5083,6 +5203,174 @@ const TABS = [
   { id: "rete", label: "Hub Utenti", icon: Server },
 ];
 
+/* ============================================================================
+   ASSISTENTE AI COACH — pulsante flottante + pannello chat, visibile su
+   tutto il pannello coach (qualunque tab, anche dentro ClientDetail): il
+   coach chiede in linguaggio naturale ("chi non si allena da una
+   settimana?", "riassumimi Mario") e riceve una risposta basata SOLO sul
+   roster già caricato (CoachDataContext.clients) — niente query aggiuntive,
+   niente dato inventato (Edge Function coach-assistant).
+   ========================================================================== */
+
+// Riassunto compatto per l'assistente: stessi campi che il coach guarda già
+// ogni giorno in Hub Atleti, non un fetch a sé — reparto calcolato con la
+// stessa deptOf usata per le colonne Attivi/In attesa/Scaduti qui sopra.
+function buildRosterSummary(clients) {
+  return clients
+    .filter((c) => REAL_COACHING_PLANS.has(c.plan))
+    .map((c) => ({
+      nome: c.fullName || c.name,
+      reparto: DEPTS.find((d) => d.id === deptOf(c))?.label || null,
+      piano: c.plan,
+      streakGiorni: c.streak,
+      ultimaAttivita: c.lastActivity || null,
+      allenamentoPct: c.rings?.allenamento != null ? Math.round(c.rings.allenamento * 100) : null,
+      alimentazionePct: c.rings?.alimentazione != null ? Math.round(c.rings.alimentazione * 100) : null,
+      recuperoPct: c.rings?.recupero != null ? Math.round(c.rings.recupero * 100) : null,
+      ultimoPeso: c.lastCheck?.weight ?? null,
+      ultimoCheckData: c.lastCheckDate || null,
+      dolore: c.evening?.doloreGrado > 0 ? { grado: c.evening.doloreGrado, nota: c.evening.doloreNota || null } : null,
+      billingStatus: c.billingStatus || null,
+    }));
+}
+
+function CoachAIAssistantPanel({ onClose }) {
+  const { supabase, clients } = useContext(CoachDataContext);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const threadRef = useRef(null);
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
+
+  useEffect(() => {
+    threadRef.current?.scrollTo?.({ top: threadRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
+
+  const EXAMPLES = [
+    "Chi non si allena da più di 5 giorni?",
+    "Chi ha dolore segnalato negli ultimi check?",
+    "Chi è in reparto In attesa da più tempo?",
+  ];
+
+  const ask = async (rawQuestion) => {
+    const question = (rawQuestion ?? input).trim();
+    if (!question || loading || !supabase) return;
+    setInput("");
+    const priorMessages = messages;
+    setMessages((m) => [...m, { role: "user", text: question }]);
+    setLoading(true);
+    try {
+      const roster = buildRosterSummary(clients);
+      const { text } = await askCoachAssistant(supabase, {
+        question, history: priorMessages.map((m) => ({ role: m.role, text: m.text })), roster,
+      });
+      setMessages((m) => [...m, { role: "assistant", text: text || "Non sono riuscito a elaborare una risposta." }]);
+    } catch (e) {
+      console.error("PERFORM: errore assistente AI coach", e);
+      let friendly = "Connessione non disponibile in questo momento. Riprova tra poco.";
+      try {
+        const body = await e?.context?.json?.();
+        if (body?.error) friendly = body.error;
+      } catch { /* mantieni il messaggio generico */ }
+      setMessages((m) => [...m, { role: "assistant", text: friendly }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+           style={{ backgroundColor: "rgba(9,9,11,0.65)", backdropFilter: "blur(6px)" }} onClick={onClose}>
+        <div className="spring-in c-card w-full flex flex-col" style={{ maxWidth: 480, height: "min(78vh, 640px)" }} onClick={(e) => e.stopPropagation()}>
+          <div ref={headerRef} className="shrink-0">
+            <SwipeHandle />
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: "#111111" }}>
+                  <Sparkles size={15} style={{ color: "#C5A059" }} />
+                </span>
+                <div className="min-w-0">
+                  <p className="c-heading font-display font-bold truncate">Assistente PERFORM AI</p>
+                  <p className="c-muted text-xs">Chiedi del tuo roster in linguaggio naturale</p>
+                </div>
+              </div>
+              <button onClick={onClose} aria-label="Chiudi" className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0">
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+
+          <div ref={threadRef} className="flex-1 min-h-0 overflow-y-auto space-y-2.5 py-1">
+            {messages.length === 0 && !loading && (
+              <div className="space-y-1.5">
+                <p className="c-muted text-xs mb-2">Alcuni esempi:</p>
+                {EXAMPLES.map((ex) => (
+                  <button key={ex} onClick={() => ask(ex)} className="t-inner w-full text-left px-3 py-2 text-xs" style={{ color: "var(--ink-2)" }}>
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className="rounded-2xl px-3.5 py-2.5 text-sm" style={{
+                  maxWidth: "85%", whiteSpace: "pre-wrap", lineHeight: 1.55,
+                  backgroundColor: m.role === "user" ? "#111111" : "var(--surface-2)",
+                  color: m.role === "user" ? "#FFFFFF" : "var(--ink)",
+                  border: m.role === "user" ? "none" : "1px solid var(--line)",
+                }}>
+                  {m.text}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl px-3.5 py-2.5 text-sm" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                  Sto guardando il roster…
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="shrink-0 flex items-center gap-2 pt-3" style={{ borderTop: "1px solid var(--line)" }}>
+            <input value={input} onChange={(e) => setInput(e.target.value)}
+                   onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
+                   placeholder="Es. chi ha bisogno di attenzione oggi?"
+                   className="flex-1 rounded-full px-4 py-2.5 text-sm" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line-strong)", color: "var(--ink)" }}
+                   aria-label="Fai una domanda sul tuo roster" />
+            <button onClick={() => ask()} disabled={loading || !input.trim()}
+                    className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: "#111111", opacity: (loading || !input.trim()) ? 0.4 : 1 }}
+                    aria-label="Invia domanda">
+              <Sparkles size={16} style={{ color: "#C5A059" }} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+function CoachAIAssistant() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)} aria-label="Apri assistente AI"
+              className="fixed z-40 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+              style={{
+                bottom: "calc(env(safe-area-inset-bottom, 0px) + 96px)", right: 18,
+                width: 52, height: 52, backgroundColor: "#111111",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+              }}>
+        <Sparkles size={20} style={{ color: "#C5A059" }} />
+      </button>
+      {open && <CoachAIAssistantPanel onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 export default function CoachDashboard({ supabase, coachId, dark = true } = {}) {
   const isRealMode = Boolean(supabase && coachId);
   const [realClients, setRealClients] = useState(null); // null = non ancora caricato
@@ -5131,6 +5419,9 @@ export default function CoachDashboard({ supabase, coachId, dark = true } = {}) 
     <CoachDataContext.Provider value={{ clients, supabase, coachId, isRealMode, reloadRoster, exerciseLib, reloadExerciseLib }}>
       <div className={`coach-root${isDark ? " dark" : ""}`}>
         <GlobalStyle />
+        {/* Solo in modalità reale: in anteprima/demo non c'è una Edge
+            Function da chiamare né un roster vero da leggere. */}
+        {isRealMode && <CoachAIAssistant />}
         {/* max-w-2xl su mobile: stessa larghezza fissa "da app" delle altre
             schermate (Home/Profilo/Classifica), niente contenuto più largo
             dello schermo che obbliga il browser a permettere zoom/spostamento.
