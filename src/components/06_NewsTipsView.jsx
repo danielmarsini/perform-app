@@ -52,7 +52,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Heart, Bookmark, Lock, Newspaper, ArrowLeft } from "lucide-react";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
-import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel, publishTeamPost, deleteTeamPost, notifyTeamPost, markTeamSeen } from "../lib/coachingData.js";
+import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel, publishTeamPost, deleteTeamPost, notifyTeamPost, markTeamSeen, translateNewsTipsItem } from "../lib/coachingData.js";
 
 /* ============================================================================
    1 · UTILITÀ
@@ -165,7 +165,7 @@ function useUserPlan({ supabase, meId, fallback = "free" }) {
   return plan;
 }
 
-function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3 }) {
+function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3, lang = "it" }) {
   const real = !!supabase;
   const expires = channelExpires(channel);
   const [items, setItems] = useState([]);
@@ -174,6 +174,13 @@ function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3 }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
+  // Traduzioni ottenute in QUESTA sessione, per post non ancora in cache
+  // server-side (item.translations, SCHEMA_v82) — { [itemId]: {eyebrow,
+  // title, body, body_extended} }. Le richieste in corso vivono in un ref
+  // (non in state) per evitare doppie chiamate mentre l'effect sotto si
+  // ri-esegue ad ogni traduzione che arriva.
+  const [sessionTranslations, setSessionTranslations] = useState({});
+  const translatingRef = useRef(new Set());
 
   // BUG PRESO: toggleLike scrive davvero su tip_likes ma likedMine non
   // veniva mai idratato da un fetch iniziale — dopo un refresh un articolo
@@ -197,7 +204,7 @@ function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3 }) {
     if (real) {
       let query = supabase
         .from("coach_news_tips")
-        .select("id, channel, eyebrow, title, body, body_extended, source_query, like_count, published_at, photo_before_url, photo_after_url, weight_achieved")
+        .select("id, channel, eyebrow, title, body, body_extended, source_query, like_count, published_at, photo_before_url, photo_after_url, weight_achieved, translations")
         .eq("channel", channel);
       /* Gli Avvisi Team non hanno finestra di scadenza: nessun filtro temporale. */
       if (expires) query = query.gte("published_at", new Date(Date.now() - EXPIRY_MS).toISOString());
@@ -279,7 +286,45 @@ function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3 }) {
     setItems((all) => all.filter((it) => it.id !== itemId));
   }, []);
 
-  return { loading, loadingMore, hasMore, items, likedMine, toggleLike, loadMore, removeItem };
+  // Traduzione automatica (SCHEMA_v82): per ogni post senza già una
+  // traduzione in cache (server, item.translations) né in questa sessione,
+  // chiede la traduzione alla Edge Function e la tiene in sessionTranslations
+  // finché il post non viene ricaricato dal server con la cache aggiornata.
+  // translatingRef evita doppie richieste per lo stesso post mentre l'effect
+  // si ri-esegue ad ogni traduzione che arriva (dipende da sessionTranslations).
+  useEffect(() => {
+    if (!real || lang === "it") return;
+    const pending = items.filter((it) =>
+      !it.translations?.[lang] && !sessionTranslations[it.id]?.[lang] && !translatingRef.current.has(it.id));
+    pending.forEach((it) => {
+      translatingRef.current.add(it.id);
+      translateNewsTipsItem(supabase, it.id, lang)
+        .then((translated) => {
+          setSessionTranslations((all) => ({ ...all, [it.id]: { ...(all[it.id] || {}), [lang]: translated } }));
+        })
+        .catch((err) => console.error("PERFORM: errore traduzione automatica post", it.id, lang, err))
+        .finally(() => translatingRef.current.delete(it.id));
+    });
+  }, [real, lang, items, supabase, sessionTranslations]);
+
+  // Nessuna traduzione richiesta (italiano) o non ancora arrivata: i campi
+  // display* restano quelli originali — il cliente legge subito l'italiano
+  // invece di aspettare a vuoto, la traduzione lo sostituisce appena pronta.
+  const displayItems = items.map((it) => {
+    const translated = lang === "it" ? null : (it.translations?.[lang] || sessionTranslations[it.id]?.[lang]);
+    return {
+      ...it,
+      displayEyebrow: translated?.eyebrow ?? it.eyebrow,
+      displayTitle: translated?.title ?? it.title,
+      displayBody: translated?.body ?? it.body,
+      // it.bodyExtended (camelCase): fallback per il pool di anteprima
+      // (seedPool, modalità !supabase), che non passa mai dalla select
+      // Supabase e quindi non ha mai body_extended in snake_case.
+      displayBodyExtended: translated?.body_extended ?? it.body_extended ?? it.bodyExtended,
+    };
+  });
+
+  return { loading, loadingMore, hasMore, items: displayItems, likedMine, toggleLike, loadMore, removeItem };
 }
 
 /* ============================================================================
@@ -407,9 +452,9 @@ function FeedCard({ item, channel, isLatest, gender, accent, liked, likeCount, s
         </div>
       ) : (
         <div className="flex items-center justify-between gap-3 mb-4">
-          {item.eyebrow ? (
+          {item.displayEyebrow ? (
             <span style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--ink-2)" }}>
-              {item.eyebrow}
+              {item.displayEyebrow}
             </span>
           ) : <span />}
           <div className="flex items-center gap-2 shrink-0">
@@ -428,11 +473,11 @@ function FeedCard({ item, channel, isLatest, gender, accent, liked, likeCount, s
 
       <GradientTitle tag="h2" gender={gender}
                       style={{ fontSize: "1.05rem", fontWeight: 700, lineHeight: 1.32, letterSpacing: "-0.01em", marginBottom: "0.6rem" }}>
-        {item.title}
+        {item.displayTitle}
       </GradientTitle>
 
       <p className="teaser-clamp" style={{ fontSize: "0.96rem", fontWeight: 400, color: "var(--satin-gray)", lineHeight: 1.8 }}>
-        {item.body}
+        {item.displayBody}
       </p>
 
       {(item.photo_before_url || item.photo_after_url) && (
@@ -522,7 +567,7 @@ function PerformAIChat({ item, accent, supabase }) {
     setMessages(nextMessages);
     setLoading(true);
     try {
-      const context = `Titolo: ${item.title}\nSintesi: ${item.body}\nApprofondimento: ${(item.bodyExtended || []).join(" ")}`;
+      const context = `Titolo: ${item.displayTitle}\nSintesi: ${item.displayBody}\nApprofondimento: ${(item.displayBodyExtended || []).join(" ")}`;
       // Il system prompt e il controllo del piano vivono SOLO server-side
       // (Edge Function ask-perform-ai) — qui si manda solo il contesto
       // dell'articolo e la cronologia, mai la chiave Anthropic né un
@@ -648,19 +693,19 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
             )}
           </div>
 
-          {item.eyebrow && (
+          {item.displayEyebrow && (
             <span style={{ display: "block", fontSize: "0.64rem", fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: accent, marginBottom: "0.7rem" }}>
-              {item.eyebrow}
+              {item.displayEyebrow}
             </span>
           )}
 
           <GradientTitle tag="h1" gender={gender}
                           style={{ fontSize: "1.5rem", fontWeight: 700, lineHeight: 1.26, letterSpacing: "-0.012em", marginBottom: "1.2rem" }}>
-            {item.title}
+            {item.displayTitle}
           </GradientTitle>
 
           <div className="expand-body">
-            {(item.bodyExtended && item.bodyExtended.length ? item.bodyExtended : [item.body]).map((p, i) => (
+            {(item.displayBodyExtended && item.displayBodyExtended.length ? item.displayBodyExtended : [item.displayBody]).map((p, i) => (
               <p key={i} style={{ fontSize: "1rem", fontWeight: 400, color: "var(--satin-gray)", lineHeight: 1.85, marginBottom: "1.1rem" }}>
                 {p}
               </p>
@@ -844,7 +889,7 @@ function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave
    9 · CONTENITORE PRINCIPALE
    ========================================================================== */
 
-export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride, isCoach = false, onTeamSeen }) {
+export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride, isCoach = false, onTeamSeen, lang = "it" }) {
   const [active, setActive] = useState("news");
   const [expanded, setExpanded] = useState(null);          // { channel, id } | null
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -892,9 +937,9 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
       .catch((err) => console.error("PERFORM: errore visto avvisi team", err));
   }, [real, isCoach, active, supabase, meId, onTeamSeen]);
 
-  const feedNews = useNewsFeed({ supabase, meId, channel: "news", seedPool: seeds.news });
-  const feedTips = useNewsFeed({ supabase, meId, channel: "tips", seedPool: seeds.tips });
-  const feedTeam = useNewsFeed({ supabase, meId, channel: "team", seedPool: seeds.team });
+  const feedNews = useNewsFeed({ supabase, meId, channel: "news", seedPool: seeds.news, lang });
+  const feedTips = useNewsFeed({ supabase, meId, channel: "tips", seedPool: seeds.tips, lang });
+  const feedTeam = useNewsFeed({ supabase, meId, channel: "team", seedPool: seeds.team, lang });
   const feeds = { news: feedNews, tips: feedTips, team: feedTeam };
 
   const expandedItem = expanded ? feeds[expanded.channel].items.find((i) => i.id === expanded.id) : null;
