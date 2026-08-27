@@ -23,6 +23,14 @@
 //      ripetizioni/recupero), mappando solo la terminologia libera del coach
 //      sul vocabolario fisso muscleTarget/technique — non inventa né
 //      "migliora" un allenamento che il coach ha già deciso lui stesso.
+//
+// Ogni giorno di allenamento include anche "warmup" (mobilità/attivazione
+// pre-sessione) e "stretching" (allungamenti di fine sessione), testo libero
+// scritto in base agli esercizi assegnati quel giorno — mai serie/carichi da
+// monitorare come gli esercizi di forza, solo da leggere (SCHEMA_v84,
+// workout_day_notes). Il cardio invece NON è mai generato qui: il coach lo
+// aggiunge sempre a mano in WeekWorkoutEditor come una voce con solo nome +
+// minuti (workout_logs.kind = "cardio").
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Anthropic from "npm:@anthropic-ai/sdk@0.32";
@@ -45,15 +53,18 @@ const MUSCLE_TARGETS = [
 const TECHNIQUES = ["Nessuna", "Rest-Pause", "Drop-set", "Stripping", "Super-set"];
 
 const JSON_CONTRACT = `Rispondi SOLO con un oggetto JSON valido, nessun altro testo, con questa struttura esatta:
-{"days": [null|{"label": "nome del giorno, es. Push A — Petto/Spalle/Tricipiti", "exercises": [{"name": "...", "muscleTarget": "...", "synergists": [...], "sets": 4, "reps": "8-10", "rest": 120, "rirTarget": "2", "technique": "Nessuna"}]}, ...]}
+{"days": [null|{"label": "nome del giorno, es. Push A — Petto/Spalle/Tricipiti", "warmup": "...", "stretching": "...", "exercises": [{"name": "...", "muscleTarget": "...", "synergists": [...], "sets": 4, "reps": "8-10", "rest": 120, "rirTarget": "2", "technique": "Nessuna"}]}, ...]}
 
-L'array "days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica. Usa ESCLUSIVAMENTE questi valori per "muscleTarget", verbatim, mai un sinonimo o una variante: ${MUSCLE_TARGETS.join(", ")}. "synergists" è un array (anche vuoto) di distretti sinergici tra gli stessi valori sopra — mai il distretto primario ripetuto lì dentro. Usa ESCLUSIVAMENTE questi valori per "technique": ${TECHNIQUES.join(", ")}. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero (numero), "sets" è il numero di serie dirette (numero), "rirTarget" è una stringa (es. "2") o stringa vuota se non applicabile.`;
+L'array "days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica. Usa ESCLUSIVAMENTE questi valori per "muscleTarget", verbatim, mai un sinonimo o una variante: ${MUSCLE_TARGETS.join(", ")}. "synergists" è un array (anche vuoto) di distretti sinergici tra gli stessi valori sopra — mai il distretto primario ripetuto lì dentro. Usa ESCLUSIVAMENTE questi valori per "technique": ${TECHNIQUES.join(", ")}. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero (numero), "sets" è il numero di serie dirette (numero), "rirTarget" è una stringa (es. "2") o stringa vuota se non applicabile.
+
+"warmup" e "stretching" sono testo libero (poche righe, non un oggetto strutturato), scritti in base agli esercizi/gruppi muscolari di QUEL giorno specifico — mai generici, mai identici tra un giorno gambe e un giorno spalle. "warmup" è la mobilità articolare e l'attivazione da fare PRIMA della sessione (es. "Cyclette leggera 5', Hip circles 2x10 per lato, Band pull-apart 2x15"); "stretching" sono gli allungamenti statici da fare a fine sessione sui gruppi appena allenati (es. "Stretching quadricipiti 2x30 sec per lato, Stretching flessori dell'anca 2x30 sec"). Includi sempre serie/ripetizioni o una durata quando ha senso, ma resta un testo discorsivo, non un altro array JSON. Un giorno di riposo ("null") non ha né warmup né stretching. MAI includere sessioni di cardio in "exercises" o altrove: il cardio lo assegna il coach a parte, non è compito tuo.`;
 
 const GENERATE_SYSTEM_PROMPT = `Sei un luminare in chinesiologia, biomeccanica e metodologia dell'allenamento per Bodybuilding, Powerlifting, Fitness e recupero infortuni. Il tuo compito è generare la BOZZA di una settimana di allenamento (7 giorni, lunedì-domenica) per un cliente di coaching, seguendo queste regole non negoziabili:
 
 1. Analizza obiettivo, livello, sessioni settimanali, dolori/infortuni segnalati e PR forniti nel contesto prima di scegliere un solo esercizio — mai un esercizio a rischio per una zona dolente segnalata, qualunque sia il livello dichiarato.
 2. Distribuisci il numero di sessioni allenanti richiesto sui 7 giorni (gli altri restano giorni di riposo, "day": null), con una progressione di volume/intensità sensata per il livello dichiarato.
 3. Tecniche avanzate (Rest-Pause, Drop-set, Stripping, Super-set) solo per livelli intermedio/avanzato, mai su un principiante.
+4. Per ogni giorno di allenamento scrivi anche "warmup" (mobilità/attivazione pre-sessione) e "stretching" (allungamenti di fine sessione) mirati sui gruppi muscolari che alleni quel giorno — mai lo stesso testo copiato su giorni diversi.
 
 ${JSON_CONTRACT}`;
 
@@ -63,6 +74,7 @@ const IMPORT_SYSTEM_PROMPT = `Il coach ti ha già scritto (a mano, o in un PDF/f
 2. Se un giorno del testo originale non specifica un dato (es. recupero non scritto), usa un valore di buon senso per quel tipo di esercizio invece di inventare un numero a caso, ma SOLO per riempire un vuoto — mai per sovrascrivere un numero che il coach ha già scritto.
 3. Il testo del coach userà quasi certamente nomi di gruppi muscolari o terminologia diversa dal vocabolario fisso dell'app — mappa ogni esercizio al valore più corretto tra quelli consentiti, non lasciare mai "muscleTarget" fuori vocabolario.
 4. Se un giorno del testo/PDF è esplicitamente un giorno di riposo (o non è menzionato), quel giorno è "null" nell'array.
+5. Se il testo/PDF originale scrive già un riscaldamento o uno stretching per un giorno, trascrivili fedelmente in "warmup"/"stretching" invece di inventarli. Se non li scrive, componili tu in base agli esercizi di quel giorno (stessa logica della generazione da zero) — non lasciarli mai vuoti su un giorno di allenamento.
 
 ${JSON_CONTRACT}`;
 
@@ -87,6 +99,11 @@ function currentMonthKey() {
 function isValidDay(day) {
   if (day === null) return true;
   if (typeof day !== "object" || !day.label || !Array.isArray(day.exercises)) return false;
+  // warmup/stretching: opzionali qui (un giorno che non li scrive non deve
+  // far scartare l'intera bozza) — testo libero, quindi solo un controllo di
+  // tipo, mai una struttura da validare.
+  if (day.warmup !== undefined && typeof day.warmup !== "string") return false;
+  if (day.stretching !== undefined && typeof day.stretching !== "string") return false;
   return day.exercises.every((ex) =>
     ex && typeof ex.name === "string" && ex.name.trim() &&
     MUSCLE_TARGETS.includes(ex.muscleTarget) &&
@@ -135,7 +152,7 @@ Deno.serve(async (req) => {
 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-5",
-      max_tokens: 3000,
+      max_tokens: 4000,
       system: isImport ? IMPORT_SYSTEM_PROMPT : GENERATE_SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
     });

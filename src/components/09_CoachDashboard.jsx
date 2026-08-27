@@ -1712,7 +1712,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   const [selDay, setSelDay] = useState(0);
   const day = week.workout[selDay];
   const setDay = (updater) => onChange({ ...week, workout: week.workout.map((d, i) => (i === selDay ? updater(d) : d)) });
-  const toggleRest = () => setDay((d) => (d ? null : { label: "Nuova sessione", exercises: [] }));
+  const toggleRest = () => setDay((d) => (d ? null : { label: "Nuova sessione", warmup: "", stretching: "", exercises: [] }));
   // Drag-to-reorder (stesso hook/pattern di DayEditor in 05_HomeDashboard.jsx,
   // vedi useDragReorder.js): l'ordine dell'array locale È l'ordine mostrato,
   // saveWeekWorkout scrive quell'ordine in workout_logs.sort_order al salvataggio
@@ -1721,7 +1721,13 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   const reorder = useDragReorder({ length: day?.exercises?.length ?? 0, onReorder: reorderEx });
   const updateEx = (i, field, value) => setDay((d) => ({
     ...d,
-    exercises: d.exercises.map((e, j) => (j === i ? { ...e, [field]: field === "sets" ? Math.max(1, Math.min(8, Number(value) || 1)) : field === "rest" ? Math.max(0, Number(value) || 0) : value } : e)),
+    exercises: d.exercises.map((e, j) => (j === i ? {
+      ...e,
+      [field]: field === "sets" ? Math.max(1, Math.min(8, Number(value) || 1))
+        : field === "rest" ? Math.max(0, Number(value) || 0)
+        : field === "durationMin" ? Math.max(1, Number(value) || 1)
+        : value,
+    } : e)),
   }));
   // BUG PRESO (stesso identico difetto già preso sul campo Kcal in
   // WeekDietEditor): "Serie" e "Recupero" applicavano Math.max/min a OGNI
@@ -1743,7 +1749,13 @@ function WeekWorkoutEditor({ week, onChange, client }) {
     exercises: d.exercises.map((e, j) => (j === i ? { ...e, custom: !e.custom, name: e.custom ? EX_NAMES[0] : "" } : e)),
   }));
   const removeEx = (i) => setDay((d) => ({ ...d, exercises: d.exercises.filter((_, j) => j !== i) }));
-  const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, sets: 3, reps: "8-10", rest: 120, rirTarget: "", technique: "Nessuna" }] }));
+  const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, kind: "strength", sets: 3, reps: "8-10", rest: 120, rirTarget: "", technique: "Nessuna" }] }));
+  // Cardio (SCHEMA_v84): il coach lo aggiunge sempre a mano, mai l'AI — solo
+  // nome libero + minuti, nessuna serie/carico da monitorare. Stesso array
+  // "exercises" degli esercizi di forza (appare come una voce in più nella
+  // stessa lista, nell'ordine in cui il coach la trascina), distinto solo da
+  // kind: "cardio".
+  const addCardio = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), kind: "cardio", name: "", durationMin: 15 }] }));
 
   // Elimina l'intera giornata (tutti gli esercizi, non solo uno): conferma
   // in due tocchi invece di un window.confirm nativo — è distruttivo (nessun
@@ -1774,7 +1786,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
     onChange({
       ...week,
       workout: week.workout.map((d, i) => (copyTargets.includes(i)
-        ? { label: day.label, exercises: day.exercises.map((e) => ({ ...e, id: uid() })) }
+        ? { label: day.label, warmup: day.warmup || "", stretching: day.stretching || "", exercises: day.exercises.map((e) => ({ ...e, id: uid() })) }
         : d)),
     });
     setCopyPickerOpen(false);
@@ -1900,8 +1912,42 @@ function WeekWorkoutEditor({ week, onChange, client }) {
             </div>
           )}
 
+          {/* Riscaldamento & Mobilità (prima della sessione) e Stretching
+              (a fine sessione, subito sotto la lista esercizi): testo libero
+              per giorno, mai serie/carichi da monitorare — solo da leggere.
+              "Genera bozza con AI" li scrive sempre in base agli esercizi
+              assegnati quel giorno; il coach può comunque scriverli/
+              modificarli qui a mano in qualunque momento. */}
+          <label className="block mb-3">
+            <span className="c-label block mb-1">🔥 Riscaldamento & Mobilità (prima della sessione)</span>
+            <textarea value={day.warmup || ""} rows={2} onChange={(e) => setDay((d) => ({ ...d, warmup: e.target.value }))}
+              placeholder="Es. Cyclette leggera 5', Rotazioni di spalle 2x15, Hip circles 2x10 per lato…"
+              className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+          </label>
+
           <div className="space-y-2.5 mb-3">
             {day.exercises.map((ex, i) => (
+              ex.kind === "cardio" ? (
+                <div key={ex.id} ref={reorder.setRowRef(i)} style={{ ...reorder.rowStyle(i) }} className="t-inner px-3 py-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0" style={{ ...reorder.handleProps(i).style, color: "var(--ink-tertiary)" }}>
+                      <GripVertical size={15} />
+                    </span>
+                    <span className="shrink-0" aria-hidden="true">🏃</span>
+                    <input value={ex.name} onChange={(e) => updateEx(i, "name", e.target.value)} placeholder="Es. Tapis roulant, Bike, Vogatore…"
+                      className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[160px]" />
+                    <label className="text-center shrink-0">
+                      <span className="c-label block mb-1">Minuti</span>
+                      <input type="number" min={1} value={fieldDrafts[draftKey(ex.id, "durationMin")] ?? ex.durationMin}
+                        onFocus={() => setFieldDrafts((d) => ({ ...d, [draftKey(ex.id, "durationMin")]: String(ex.durationMin) }))}
+                        onChange={(e) => setFieldDrafts((d) => ({ ...d, [draftKey(ex.id, "durationMin")]: e.target.value }))}
+                        onBlur={() => commitDraft(i, ex.id, "durationMin")}
+                        className="t-input w-16 text-sm rounded-md px-2 py-1.5 font-data text-center" />
+                    </label>
+                    <button onClick={() => removeEx(i)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
+                  </div>
+                </div>
+              ) : (
               <div key={ex.id} ref={reorder.setRowRef(i)} style={{ ...reorder.rowStyle(i) }} className="t-inner px-3 py-3">
                 <div className="flex items-center gap-2 flex-wrap mb-2">
                   <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0" style={{ ...reorder.handleProps(i).style, color: "var(--ink-tertiary)" }}>
@@ -2069,9 +2115,21 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                   )}
                 </div>
               </div>
+              )
             ))}
           </div>
-          <button onClick={addEx} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1"><Plus size={13} /> Esercizio</button>
+
+          <label className="block mb-3">
+            <span className="c-label block mb-1">🧘 Stretching (a fine sessione)</span>
+            <textarea value={day.stretching || ""} rows={2} onChange={(e) => setDay((d) => ({ ...d, stretching: e.target.value }))}
+              placeholder="Es. Stretching pettorali 2x30 sec, Stretching quadricipiti 2x30 sec per lato…"
+              className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+          </label>
+
+          <div className="flex items-center gap-2">
+            <button onClick={addEx} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1"><Plus size={13} /> Esercizio</button>
+            <button onClick={addCardio} className="c-ghost px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1">🏃 Cardio</button>
+          </div>
         </div>
       )}
 
@@ -2682,7 +2740,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   // potrebbero disallinearsi.
   const resolveDays = (days) => days.map((day) => day && {
     ...day,
-    exercises: day.exercises.map((ex) => ({
+    exercises: day.exercises.map((ex) => (ex.kind === "cardio" ? ex : {
       ...ex,
       muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name, exerciseLib),
       synergists: ex.custom ? ex.synergists : [],
@@ -2697,7 +2755,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     const snapshot = realWorkout; // vedi realWorkoutRef sopra: confrontato dopo il refetch
     try {
       const resolved = resolveDays(realWorkout);
-      await saveWeekWorkout(supabase, client.id, weekStartISO, resolved);
+      await saveWeekWorkout(supabase, client.id, weekStartISO, resolved, coachId);
       // BUG PRESO: prima si faceva setRealWorkout(resolved), cioè si teneva in
       // stato locale la STESSA copia appena inviata al salvataggio — inclusi
       // gli id finti (uid() lato client) di ogni esercizio appena aggiunto con
@@ -2749,7 +2807,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
     const snapshot = realWorkout; // vedi realWorkoutRef sopra: confrontato dopo il refetch
     autosaveTimerRef.current = setTimeout(() => {
       const resolved = resolveDays(snapshot);
-      saveWeekWorkout(supabase, client.id, weekStartISO, resolved)
+      saveWeekWorkout(supabase, client.id, weekStartISO, resolved, coachId)
         // STESSO motivo del refetch in saveWorkout qui sopra: un esercizio
         // appena aggiunto ha ancora un id finto (uid() locale) finché non si
         // rilegge lo stato vero dal DB. Senza questo refetch, l'autosave
@@ -2894,7 +2952,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       setWorkoutBusy(true);
       setWorkoutError("");
       try {
-        await cloneWeekWorkout(supabase, client.id, weekStartISO, weekKeyForOffset(nextOffset));
+        await cloneWeekWorkout(supabase, client.id, weekStartISO, weekKeyForOffset(nextOffset), coachId);
       } catch (err) {
         console.error("PERFORM: errore clonazione allenamento reale", err);
         setWorkoutError(err.message || "Non sono riuscito a clonare l'allenamento della settimana.");
@@ -3563,6 +3621,9 @@ function GenerateStarterPlanModal({ anamnesis, exerciseLib, onClose, onConfirm }
               <div key={i} className="t-inner px-3 py-2.5">
                 <p className="text-sm font-semibold mb-1" style={{ color: "var(--ink)" }}>{day.label}</p>
                 <p className="c-muted text-xs">{day.exercises.map((e) => e.name).join(" · ")}</p>
+                {(day.warmup || day.stretching) && (
+                  <p className="c-muted text-[10px] mt-1">🔥 Riscaldamento + 🧘 Stretching inclusi — rivedibili nell'editor</p>
+                )}
               </div>
             ))}
           </div>

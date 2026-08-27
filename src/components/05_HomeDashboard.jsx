@@ -24,7 +24,7 @@ import {
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check, Navigation, Trophy,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
+import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
@@ -3180,25 +3180,62 @@ export function HomeDashboard({
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    {/* Riscaldamento & Mobilità (SCHEMA_v84): testo libero
+                        scritto dal coach (a mano o dal generatore AI) in base
+                        agli esercizi di oggi — mai serie/carichi da segnare,
+                        solo da leggere prima di iniziare. */}
+                    {day.warmup && (
+                      <div className="card">
+                        <p className="label mb-1">Prima di iniziare</p>
+                        <p className="h2 mb-2">🔥 Riscaldamento & Mobilità</p>
+                        <p className="body" style={{ whiteSpace: "pre-line" }}>{day.warmup}</p>
+                      </div>
+                    )}
                     {exercises.map((ex, exIdx) => (
-                      <ExerciseCard
-                        key={ex.id}
-                        ex={ex}
-                        index={exIdx}
-                        rows={setsFor(ex)}
-                        onSetField={onSetField}
-                        accent={accent}
-                        accentText={accentText}
-                        userPlan={userPlan}
-                        schedaAddonChatActive={schedaAddonChatActive}
-                        gender={profile.gender}
-                        onUpgrade={onUpgrade}
-                        onOpenChat={onOpenChat}
-                        onCoachSync={onCoachSync}
-                        supabase={supabase}
-                        userId={userId}
-                      />
+                      ex.kind === "cardio" ? (
+                        // Cardio (SCHEMA_v84): il coach lo aggiunge a mano come
+                        // una voce in più — solo nome + minuti, mai serie/
+                        // carichi da monitorare come gli esercizi di forza.
+                        <div key={ex.id} className="card flex items-center gap-3">
+                          <span style={{ fontSize: "1.3rem" }} aria-hidden="true">🏃</span>
+                          <div className="flex-1">
+                            <p className="h2" style={{ fontSize: "1rem" }}>{ex.name}</p>
+                            <p className="meta">Cardio</p>
+                          </div>
+                          <span className="font-data" style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--ink)" }}>
+                            {ex.durationMin} min
+                          </span>
+                        </div>
+                      ) : (
+                        <ExerciseCard
+                          key={ex.id}
+                          ex={ex}
+                          index={exIdx}
+                          rows={setsFor(ex)}
+                          onSetField={onSetField}
+                          accent={accent}
+                          accentText={accentText}
+                          userPlan={userPlan}
+                          schedaAddonChatActive={schedaAddonChatActive}
+                          gender={profile.gender}
+                          onUpgrade={onUpgrade}
+                          onOpenChat={onOpenChat}
+                          onCoachSync={onCoachSync}
+                          supabase={supabase}
+                          userId={userId}
+                        />
+                      )
                     ))}
+                    {/* Stretching di fine sessione (SCHEMA_v84): stesso
+                        principio del riscaldamento sopra, ma a chiusura
+                        della lista esercizi invece che in apertura. */}
+                    {day.stretching && (
+                      <div className="card">
+                        <p className="label mb-1">A fine sessione</p>
+                        <p className="h2 mb-2">🧘 Stretching</p>
+                        <p className="body" style={{ whiteSpace: "pre-line" }}>{day.stretching}</p>
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* "Come è andata oggi?" sopra il grafico del volume — prima
@@ -4754,7 +4791,28 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
       ) : (
         <>
           <p className="h2">{dayData.label}</p>
+          {dayData.warmup && (
+            <div className="card">
+              <p className="label mb-1">Prima di iniziare</p>
+              <p className="h2 mb-2">🔥 Riscaldamento & Mobilità</p>
+              <p className="body" style={{ whiteSpace: "pre-line" }}>{dayData.warmup}</p>
+            </div>
+          )}
           {dayData.exercises.map((ex) => {
+            if (ex.kind === "cardio") {
+              return (
+                <div key={ex.id || ex.name} className="card flex items-center gap-3">
+                  <span style={{ fontSize: "1.3rem" }} aria-hidden="true">🏃</span>
+                  <div className="flex-1">
+                    <p className="h2" style={{ fontSize: "1rem" }}>{ex.name}</p>
+                    <p className="meta">Cardio</p>
+                  </div>
+                  <span className="font-data" style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--ink)" }}>
+                    {ex.durationMin} min
+                  </span>
+                </div>
+              );
+            }
             const hist = ex.history || [];
             const entry = isFuture ? hist[hist.length - 1] : hist[hist.length - weeksAgo];
             return (
@@ -4776,6 +4834,13 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
               </div>
             );
           })}
+          {dayData.stretching && (
+            <div className="card">
+              <p className="label mb-1">A fine sessione</p>
+              <p className="h2 mb-2">🧘 Stretching</p>
+              <p className="body" style={{ whiteSpace: "pre-line" }}>{dayData.stretching}</p>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -10743,8 +10808,11 @@ export default function HomePreview({
     if (!supabaseProp || !userId) return;
     let cancelled = false;
     const weekDates = weekDatesFromLocal(mondayOfLocal());
-    fetchAssignedWorkouts(supabaseProp, userId, weekDates[0], weekDates[6])
-      .then(async (rows) => {
+    Promise.all([
+      fetchAssignedWorkouts(supabaseProp, userId, weekDates[0], weekDates[6]),
+      fetchWorkoutDayNotes(supabaseProp, userId, weekDates[0], weekDates[6]).catch(() => new Map()),
+    ])
+      .then(async ([rows, dayNotesByDate]) => {
         const byDate = new Map();
         rows.forEach((r) => {
           if (!byDate.has(r.date)) byDate.set(r.date, []);
@@ -10786,6 +10854,8 @@ export default function HomePreview({
             return {
               id: r.id,               // id reale della riga workout_logs, serve per salvare il log dopo
               name: r.exercise_name,
+              kind: r.kind || "strength",
+              durationMin: r.duration_min ?? null,
               sets: r.sets_count ?? 3,
               reps: r.reps_target || "—",   // prescrizione del coach (SCHEMA_v17); "—" solo se davvero non impostata
               rirTarget: r.rir_target || "—",   // prescrizione del coach (SCHEMA_v21); "—" solo se davvero non impostato
@@ -10806,7 +10876,13 @@ export default function HomePreview({
               synergists: r.synergist_targets || [],
             };
           });
-          return { label: dayRows[0].split_label || "Scheda di oggi", exercises: exercisesForDay };
+          const dayNotes = dayNotesByDate.get(date);
+          return {
+            label: dayRows[0].split_label || "Scheda di oggi",
+            warmup: dayNotes?.warmupText || "",
+            stretching: dayNotes?.stretchingText || "",
+            exercises: exercisesForDay,
+          };
         });
         if (cancelled) return;
         setAssignedWeek(week);
@@ -11170,8 +11246,8 @@ export default function HomePreview({
   // un vero "giorno N del percorso"), e mostrare "Giorno 15" a un cliente
   // vero sarebbe un dato falso, non solo un placeholder innocuo.
   const day = isRealMode
-    ? { weekday: todayWeekdayIdx, weekNumber: null, isTraining: exercises.length > 0, sessionLabel: exercises[0]?.splitLabel || "", dayNumber: null, mesociclo: null, mesocicloWeeks: null }
-    : { weekday: 0, weekNumber: 3, isTraining: isTrainingDay, sessionLabel: "Upper A — Spinta", dayNumber: 15, mesociclo: 2, mesocicloWeeks: 4 };
+    ? { weekday: todayWeekdayIdx, weekNumber: null, isTraining: exercises.length > 0, sessionLabel: exercises[0]?.splitLabel || "", dayNumber: null, mesociclo: null, mesocicloWeeks: null, warmup: weekPlan[todayWeekdayIdx]?.warmup || "", stretching: weekPlan[todayWeekdayIdx]?.stretching || "" }
+    : { weekday: 0, weekNumber: 3, isTraining: isTrainingDay, sessionLabel: "Upper A — Spinta", dayNumber: 15, mesociclo: 2, mesocicloWeeks: 4, warmup: "", stretching: "" };
 
   // Il proprietario (danielmarsini@coach.com) vede sempre tutto sbloccato:
   // non è un cliente, non ha un piano da rispettare, ogni gate va bypassato.
