@@ -78,7 +78,7 @@ const STATUS_META = {
 import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
-  assignNutritionTarget, fetchBothNutritionTargets, saveWeekSupplements, computeTrainingCompliance,
+  assignNutritionTarget, fetchBothNutritionTargets, saveWeekDiet, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance,
   computeBatchTrainingCompliance, computeBatchRecoveryCompliance, computeBatchNutritionCompliance,
   notifyClientPlanChange, fetchClientPauses,
@@ -351,6 +351,27 @@ function dayMacros(meals) {
     const m = mealMacros(meal);
     return { p: acc.p + m.p, c: acc.c + m.c, f: acc.f + m.f, kcal: acc.kcal + m.kcal };
   }, { p: 0, c: 0, f: 0, kcal: 0 });
+}
+
+// Converte i pasti dell'editor (foodKey/customName + grams, vivi contro
+// FOOD_DB) in una SNAPSHOT già calcolata da salvare su diet_plans — il
+// cliente legge kcal/macro già pronti dal server, che non ha FOOD_DB: senza
+// questa conversione "Salva modifiche" scriverebbe un riferimento che
+// lato cliente non si potrebbe più risolvere.
+function snapshotMeals(meals) {
+  return (meals || []).map((m) => {
+    const tot = mealMacros(m);
+    return {
+      name: m.name,
+      time: m.time,
+      items: (m.items || []).map((it) => ({
+        name: it.foodKey || it.customName || "Alimento",
+        grams: Math.round(Number(it.grams) || 0),
+        kcal: Math.round(itemMacros(it).kcal),
+      })),
+      tot: { kcal: Math.round(tot.kcal), p: Math.round(tot.p), c: Math.round(tot.c), f: Math.round(tot.f) },
+    };
+  });
 }
 
 /* Struttura libera "giorni-orari con nomi alimenti e quantità": non più 6
@@ -2151,11 +2172,11 @@ function WeekDietEditor({ week, onChange, client }) {
   const [profile, setProfile] = useState("ON");
   const current = week.diet[profile];
 
-  // Scrive i target ON/OFF su nutrition_targets: stessa tabella che
-  // fetchBothNutritionTargets legge lato Home cliente. A differenza
-  // dell'allenamento, qui non c'è (ancora) un fetch reale in lettura per
-  // quest'editor — week.diet resta lo stato locale di sempre, "Salva
-  // modifiche" si limita a spingere su Supabase i due target correnti.
+  // Scrive i target ON/OFF su nutrition_targets (fetchBothNutritionTargets
+  // legge lato Home cliente) E i pasti stessi su diet_plans (snapshotMeals →
+  // saveWeekDiet, fetchDietPlan legge lato Home cliente per il tab "Dieta
+  // Tipo"). week.diet resta lo stato locale di sempre per quest'editor —
+  // "Salva modifiche" spinge entrambe le tabelle su Supabase in un colpo solo.
   const [dietSaving, setDietSaving] = useState(false);
   const [dietError, setDietError] = useState("");
   const [dietSaved, setDietSaved] = useState(false);
@@ -2172,6 +2193,10 @@ function WeekDietEditor({ week, onChange, client }) {
           kcal: kcalFromMacros(t.p, t.c, t.f), protein: t.p, carbs: t.c, fat: t.f,
         });
       }));
+      await saveWeekDiet(supabase, coachId, client.id, {
+        on: snapshotMeals(week.diet.ON.meals),
+        off: snapshotMeals(week.diet.OFF.meals),
+      });
       setDietSaved(true);
       setTimeout(() => setDietSaved(false), 2500);
       notifyClientPlanChange(supabase, client.id, {
