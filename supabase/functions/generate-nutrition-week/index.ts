@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-5",
-      max_tokens: 4000,
+      max_tokens: 8000,
       system: buildSystemPrompt(foods.map((f) => f.name)),
       messages: [{
         role: "user",
@@ -116,7 +116,13 @@ Deno.serve(async (req) => {
 
     const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("risposta senza JSON valido");
+    if (!match) {
+      throw new Error(
+        response.stop_reason === "max_tokens"
+          ? "risposta troncata (troppo lunga) — riprova con un'istruzione più semplice o un solo profilo ON/OFF alla volta"
+          : "risposta senza JSON valido",
+      );
+    }
     const parsed = JSON.parse(match[0]);
     if (!isValidProfile(parsed.ON, foodNameSet) || !isValidProfile(parsed.OFF, foodNameSet)) {
       throw new Error("struttura pasti non valida");
