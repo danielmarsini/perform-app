@@ -78,7 +78,8 @@ const STATUS_META = {
 import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
-  assignNutritionTarget, fetchBothNutritionTargets, saveWeekDiet, saveWeekSupplements, computeTrainingCompliance,
+  assignNutritionTarget, fetchBothNutritionTargets, applyNutritionProgramToDateRange, fetchNutritionProgramsRange,
+  saveWeekDiet, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance,
   computeBatchTrainingCompliance, computeBatchRecoveryCompliance, computeBatchNutritionCompliance,
   notifyClientPlanChange, fetchClientPauses,
@@ -2673,6 +2674,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [applyTemplateOpen, setApplyTemplateOpen] = useState(false);
   const [mesocicloCalendarOpen, setMesocicloCalendarOpen] = useState(false);
+  const [nutritionCalendarOpen, setNutritionCalendarOpen] = useState(false);
   const loadTemplates = useCallback(() => {
     if (!isRealMode) return;
     fetchWorkoutTemplates(supabase).then(setTemplates).catch((err) => console.error("PERFORM: errore caricamento template", err));
@@ -3112,12 +3114,13 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         <p className="c-label">Settimana selezionata: {selOffset === 0 ? "corrente" : selOffset > 0 ? `+${selOffset} da oggi` : `${Math.abs(selOffset)} fa (storico)`}</p>
         <div className="flex items-center gap-2 flex-wrap">
           {/* "Clona Settimana" restava l'unico modo di programmare
-              l'allenamento nel tempo: avanzare di 7 giorni alla volta,
-              clonando, mai preciso su un intervallo. Per l'allenamento è
-              sostituito dal Calendario mesociclo qui sotto (stesso principio
-              di "Applica split" ma sulla bozza corrente, non su uno split
-              salvato) — resta invariato per dieta/integratori. */}
-          {!(section === "allenamento" && isRealMode) && (
+              l'allenamento/l'alimentazione nel tempo: avanzare di 7 giorni
+              alla volta, clonando, mai preciso su un intervallo. Per
+              allenamento e alimentazione è sostituito dal Calendario
+              mesociclo qui sotto (stesso principio di "Applica split" ma
+              sulla bozza corrente, non su uno split salvato) — resta
+              invariato solo per gli integratori. */}
+          {!((section === "allenamento" || section === "dieta") && isRealMode) && (
             <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS || workoutBusy} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
               <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : pillDateLabel(selOffset + 1)}
             </button>
@@ -3150,6 +3153,12 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
               </button>
             </>
           )}
+          {section === "dieta" && isRealMode && (
+            <button onClick={() => setNutritionCalendarOpen(true)}
+              className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
+              📅 Calendario mesociclo
+            </button>
+          )}
         </div>
       </div>
       {cloned && (
@@ -3177,6 +3186,17 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
             fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name])
               .then(setRealWorkout)
               .catch((err) => console.error("PERFORM: errore ricarica allenamento dopo calendario mesociclo", err));
+          }} />
+      )}
+      {nutritionCalendarOpen && (
+        <NutritionMesocicloCalendarModal clientId={client.id} clientName={client.name}
+          coachId={coachId} supabase={supabase}
+          targetOn={weekForEditor.diet.ON.target} targetOff={weekForEditor.diet.OFF.target}
+          onClose={() => setNutritionCalendarOpen(false)}
+          onApplied={() => {
+            fetchBothNutritionTargets(supabase, client.id)
+              .then(({ targetOn, targetOff }) => setRealDietTargets({ ON: targetOn, OFF: targetOff }))
+              .catch((err) => console.error("PERFORM: errore ricarica alimentazione dopo calendario mesociclo", err));
           }} />
       )}
       {libraryManagerOpen && (
@@ -3558,6 +3578,182 @@ function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase,
           <div className="flex gap-2">
             <button onClick={onClose} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Chiudi</button>
             <button onClick={apply} disabled={busy || dayCount < 1}
+              className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+              {busy ? "Programmo…" : "Programma"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* Alimentazione: stesso principio di "Calendario mesociclo" per l'allenamento,
+   ma qui — a differenza di un intervallo cieco a due date — la griglia
+   mensile mostra a colpo d'occhio la copertura reale (SCHEMA_v86,
+   nutrition_programs): verde = giorno già programmato, blu = giorno
+   passato mai programmato, rosso = giorno futuro/oggi ancora senza
+   programmazione, come richiesto esplicitamente. Applica sempre la bozza
+   ON/OFF corrente dell'editor (targetOn/targetOff, non ancora
+   necessariamente salvata) sull'intervallo scelto toccando due giorni.
+   A differenza di nutrition_targets (log a tempo indeterminato), qui la
+   programmazione termina davvero a end_date — vedi fetchBothNutritionTargets
+   in coachingData.js, che controlla prima nutrition_programs e solo poi
+   ripiega sul vecchio sistema. */
+function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supabase, targetOn, targetOff, onClose, onApplied }) {
+  const todayISO = toLocalISODate();
+  const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+  const [programs, setPrograms] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selStart, setSelStart] = useState(null);
+  const [selEnd, setSelEnd] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [result, setResult] = useState(null);
+
+  const monthLabel = monthCursor.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+
+  const gridCells = useMemo(() => {
+    const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
+    const firstDow = (new Date(y, m, 1).getDay() + 6) % 7; // lunedì=0
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < firstDow; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(toLocalISODate(new Date(y, m, d)));
+    return cells;
+  }, [monthCursor]);
+
+  const loadPrograms = useCallback(() => {
+    setLoading(true);
+    const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
+    const fromISO = toLocalISODate(new Date(y, m, 1));
+    const toISO = toLocalISODate(new Date(y, m + 1, 0));
+    fetchNutritionProgramsRange(supabase, clientId, fromISO, toISO)
+      .then(setPrograms)
+      .catch((err) => console.error("PERFORM: errore lettura programmazione alimentazione", err))
+      .finally(() => setLoading(false));
+  }, [supabase, clientId, monthCursor]);
+  useEffect(() => { loadPrograms(); }, [loadPrograms]);
+
+  const isCovered = (dateISO) => programs.some((p) => p.start_date <= dateISO && p.end_date >= dateISO);
+  const inSelection = (dateISO) => selStart && dateISO >= selStart && dateISO <= (selEnd || selStart);
+
+  const handleDayClick = (dateISO) => {
+    setResult(null);
+    if (!selStart || selEnd) {
+      setSelStart(dateISO);
+      setSelEnd(null);
+    } else if (dateISO < selStart) {
+      setSelStart(dateISO);
+    } else {
+      setSelEnd(dateISO);
+    }
+  };
+
+  const dayCount = selStart
+    ? Math.round((new Date(`${selEnd || selStart}T00:00:00`) - new Date(`${selStart}T00:00:00`)) / 86400000) + 1
+    : 0;
+
+  const kcalOn = targetOn ? kcalFromMacros(targetOn.p, targetOn.c, targetOn.f) : 0;
+  const kcalOff = targetOff ? kcalFromMacros(targetOff.p, targetOff.c, targetOff.f) : 0;
+  const hasTargets = kcalOn > 0 && kcalOff > 0;
+
+  const apply = async () => {
+    if (!selStart || !hasTargets) return;
+    const startDate = selStart;
+    const endDate = selEnd || selStart;
+    setBusy(true);
+    setErr("");
+    try {
+      await applyNutritionProgramToDateRange(supabase, clientId, startDate, endDate,
+        { kcal: kcalOn, p: targetOn.p, c: targetOn.c, f: targetOn.f },
+        { kcal: kcalOff, p: targetOff.p, c: targetOff.c, f: targetOff.f },
+        coachId);
+      setResult({ dayCount });
+      setSelStart(null);
+      setSelEnd(null);
+      loadPrograms();
+      onApplied();
+    } catch (e) {
+      console.error("PERFORM: errore programmazione alimentazione", e);
+      setErr(e?.message || "Non sono riuscito a programmare l'alimentazione.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const shiftMonth = (delta) => setMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() + delta, 1));
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "90vh", overflowY: "auto" }}>
+          <p className="c-heading font-display font-bold mb-1">📅 Calendario mesociclo</p>
+          <p className="c-muted text-xs mb-3">
+            Programma le calorie ON/OFF correnti per {clientName} su un intervallo preciso: tocca il giorno di inizio e quello di fine. Superata la data di fine la programmazione termina davvero, a differenza del vecchio sistema.
+          </p>
+
+          {!hasTargets && (
+            <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
+              Imposta prima le macro ON e OFF qui sotto: senza target non c'è nulla da programmare.
+            </p>
+          )}
+
+          <div className="flex items-center justify-between mb-2">
+            <button onClick={() => shiftMonth(-1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center">‹</button>
+            <p className="c-label capitalize">{monthLabel}</p>
+            <button onClick={() => shiftMonth(1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center">›</button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {["L", "M", "M", "G", "V", "S", "D"].map((lab, i) => (
+              <p key={i} className="c-muted text-center text-[10px] font-semibold">{lab}</p>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1 mb-3">
+            {gridCells.map((dateISO, i) => {
+              if (!dateISO) return <div key={i} />;
+              const covered = isCovered(dateISO);
+              const isPast = dateISO < todayISO;
+              const bg = covered ? "#10B981" : isPast ? "#3B82F6" : "#EF4444";
+              const selected = inSelection(dateISO);
+              return (
+                <button key={i} onClick={() => handleDayClick(dateISO)}
+                  className="aspect-square rounded-md flex items-center justify-center text-[11px] font-data font-semibold"
+                  style={{
+                    backgroundColor: bg, color: "#FFFFFF",
+                    outline: selected ? "2px solid #111111" : dateISO === todayISO ? "2px solid #C5A059" : "none",
+                    outlineOffset: -2,
+                  }}>
+                  {Number(dateISO.slice(-2))}
+                </button>
+              );
+            })}
+          </div>
+          {loading && <p className="c-muted text-[11px] mb-2">Carico programmazione…</p>}
+
+          <div className="flex items-center gap-3 mb-3 flex-wrap">
+            <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#10B981" }} /> programmato</span>
+            <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#3B82F6" }} /> passato</span>
+            <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#EF4444" }} /> da programmare</span>
+          </div>
+
+          <p className="c-muted text-[11px] mb-4">
+            {selStart
+              ? `${selStart}${selEnd ? ` → ${selEnd} (${dayCount} ${dayCount === 1 ? "giorno" : "giorni"})` : " · tocca il giorno di fine (o lo stesso per un solo giorno)"}`
+              : "Tocca un giorno per iniziare la selezione."}
+          </p>
+
+          {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
+          {result && (
+            <p className="text-xs mb-3 font-semibold" style={{ color: "#047857" }}>
+              Programmato per {result.dayCount} {result.dayCount === 1 ? "giorno" : "giorni"}.
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={onClose} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Chiudi</button>
+            <button onClick={apply} disabled={busy || !selStart || !hasTargets}
               className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
               {busy ? "Programmo…" : "Programma"}
             </button>
