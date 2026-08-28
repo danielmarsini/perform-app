@@ -530,7 +530,7 @@ export async function computeBatchRecoveryCompliance(supabase, userIds) {
 export async function fetchNutritionLogsForDate(supabase, userId, dateISO) {
   const { data, error } = await supabase
     .from("nutrition_logs")
-    .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, created_at")
+    .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, sodium_mg, potassium_mg, iron_mg, calcium_mg, magnesium_mg, created_at")
     .eq("user_id", userId)
     .eq("date", dateISO)
     .order("created_at", { ascending: true });
@@ -546,7 +546,7 @@ export async function fetchNutritionLogsForDate(supabase, userId, dateISO) {
 export async function fetchAllNutritionLogsForExport(supabase, userId, fromISO, toISO) {
   const { data, error } = await supabase
     .from("nutrition_logs")
-    .select("date, meal_slot, name, grams, kcal, protein, carbs, fat")
+    .select("date, meal_slot, name, grams, kcal, protein, carbs, fat, sodium_mg, potassium_mg, iron_mg, calcium_mg, magnesium_mg")
     .eq("user_id", userId)
     .gte("date", fromISO)
     .lte("date", toISO)
@@ -556,7 +556,13 @@ export async function fetchAllNutritionLogsForExport(supabase, userId, fromISO, 
 }
 
 // Aggiunge UN alimento a un pasto in una data. `item` = {name, grams, kcal,
-// p, c, f} — stessa forma già usata lato client per il preview del food.
+// p, c, f, na, k, fe, ca, mg} — stessa forma già usata lato client per il
+// preview del food (na/k/fe/ca/mg = sodio/potassio/ferro/calcio/magnesio in
+// mg, già scalati sui grammi). BUG PRESO: la scrittura includeva solo i 4
+// macro, mai i micronutrienti — computeMicroTotals (05_HomeDashboard.jsx) li
+// somma dai record già in nutrition_logs, quindi ogni ricarica (giorno dopo,
+// nuova sessione) li rileggeva sempre a 0 qualunque cosa fosse stata
+// registrata. La tabella non aveva nemmeno le colonne (SCHEMA_v85).
 export async function addNutritionLogItem(supabase, userId, dateISO, mealSlot, item) {
   const { data, error } = await supabase
     .from("nutrition_logs")
@@ -564,8 +570,10 @@ export async function addNutritionLogItem(supabase, userId, dateISO, mealSlot, i
       user_id: userId, date: dateISO, meal_slot: mealSlot,
       name: item.name, grams: item.grams ?? null,
       kcal: item.kcal || 0, protein: item.p || 0, carbs: item.c || 0, fat: item.f || 0,
+      sodium_mg: item.na || 0, potassium_mg: item.k || 0, iron_mg: item.fe || 0,
+      calcium_mg: item.ca || 0, magnesium_mg: item.mg || 0,
     })
-    .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, created_at")
+    .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, sodium_mg, potassium_mg, iron_mg, calcium_mg, magnesium_mg, created_at")
     .single();
   if (error) throw error;
   return data;
@@ -578,13 +586,15 @@ export async function removeNutritionLogItem(supabase, logId) {
   if (error) throw error;
 }
 
-// Corregge la quantità (grammi + macro già riscalate dal chiamante, vedi
-// scaleFoodItem in 05_HomeDashboard.jsx) di UN alimento già nel diario —
-// prima l'unico modo per cambiare una quantità sbagliata o rivista era
-// cancellare la riga e ricercare/reinserire tutto da capo.
+// Corregge la quantità (grammi + macro/micronutrienti già riscalati dal
+// chiamante, vedi scaleFoodItem in 05_HomeDashboard.jsx) di UN alimento già
+// nel diario — prima l'unico modo per cambiare una quantità sbagliata o
+// rivista era cancellare la riga e ricercare/reinserire tutto da capo.
 export async function updateNutritionLogItem(supabase, logId, patch) {
   const { error } = await supabase.from("nutrition_logs").update({
     grams: patch.grams, kcal: patch.kcal, protein: patch.p, carbs: patch.c, fat: patch.f,
+    sodium_mg: patch.na || 0, potassium_mg: patch.k || 0, iron_mg: patch.fe || 0,
+    calcium_mg: patch.ca || 0, magnesium_mg: patch.mg || 0,
   }).eq("id", logId);
   if (error) throw error;
 }
