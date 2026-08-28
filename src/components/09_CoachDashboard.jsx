@@ -1745,12 +1745,30 @@ function WeekWorkoutEditor({ week, onChange, client }) {
     if (key in fieldDrafts) updateEx(i, field, fieldDrafts[key]);
     setFieldDrafts((d) => { const next = { ...d }; delete next[key]; return next; });
   };
-  const toggleCustom = (i) => setDay((d) => ({
+  // Applica più campi insieme in un colpo solo (serve per il cambio
+  // esercizio: azzerare muscleTarget/synergists SOLO quando l'identità
+  // dell'esercizio cambia davvero, così i valori mostrati — con fallback
+  // alla libreria condivisa più sotto — non restano quelli del precedente).
+  const setExFields = (i, patch) => setDay((d) => ({
     ...d,
-    exercises: d.exercises.map((e, j) => (j === i ? { ...e, custom: !e.custom, name: e.custom ? EX_NAMES[0] : "" } : e)),
+    exercises: d.exercises.map((e, j) => (j === i ? { ...e, ...patch } : e)),
   }));
+  const toggleCustom = (i) => {
+    const exId = day?.exercises?.[i]?.id;
+    if (exId) clearExDrafts(exId);
+    setDay((d) => ({
+      ...d,
+      exercises: d.exercises.map((e, j) => (j === i ? { ...e, custom: !e.custom, name: e.custom ? EX_NAMES[0] : "", muscleTarget: undefined, synergists: undefined } : e)),
+    }));
+  };
   const removeEx = (i) => setDay((d) => ({ ...d, exercises: d.exercises.filter((_, j) => j !== i) }));
-  const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, kind: "strength", sets: 3, reps: "8-10", rest: 120, rirTarget: "", technique: "Nessuna" }] }));
+  // Serie/Reps/Recupero partono VUOTI (mai un numero prestabilito da
+  // cancellare prima di scrivere il proprio) — richiesta esplicita. RIR
+  // target parte a "0": il coach lavora quasi sempre a cedimento, gli altri
+  // valori (1-4, in buffer) li imposta lui a mano sui pochi esercizi dove
+  // servono — meglio un default sbagliato raro che doverlo scegliere ogni
+  // volta. Tecnica resta "Nessuna" (invariato).
+  const addEx = () => setDay((d) => ({ ...d, exercises: [...d.exercises, { id: uid(), name: EX_NAMES[0], custom: false, kind: "strength", sets: "", reps: "", rest: "", rirTarget: "0", technique: "Nessuna" }] }));
   // Cardio (SCHEMA_v84): il coach lo aggiunge sempre a mano, mai l'AI — solo
   // nome libero + minuti, nessuna serie/carico da monitorare. Stesso array
   // "exercises" degli esercizi di forza (appare come una voce in più nella
@@ -1813,6 +1831,20 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   // constraint — questo secondo target esiste solo per comporre "direct" al
   // salvataggio in libreria, non tocca ex.muscleTarget).
   const [secondMuscleDrafts, setSecondMuscleDrafts] = useState({}); // {exId: nome muscolo DB o ""}
+  // Ripulisce tutte le bozze/lo stato di feedback legati a un esercizio —
+  // usata quando l'IDENTITÀ dell'esercizio in una riga cambia (nome diverso
+  // scelto dal menu, o passaggio libreria/libero): senza questo, valori del
+  // vecchio esercizio (2° distretto, bozza guida, "✓ Salvato") restavano
+  // visibili addosso al nuovo esercizio appena scelto.
+  const clearExDrafts = (exId) => {
+    setSecondMuscleDrafts((d) => { if (!(exId in d)) return d; const next = { ...d }; delete next[exId]; return next; });
+    setGuideDrafts((d) => { if (!(exId in d)) return d; const next = { ...d }; delete next[exId]; return next; });
+    setSavedToLib((s) => { if (!(exId in s)) return s; const next = { ...s }; delete next[exId]; return next; });
+  };
+  const handleNameChange = (i, exId, value) => {
+    clearExDrafts(exId);
+    setExFields(i, { name: value, muscleTarget: undefined, synergists: undefined });
+  };
   // BUG PRESO: prima non c'era nessun try/catch — saveExerciseGuide non
   // rilanciava mai un errore reale (solo console.error), quindi questa
   // funzione marcava SEMPRE "✓ Salvato in libreria" anche quando la
@@ -1820,17 +1852,22 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   // dalla libreria condivisa al prossimo caricamento senza che il coach
   // avesse modo di saperlo. Ora un fallimento reale mostra un errore
   // visibile invece di un falso successo.
-  const saveExerciseToLib = async (ex) => {
-    if (!isRealMode || !ex.name?.trim() || !ex.muscleTarget) return;
+  // "eff" (valori effettivi mostrati in UI, vedi il render della riga più
+  // sotto): per un esercizio scelto da libreria, ex.muscleTarget/synergists
+  // restano intoccati finché il coach non li modifica davvero — l'UI mostra
+  // già il valore corrente della libreria come fallback, quindi qui si
+  // salvano SEMPRE i valori effettivi (mai solo il campo ex nudo, altrimenti
+  // un esercizio di libreria non ancora toccato non avrebbe nulla da
+  // salvare).
+  const saveExerciseToLib = async (ex, eff) => {
+    if (!isRealMode || !ex.name?.trim() || !eff.muscleTarget) return;
     setSaveLibError((s) => ({ ...s, [ex.id]: "" }));
-    const secondMuscle = secondMuscleDrafts[ex.id];
-    const direct = [DB_MUSCLE_TO_CHART[ex.muscleTarget] || ex.muscleTarget];
-    if (secondMuscle) direct.push(DB_MUSCLE_TO_CHART[secondMuscle] || secondMuscle);
-    const indirect = (ex.synergists || []).map((m) => DB_MUSCLE_TO_CHART[m] || m);
-    const guide = guideDrafts[ex.id] || {};
+    const direct = [DB_MUSCLE_TO_CHART[eff.muscleTarget] || eff.muscleTarget];
+    if (eff.secondMuscle) direct.push(DB_MUSCLE_TO_CHART[eff.secondMuscle] || eff.secondMuscle);
+    const indirect = (eff.synergists || []).map((m) => DB_MUSCLE_TO_CHART[m] || m);
     try {
       await saveExerciseGuide(supabase, ex.name.trim(), direct, indirect,
-        { howTo: guide.howTo, avoid: guide.avoid, videoUrl: guide.videoUrl }, coachId);
+        { howTo: eff.howTo, avoid: eff.avoid, videoUrl: eff.videoUrl }, coachId);
       reloadExerciseLib();
       setSavedToLib((s) => ({ ...s, [ex.id]: true }));
     } catch (err) {
@@ -1927,8 +1964,23 @@ function WeekWorkoutEditor({ week, onChange, client }) {
           </label>
 
           <div className="space-y-2.5 mb-3">
-            {day.exercises.map((ex, i) => (
-              ex.kind === "cardio" ? (
+            {day.exercises.map((ex, i) => {
+              // Valori effettivi mostrati/salvati per questa riga: per un
+              // esercizio scelto da libreria (custom === false) partono dalla
+              // libreria condivisa finché il coach non li tocca — non sono mai
+              // "vuoti e da rifare" come prima, un esercizio già in libreria
+              // mostra subito cosa c'è già scritto, pronto da correggere.
+              const libEntry = exerciseLib[(ex.name || "").trim()];
+              const libDirect0 = libEntry?.direct?.[0] ? (EXERCISE_LIB_MUSCLE_TO_DB[libEntry.direct[0]] || libEntry.direct[0]) : "";
+              const libDirect1 = libEntry?.direct?.[1] ? (EXERCISE_LIB_MUSCLE_TO_DB[libEntry.direct[1]] || libEntry.direct[1]) : "";
+              const libIndirect = (libEntry?.indirect || []).map((m) => EXERCISE_LIB_MUSCLE_TO_DB[m] || m);
+              const effMuscleTarget = ex.muscleTarget ?? libDirect0;
+              const effSecondMuscle = secondMuscleDrafts[ex.id] ?? libDirect1;
+              const effSynergists = ex.synergists ?? libIndirect;
+              const effHowTo = guideDrafts[ex.id]?.howTo ?? ex.howTo ?? libEntry?.howTo ?? "";
+              const effAvoid = guideDrafts[ex.id]?.avoid ?? ex.avoid ?? libEntry?.avoid ?? "";
+              const effVideoUrl = guideDrafts[ex.id]?.videoUrl ?? ex.videoUrl ?? libEntry?.videoUrl ?? "";
+              return ex.kind === "cardio" ? (
                 <div key={ex.id} ref={reorder.setRowRef(i)} style={{ ...reorder.rowStyle(i) }} className="t-inner px-3 py-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0" style={{ ...reorder.handleProps(i).style, color: "var(--ink-tertiary)" }}>
@@ -1964,7 +2016,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                     <input value={ex.name} onChange={(e) => updateEx(i, "name", e.target.value)} placeholder="Scrivi il nome dell'esercizio…"
                       className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[180px]" />
                   ) : (
-                    <select value={ex.name} onChange={(e) => updateEx(i, "name", e.target.value)} className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[180px]">
+                    <select value={ex.name} onChange={(e) => handleNameChange(i, ex.id, e.target.value)} className="t-input text-sm rounded-md px-2 py-1.5 flex-1 min-w-[180px]">
                       {EX_NAMES_BY_MUSCLE.map(([muscle, names]) => (
                         <optgroup key={muscle} label={muscle}>
                           {names.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -2011,50 +2063,55 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                       {INTENSITY_TECHNIQUES.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </label>
-                  {ex.custom && (
-                    <label className="flex-1 min-w-[160px]">
-                      <span className="c-label block mb-1">Distretto muscolare (diretto)</span>
-                      <select value={ex.muscleTarget || ""}
-                        onChange={(e) => {
-                          updateEx(i, "muscleTarget", e.target.value);
-                          if (e.target.value === secondMuscleDrafts[ex.id]) setSecondMuscleDrafts((d) => ({ ...d, [ex.id]: "" }));
-                        }}
-                        className="t-input w-full text-sm rounded-md px-2 py-1.5">
-                        <option value="">— scegli —</option>
-                        {MUSCLE_TARGETS.map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                    </label>
-                  )}
-                  {ex.custom && ex.muscleTarget && (
+                  {/* Distretto muscolare/sinergici/guida esercizio: SEMPRE
+                      visibili, non solo per gli esercizi "liberi" come prima
+                      — un esercizio scelto da libreria parte già coi valori
+                      correnti della libreria condivisa (eff*, vedi sopra),
+                      modificabili qui stesso senza dover riscrivere tutto da
+                      capo. Toccare questi campi modifica solo questa riga:
+                      per farlo valere per l'esercizio in libreria (tutti i
+                      clienti futuri) va premuto "Aggiorna esercizio" sotto. */}
+                  <label className="flex-1 min-w-[160px]">
+                    <span className="c-label block mb-1">Distretto muscolare (diretto)</span>
+                    <select value={effMuscleTarget}
+                      onChange={(e) => {
+                        setExFields(i, { muscleTarget: e.target.value });
+                        if (e.target.value === effSecondMuscle) setSecondMuscleDrafts((d) => ({ ...d, [ex.id]: "" }));
+                      }}
+                      className="t-input w-full text-sm rounded-md px-2 py-1.5">
+                      <option value="">— scegli —</option>
+                      {MUSCLE_TARGETS.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </label>
+                  {effMuscleTarget && (
                     <label className="flex-1 min-w-[160px]">
                       <span className="c-label block mb-1">2° distretto al 100% (opzionale)</span>
-                      <select value={secondMuscleDrafts[ex.id] || ""}
+                      <select value={effSecondMuscle}
                         onChange={(e) => setSecondMuscleDrafts((d) => ({ ...d, [ex.id]: e.target.value }))}
                         className="t-input w-full text-sm rounded-md px-2 py-1.5">
                         <option value="">— nessuno —</option>
-                        {MUSCLE_TARGETS.filter((m) => m !== ex.muscleTarget).map((m) => <option key={m} value={m}>{m}</option>)}
+                        {MUSCLE_TARGETS.filter((m) => m !== effMuscleTarget).map((m) => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </label>
                   )}
-                  {ex.custom && ex.muscleTarget && (
+                  {effMuscleTarget && (
                     <div className="w-full">
-                      {secondMuscleDrafts[ex.id] && (
+                      {effSecondMuscle && (
                         <p className="c-muted text-[11px] mb-1.5">
-                          Salvato in libreria con {ex.muscleTarget} + {secondMuscleDrafts[ex.id]} entrambi al 100% — 1 serie vale come 1 serie allenante per ciascuno dei due.
+                          Salvato in libreria con {effMuscleTarget} + {effSecondMuscle} entrambi al 100% — 1 serie vale come 1 serie allenante per ciascuno dei due.
                         </p>
                       )}
                       <span className="c-label block mb-1">Muscoli sinergici (indiretto, opzionale)</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {MUSCLE_TARGETS.filter((m) => m !== ex.muscleTarget && m !== secondMuscleDrafts[ex.id]).map((m) => {
-                          const active = (ex.synergists || []).includes(m);
+                        {MUSCLE_TARGETS.filter((m) => m !== effMuscleTarget && m !== effSecondMuscle).map((m) => {
+                          const active = effSynergists.includes(m);
                           return (
                             <button
                               key={m}
                               type="button"
                               onClick={() => {
-                                const cur = ex.synergists || [];
-                                const next = active ? cur.filter((x) => x !== m) : [...cur, m];
-                                updateEx(i, "synergists", next);
+                                const next = active ? effSynergists.filter((x) => x !== m) : [...effSynergists, m];
+                                setExFields(i, { synergists: next });
                               }}
                               // BUG PRESO: text-white fisso su bg-[var(--ink)] — --ink è scuro in
                               // tema chiaro ma CHIARO in tema scuro (vedi DesignSystem, File 4), quindi
@@ -2080,44 +2137,47 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                       <div className="w-full mt-3 space-y-2">
                         <label className="block">
                           <span className="c-label block mb-1">Come si esegue (opzionale)</span>
-                          <textarea value={guideDrafts[ex.id]?.howTo ?? ex.howTo ?? ""} rows={2}
+                          <textarea value={effHowTo} rows={2}
                             onChange={(e) => updateGuideDraft(ex.id, "howTo", e.target.value)}
                             placeholder="Setup, esecuzione, respirazione..."
                             className="t-input w-full text-sm rounded-md px-2 py-1.5" />
                         </label>
                         <label className="block">
                           <span className="c-label block mb-1">Cosa evitare (opzionale)</span>
-                          <textarea value={guideDrafts[ex.id]?.avoid ?? ex.avoid ?? ""} rows={2}
+                          <textarea value={effAvoid} rows={2}
                             onChange={(e) => updateGuideDraft(ex.id, "avoid", e.target.value)}
                             placeholder="Errori tecnici comuni da correggere..."
                             className="t-input w-full text-sm rounded-md px-2 py-1.5" />
                         </label>
                         <label className="block">
                           <span className="c-label block mb-1">Link video esecuzione (opzionale)</span>
-                          <input type="url" value={guideDrafts[ex.id]?.videoUrl ?? ex.videoUrl ?? ""}
+                          <input type="url" value={effVideoUrl}
                             onChange={(e) => updateGuideDraft(ex.id, "videoUrl", e.target.value)}
                             placeholder="https://..."
                             className="t-input w-full text-sm rounded-md px-2 py-1.5" />
                         </label>
                       </div>
 
-                      <button type="button" onClick={() => saveExerciseToLib(ex)}
+                      <button type="button"
+                              onClick={() => saveExerciseToLib(ex, { muscleTarget: effMuscleTarget, secondMuscle: effSecondMuscle, synergists: effSynergists, howTo: effHowTo, avoid: effAvoid, videoUrl: effVideoUrl })}
                               className="c-ghost px-2.5 py-1.5 rounded-md text-[11px] font-data uppercase mt-2 flex items-center gap-1">
-                        {savedToLib[ex.id] ? "✓ Salvato in libreria" : "💾 Salva in libreria"}
+                        {savedToLib[ex.id] ? "✓ Salvato" : libEntry ? "🔄 Aggiorna esercizio" : "💾 Salva in libreria"}
                       </button>
                       {saveLibError[ex.id] ? (
                         <p className="text-[10px] mt-1" style={{ color: "#B91C1C" }}>{saveLibError[ex.id]}</p>
                       ) : (
                         <p className="c-muted text-[10px] mt-1">
-                          Salvalo dopo aver scelto i muscoli: la prossima volta compare già nel menu, per qualunque cliente — mai più da riscrivere.
+                          {libEntry
+                            ? "Aggiorna la libreria condivisa: la modifica vale subito per ogni cliente a cui assegni questo esercizio."
+                            : "Salvalo dopo aver scelto i muscoli: la prossima volta compare già nel menu, per qualunque cliente — mai più da riscrivere."}
                         </p>
                       )}
                     </div>
                   )}
                 </div>
               </div>
-              )
-            ))}
+              );
+            })}
           </div>
 
           <label className="block mb-3">
