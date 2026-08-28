@@ -2672,6 +2672,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const [templates, setTemplates] = useState([]);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [applyTemplateOpen, setApplyTemplateOpen] = useState(false);
+  const [mesocicloCalendarOpen, setMesocicloCalendarOpen] = useState(false);
   const loadTemplates = useCallback(() => {
     if (!isRealMode) return;
     fetchWorkoutTemplates(supabase).then(setTemplates).catch((err) => console.error("PERFORM: errore caricamento template", err));
@@ -3110,11 +3111,23 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <p className="c-label">Settimana selezionata: {selOffset === 0 ? "corrente" : selOffset > 0 ? `+${selOffset} da oggi` : `${Math.abs(selOffset)} fa (storico)`}</p>
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS || workoutBusy} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
-            <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : pillDateLabel(selOffset + 1)}
-          </button>
+          {/* "Clona Settimana" restava l'unico modo di programmare
+              l'allenamento nel tempo: avanzare di 7 giorni alla volta,
+              clonando, mai preciso su un intervallo. Per l'allenamento è
+              sostituito dal Calendario mesociclo qui sotto (stesso principio
+              di "Applica split" ma sulla bozza corrente, non su uno split
+              salvato) — resta invariato per dieta/integratori. */}
+          {!(section === "allenamento" && isRealMode) && (
+            <button onClick={cloneToNext} disabled={selOffset >= MAX_FORWARD_WEEKS || workoutBusy} className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
+              <Copy size={14} /> Clona Settimana → {selOffset + 1 === 0 ? "OGGI" : pillDateLabel(selOffset + 1)}
+            </button>
+          )}
           {section === "allenamento" && isRealMode && (
             <>
+              <button onClick={() => setMesocicloCalendarOpen(true)} disabled={!realWorkout || realWorkout.every((d) => !d)}
+                className="c-btn px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2">
+                📅 Calendario mesociclo
+              </button>
               <button onClick={() => setSaveTemplateOpen(true)} disabled={!realWorkout || realWorkout.every((d) => !d)}
                 className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
                 💾 Salva come split
@@ -3155,6 +3168,16 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
         <ApplyTemplateModal templates={templates} clients={CLIENTS} currentClientId={client.id}
           coachId={coachId} supabase={supabase}
           onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates} />
+      )}
+      {mesocicloCalendarOpen && (
+        <MesocicloCalendarModal days={resolveDays(realWorkout || [])} clientId={client.id} clientName={client.name}
+          coachId={coachId} supabase={supabase}
+          onClose={() => setMesocicloCalendarOpen(false)}
+          onApplied={() => {
+            fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name])
+              .then(setRealWorkout)
+              .catch((err) => console.error("PERFORM: errore ricarica allenamento dopo calendario mesociclo", err));
+          }} />
       )}
       {libraryManagerOpen && (
         <ExerciseLibraryManagerModal supabase={supabase} coachId={coachId}
@@ -3450,6 +3473,93 @@ function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supa
             <button onClick={apply} disabled={busy || !templateId || selectedIds.size === 0 || dayCount < 1}
               className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
               {busy ? "Applico…" : `Applica a ${selectedIds.size}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/* Calendario mesociclo: applica la settimana ATTUALMENTE aperta
+   nell'editor (bozza corrente, non necessariamente ancora salvata con
+   "Salva") a un intervallo di date preciso per questo cliente — sostituisce
+   "Clona Settimana" per l'allenamento: niente più avanzare di 7 giorni alla
+   volta, si sceglie subito da che giorno a che giorno vale il programma,
+   anche per un mesociclo futuro o per rivederne uno passato. Stessa
+   applyWorkoutSplitToDateRange già usata da "Libreria split": qui la
+   sorgente è la bozza corrente invece di uno split salvato. */
+function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase, onClose, onApplied }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // { ok, failed, dayCount }
+  const [err, setErr] = useState("");
+
+  const today = toLocalISODate(new Date());
+  const maxDate = toLocalISODate(new Date(Date.now() + MAX_APPLY_SPLIT_DAYS_AHEAD * 86400000));
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const dayCount = Math.round((new Date(`${endDate}T00:00:00`) - new Date(`${startDate}T00:00:00`)) / 86400000) + 1;
+
+  const apply = async () => {
+    if (dayCount < 1) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const outcome = await applyWorkoutSplitToDateRange(supabase, days, [clientId], startDate, endDate, coachId);
+      setResult(outcome);
+      if (outcome.failed.length === 0) onApplied();
+    } catch (e) {
+      console.error("PERFORM: errore applicazione calendario mesociclo", e);
+      setErr(e?.message || "Non sono riuscito a programmare l'allenamento.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+          <p className="c-heading font-display font-bold mb-1">📅 Calendario mesociclo</p>
+          <p className="c-muted text-xs mb-3">
+            Programma questa scheda per {clientName} dal giorno di inizio al giorno di fine, compresi — come una prenotazione: scegli le due date, i giorni in mezzo si sistemano da soli secondo il giorno della settimana (lunedì di questa scheda → ogni lunedì del periodo, e così via).
+          </p>
+          <div className="flex items-center gap-2 mb-2">
+            <label className="flex-1">
+              <span className="c-label block mb-1">Dal giorno</span>
+              <input type="date" value={startDate} min={today} max={maxDate}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setStartDate(v);
+                  if (v > endDate) setEndDate(v);
+                }}
+                className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+            </label>
+            <label className="flex-1">
+              <span className="c-label block mb-1">Al giorno</span>
+              <input type="date" value={endDate} min={startDate} max={maxDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+            </label>
+          </div>
+          <p className="c-muted text-[11px] mb-4">
+            {dayCount > 0 ? `${dayCount} ${dayCount === 1 ? "giorno" : "giorni"}` : "intervallo non valido"}. Puoi programmare anche mesocicli futuri in anticipo, o riaprire e rivedere un intervallo passato.
+          </p>
+
+          {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
+          {result && (
+            <p className="text-xs mb-3 font-semibold" style={{ color: result.failed.length ? "#DC2626" : "#047857" }}>
+              {result.failed.length
+                ? "Non sono riuscito a programmare l'allenamento per l'intervallo scelto."
+                : `Programmato per ${result.dayCount} ${result.dayCount === 1 ? "giorno" : "giorni"}.`}
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={onClose} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Chiudi</button>
+            <button onClick={apply} disabled={busy || dayCount < 1}
+              className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
+              {busy ? "Programmo…" : "Programma"}
             </button>
           </div>
         </div>
