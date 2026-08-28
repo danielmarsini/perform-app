@@ -85,7 +85,7 @@ import {
   notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
-  fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutSplitToDateRange,
+  fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutSplitToDateRange, fetchWorkoutProgrammedDates,
   xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, EXERCISE_LIB_MUSCLE_TO_DB, resolveMuscleTarget,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
@@ -3462,33 +3462,122 @@ function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supa
   );
 }
 
+/* Griglia mensile condivisa dai due Calendario mesociclo (allenamento e
+   alimentazione), richiesta esplicita: stesso stile/colori ovunque anche se
+   il "coperto" (verde) ha una fonte diversa nei due casi (workout_logs vs
+   nutrition_programs, decisa dal chiamante via isCovered). Verde = giorno
+   già programmato, blu = giorno passato mai programmato, rosso = giorno
+   futuro/oggi ancora da programmare. Puramente presentazionale. */
+function MesocicloGrid({ monthCursor, onShiftMonth, todayISO, isCovered, selStart, selEnd, onDayClick }) {
+  const monthLabel = monthCursor.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+  const gridCells = useMemo(() => {
+    const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
+    const firstDow = (new Date(y, m, 1).getDay() + 6) % 7; // lunedì=0
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < firstDow; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(toLocalISODate(new Date(y, m, d)));
+    return cells;
+  }, [monthCursor]);
+  const inSelection = (dateISO) => selStart && dateISO >= selStart && dateISO <= (selEnd || selStart);
+  return (
+    <>
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={() => onShiftMonth(-1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center">‹</button>
+        <p className="c-label capitalize">{monthLabel}</p>
+        <button onClick={() => onShiftMonth(1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center">›</button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 mb-1">
+        {["L", "M", "M", "G", "V", "S", "D"].map((lab, i) => (
+          <p key={i} className="c-muted text-center text-[10px] font-semibold">{lab}</p>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1 mb-3">
+        {gridCells.map((dateISO, i) => {
+          if (!dateISO) return <div key={i} />;
+          const covered = isCovered(dateISO);
+          const isPast = dateISO < todayISO;
+          const bg = covered ? "#10B981" : isPast ? "#3B82F6" : "#EF4444";
+          const selected = inSelection(dateISO);
+          return (
+            <button key={i} onClick={() => onDayClick(dateISO)}
+              className="aspect-square rounded-md flex items-center justify-center text-[11px] font-data font-semibold"
+              style={{
+                backgroundColor: bg, color: "#FFFFFF",
+                outline: selected ? "2px solid #111111" : dateISO === todayISO ? "2px solid #C5A059" : "none",
+                outlineOffset: -2,
+              }}>
+              {Number(dateISO.slice(-2))}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#10B981" }} /> programmato</span>
+        <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#3B82F6" }} /> passato</span>
+        <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#EF4444" }} /> da programmare</span>
+      </div>
+    </>
+  );
+}
+
 /* Calendario mesociclo: applica la settimana ATTUALMENTE aperta
    nell'editor (bozza corrente, non necessariamente ancora salvata con
    "Salva") a un intervallo di date preciso per questo cliente — sostituisce
-   "Clona Settimana" per l'allenamento: niente più avanzare di 7 giorni alla
-   volta, si sceglie subito da che giorno a che giorno vale il programma,
-   anche per un mesociclo futuro o per rivederne uno passato. Stessa
-   applyWorkoutSplitToDateRange già usata da "Libreria split": qui la
+   "Clona Settimana" per l'allenamento. Stessa griglia colorata mensile di
+   Alimentazione (MesocicloGrid, richiesta esplicita: stesso stile), verde
+   qui = esiste già almeno un esercizio assegnato quel giorno
+   (fetchWorkoutProgrammedDates) — più due input data espliciti "Dal
+   giorno"/"Al giorno" sincronizzati con la griglia, così la selezione
+   dell'intervallo resta sempre inequivocabile anche con un solo tocco.
+   Stessa applyWorkoutSplitToDateRange già usata da "Libreria split": qui la
    sorgente è la bozza corrente invece di uno split salvato. */
 function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase, onClose, onApplied }) {
+  const todayISO = toLocalISODate();
+  const maxDateISO = toLocalISODate(new Date(Date.now() + MAX_APPLY_SPLIT_DAYS_AHEAD * 86400000));
+  const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+  const [programmedDates, setProgrammedDates] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [selStart, setSelStart] = useState(todayISO);
+  const [selEnd, setSelEnd] = useState(todayISO);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { ok, failed, dayCount }
   const [err, setErr] = useState("");
 
-  const today = toLocalISODate(new Date());
-  const maxDate = toLocalISODate(new Date(Date.now() + MAX_APPLY_SPLIT_DAYS_AHEAD * 86400000));
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
-  const dayCount = Math.round((new Date(`${endDate}T00:00:00`) - new Date(`${startDate}T00:00:00`)) / 86400000) + 1;
+  const loadProgrammed = useCallback(() => {
+    setLoading(true);
+    const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
+    const fromISO = toLocalISODate(new Date(y, m, 1));
+    const toISO = toLocalISODate(new Date(y, m + 1, 0));
+    fetchWorkoutProgrammedDates(supabase, clientId, fromISO, toISO)
+      .then(setProgrammedDates)
+      .catch((err) => console.error("PERFORM: errore lettura giorni allenamento programmati", err))
+      .finally(() => setLoading(false));
+  }, [supabase, clientId, monthCursor]);
+  useEffect(() => { loadProgrammed(); }, [loadProgrammed]);
+
+  // A differenza della griglia Alimentazione (parte "vuota", nessun default
+  // sensato per le calorie), qui selStart/selEnd restano sempre validi
+  // (default "solo oggi"): un tap ridefinisce l'estremo più vicino alla
+  // data toccata, così un solo tocco sposta subito l'intervallo invece di
+  // dover sempre toccarne due.
+  const handleDayClick = (dateISO) => {
+    setResult(null);
+    if (dateISO < selStart) { setSelStart(dateISO); }
+    else if (dateISO > selEnd) { setSelEnd(dateISO); }
+    else { setSelStart(dateISO); setSelEnd(dateISO); }
+  };
+
+  const dayCount = Math.round((new Date(`${selEnd}T00:00:00`) - new Date(`${selStart}T00:00:00`)) / 86400000) + 1;
 
   const apply = async () => {
     if (dayCount < 1) return;
     setBusy(true);
     setErr("");
     try {
-      const outcome = await applyWorkoutSplitToDateRange(supabase, days, [clientId], startDate, endDate, coachId);
+      const outcome = await applyWorkoutSplitToDateRange(supabase, days, [clientId], selStart, selEnd, coachId);
       setResult(outcome);
-      if (outcome.failed.length === 0) onApplied();
+      if (outcome.failed.length === 0) { loadProgrammed(); onApplied(); }
     } catch (e) {
       console.error("PERFORM: errore applicazione calendario mesociclo", e);
       setErr(e?.message || "Non sono riuscito a programmare l'allenamento.");
@@ -3500,26 +3589,28 @@ function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase,
   return (
     <Portal>
       <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
-        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
+        <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "90vh", overflowY: "auto" }}>
           <p className="c-heading font-display font-bold mb-1">📅 Calendario mesociclo</p>
           <p className="c-muted text-xs mb-3">
-            Programma questa scheda per {clientName} dal giorno di inizio al giorno di fine, compresi — come una prenotazione: scegli le due date, i giorni in mezzo si sistemano da soli secondo il giorno della settimana (lunedì di questa scheda → ogni lunedì del periodo, e così via).
+            Programma questa scheda per {clientName} dal giorno di inizio al giorno di fine, compresi — come una prenotazione: i giorni in mezzo si sistemano da soli secondo il giorno della settimana (lunedì di questa scheda → ogni lunedì del periodo, e così via). Tocca due giorni sulla griglia o scrivi le date qui sotto.
           </p>
+
+          <MesocicloGrid monthCursor={monthCursor} onShiftMonth={(d) => setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth() + d, 1))}
+            todayISO={todayISO} isCovered={(dateISO) => programmedDates.has(dateISO)}
+            selStart={selStart} selEnd={selEnd} onDayClick={handleDayClick} />
+          {loading && <p className="c-muted text-[11px] mb-2">Carico programmazione…</p>}
+
           <div className="flex items-center gap-2 mb-2">
             <label className="flex-1">
               <span className="c-label block mb-1">Dal giorno</span>
-              <input type="date" value={startDate} min={today} max={maxDate}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setStartDate(v);
-                  if (v > endDate) setEndDate(v);
-                }}
+              <input type="date" value={selStart} max={maxDateISO}
+                onChange={(e) => { const v = e.target.value; setSelStart(v); if (v > selEnd) setSelEnd(v); setResult(null); }}
                 className="t-input w-full text-sm rounded-md px-2.5 py-2" />
             </label>
             <label className="flex-1">
               <span className="c-label block mb-1">Al giorno</span>
-              <input type="date" value={endDate} min={startDate} max={maxDate}
-                onChange={(e) => setEndDate(e.target.value)}
+              <input type="date" value={selEnd} min={selStart} max={maxDateISO}
+                onChange={(e) => { setSelEnd(e.target.value); setResult(null); }}
                 className="t-input w-full text-sm rounded-md px-2.5 py-2" />
             </label>
           </div>
@@ -3550,17 +3641,20 @@ function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase,
 }
 
 /* Alimentazione: stesso principio di "Calendario mesociclo" per l'allenamento,
-   ma qui — a differenza di un intervallo cieco a due date — la griglia
-   mensile mostra a colpo d'occhio la copertura reale (SCHEMA_v86,
-   nutrition_programs): verde = giorno già programmato, blu = giorno
-   passato mai programmato, rosso = giorno futuro/oggi ancora senza
-   programmazione, come richiesto esplicitamente. Applica sempre la bozza
-   ON/OFF corrente dell'editor (targetOn/targetOff, non ancora
-   necessariamente salvata) sull'intervallo scelto toccando due giorni.
-   A differenza di nutrition_targets (log a tempo indeterminato), qui la
-   programmazione termina davvero a end_date — vedi fetchBothNutritionTargets
-   in coachingData.js, che controlla prima nutrition_programs e solo poi
-   ripiega sul vecchio sistema. */
+   stessa griglia colorata (MesocicloGrid) — verde = giorno già programmato
+   (SCHEMA_v86, nutrition_programs), blu = giorno passato mai programmato,
+   rosso = giorno futuro/oggi ancora senza programmazione. BUG PRESO
+   (segnalato): con la sola griglia a tap, chi toccava un solo giorno e
+   premeva subito "Programma" senza rendersi conto che serviva un secondo
+   tocco per il giorno di fine programmava un giorno alla volta credendo di
+   dover ripetere l'operazione ogni giorno — ora due input data espliciti
+   "Dal giorno"/"Al giorno", sincronizzati con la griglia, rendono sempre
+   visibile l'intervallo davvero selezionato. Applica sempre la bozza ON/OFF
+   corrente dell'editor (targetOn/targetOff, non ancora necessariamente
+   salvata). A differenza di nutrition_targets (log a tempo indeterminato),
+   qui la programmazione termina davvero a end_date — vedi
+   fetchBothNutritionTargets in coachingData.js, che controlla prima
+   nutrition_programs e solo poi ripiega sul vecchio sistema. */
 function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supabase, targetOn, targetOff, onClose, onApplied }) {
   const todayISO = toLocalISODate();
   const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
@@ -3571,18 +3665,6 @@ function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supaba
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
-
-  const monthLabel = monthCursor.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
-
-  const gridCells = useMemo(() => {
-    const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
-    const firstDow = (new Date(y, m, 1).getDay() + 6) % 7; // lunedì=0
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const cells = [];
-    for (let i = 0; i < firstDow; i++) cells.push(null);
-    for (let d = 1; d <= daysInMonth; d++) cells.push(toLocalISODate(new Date(y, m, d)));
-    return cells;
-  }, [monthCursor]);
 
   const loadPrograms = useCallback(() => {
     setLoading(true);
@@ -3597,7 +3679,6 @@ function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supaba
   useEffect(() => { loadPrograms(); }, [loadPrograms]);
 
   const isCovered = (dateISO) => programs.some((p) => p.start_date <= dateISO && p.end_date >= dateISO);
-  const inSelection = (dateISO) => selStart && dateISO >= selStart && dateISO <= (selEnd || selStart);
 
   const handleDayClick = (dateISO) => {
     setResult(null);
@@ -3643,15 +3724,13 @@ function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supaba
     }
   };
 
-  const shiftMonth = (delta) => setMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() + delta, 1));
-
   return (
     <Portal>
       <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
         <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "90vh", overflowY: "auto" }}>
           <p className="c-heading font-display font-bold mb-1">📅 Calendario mesociclo</p>
           <p className="c-muted text-xs mb-3">
-            Programma le calorie ON/OFF correnti per {clientName} su un intervallo preciso: tocca il giorno di inizio e quello di fine. Superata la data di fine la programmazione termina davvero, a differenza del vecchio sistema.
+            Programma le calorie ON/OFF correnti per {clientName} su un intervallo preciso: tocca due giorni sulla griglia o scrivi le date qui sotto. Superata la data di fine la programmazione termina davvero, a differenza del vecchio sistema.
           </p>
 
           {!hasTargets && (
@@ -3660,49 +3739,35 @@ function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supaba
             </p>
           )}
 
-          <div className="flex items-center justify-between mb-2">
-            <button onClick={() => shiftMonth(-1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center">‹</button>
-            <p className="c-label capitalize">{monthLabel}</p>
-            <button onClick={() => shiftMonth(1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center">›</button>
-          </div>
-
-          <div className="grid grid-cols-7 gap-1 mb-1">
-            {["L", "M", "M", "G", "V", "S", "D"].map((lab, i) => (
-              <p key={i} className="c-muted text-center text-[10px] font-semibold">{lab}</p>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-1 mb-3">
-            {gridCells.map((dateISO, i) => {
-              if (!dateISO) return <div key={i} />;
-              const covered = isCovered(dateISO);
-              const isPast = dateISO < todayISO;
-              const bg = covered ? "#10B981" : isPast ? "#3B82F6" : "#EF4444";
-              const selected = inSelection(dateISO);
-              return (
-                <button key={i} onClick={() => handleDayClick(dateISO)}
-                  className="aspect-square rounded-md flex items-center justify-center text-[11px] font-data font-semibold"
-                  style={{
-                    backgroundColor: bg, color: "#FFFFFF",
-                    outline: selected ? "2px solid #111111" : dateISO === todayISO ? "2px solid #C5A059" : "none",
-                    outlineOffset: -2,
-                  }}>
-                  {Number(dateISO.slice(-2))}
-                </button>
-              );
-            })}
-          </div>
+          <MesocicloGrid monthCursor={monthCursor} onShiftMonth={(d) => setMonthCursor((c) => new Date(c.getFullYear(), c.getMonth() + d, 1))}
+            todayISO={todayISO} isCovered={isCovered}
+            selStart={selStart} selEnd={selEnd} onDayClick={handleDayClick} />
           {loading && <p className="c-muted text-[11px] mb-2">Carico programmazione…</p>}
 
-          <div className="flex items-center gap-3 mb-3 flex-wrap">
-            <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#10B981" }} /> programmato</span>
-            <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#3B82F6" }} /> passato</span>
-            <span className="flex items-center gap-1 text-[11px] c-muted"><span className="rounded-full inline-block" style={{ width: 8, height: 8, backgroundColor: "#EF4444" }} /> da programmare</span>
+          <div className="flex items-center gap-2 mb-2">
+            <label className="flex-1">
+              <span className="c-label block mb-1">Dal giorno</span>
+              <input type="date" value={selStart || ""}
+                onChange={(e) => {
+                  const v = e.target.value || null;
+                  setSelStart(v);
+                  if (v && selEnd && v > selEnd) setSelEnd(v);
+                  setResult(null);
+                }}
+                className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+            </label>
+            <label className="flex-1">
+              <span className="c-label block mb-1">Al giorno</span>
+              <input type="date" value={selEnd || selStart || ""} min={selStart || undefined} disabled={!selStart}
+                onChange={(e) => { setSelEnd(e.target.value || null); setResult(null); }}
+                className="t-input w-full text-sm rounded-md px-2.5 py-2 disabled:opacity-50" />
+            </label>
           </div>
 
           <p className="c-muted text-[11px] mb-4">
             {selStart
-              ? `${selStart}${selEnd ? ` → ${selEnd} (${dayCount} ${dayCount === 1 ? "giorno" : "giorni"})` : " · tocca il giorno di fine (o lo stesso per un solo giorno)"}`
-              : "Tocca un giorno per iniziare la selezione."}
+              ? `${selStart}${selEnd ? ` → ${selEnd}` : ""} · ${dayCount} ${dayCount === 1 ? "giorno" : "giorni"}`
+              : "Tocca un giorno sulla griglia o scrivi la data di inizio."}
           </p>
 
           {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
