@@ -84,7 +84,7 @@ import {
   notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
-  fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutTemplateToClients,
+  fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutSplitToDateRange,
   xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, EXERCISE_LIB_MUSCLE_TO_DB, resolveMuscleTarget,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
@@ -3057,11 +3057,11 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
             <>
               <button onClick={() => setSaveTemplateOpen(true)} disabled={!realWorkout || realWorkout.every((d) => !d)}
                 className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
-                💾 Salva come template
+                💾 Salva come split
               </button>
               <button onClick={() => setApplyTemplateOpen(true)} disabled={templates.length === 0}
                 className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
-                📋 Applica template
+                📋 Applica split
               </button>
               <button onClick={() => setLibraryManagerOpen(true)}
                 className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
@@ -3093,7 +3093,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       )}
       {applyTemplateOpen && (
         <ApplyTemplateModal templates={templates} clients={CLIENTS} currentClientId={client.id}
-          startOffset={selOffset} supabase={supabase}
+          coachId={coachId} supabase={supabase}
           onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates} />
       )}
       {libraryManagerOpen && (
@@ -3213,15 +3213,15 @@ function SaveTemplateModal({ days, coachId, supabase, onClose, onSaved }) {
 
   const save = async () => {
     const trimmed = name.trim();
-    if (!trimmed) { setErr("Dai un nome al template."); return; }
+    if (!trimmed) { setErr("Dai un nome allo split."); return; }
     setBusy(true);
     setErr("");
     try {
       await saveWorkoutTemplate(supabase, coachId, trimmed, days);
       onSaved();
     } catch (e) {
-      console.error("PERFORM: errore salvataggio template", e);
-      setErr("Non sono riuscito a salvare il template.");
+      console.error("PERFORM: errore salvataggio split", e);
+      setErr("Non sono riuscito a salvare lo split.");
     } finally {
       setBusy(false);
     }
@@ -3231,7 +3231,7 @@ function SaveTemplateModal({ days, coachId, supabase, onClose, onSaved }) {
     <Portal>
       <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
         <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-sm">
-          <p className="c-heading font-display font-bold mb-3">Salva come template</p>
+          <p className="c-heading font-display font-bold mb-3">Salva come split</p>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} autoFocus
             placeholder='Es. "Push Pull Legs - Base"' className="c-ghost w-full px-3 py-2.5 rounded-lg text-sm mb-3" />
           {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
@@ -3247,28 +3247,28 @@ function SaveTemplateModal({ days, coachId, supabase, onClose, onSaved }) {
   );
 }
 
-/* Applica un template a uno o più clienti insieme (azioni bulk) — stessa
-   settimana selezionata nell'editor da cui è stato aperto. */
-function ApplyTemplateModal({ templates, clients, currentClientId, startOffset, supabase, onClose, onDeleted }) {
+// Quanti giorni avanti si può spingere il giorno di fine — stesso limite di
+// "Clona Settimana" (12 settimane), qui espresso in giorni dato che la
+// selezione è ora a data precisa, non più a settimana intera.
+const MAX_APPLY_SPLIT_DAYS_AHEAD = MAX_FORWARD_WEEKS * 7;
+
+/* Applica uno split a uno o più clienti insieme (azioni bulk), su un
+   intervallo di date PRECISE — giorno di inizio e giorno di fine scelti dal
+   coach come una prenotazione volo/hotel, non più settimane intere da
+   clonare una per una. Il click su uno split ne mostra anche un'anteprima
+   (giorni + nomi esercizi, senza serie/rep) per un colpo d'occhio. */
+function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supabase, onClose, onDeleted }) {
   const [templateId, setTemplateId] = useState(templates[0]?.id || "");
   const [selectedIds, setSelectedIds] = useState(() => new Set([currentClientId]));
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null); // { ok, failed, weekCount }
+  const [result, setResult] = useState(null); // { ok, failed, dayCount }
   const [err, setErr] = useState("");
 
-  // Richiesta esplicita: dire "questa scheda vale dalla settimana X alla Y
-  // comprese" invece di clonare settimana per settimana (percepito scomodo
-  // e poco chiaro) — offset settimana rispetto a oggi, stesso sistema già
-  // usato da "Clona Settimana"/il pallino calendario, mai una data libera
-  // che potrebbe cadere fuori da un lunedì. Non si può scegliere una
-  // settimana precedente a quella da cui si è aperto "Applica template",
-  // né oltre il limite di 12 settimane in avanti (stesso limite di
-  // "Clona Settimana").
-  const [fromOffset, setFromOffset] = useState(startOffset);
-  const [toOffset, setToOffset] = useState(startOffset);
-  const offsetOptions = [];
-  for (let o = startOffset; o <= MAX_FORWARD_WEEKS; o++) offsetOptions.push(o);
-  const weekCount = toOffset - fromOffset + 1;
+  const today = toLocalISODate(new Date());
+  const maxDate = toLocalISODate(new Date(Date.now() + MAX_APPLY_SPLIT_DAYS_AHEAD * 86400000));
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const dayCount = Math.round((new Date(`${endDate}T00:00:00`) - new Date(`${startDate}T00:00:00`)) / 86400000) + 1;
 
   const toggleClient = (id) => setSelectedIds((s) => {
     const next = new Set(s);
@@ -3278,88 +3278,91 @@ function ApplyTemplateModal({ templates, clients, currentClientId, startOffset, 
 
   const apply = async () => {
     const template = templates.find((t) => t.id === templateId);
-    if (!template || selectedIds.size === 0 || weekCount < 1) return;
+    if (!template || selectedIds.size === 0 || dayCount < 1) return;
     setBusy(true);
     setErr("");
     try {
-      const weekISOs = [];
-      for (let o = fromOffset; o <= toOffset; o++) weekISOs.push(weekKeyForOffset(o));
-      const outcome = await applyWorkoutTemplateToClients(supabase, template.days, [...selectedIds], weekISOs);
-      setResult({ ...outcome, weekCount });
+      const outcome = await applyWorkoutSplitToDateRange(supabase, template.days, [...selectedIds], startDate, endDate, coachId);
+      setResult(outcome);
     } catch (e) {
-      console.error("PERFORM: errore applicazione template", e);
-      setErr("Non sono riuscito ad applicare il template.");
+      console.error("PERFORM: errore applicazione split", e);
+      setErr(e?.message || "Non sono riuscito ad applicare lo split.");
     } finally {
       setBusy(false);
     }
   };
 
   const removeTemplate = async (id) => {
-    if (!window.confirm("Eliminare questo template? L'azione non si può annullare.")) return;
+    if (!window.confirm("Eliminare questo split? L'azione non si può annullare.")) return;
     try {
       await deleteWorkoutTemplate(supabase, id);
       onDeleted();
       if (templateId === id) setTemplateId("");
     } catch (e) {
-      console.error("PERFORM: errore eliminazione template", e);
+      console.error("PERFORM: errore eliminazione split", e);
     }
   };
+
+  const previewTemplate = templates.find((t) => t.id === templateId);
 
   return (
     <Portal>
       <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={onClose}>
         <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
-          <p className="c-heading font-display font-bold mb-1">Applica template</p>
+          <p className="c-heading font-display font-bold mb-1">Applica split</p>
           <p className="c-muted text-xs mb-3">
-            Vale dalla settimana selezionata a quella scelta, comprese — non serve più clonare settimana per settimana.
+            Vale dal giorno di inizio al giorno di fine, compresi — come una prenotazione: scegli le due date e i giorni in mezzo si sistemano da soli, senza clonare settimana per settimana.
           </p>
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-2">
             <label className="flex-1">
-              <span className="c-label block mb-1">Da settimana</span>
-              <select value={fromOffset}
+              <span className="c-label block mb-1">Dal giorno</span>
+              <input type="date" value={startDate} min={today} max={maxDate}
                 onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setFromOffset(v);
-                  if (v > toOffset) setToOffset(v);
+                  const v = e.target.value;
+                  setStartDate(v);
+                  if (v > endDate) setEndDate(v);
                 }}
-                className="t-input w-full text-sm rounded-md px-2.5 py-2">
-                {offsetOptions.map((o) => (
-                  <option key={o} value={o}>{weekRangeLabel(o)}{o === 0 ? " · oggi" : ""}</option>
-                ))}
-              </select>
+                className="t-input w-full text-sm rounded-md px-2.5 py-2" />
             </label>
             <label className="flex-1">
-              <span className="c-label block mb-1">A settimana</span>
-              <select value={toOffset}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setToOffset(v);
-                  if (v < fromOffset) setFromOffset(v);
-                }}
-                className="t-input w-full text-sm rounded-md px-2.5 py-2">
-                {offsetOptions.map((o) => (
-                  <option key={o} value={o}>{weekRangeLabel(o)}{o === 0 ? " · oggi" : ""}</option>
-                ))}
-              </select>
+              <span className="c-label block mb-1">Al giorno</span>
+              <input type="date" value={endDate} min={startDate} max={maxDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="t-input w-full text-sm rounded-md px-2.5 py-2" />
             </label>
           </div>
           <p className="c-muted text-[11px] mb-4">
-            {weekCount === 1 ? "1 settimana" : `${weekCount} settimane`} — stessa scheda ripetuta identica su ognuna.
+            {dayCount > 0 ? `${dayCount} ${dayCount === 1 ? "giorno" : "giorni"}` : "intervallo non valido"} — lo split si ripete secondo il giorno della settimana (lunedì dello split → ogni lunedì del periodo, e così via).
           </p>
 
-          <p className="c-label mb-2">Template</p>
+          <p className="c-label mb-2">Split{previewTemplate ? " — tocca di nuovo per chiudere l'anteprima" : ""}</p>
           <div className="space-y-1.5 mb-4">
             {templates.map((t) => (
-              <div key={t.id} className="flex items-center gap-2">
-                <button onClick={() => setTemplateId(t.id)}
-                  className="flex-1 text-left px-3 py-2.5 rounded-lg text-sm"
-                  style={templateId === t.id ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)" }}>
-                  {t.name}
-                </button>
-                <button onClick={() => removeTemplate(t.id)} aria-label={`Elimina template ${t.name}`}
-                  className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ border: "1px solid var(--line-strong)" }}>
-                  <Trash2 size={14} style={{ color: "#DC2626" }} />
-                </button>
+              <div key={t.id}>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setTemplateId((cur) => (cur === t.id ? "" : t.id))}
+                    className="flex-1 text-left px-3 py-2.5 rounded-lg text-sm"
+                    style={templateId === t.id ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)" }}>
+                    {t.name}
+                  </button>
+                  <button onClick={() => removeTemplate(t.id)} aria-label={`Elimina split ${t.name}`}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ border: "1px solid var(--line-strong)" }}>
+                    <Trash2 size={14} style={{ color: "#DC2626" }} />
+                  </button>
+                </div>
+                {templateId === t.id && (
+                  <div className="mt-1.5 px-3 py-2.5 rounded-lg text-xs space-y-1" style={{ backgroundColor: "var(--surface-2)" }}>
+                    {t.days.map((day, i) => (
+                      <p key={i}>
+                        <span className="font-data uppercase font-semibold">{WEEK_DAYS[i]}</span>
+                        {" · "}
+                        {day
+                          ? <span className="c-muted">{day.exercises.map((e) => e.name).join(", ") || "(nessun esercizio)"}</span>
+                          : <span className="c-muted">riposo</span>}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -3377,13 +3380,13 @@ function ApplyTemplateModal({ templates, clients, currentClientId, startOffset, 
           {err && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{err}</p>}
           {result && (
             <p className="text-xs mb-3 font-semibold" style={{ color: result.failed.length ? "#F0A020" : "#047857" }}>
-              Applicato a {result.ok.length} client{result.ok.length === 1 ? "e" : "i"} per {result.weekCount === 1 ? "1 settimana" : `${result.weekCount} settimane`}{result.failed.length ? `, fallito per ${result.failed.length}` : ""}.
+              Applicato a {result.ok.length} client{result.ok.length === 1 ? "e" : "i"} per {result.dayCount} {result.dayCount === 1 ? "giorno" : "giorni"}{result.failed.length ? `, fallito per ${result.failed.length}` : ""}.
             </p>
           )}
 
           <div className="flex gap-2">
             <button onClick={onClose} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Chiudi</button>
-            <button onClick={apply} disabled={busy || !templateId || selectedIds.size === 0}
+            <button onClick={apply} disabled={busy || !templateId || selectedIds.size === 0 || dayCount < 1}
               className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
               {busy ? "Applico…" : `Applica a ${selectedIds.size}`}
             </button>

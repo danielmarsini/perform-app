@@ -1720,20 +1720,17 @@ async function saveWorkoutDayNotes(supabase, coachId, userId, date, warmupText, 
 // created_at più recente di tutte le altre. fetchWeekWorkout ordina per
 // created_at: l'esercizio rinominato saltava sempre in fondo alla lista del
 // giorno, invece di restare dov'era.
-export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workoutArray, coachId) {
-  if (!Array.isArray(workoutArray) || workoutArray.length !== 7) {
-    throw new Error("saveWeekWorkout: workoutArray deve avere 7 elementi (Lunedì→Domenica).");
-  }
-  const dates = weekDatesFrom(weekStartDateISO);
-
-  // Validazione preventiva su TUTTA la settimana prima di scrivere anche una
-  // sola riga: un salvataggio parziale (metà settimana scritta, metà no per
-  // un distretto mancante scoperto a metà) sarebbe peggio di un rifiuto secco.
-  // Le voci cardio (kind: "cardio", SCHEMA_v84) non hanno un muscleTarget —
-  // sono inserite dal coach come un esercizio in più ma senza serie/carichi
-  // da tracciare, mai generate dall'AI — richiedono solo un nome.
+// Validazione preventiva su UN INSIEME di giorni prima di scrivere anche una
+// sola riga: un salvataggio parziale (metà scritta, metà no per un distretto
+// mancante scoperto a metà) sarebbe peggio di un rifiuto secco. Condivisa tra
+// saveWeekWorkout (7 giorni di una settimana) e applyWorkoutSplitToDateRange
+// (N giorni di un intervallo libero) — stessa regola, mai due copie. Le voci
+// cardio (kind: "cardio", SCHEMA_v84) non hanno un muscleTarget — sono
+// inserite dal coach come un esercizio in più ma senza serie/carichi da
+// tracciare, mai generate dall'AI — richiedono solo un nome.
+function validateWorkoutDays(days, dates) {
   const missing = [];
-  workoutArray.forEach((day, i) => {
+  days.forEach((day, i) => {
     (day?.exercises ?? []).forEach((ex) => {
       if (ex.kind === "cardio") {
         if (!ex.name || !ex.name.trim()) missing.push(`voce cardio senza nome (${dates[i]})`);
@@ -1745,98 +1742,163 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
   if (missing.length > 0) {
     throw new Error(`Distretto muscolare mancante o non valido per: ${missing.join(", ")}.`);
   }
+}
+
+// Scrive UN singolo giorno di allenamento (id-diffing: aggiorna le righe già
+// presenti, cancella quelle non più rivendicate, inserisce le nuove) — estratta
+// da saveWeekWorkout perché applyWorkoutSplitToDateRange deve scrivere singole
+// date sparse su un intervallo libero, non 7 giorni consecutivi allineati al
+// lunedì: stessa identica logica di scrittura, mai due versioni che potrebbero
+// disallinearsi.
+async function writeSingleDayWorkout(supabase, userId, date, day, coachId) {
+  const newExercises = day?.exercises ?? [];
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("workout_logs")
+    .select("id, exercise_name")
+    .eq("user_id", userId)
+    .eq("date", date);
+  if (fetchError) throw fetchError;
+
+  const existingIds = new Set((existing ?? []).map((r) => r.id));
+  const claimedIds = new Set(newExercises.filter((e) => existingIds.has(e.id)).map((e) => e.id));
+  const toDelete = (existing ?? []).filter((r) => !claimedIds.has(r.id)).map((r) => r.id);
+  if (toDelete.length > 0) {
+    const { error: deleteError } = await supabase.from("workout_logs").delete().in("id", toDelete);
+    if (deleteError) throw deleteError;
+  }
+
+  for (const [exIdx, ex] of newExercises.entries()) {
+    // sort_order = posizione nell'array locale: il coach può trascinare per
+    // riordinare (drag-to-reorder, vedi WeekWorkoutEditor/useDragReorder),
+    // e QUELL'ordine è quello che si salva — mai dedotto da created_at,
+    // che non cambia quando si sposta una riga già esistente.
+    const isCardio = ex.kind === "cardio";
+    const prescriptiveFields = isCardio ? {
+      exercise_name: ex.name,
+      split_label: day.label || null,
+      kind: "cardio",
+      duration_min: Number(ex.durationMin) || null,
+      muscle_target: null,
+      synergist_targets: null,
+      sets_count: null,
+      reps_target: null,
+      rest_seconds: null,
+      rir_target: null,
+      intensity_technique: null,
+      sort_order: exIdx,
+    } : {
+      exercise_name: ex.name,
+      split_label: day.label || null,
+      kind: "strength",
+      duration_min: null,
+      muscle_target: ex.muscleTarget,
+      synergist_targets: ex.synergists && ex.synergists.length > 0 ? ex.synergists : null,
+      sets_count: ex.sets,
+      reps_target: ex.reps || null,
+      rest_seconds: ex.rest ?? null,
+      rir_target: ex.rirTarget || null,
+      intensity_technique: ex.technique || null,
+      sort_order: exIdx,
+    };
+    if (existingIds.has(ex.id)) {
+      const { error: updateError } = await supabase.from("workout_logs").update(prescriptiveFields).eq("id", ex.id);
+      if (updateError) throw updateError;
+    } else {
+      const { error: insertError } = await supabase.from("workout_logs").insert({
+        user_id: userId,
+        date,
+        status: "missed",
+        is_read_only: true,
+        ...prescriptiveFields,
+      });
+      if (insertError) throw insertError;
+    }
+  }
+
+  await saveWorkoutDayNotes(supabase, coachId, userId, date, day?.warmup, day?.stretching);
+}
+
+// Add-on Scheda Personalizzata (SCHEMA_v68): la scheda resta "attiva"
+// esattamente finché il coach l'ha davvero costruita, non una stima fissa
+// indovinata all'acquisto — ogni volta che un salvataggio include almeno un
+// esercizio, scheda_addon_program_until si allunga (mai si accorcia) fino
+// all'ultima data toccata, se più avanti di quanto già impostato. Nessun
+// effetto su chi non ha questo add-on attivo (resta null per loro). Condivisa
+// tra saveWeekWorkout (ultima data = fine settimana) e
+// applyWorkoutSplitToDateRange (ultima data = fine dell'intervallo scelto).
+async function extendSchedaAddonUntilIfNeeded(supabase, userId, lastDateISO) {
+  const { data: profile } = await supabase.from("profiles").select("scheda_addon_program_until").eq("id", userId).maybeSingle();
+  if (profile?.scheda_addon_program_until) {
+    const end = new Date(`${lastDateISO}T23:59:59`);
+    if (end > new Date(profile.scheda_addon_program_until)) {
+      const { error } = await supabase.from("profiles").update({ scheda_addon_program_until: end.toISOString() }).eq("id", userId);
+      if (error) console.error("PERFORM: errore estensione scheda_addon_program_until", error);
+    }
+  }
+}
+
+export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workoutArray, coachId) {
+  if (!Array.isArray(workoutArray) || workoutArray.length !== 7) {
+    throw new Error("saveWeekWorkout: workoutArray deve avere 7 elementi (Lunedì→Domenica).");
+  }
+  const dates = weekDatesFrom(weekStartDateISO);
+  validateWorkoutDays(workoutArray, dates);
 
   for (let i = 0; i < 7; i++) {
-    const date = dates[i];
-    const day = workoutArray[i];
-    const newExercises = day?.exercises ?? [];
-
-    const { data: existing, error: fetchError } = await supabase
-      .from("workout_logs")
-      .select("id, exercise_name")
-      .eq("user_id", userId)
-      .eq("date", date);
-    if (fetchError) throw fetchError;
-
-    const existingIds = new Set((existing ?? []).map((r) => r.id));
-    const claimedIds = new Set(newExercises.filter((e) => existingIds.has(e.id)).map((e) => e.id));
-    const toDelete = (existing ?? []).filter((r) => !claimedIds.has(r.id)).map((r) => r.id);
-    if (toDelete.length > 0) {
-      const { error: deleteError } = await supabase.from("workout_logs").delete().in("id", toDelete);
-      if (deleteError) throw deleteError;
-    }
-
-    for (const [exIdx, ex] of newExercises.entries()) {
-      // sort_order = posizione nell'array locale: il coach può trascinare per
-      // riordinare (drag-to-reorder, vedi WeekWorkoutEditor/useDragReorder),
-      // e QUELL'ordine è quello che si salva — mai dedotto da created_at,
-      // che non cambia quando si sposta una riga già esistente.
-      const isCardio = ex.kind === "cardio";
-      const prescriptiveFields = isCardio ? {
-        exercise_name: ex.name,
-        split_label: day.label || null,
-        kind: "cardio",
-        duration_min: Number(ex.durationMin) || null,
-        muscle_target: null,
-        synergist_targets: null,
-        sets_count: null,
-        reps_target: null,
-        rest_seconds: null,
-        rir_target: null,
-        intensity_technique: null,
-        sort_order: exIdx,
-      } : {
-        exercise_name: ex.name,
-        split_label: day.label || null,
-        kind: "strength",
-        duration_min: null,
-        muscle_target: ex.muscleTarget,
-        synergist_targets: ex.synergists && ex.synergists.length > 0 ? ex.synergists : null,
-        sets_count: ex.sets,
-        reps_target: ex.reps || null,
-        rest_seconds: ex.rest ?? null,
-        rir_target: ex.rirTarget || null,
-        intensity_technique: ex.technique || null,
-        sort_order: exIdx,
-      };
-      if (existingIds.has(ex.id)) {
-        const { error: updateError } = await supabase.from("workout_logs").update(prescriptiveFields).eq("id", ex.id);
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await supabase.from("workout_logs").insert({
-          user_id: userId,
-          date,
-          status: "missed",
-          is_read_only: true,
-          ...prescriptiveFields,
-        });
-        if (insertError) throw insertError;
-      }
-    }
-
-    await saveWorkoutDayNotes(supabase, coachId, userId, date, day?.warmup, day?.stretching);
+    await writeSingleDayWorkout(supabase, userId, dates[i], workoutArray[i], coachId);
   }
 
-  // Add-on Scheda Personalizzata (SCHEMA_v68): la scheda resta "attiva"
-  // esattamente finché il coach l'ha davvero costruita, non una stima fissa
-  // indovinata all'acquisto — ogni volta che questa settimana ha almeno un
-  // esercizio assegnato, scheda_addon_program_until si allunga (mai si
-  // accorcia) fino alla fine di QUESTA settimana, se più avanti di quanto
-  // già impostato. Nessun effetto su chi non ha questo add-on attivo
-  // (scheda_addon_program_until resta null per loro).
   const weekHasExercises = workoutArray.some((day) => (day?.exercises?.length ?? 0) > 0);
-  if (weekHasExercises) {
-    const { data: profile } = await supabase.from("profiles").select("scheda_addon_program_until").eq("id", userId).maybeSingle();
-    if (profile?.scheda_addon_program_until) {
-      const weekEnd = new Date(`${dates[6]}T23:59:59`);
-      if (weekEnd > new Date(profile.scheda_addon_program_until)) {
-        const { error: extendError } = await supabase.from("profiles")
-          .update({ scheda_addon_program_until: weekEnd.toISOString() }).eq("id", userId);
-        if (extendError) console.error("PERFORM: errore estensione scheda_addon_program_until", extendError);
+  if (weekHasExercises) await extendSchedaAddonUntilIfNeeded(supabase, userId, dates[6]);
+  await markSectionUpdated(supabase, userId, "workout");
+}
+
+// Applica uno split (pattern settimanale lun-dom, 7 elementi) a un intervallo
+// di date PRECISE scelte dal coach — come una prenotazione volo/hotel: giorno
+// di inizio e giorno di fine, tutti i giorni COMPRESI si trasformano secondo
+// il pattern (giorno del range → indice nello split via giorno-della-
+// settimana, lun=0). Scrive SOLO ogni singola data realmente compresa
+// nell'intervallo (mai un giorno adiacente fuori range) tramite
+// writeSingleDayWorkout — non saveWeekWorkout, che opera per settimane
+// intere e toccherebbe anche i giorni fuori dal range scelto sulla prima/
+// ultima settimana parziale.
+export async function applyWorkoutSplitToDateRange(supabase, splitDays, clientIds, startDateISO, endDateISO, coachId) {
+  if (!Array.isArray(splitDays) || splitDays.length !== 7) {
+    throw new Error("applyWorkoutSplitToDateRange: lo split deve avere 7 elementi (Lunedì→Domenica).");
+  }
+  const start = new Date(`${startDateISO}T00:00:00`);
+  const end = new Date(`${endDateISO}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    throw new Error("Intervallo di date non valido.");
+  }
+  const dates = [];
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) dates.push(toLocalISODate(d));
+
+  // (getDay() + 6) % 7: stessa formula già usata da mondayOf/09_CoachDashboard
+  // per ottenere lunedì=0…domenica=6 dal giorno-della-settimana nativo di JS
+  // (che parte da domenica=0).
+  const daysForDates = dates.map((iso) => splitDays[(new Date(`${iso}T00:00:00`).getDay() + 6) % 7]);
+  validateWorkoutDays(daysForDates, dates);
+
+  const ok = [];
+  const failed = [];
+  for (const clientId of clientIds) {
+    try {
+      for (let i = 0; i < dates.length; i++) {
+        await writeSingleDayWorkout(supabase, clientId, dates[i], daysForDates[i], coachId);
       }
+      if (daysForDates.some((day) => (day?.exercises?.length ?? 0) > 0)) {
+        await extendSchedaAddonUntilIfNeeded(supabase, clientId, dates[dates.length - 1]);
+      }
+      await markSectionUpdated(supabase, clientId, "workout");
+      ok.push(clientId);
+    } catch (e) {
+      console.error("PERFORM: errore applicazione split a intervallo di date", clientId, e);
+      failed.push(clientId);
     }
   }
-  await markSectionUpdated(supabase, userId, "workout");
+  return { ok, failed, dayCount: dates.length };
 }
 
 // Clona una settimana di allenamento su un'altra: legge le righe della
@@ -1930,35 +1992,6 @@ export async function saveWorkoutTemplate(supabase, coachId, name, days) {
 export async function deleteWorkoutTemplate(supabase, templateId) {
   const { error } = await supabase.from("workout_templates").delete().eq("id", templateId);
   if (error) throw error;
-}
-
-// Applica un template a più clienti insieme (azioni bulk): stesso identico
-// percorso di scrittura di saveWeekWorkout per ciascun cliente, uno alla
-// volta — nessuna logica di scrittura duplicata. Ritorna { ok, failed } così
-// il chiamante può mostrare quanti sono andati a buon fine anche se qualcuno
-// fallisce (es. un permesso mancante su un singolo cliente non deve bloccare
-// gli altri).
-// Richiesta esplicita: poter dire "questa scheda vale dalla settimana X alla
-// Y comprese" invece di clonare settimana per settimana (percepito scomodo/
-// poco chiaro) — targetWeekStartISO ora accetta anche un ARRAY di date (una
-// per settimana del range): scrive la STESSA scheda su ciascuna. Una singola
-// stringa resta valida (comportamento precedente, un solo target).
-export async function applyWorkoutTemplateToClients(supabase, days, clientIds, targetWeekStartISO) {
-  const weeks = Array.isArray(targetWeekStartISO) ? targetWeekStartISO : [targetWeekStartISO];
-  const ok = [];
-  const failed = [];
-  for (const clientId of clientIds) {
-    try {
-      for (const weekISO of weeks) {
-        await saveWeekWorkout(supabase, clientId, weekISO, days);
-      }
-      ok.push(clientId);
-    } catch (err) {
-      console.error(`PERFORM: errore applicazione template al cliente ${clientId}`, err);
-      failed.push(clientId);
-    }
-  }
-  return { ok, failed };
 }
 
 /* ---------------------------------------------------------------------------
