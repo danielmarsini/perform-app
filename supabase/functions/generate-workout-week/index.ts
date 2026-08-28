@@ -265,23 +265,33 @@ Deno.serve(async (req) => {
 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-5",
-      max_tokens: 8000,
+      // Con "howTo"/"avoid" (guida esercizio in stile scientifico) una
+      // settimana reale con molti esercizi diversi supera facilmente 8000
+      // token di output — è il caso già osservato ("struttura settimana non
+      // valida" con days undefined: la risposta veniva troncata a metà prima
+      // di finire "days"). 16000 lascia margine reale, resta sotto i timeout
+      // HTTP di una richiesta non-streaming.
+      max_tokens: 16000,
       system: isImport ? IMPORT_SYSTEM_PROMPT : GENERATE_SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
       tools: [WORKOUT_TOOL],
       tool_choice: { type: "tool", name: "report_workout_week" },
     });
 
+    // Va controllato PRIMA di leggere il tool_use: un troncamento a metà
+    // può comunque produrre un oggetto "input" valido ma incompleto (es.
+    // senza "days"), che altrimenti finirebbe nel controllo generico sotto
+    // come "struttura settimana non valida" invece del messaggio corretto.
+    if (response.stop_reason === "max_tokens") {
+      throw new Error("risposta troncata (scheda troppo lunga) — riprova con note più semplici o dividendo l'import in due parti");
+    }
+
     // Con tool_choice forzato, la settimana arriva già come oggetto JS
     // dentro il blocco tool_use — mai più testo libero da isolare con una
     // regex e passare a JSON.parse a mano.
     const toolUse = response.content.find((b) => b.type === "tool_use" && b.name === "report_workout_week");
     if (!toolUse || !toolUse.input || typeof toolUse.input !== "object") {
-      throw new Error(
-        response.stop_reason === "max_tokens"
-          ? "risposta troncata (scheda troppo lunga) — riprova con note più semplici o dividendo l'import in due parti"
-          : "risposta senza dati validi dallo strumento AI",
-      );
+      throw new Error("risposta senza dati validi dallo strumento AI");
     }
     const parsed = toolUse.input;
     if (!Array.isArray(parsed.days) || parsed.days.length !== 7) {
