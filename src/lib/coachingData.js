@@ -278,8 +278,36 @@ function toLocalISODate(date = new Date()) {
    LETTURA — lato cliente (Home)
    ------------------------------------------------------------------------- */
 
+// SCHEMA_v86: il programma con calendario ("Calendario mesociclo") attivo
+// per una data — vince sempre sul vecchio nutrition_targets, vedi
+// fetchBothNutritionTargets sotto. Più programmi che si sovrappongono per
+// errore: vince il più recente (created_at), stessa convenzione già usata
+// per nutrition_targets ("ultima riga con effective_from <= data").
+async function fetchActiveNutritionProgram(supabase, userId, dateISO) {
+  const { data, error } = await supabase
+    .from("nutrition_programs")
+    .select("on_kcal, on_protein, on_carbs, on_fat, off_kcal, off_protein, off_carbs, off_fat")
+    .eq("user_id", userId)
+    .lte("start_date", dateISO)
+    .gte("end_date", dateISO)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+function programTargetFor(program, dayType) {
+  if (!program) return null;
+  return dayType === "on"
+    ? { kcal: Number(program.on_kcal), p: Number(program.on_protein), c: Number(program.on_carbs), f: Number(program.on_fat) }
+    : { kcal: Number(program.off_kcal), p: Number(program.off_protein), c: Number(program.off_carbs), f: Number(program.off_fat) };
+}
+
 // Target macro/kcal attivi oggi per un giorno ON o OFF: la riga più recente
 // con effective_from <= oggi. Ritorna null se il coach non ha ancora assegnato nulla.
+// Fallback "storico" per i clienti impostati prima del Calendario Mesociclo
+// (SCHEMA_v86) — fetchBothNutritionTargets sotto controlla SEMPRE prima se
+// c'è un programma con calendario attivo oggi.
 export async function fetchActiveNutritionTarget(supabase, userId, dayType) {
   const today = toLocalISODate();
   const { data, error } = await supabase
@@ -296,12 +324,63 @@ export async function fetchActiveNutritionTarget(supabase, userId, dayType) {
   return { kcal: Number(data.kcal), p: Number(data.protein), c: Number(data.carbs), f: Number(data.fat) };
 }
 
+// SCHEMA_v86: un Calendario mesociclo (nutrition_programs) copre un
+// intervallo di date preciso — se ce n'è uno attivo oggi vince SEMPRE sul
+// vecchio nutrition_targets (log a tempo indeterminato, mai una vera "fine
+// programmazione"): superata la data di fine di un programma il target
+// torna "non impostato" invece di restare valido per sempre, come richiesto.
 export async function fetchBothNutritionTargets(supabase, userId) {
+  const today = toLocalISODate();
+  const program = await fetchActiveNutritionProgram(supabase, userId, today);
+  if (program) {
+    return { targetOn: programTargetFor(program, "on"), targetOff: programTargetFor(program, "off") };
+  }
   const [on, off] = await Promise.all([
     fetchActiveNutritionTarget(supabase, userId, "on"),
     fetchActiveNutritionTarget(supabase, userId, "off"),
   ]);
   return { targetOn: on, targetOff: off };
+}
+
+// Scrive il Calendario mesociclo: la bozza ON/OFF corrente dell'editor
+// (kcal/macro) vale per il cliente dal giorno di inizio al giorno di fine,
+// compresi — dopo end_date la programmazione termina davvero (vedi
+// fetchBothNutritionTargets). Un solo insert per l'intero intervallo, non
+// una riga per giorno: la copertura si calcola al momento della lettura
+// (start_date <= data <= end_date), non serve materializzarla.
+export async function applyNutritionProgramToDateRange(supabase, clientId, startDateISO, endDateISO, targetOn, targetOff, coachId) {
+  const start = new Date(`${startDateISO}T00:00:00`);
+  const end = new Date(`${endDateISO}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    throw new Error("Intervallo di date non valido.");
+  }
+  const { error } = await supabase.from("nutrition_programs").insert({
+    user_id: clientId,
+    coach_id: coachId || null,
+    start_date: startDateISO,
+    end_date: endDateISO,
+    on_kcal: targetOn.kcal, on_protein: targetOn.p, on_carbs: targetOn.c, on_fat: targetOn.f,
+    off_kcal: targetOff.kcal, off_protein: targetOff.p, off_carbs: targetOff.c, off_fat: targetOff.f,
+  });
+  if (error) throw error;
+  await markSectionUpdated(supabase, clientId, "nutrition");
+}
+
+// Tutti i programmi (anche passati) che si sovrappongono a [fromISO, toISO]
+// per un cliente — usata dal calendario per colorare i giorni già coperti
+// (verde) e da computeNutritionCompliance per risolvere il target storico di
+// ogni giorno della finestra di 7 (stessa logica di programTargetFor, ma
+// sui tanti giorni di una finestra invece che su una singola data).
+export async function fetchNutritionProgramsRange(supabase, userId, fromISO, toISO) {
+  const { data, error } = await supabase
+    .from("nutrition_programs")
+    .select("start_date, end_date, on_kcal, on_protein, on_carbs, on_fat, off_kcal, off_protein, off_carbs, off_fat, created_at")
+    .eq("user_id", userId)
+    .lte("start_date", toISO)
+    .gte("end_date", fromISO)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
 }
 
 // Sonno/passi reali di un intervallo di date (daily_metrics), un giorno = una
@@ -675,12 +754,23 @@ export function dayNutritionScore(logsTotals, target) {
 // Logica pura (stesso principio di recoveryComplianceFromRows sopra):
 // unica fonte di verità condivisa tra la versione singolo-cliente e
 // computeBatchNutritionCompliance qui sotto.
-function nutritionComplianceFromRows(logs, targets, workouts, fromISO, toISO) {
+function nutritionComplianceFromRows(logs, targets, workouts, fromISO, toISO, programs) {
   if (fromISO > toISO) return { status: "neutral", pct: null, daysScored: 0 };
 
   const trainingDates = new Set((workouts ?? []).map((w) => w.date));
-  // Per ogni day_type, il target con effective_from più recente <= quella data.
+  // Per ogni day_type: prima un Calendario mesociclo attivo quel giorno
+  // (nutrition_programs, SCHEMA_v86) — vince sempre — poi, se nessuno lo
+  // copre, il vecchio target con effective_from più recente <= quella data.
+  // Stessa priorità di fetchBothNutritionTargets, qui applicata a OGNI
+  // giorno della finestra invece che solo a oggi.
   const targetFor = (dateISO, dayType) => {
+    const covering = (programs ?? []).filter((pr) => pr.start_date <= dateISO && pr.end_date >= dateISO);
+    if (covering.length > 0) {
+      const latestProgram = covering[covering.length - 1]; // già ordinati ascending per created_at
+      return dayType === "on"
+        ? { kcal: Number(latestProgram.on_kcal), p: Number(latestProgram.on_protein), c: Number(latestProgram.on_carbs), f: Number(latestProgram.on_fat) }
+        : { kcal: Number(latestProgram.off_kcal), p: Number(latestProgram.off_protein), c: Number(latestProgram.off_carbs), f: Number(latestProgram.off_fat) };
+    }
     const rows = (targets ?? []).filter((t) => t.day_type === dayType && t.effective_from <= dateISO);
     if (rows.length === 0) return null;
     const latest = rows[rows.length - 1]; // già ordinati ascending per effective_from
@@ -740,16 +830,17 @@ export async function computeNutritionCompliance(supabase, userId) {
     return { status: "neutral", pct: null, daysScored: 0 };
   }
 
-  const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }] = await Promise.all([
+  const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }, programs] = await Promise.all([
     supabase.from("nutrition_logs").select("date, kcal, protein, carbs, fat").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
     supabase.from("nutrition_targets").select("day_type, kcal, protein, carbs, fat, effective_from").eq("user_id", userId).lte("effective_from", toISO).order("effective_from", { ascending: true }),
     supabase.from("workout_logs").select("date").eq("user_id", userId).gte("date", fromISO).lte("date", toISO),
+    fetchNutritionProgramsRange(supabase, userId, fromISO, toISO),
   ]);
   if (logsError) throw logsError;
   if (targetsError) throw targetsError;
   if (workoutsError) throw workoutsError;
 
-  return nutritionComplianceFromRows(logs, targets, workouts, fromISO, toISO);
+  return nutritionComplianceFromRows(logs, targets, workouts, fromISO, toISO, programs);
 }
 
 // Stessa formula di computeNutritionCompliance per N clienti in un colpo
@@ -786,14 +877,17 @@ export async function computeBatchNutritionCompliance(supabase, userIds) {
   if (profileError) throw profileError;
   const joinedByUser = new Map((profiles ?? []).map((p) => [p.id, p.created_at ? toLocalISODate(new Date(p.created_at)) : null]));
 
-  const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }] = await Promise.all([
+  const [{ data: logs, error: logsError }, { data: targets, error: targetsError }, { data: workouts, error: workoutsError }, { data: programs, error: programsError }] = await Promise.all([
     supabase.from("nutrition_logs").select("user_id, date, kcal, protein, carbs, fat").in("user_id", userIds).gte("date", globalFromISO).lte("date", globalToISO),
     supabase.from("nutrition_targets").select("user_id, day_type, kcal, protein, carbs, fat, effective_from").in("user_id", userIds).lte("effective_from", globalToISO).order("effective_from", { ascending: true }),
     supabase.from("workout_logs").select("user_id, date").in("user_id", userIds).gte("date", globalFromISO).lte("date", globalToISO),
+    supabase.from("nutrition_programs").select("user_id, start_date, end_date, on_kcal, on_protein, on_carbs, on_fat, off_kcal, off_protein, off_carbs, off_fat, created_at")
+      .in("user_id", userIds).lte("start_date", globalToISO).gte("end_date", globalFromISO).order("created_at", { ascending: true }),
   ]);
   if (logsError) throw logsError;
   if (targetsError) throw targetsError;
   if (workoutsError) throw workoutsError;
+  if (programsError) throw programsError;
 
   const groupByUser = (rows) => {
     const map = new Map(userIds.map((id) => [id, []]));
@@ -803,6 +897,7 @@ export async function computeBatchNutritionCompliance(supabase, userIds) {
   const logsByUser = groupByUser(logs);
   const targetsByUser = groupByUser(targets);
   const workoutsByUser = groupByUser(workouts);
+  const programsByUser = groupByUser(programs);
 
   for (const userId of userIds) {
     const toISO = usersWithTodayLogged.has(userId) ? todayISO : yesterdayISO;
@@ -816,7 +911,7 @@ export async function computeBatchNutritionCompliance(supabase, userIds) {
       results.set(userId, { status: "neutral", pct: null, daysScored: 0 });
       continue;
     }
-    results.set(userId, nutritionComplianceFromRows(logsByUser.get(userId), targetsByUser.get(userId), workoutsByUser.get(userId), fromISO, toISO));
+    results.set(userId, nutritionComplianceFromRows(logsByUser.get(userId), targetsByUser.get(userId), workoutsByUser.get(userId), fromISO, toISO, programsByUser.get(userId)));
   }
   return results;
 }
