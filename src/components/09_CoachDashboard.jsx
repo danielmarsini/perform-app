@@ -724,14 +724,6 @@ function weekRangeLabel(offset) {
 }
 const MAX_FORWARD_WEEKS = 12;
 
-/* Reparto colore del pallino settimana:
-   giallo = settimana passata (storico, sempre navigabile)
-   verde  = settimana presente/futura (il coach la edita direttamente, niente
-            più passaggio di "conferma" separato da spuntare a mano) */
-function weekDeptColor(offset) {
-  return offset < 0 ? "yellow" : "green";
-}
-
 /* ==========================================================================
    GENERAZIONE PREDITTIVA TOTALE — "L'AI calcola tutto"
    Motore deterministico evidence-based (Mifflin-St Jeor + moltiplicatori
@@ -2651,7 +2643,6 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const myQuickTarget = quickTargets?.[client.id];
   const [weeksByOffset, setWeeksByOffset] = useState(() => ({ 0: makeDefaultWeek(client, 0, myQuickTarget) }));
   const [selOffset, setSelOffset] = useState(0);
-  const [windowStart, setWindowStart] = useState(-2); // la striscia visibile mostra 7 pallini a partire da qui
   const [section, setSection] = useState("allenamento");
   const [cloned, setCloned] = useState(false);
 
@@ -3025,14 +3016,9 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       }
     }
     setSelOffset(nextOffset);
-    if (nextOffset > windowStart + 6) setWindowStart(nextOffset - 6);
     setCloned(true);
     setTimeout(() => setCloned(false), 2200);
   };
-  const shiftWindow = (dir) => setWindowStart((w) => w + dir * 7);
-  const backToToday = () => { setWindowStart(-2); goTo(0); };
-
-  const pills = Array.from({ length: 7 }, (_, i) => windowStart + i);
 
   // Riorganizzato: prima la scelta di COSA editare (allenamento/dieta/
   // integratori), poi — solo per allenamento e dieta, che si programmano
@@ -3069,49 +3055,24 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
 
       {showWeekManager && (
       <>
-      <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => shiftWindow(-1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0" aria-label="Settimane precedenti">‹</button>
-          <div className="flex gap-1.5 flex-wrap">
-            {pills.map((offset) => {
-              const color = weekDeptColor(offset);
-              const dot = color === "yellow" ? "#F0A020" : "#10B981";
-              const on = selOffset === offset;
-              const tooltip = weekRangeLabel(offset);
-              return (
-                <button key={offset} onClick={() => goTo(offset)} className="relative w-11 h-11 rounded-full font-data text-[11px] font-bold flex flex-col items-center justify-center leading-none"
-                  style={on ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}
-                  title={tooltip}>
-                  <span className="absolute top-1 right-1 rounded-full" style={{ width: 6, height: 6, backgroundColor: dot }} />
-                  {offset === 0 ? "OGGI" : pillDateLabel(offset)}
-                </button>
-              );
-            })}
-          </div>
-          <button onClick={() => shiftWindow(1)} className="c-ghost w-8 h-8 rounded-full flex items-center justify-center shrink-0" aria-label="Settimane successive">›</button>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {/* Calendario vero (input date nativo) per saltare direttamente a
-              qualunque giorno passato o futuro, senza scorrere i pallini uno
-              a uno — la settimana che lo contiene si apre subito. */}
-          <input type="date" aria-label="Vai a una data specifica"
-            onChange={(e) => {
-              if (!e.target.value) return;
-              const off = offsetForDateISO(e.target.value);
-              goTo(off);
-              setWindowStart(off - 3);
-              e.target.value = "";
-            }}
-            className="c-ghost px-2.5 py-2 rounded-lg text-xs font-data" style={{ colorScheme: "auto" }} />
-          <button onClick={backToToday} className="c-ghost px-3 py-2 rounded-lg text-xs font-data uppercase">Torna a oggi</button>
-        </div>
+      {/* Vecchia striscia di 7 "pallini" settimana (una per volta, avanti/
+          indietro di 7 giorni) rimossa: col Calendario mesociclo qui sotto
+          si programma già un intero intervallo in un colpo, e per saltare a
+          una settimana precisa basta il vero calendario nativo (input date)
+          — scorrere pallini uno a uno per trovarla era solo ingombro. */}
+      <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+        <input type="date" aria-label="Vai a una data specifica"
+          onChange={(e) => {
+            if (!e.target.value) return;
+            goTo(offsetForDateISO(e.target.value));
+            e.target.value = "";
+          }}
+          className="c-ghost px-2.5 py-2 rounded-lg text-xs font-data" style={{ colorScheme: "auto" }} />
+        <button onClick={() => goTo(0)} className="c-ghost px-3 py-2 rounded-lg text-xs font-data uppercase">Torna a oggi</button>
       </div>
-      <p className="c-muted font-data text-[11px] mb-4">
-        {weekRangeLabel(selOffset)} · 🟡 storico · 🟢 corrente/futura
-      </p>
 
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-        <p className="c-label">Settimana selezionata: {selOffset === 0 ? "corrente" : selOffset > 0 ? `+${selOffset} da oggi` : `${Math.abs(selOffset)} fa (storico)`}</p>
+        <p className="c-label">Settimana selezionata: {weekRangeLabel(selOffset)} ({selOffset === 0 ? "corrente" : selOffset > 0 ? `+${selOffset} da oggi` : `${Math.abs(selOffset)} fa, storico`})</p>
         <div className="flex items-center gap-2 flex-wrap">
           {/* "Clona Settimana" restava l'unico modo di programmare
               l'allenamento/l'alimentazione nel tempo: avanzare di 7 giorni
