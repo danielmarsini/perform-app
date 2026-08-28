@@ -605,6 +605,23 @@ export async function computeBatchRecoveryCompliance(supabase, userIds) {
   return results;
 }
 
+// BUG PRESO (grave): finché la migrazione SCHEMA_v85 (colonne micronutrienti
+// su nutrition_logs) non è ancora stata eseguita sul DB, OGNI select/insert/
+// update di nutrition_logs qui sotto falliva per intero (Postgres "column
+// does not exist", 42703) — il diario alimentare risultava vuoto in tutti i
+// giorni, incluso quello corrente, esattamente come se ogni alimento
+// registrato fosse stato cancellato, mentre i dati salvati PRIMA di questo
+// deploy restavano tutti intatti nel DB, semplicemente illeggibili con
+// queste query più larghe. Ogni funzione qui sotto ora riprova senza le
+// colonne micro se e solo se l'errore è "colonna mancante": il diario
+// (nome/grammi/macro) torna sempre leggibile/scrivibile anche prima che la
+// migrazione sia stata applicata, i soli micronutrienti restano a 0/non
+// salvati finché non lo è — mai più un intero giorno che sembra sparito per
+// una migrazione in ritardo.
+function isMissingColumnError(error) {
+  return error?.code === "42703" || /column .* does not exist/i.test(error?.message || "");
+}
+
 // Diario pasti reale di UN giorno, per il "Diario Libero" della Home.
 export async function fetchNutritionLogsForDate(supabase, userId, dateISO) {
   const { data, error } = await supabase
@@ -613,7 +630,17 @@ export async function fetchNutritionLogsForDate(supabase, userId, dateISO) {
     .eq("user_id", userId)
     .eq("date", dateISO)
     .order("created_at", { ascending: true });
-  if (error) throw error;
+  if (error) {
+    if (!isMissingColumnError(error)) throw error;
+    const { data: legacy, error: legacyError } = await supabase
+      .from("nutrition_logs")
+      .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, created_at")
+      .eq("user_id", userId)
+      .eq("date", dateISO)
+      .order("created_at", { ascending: true });
+    if (legacyError) throw legacyError;
+    return (legacy ?? []).map((r) => ({ ...r, sodium_mg: null, potassium_mg: null, iron_mg: null, calcium_mg: null, magnesium_mg: null }));
+  }
   return data ?? [];
 }
 
@@ -630,7 +657,18 @@ export async function fetchAllNutritionLogsForExport(supabase, userId, fromISO, 
     .gte("date", fromISO)
     .lte("date", toISO)
     .order("date", { ascending: true });
-  if (error) throw error;
+  if (error) {
+    if (!isMissingColumnError(error)) throw error;
+    const { data: legacy, error: legacyError } = await supabase
+      .from("nutrition_logs")
+      .select("date, meal_slot, name, grams, kcal, protein, carbs, fat")
+      .eq("user_id", userId)
+      .gte("date", fromISO)
+      .lte("date", toISO)
+      .order("date", { ascending: true });
+    if (legacyError) throw legacyError;
+    return (legacy ?? []).map((r) => ({ ...r, sodium_mg: null, potassium_mg: null, iron_mg: null, calcium_mg: null, magnesium_mg: null }));
+  }
   return data ?? [];
 }
 
@@ -654,7 +692,20 @@ export async function addNutritionLogItem(supabase, userId, dateISO, mealSlot, i
     })
     .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, sodium_mg, potassium_mg, iron_mg, calcium_mg, magnesium_mg, created_at")
     .single();
-  if (error) throw error;
+  if (error) {
+    if (!isMissingColumnError(error)) throw error;
+    const { data: legacy, error: legacyError } = await supabase
+      .from("nutrition_logs")
+      .insert({
+        user_id: userId, date: dateISO, meal_slot: mealSlot,
+        name: item.name, grams: item.grams ?? null,
+        kcal: item.kcal || 0, protein: item.p || 0, carbs: item.c || 0, fat: item.f || 0,
+      })
+      .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, created_at")
+      .single();
+    if (legacyError) throw legacyError;
+    return { ...legacy, sodium_mg: null, potassium_mg: null, iron_mg: null, calcium_mg: null, magnesium_mg: null };
+  }
   return data;
 }
 
@@ -675,7 +726,13 @@ export async function updateNutritionLogItem(supabase, logId, patch) {
     sodium_mg: patch.na || 0, potassium_mg: patch.k || 0, iron_mg: patch.fe || 0,
     calcium_mg: patch.ca || 0, magnesium_mg: patch.mg || 0,
   }).eq("id", logId);
-  if (error) throw error;
+  if (error) {
+    if (!isMissingColumnError(error)) throw error;
+    const { error: legacyError } = await supabase.from("nutrition_logs").update({
+      grams: patch.grams, kcal: patch.kcal, protein: patch.p, carbs: patch.c, fat: patch.f,
+    }).eq("id", logId);
+    if (legacyError) throw legacyError;
+  }
 }
 
 // Abitudini alimentari personali, derivate dagli ultimi `sinceDays` giorni di
