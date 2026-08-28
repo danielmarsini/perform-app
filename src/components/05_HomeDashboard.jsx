@@ -1514,16 +1514,20 @@ function MesocicloBadge({ mesociclo, week, weeks }) {
 }
 
 /* ============================================================================
-   GUIDA INTERATTIVA PERFORM — sostituisce il vecchio banner "Giorno 1 di 14"
-   (richiesta esplicita: "toglilo, fai una guida interattiva vera"). Mostrata
-   UNA sola volta, subito dopo l'onboarding: una piccola sequenza di schermate
-   stile bot, diversa per ognuno dei 5 piani, che spiega le funzioni
-   principali dell'app e dove trovarle — pensata per stare nei primi 5-10
-   minuti, non un tutorial lungo da leggere. Stessa identità visiva
-   dell'AppIntroTutorial di 11_OnboardingFlow.jsx (icona in cerchio
-   sfumato, kicker, title-shine, corpo breve) invece di un secondo stile
-   inventato da zero — chi l'ha già vista una volta la riconosce.
-   ========================================================================== */
+   GUIDA INTERATTIVA PERFORM — v2: spotlight reale sugli elementi della Home
+   (richiesta esplicita: "rendi la guida interattiva, non pagine da mandare
+   avanti ma cosa cliccare/inserirci dentro schermate dell'app"). La v1 era
+   comunque solo una sequenza di slide astratte, una diversa dall'altra ma
+   sempre lette-e-premi-Avanti — questa punta un vero ritaglio (spotlight)
+   sopra un elemento REALE della Home già montato sullo schermo (cerchi di
+   compliance, streak, barra XP, le 4 card di sezione, il tab Chat in bottom
+   nav) invece di un'icona generica in una schermata a parte. Ogni step porta
+   un `target` (attributo data-tour sull'elemento vero, vedi più sotto per i
+   punti di aggancio) o resta senza (welcome/chiusura, card centrata). Un
+   target mai trovato (elemento non montato per quel piano) fa avanzare da
+   solo lo step dopo una breve attesa — mai un buco a schermo vuoto. Mostrata
+   UNA sola volta, subito dopo l'onboarding (guide_tour_completed,
+   SCHEMA_v70), diversa per ognuno dei 5 piani come già in v1. */
 const GUIDE_BOT_ICON = MessageCircle;
 
 // Contenuto specifico per piano: ognuno vede SOLO le funzioni che ha
@@ -1534,95 +1538,140 @@ const GUIDE_BOT_ICON = MessageCircle;
 const GUIDE_TOUR_STEPS = {
   free: [
     { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
-      body: "In 2 minuti ti mostro le funzioni principali di PERFORM: dove sono, a cosa servono e cosa farci. Si può saltare in qualsiasi momento." },
-    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Ti mostro le funzioni principali di PERFORM direttamente sulla tua Home: tocca Avanti e ti indico dove sono, una alla volta. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", target: "compliance", title: "I 3 cerchi raccontano la tua settimana.",
       body: "Allenamento, Alimentazione e Recupero: ognuno è una percentuale calcolata sui tuoi ultimi giorni reali. Toccane uno per vedere il dettaglio — non sono solo un numero, spiegano il perché." },
-    { icon: Dumbbell, kicker: "Allenamento", title: "Costruisci la tua routine libera.",
-      body: "In \"La Mia Routine\" scegli tu gli esercizi giorno per giorno. Segna carico e reps mentre alleni: si salva da sola, niente da confermare." },
-    { icon: Salad, kicker: "Alimentazione", title: "Diario libero e target personalizzabile.",
-      body: "Registra i pasti nel Diario Libero e imposta tu il tuo target calorico/macro in cima alla pagina — puoi cambiarlo quando vuoi." },
-    { icon: BedDouble, kicker: "Recupero & Integrazione", title: "Sonno, passi e integratori.",
-      body: "Registrali ogni giorno: alimentano il cerchio Recupero e ti aiutano a capire quando serve rallentare." },
-    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
-      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei li trovi nel tuo Profilo — tocca la barra XP in Home per vedere quanto manca al prossimo." },
+    { icon: Dumbbell, kicker: "Allenamento", target: "card-workout", title: "Costruisci la tua routine libera.",
+      body: "Tocca questa card per aprire \"La Mia Routine\" e scegliere tu gli esercizi giorno per giorno. Segna carico e reps mentre alleni: si salva da sola, niente da confermare." },
+    { icon: Salad, kicker: "Alimentazione", target: "card-nutrition", title: "Diario libero e target personalizzabile.",
+      body: "Da qui registri i pasti nel Diario Libero e imposti tu il tuo target calorico/macro in cima alla pagina — puoi cambiarlo quando vuoi." },
+    { icon: BedDouble, kicker: "Recupero & Integrazione", target: "card-recovery", title: "Sonno, passi e integratori.",
+      body: "Registrali ogni giorno da qui e dalla card Integrazione qui sotto: alimentano il cerchio Recupero e ti aiutano a capire quando serve rallentare." },
+    { icon: Trophy, kicker: "Streak e livelli", target: "xp", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva la streak (il numero accanto alla fiamma). Tocca questa barra quando vuoi per vedere quanto manca al prossimo livello — trofei e storico li trovi nel tuo Profilo." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Con un piano a pagamento sblocchi grafici storici avanzati, la guida biomeccanica di ogni esercizio e — dalla Scheda Personalizzata in su — un coach vero che segue i tuoi progressi. Vedi gli abbonamenti quando vuoi, dalle Impostazioni." },
   ],
   performance_pack: [
     { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
-      body: "In 2 minuti ti mostro le funzioni principali di PERFORM Premium: dove sono, a cosa servono e cosa farci. Si può saltare in qualsiasi momento." },
-    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Ti mostro le funzioni principali di PERFORM Premium direttamente sulla tua Home: tocca Avanti e ti indico dove sono, una alla volta. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", target: "compliance", title: "I 3 cerchi raccontano la tua settimana.",
       body: "Allenamento, Alimentazione e Recupero: ognuno è una percentuale calcolata sui tuoi ultimi giorni reali. Toccane uno per vedere il dettaglio." },
-    { icon: Dumbbell, kicker: "Allenamento", title: "Routine libera + guida a ogni esercizio.",
-      body: "Costruisci la tua scheda in \"La Mia Routine\": per ogni esercizio hai anche la guida biomeccanica (come eseguirlo, cosa evitare) e la Wiki Allenamento con i principi scientifici dietro un piano che funziona." },
-    { icon: Salad, kicker: "Alimentazione", title: "Diario, sostituzioni e micronutrienti.",
+    { icon: Dumbbell, kicker: "Allenamento", target: "card-workout", title: "Routine libera + guida a ogni esercizio.",
+      body: "Tocca questa card per costruire la tua scheda in \"La Mia Routine\": per ogni esercizio hai anche la guida biomeccanica (come eseguirlo, cosa evitare) e la Wiki Allenamento con i principi scientifici dietro un piano che funziona." },
+    { icon: Salad, kicker: "Alimentazione", target: "card-nutrition", title: "Diario, sostituzioni e micronutrienti.",
       body: "Oltre al Diario Libero, le Sostituzioni trovano al volo l'alimento equivalente per macro se ti manca qualcosa, e l'analisi in tempo reale di Sodio/Potassio/Ferro/Calcio/Magnesio ti segnala le carenze croniche." },
-    { icon: History, kicker: "Recupero", title: "Grafici storici stile Apple Salute.",
-      body: "Sonno, passi, HRV — l'andamento nel tempo, non solo il numero di oggi. Li trovi nella sezione Recupero." },
-    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
-      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei li trovi nel tuo Profilo." },
+    { icon: History, kicker: "Recupero", target: "card-recovery", title: "Grafici storici stile Apple Salute.",
+      body: "Tocca questa card: sonno, passi, HRV — l'andamento nel tempo, non solo il numero di oggi." },
+    { icon: Trophy, kicker: "Streak e livelli", target: "xp", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva la streak. Tocca questa barra per vedere il tuo progresso — livelli e trofei li trovi nel tuo Profilo." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Se vuoi una scheda costruita su misura da un coach vero, con follow-up diretto, dalla Scheda Personalizzata in su hai anche quello. Vedi gli abbonamenti quando vuoi, dalle Impostazioni." },
   ],
   scheda_personalizzata: [
     { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
-      body: "In pochi minuti ti mostro come sfruttare al meglio la tua Scheda Personalizzata. Si può saltare in qualsiasi momento." },
-    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Ti mostro come sfruttare al meglio la tua Scheda Personalizzata direttamente sulla tua Home. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", target: "compliance", title: "I 3 cerchi raccontano la tua settimana.",
       body: "Allenamento, Alimentazione e Recupero: percentuali calcolate sui tuoi ultimi giorni reali. Toccane uno per il dettaglio." },
-    { icon: Dumbbell, kicker: "Allenamento", title: "La scheda costruita dal coach è qui.",
-      body: "In Allenamento trovi gli esercizi assegnati sui tuoi obiettivi reali — non una scheda generica. Segna carico e reps mentre alleni: si salva da sola." },
-    { icon: MessageCircle, kicker: "Chat privata", title: "Il coach è a un messaggio di distanza.",
-      body: "Per le prime settimane hai una chat privata diretta col coach (terzo pulsante in basso): usala per dubbi su esecuzione, dolori o qualsiasi cosa nella scheda non torni." },
-    { icon: Salad, kicker: "Alimentazione & Integrazione", title: "Restano autogestite, come nel Diario Libero.",
-      body: "Diario pasti e integratori li registri tu — se in futuro vuoi anche il piano alimentare costruito dal coach, lo trovi tra gli abbonamenti a coaching completo." },
-    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
-      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei nel tuo Profilo." },
+    { icon: Dumbbell, kicker: "Allenamento", target: "card-workout", title: "La scheda costruita dal coach è qui.",
+      body: "Tocca questa card: trovi gli esercizi assegnati sui tuoi obiettivi reali, non una scheda generica. Segna carico e reps mentre alleni: si salva da sola." },
+    { icon: MessageCircle, kicker: "Chat privata", target: "nav-chat", title: "Il coach è a un messaggio di distanza.",
+      body: "Per le prime settimane hai una chat privata diretta col coach, qui in basso: usala per dubbi su esecuzione, dolori o qualsiasi cosa nella scheda non torni." },
+    { icon: Salad, kicker: "Alimentazione & Integrazione", target: "card-nutrition", title: "Restano autogestite, come nel Diario Libero.",
+      body: "Diario pasti (qui) e integratori (nella card Integrazione qui sotto) li registri tu — se in futuro vuoi anche il piano alimentare costruito dal coach, lo trovi tra gli abbonamenti a coaching completo." },
+    { icon: Trophy, kicker: "Streak e livelli", target: "streak", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva questa fiamma. Livelli e trofei nel tuo Profilo." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Buon lavoro — il coach legge davvero quello che registri per calibrare i tuoi prossimi allenamenti." },
   ],
   training: [
     { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
-      body: "In pochi minuti ti mostro come sfruttare al meglio il tuo Coaching Allenamento. Si può saltare in qualsiasi momento." },
-    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Ti mostro come sfruttare al meglio il tuo Coaching Allenamento direttamente sulla tua Home. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", target: "compliance", title: "I 3 cerchi raccontano la tua settimana.",
       body: "Allenamento, Alimentazione e Recupero: percentuali calcolate sui tuoi ultimi giorni reali. Toccane uno per il dettaglio." },
-    { icon: Dumbbell, kicker: "Allenamento", title: "Scheda aggiornata in continuo, mai statica.",
-      body: "Il coach la fa evolvere settimana dopo settimana sui tuoi progressi reali. Segna carico e reps mentre alleni, e guarda il grafico Volume settimanale per capire dove stai lavorando di più." },
-    { icon: MessageCircle, kicker: "Chat privata", title: "Il coach è sempre a un messaggio di distanza.",
-      body: "Chat diretta (terzo pulsante in basso), attiva per tutta la durata dell'abbonamento — usala per dubbi su esecuzione, dolori o qualunque correzione." },
+    { icon: Dumbbell, kicker: "Allenamento", target: "card-workout", title: "Scheda aggiornata in continuo, mai statica.",
+      body: "Tocca questa card: il coach la fa evolvere settimana dopo settimana sui tuoi progressi reali. Segna carico e reps mentre alleni, e guarda il grafico Volume settimanale per capire dove stai lavorando di più." },
+    { icon: MessageCircle, kicker: "Chat privata", target: "nav-chat", title: "Il coach è sempre a un messaggio di distanza.",
+      body: "Chat diretta qui in basso, attiva per tutta la durata dell'abbonamento — usala per dubbi su esecuzione, dolori o qualunque correzione." },
     { icon: CheckCircle2, kicker: "Check settimanale", title: "Peso e sensazioni, ogni settimana.",
       body: "Compilalo quando te lo propone l'app: è quello che il coach legge per capire se serve scaricare, spingere di più, o cambiare rotta." },
-    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
-      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei nel tuo Profilo." },
+    { icon: Trophy, kicker: "Streak e livelli", target: "streak", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva questa fiamma. Livelli e trofei nel tuo Profilo." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Hai un coach vero che segue i tuoi progressi passo passo — più registri con costanza, più preciso può essere il suo lavoro." },
   ],
   full_coaching: [
     { icon: GUIDE_BOT_ICON, kicker: "La tua guida rapida", title: "Ciao! Sono qui per orientarti.",
-      body: "In pochi minuti ti mostro come sfruttare al meglio il tuo Full Coaching. Si può saltare in qualsiasi momento." },
-    { icon: Flame, kicker: "Home", title: "I 3 cerchi raccontano la tua settimana.",
+      body: "Ti mostro come sfruttare al meglio il tuo Full Coaching direttamente sulla tua Home. Si può saltare in qualsiasi momento." },
+    { icon: Flame, kicker: "Home", target: "compliance", title: "I 3 cerchi raccontano la tua settimana.",
       body: "Allenamento, Alimentazione e Recupero: percentuali calcolate sui tuoi ultimi giorni reali. Toccane uno per il dettaglio." },
-    { icon: Dumbbell, kicker: "Allenamento", title: "Scheda aggiornata in continuo, mai statica.",
-      body: "Il coach la fa evolvere settimana dopo settimana sui tuoi progressi reali. Segna carico e reps mentre alleni." },
-    { icon: Salad, kicker: "Alimentazione", title: "Dieta calcolata su misura, ON/OFF.",
+    { icon: Dumbbell, kicker: "Allenamento", target: "card-workout", title: "Scheda aggiornata in continuo, mai statica.",
+      body: "Tocca questa card: il coach la fa evolvere settimana dopo settimana sui tuoi progressi reali. Segna carico e reps mentre alleni." },
+    { icon: Salad, kicker: "Alimentazione", target: "card-nutrition", title: "Dieta calcolata su misura, ON/OFF.",
       body: "Il coach imposta un target diverso per i giorni di allenamento e di riposo. Se ti manca un alimento, le Sostituzioni trovano al volo l'equivalente per macro — il piano resta in target senza rifare i calcoli a mano." },
-    { icon: Pill, kicker: "Integrazione", title: "Protocollo assegnato dal coach.",
-      body: "In Integrazione trovi cosa prendere, quando e perché — spuntalo ogni giorno, il coach lo vede." },
-    { icon: MessageCircle, kicker: "Chat privata", title: "Il coach è sempre a un messaggio di distanza.",
-      body: "Chat diretta (terzo pulsante in basso) e check settimanale (peso e sensazioni): è così che il coach calibra ogni cosa sui tuoi progressi reali, non su un piano scritto una volta e dimenticato." },
-    { icon: Trophy, kicker: "Streak e livelli", title: "Ogni giorno registrato conta.",
-      body: "Anche solo un pasto segnato mantiene viva la streak. Livelli e trofei nel tuo Profilo." },
+    { icon: Pill, kicker: "Integrazione", target: "card-supplements", title: "Protocollo assegnato dal coach.",
+      body: "Tocca questa card: trovi cosa prendere, quando e perché — spuntalo ogni giorno, il coach lo vede." },
+    { icon: MessageCircle, kicker: "Chat privata", target: "nav-chat", title: "Il coach è sempre a un messaggio di distanza.",
+      body: "Chat diretta qui in basso e check settimanale (peso e sensazioni): è così che il coach calibra ogni cosa sui tuoi progressi reali, non su un piano scritto una volta e dimenticato." },
+    { icon: Trophy, kicker: "Streak e livelli", target: "streak", title: "Ogni giorno registrato conta.",
+      body: "Anche solo un pasto segnato mantiene viva questa fiamma. Livelli e trofei nel tuo Profilo." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Hai tutto il necessario e un coach vero che segue ogni aspetto del tuo percorso — più registri con costanza, più preciso può essere il suo lavoro." },
   ],
 };
 
-/* Stessa identità visiva di AppIntroTutorial (11_OnboardingFlow.jsx): icona
-   in cerchio sfumato, kicker, title-shine, corpo breve, dots di
-   avanzamento — qui a schermo intero sopra il resto della Home, mostrata
-   una sola volta (guide_tour_completed, SCHEMA_v70) subito dopo
-   l'onboarding. onFinish marca il flag sia al completamento sia al salto:
-   chi salta ha scelto di saltare, non va ripresentata al prossimo accesso. */
-function PerformGuideTour({ plan, gender, onFinish }) {
+// Rimisura il rettangolo del bersaglio reale (data-tour="<id>") a ogni
+// cambio di step, e lo tiene aggiornato su resize/scroll — un piccolo
+// intervallo di sicurezza (elementi che montano/animano con un attimo di
+// ritardo, es. novità/badge) invece di un MutationObserver, per restare
+// semplice su una guida mostrata una volta sola e per pochi secondi.
+function useTourTargetRect(targetId) {
+  const [rect, setRect] = useState(null);
+  useEffect(() => {
+    if (!targetId) { setRect(null); return undefined; }
+    const measure = () => {
+      const el = document.querySelector(`[data-tour="${targetId}"]`);
+      setRect(el ? el.getBoundingClientRect() : null);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    const id = setInterval(measure, 300);
+    return () => { window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true); clearInterval(id); };
+  }, [targetId]);
+  return rect;
+}
+
+// Ritaglio "spotlight" sopra l'overlay scuro: lo stesso trucco CSS di
+// qualunque coachmark tour (box-shadow enorme invece del target reale),
+// pointer-events:none così i tap nell'area evidenziata restano gestiti
+// dall'overlay sotto (la guida avanza al tocco, l'elemento reale non è
+// interagibile finché la guida è aperta — evita azioni reali involontarie,
+// es. aprire un upsell su una card bloccata, mentre si sta solo spiegando).
+function TourSpotlight({ rect }) {
+  if (!rect) return null;
+  const pad = 8;
+  return (
+    <div className="fixed pointer-events-none spring-in" aria-hidden="true"
+      style={{
+        top: rect.top - pad, left: rect.left - pad,
+        width: rect.width + pad * 2, height: rect.height + pad * 2,
+        borderRadius: 18, boxShadow: "0 0 0 9999px rgba(0,0,0,0.72)",
+        border: "2px solid #C5A059", zIndex: 90,
+        transition: "top 240ms ease, left 240ms ease, width 240ms ease, height 240ms ease",
+      }} />
+  );
+}
+
+/* Guida interattiva PERFORM: fumetto ancorato al bersaglio reale (sotto se
+   c'è spazio, altrimenti sopra) quando lo step ha un target, altrimenti
+   card centrata (welcome/chiusura) — stessa identità visiva della v1 e di
+   AppIntroTutorial (11_OnboardingFlow.jsx): icona in cerchio sfumato,
+   kicker, title-shine, corpo breve, dots di avanzamento. Mostrata una sola
+   volta (guide_tour_completed, SCHEMA_v70) subito dopo l'onboarding.
+   onFinish marca il flag sia al completamento sia al salto: chi salta ha
+   scelto di saltare, non va ripresentata al prossimo accesso. */
+function SpotlightTour({ plan, gender, onFinish }) {
   const steps = GUIDE_TOUR_STEPS[plan] || GUIDE_TOUR_STEPS.free;
   const [step, setStep] = useState(0);
   const last = step === steps.length - 1;
@@ -1630,64 +1679,92 @@ function PerformGuideTour({ plan, gender, onFinish }) {
   const Icon = s.icon;
   const isFemale = gender === "F";
   const accentColor = isFemale ? "#D4A5A5" : "#C5A059";
+  const rect = useTourTargetRect(s.target);
+
+  const next = useCallback(() => setStep((n) => Math.min(n + 1, steps.length - 1)), [steps.length]);
+
+  // Un target mai trovato (elemento non montato per questo piano/stato, es.
+  // Recupero bloccato per Free) non deve bloccare la guida a metà: dopo una
+  // breve attesa si passa avanti da soli invece di restare su un overlay
+  // scuro senza ritaglio e senza spiegazione.
+  useEffect(() => {
+    if (!s.target || rect) return undefined;
+    const t = setTimeout(() => { if (!last) next(); }, 1200);
+    return () => clearTimeout(t);
+  }, [step, s.target, rect, last, next]);
+
+  const cardWidth = 320;
+  const pos = (() => {
+    if (!rect) return null;
+    const vh = window.innerHeight, vw = window.innerWidth;
+    const cardHeight = 220;
+    const spaceBelow = vh - rect.bottom;
+    const placeBelow = spaceBelow > cardHeight + 24 || spaceBelow > rect.top;
+    const top = placeBelow
+      ? Math.min(rect.bottom + 14, vh - cardHeight - 16)
+      : Math.max(16, rect.top - cardHeight - 14);
+    const left = Math.min(Math.max(16, rect.left), vw - cardWidth - 16);
+    return { top, left };
+  })();
+
+  const finish = () => (last ? onFinish() : next());
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: "var(--page)" }}>
-        <div className="flex justify-end px-5 pt-5" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)" }}>
-          <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
-            Salta la guida
-          </button>
-        </div>
+      <div className="fixed inset-0" style={{ zIndex: 89 }} onClick={finish}>
+        {rect
+          ? <TourSpotlight rect={rect} />
+          : <div className="fixed inset-0" style={{ backgroundColor: "rgba(0,0,0,0.72)" }} />}
+      </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center" style={{ maxWidth: 480, margin: "0 auto" }}>
-          <div key={step} className="spring-in">
-            <div className="mx-auto mb-6 rounded-full flex items-center justify-center"
-                 style={{
-                   width: 84, height: 84,
-                   background: isFemale
-                     ? "linear-gradient(135deg, rgba(212,165,165,0.22), rgba(212,165,165,0.06))"
-                     : "linear-gradient(135deg, rgba(197,160,89,0.22), rgba(197,160,89,0.06))",
-                   border: `1px solid ${isFemale ? "rgba(212,165,165,0.4)" : "rgba(197,160,89,0.4)"}`,
-                   boxShadow: `0 0 40px ${isFemale ? "rgba(212,165,165,0.25)" : "rgba(197,160,89,0.25)"}`,
-                 }}>
-              <Icon size={34} style={{ color: accentColor }} />
+      <div className="fixed spring-in" key={step}
+        style={{
+          zIndex: 91,
+          ...(pos
+            ? { top: pos.top, left: pos.left, width: cardWidth }
+            : { inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }),
+        }}
+        onClick={(e) => e.stopPropagation()}>
+        <div className="rounded-2xl p-5" style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", boxShadow: "0 20px 50px rgba(0,0,0,0.4)", maxWidth: pos ? undefined : 420 }}>
+          <div className="flex items-center gap-2.5 mb-2.5">
+            <div className="rounded-full flex items-center justify-center shrink-0"
+                 style={{ width: 34, height: 34, background: isFemale ? "rgba(212,165,165,0.18)" : "rgba(197,160,89,0.18)" }}>
+              <Icon size={17} style={{ color: accentColor }} />
             </div>
-
-            <p className="font-data mb-3" style={{ fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-2)" }}>
+            <p className="font-data" style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-2)" }}>
               {s.kicker}
             </p>
-            <p className="title-shine" style={{ fontSize: "1.5rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
-              {s.title}
-            </p>
-            <p className="mt-4 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
-              {s.body}
-            </p>
           </div>
-        </div>
+          <p className="title-shine mb-1.5" style={{ fontSize: "1.05rem", fontWeight: 800, letterSpacing: "-0.01em", lineHeight: 1.25 }}>
+            {s.title}
+          </p>
+          <p className="text-sm leading-relaxed mb-4" style={{ color: "var(--ink-2)" }}>
+            {s.body}
+          </p>
 
-        <div className="px-6 pb-10" style={{ maxWidth: 480, width: "100%", margin: "0 auto" }}>
-          <div className="flex items-center justify-center gap-2 mb-6">
-            {steps.map((_, i) => (
-              <button key={i} onClick={() => setStep(i)} aria-label={`Vai allo step ${i + 1}`}
-                className="rounded-full transition-all duration-300"
-                style={{ width: i === step ? 22 : 7, height: 7,
-                         backgroundColor: i === step ? accentColor : "var(--line)" }} />
-            ))}
-          </div>
-          <div className="flex gap-2.5">
-            {step > 0 && (
-              <button onClick={() => setStep((v) => v - 1)}
-                className="rounded-full px-5 py-3.5 text-sm"
-                style={{ border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
-                Indietro
-              </button>
-            )}
-            <button onClick={() => (last ? onFinish() : setStep((v) => v + 1))}
-              className="flex-1 rounded-full px-4 py-3.5 text-sm flex items-center justify-center gap-1.5 btn-3d"
-              style={{ backgroundColor: accentColor, color: "#111111", fontWeight: 700 }}>
-              {last ? "Ho capito, si parte!" : "Avanti"} <ChevronRight size={16} />
+          <div className="flex items-center justify-between gap-2">
+            <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+              Salta la guida
             </button>
+            <div className="flex items-center gap-2">
+              {step > 0 && (
+                <button onClick={() => setStep((v) => v - 1)} className="text-xs rounded-full px-3 py-2"
+                  style={{ border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
+                  Indietro
+                </button>
+              )}
+              <button onClick={finish} className="text-xs rounded-full px-4 py-2"
+                style={{ backgroundColor: accentColor, color: "#111111", fontWeight: 700 }}>
+                {last ? "Ho capito, si parte!" : "Avanti"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center gap-1.5 mt-3.5">
+            {steps.map((_, i) => (
+              <span key={i} className="rounded-full" style={{ width: i === step ? 16 : 6, height: 6,
+                backgroundColor: i === step ? accentColor : "var(--line)", transition: "width 200ms ease" }} />
+            ))}
           </div>
         </div>
       </div>
@@ -2898,7 +2975,8 @@ export function HomeDashboard({
               <button onClick={() => setStreakInfoOpen(true)}
                       className="inline-flex items-center gap-1.5 shrink-0"
                       style={{ background: "none" }}
-                      aria-label="Streak: tocca per i dettagli">
+                      aria-label="Streak: tocca per i dettagli"
+                      data-tour="streak">
                 <Flame size={32} className={streak >= 15 ? "flame-3" : streak >= 8 ? "flame-2" : "flame-1"}
                        fill="url(#flameShineGrad)" stroke="url(#flameShineGrad)" strokeWidth={1.3}
                        style={{ filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.4)) drop-shadow(0 0 9px rgba(212,175,55,0.5))" }} />
@@ -2921,7 +2999,7 @@ export function HomeDashboard({
 
           <div style={{ position: "relative", zIndex: 1 }}>
           {/* i 3 cerchi di compliance: dentro lo stesso banner, sopra il livello */}
-          <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }}>
+          <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }} data-tour="compliance">
             <ComplianceRings rings={complianceRings} onSelect={setActiveRingPopup} />
           </div>
 
@@ -2932,7 +3010,8 @@ export function HomeDashboard({
               subito quanto manca al prossimo grado e restare motivati. */}
           <button onClick={() => setLevelRoadmapOpen(true)} className="w-full text-left mt-4 pt-4"
                   style={{ borderTop: "1px solid var(--line)", background: "none" }}
-                  aria-label="Vedi tutti i livelli">
+                  aria-label="Vedi tutti i livelli"
+                  data-tour="xp">
             {/* Il nome del grado (Neofita/Intermedio/...) è stato rimosso su
                 richiesta esplicita — resta solo il numero di livello, meno
                 gamificato/"cringe" e comunque già sufficiente a mostrare il
@@ -2966,7 +3045,7 @@ export function HomeDashboard({
           </div>
         )}
         {isRealMode && guideTourSeen === false && (
-          <PerformGuideTour plan={userPlan} gender={profile.gender} onFinish={finishGuideTour} />
+          <SpotlightTour plan={userPlan} gender={profile.gender} onFinish={finishGuideTour} />
         )}
 
         {/* La prontezza di oggi non è più una card separata qui: vive dentro
@@ -3073,24 +3152,32 @@ export function HomeDashboard({
             fianco del titolo invece che sopra, le 4 card sono più compatte
             e più vicine fra loro, come richiesto. */}
         <div className="grid grid-cols-1 gap-2.5">
-          <Window3D icon={Dumbbell} label="Allenamento" accent={accent} floatClass="icon-float-1"
-            sub={day.isTraining ? day.sessionLabel : "Giorno di riposo"}
-            novelty={sectionNovelty.workout}
-            onClick={() => setScreen("workout")} />
-          <Window3D icon={Salad} label="Alimentazione" accent={accent} floatClass="icon-float-2"
-            sub={`${remaining.kcal} kcal rimanenti`}
-            novelty={sectionNovelty.nutrition}
-            onClick={() => setScreen("nutrition")} />
-          <Window3D icon={Pill} label="Integrazione" accent={accent} floatClass="icon-float-2"
-            sub={access.pro ? "Piano del coach attivo" : "Diario libero + wiki scientifica"}
-            novelty={sectionNovelty.supplements}
-            onClick={() => setScreen("supplements")} />
-          <Window3D icon={BedDouble} label="Recupero e Attività" accent={accent} floatClass="icon-float-3"
-            sub={access.recovery
-              ? (sleep.hours ? `${sleep.hours.toFixed(1)}h dormite · ${Number(steps || 0).toLocaleString("it-IT")} passi` : "Registra la notte")
-              : ""}
-            locked={!access.recovery} onLocked={onUpgrade}
-            onClick={() => setScreen("recovery")} />
+          <div data-tour="card-workout">
+            <Window3D icon={Dumbbell} label="Allenamento" accent={accent} floatClass="icon-float-1"
+              sub={day.isTraining ? day.sessionLabel : "Giorno di riposo"}
+              novelty={sectionNovelty.workout}
+              onClick={() => setScreen("workout")} />
+          </div>
+          <div data-tour="card-nutrition">
+            <Window3D icon={Salad} label="Alimentazione" accent={accent} floatClass="icon-float-2"
+              sub={`${remaining.kcal} kcal rimanenti`}
+              novelty={sectionNovelty.nutrition}
+              onClick={() => setScreen("nutrition")} />
+          </div>
+          <div data-tour="card-supplements">
+            <Window3D icon={Pill} label="Integrazione" accent={accent} floatClass="icon-float-2"
+              sub={access.pro ? "Piano del coach attivo" : "Diario libero + wiki scientifica"}
+              novelty={sectionNovelty.supplements}
+              onClick={() => setScreen("supplements")} />
+          </div>
+          <div data-tour="card-recovery">
+            <Window3D icon={BedDouble} label="Recupero e Attività" accent={accent} floatClass="icon-float-3"
+              sub={access.recovery
+                ? (sleep.hours ? `${sleep.hours.toFixed(1)}h dormite · ${Number(steps || 0).toLocaleString("it-IT")} passi` : "Registra la notte")
+                : ""}
+              locked={!access.recovery} onLocked={onUpgrade}
+              onClick={() => setScreen("recovery")} />
+          </div>
         </div>
       </div>
     );
