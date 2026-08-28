@@ -2450,7 +2450,10 @@ export function HomeDashboard({
         const bySlot = MEAL_SLOTS.reduce((a, s) => ({ ...a, [s.id]: [] }), {});
         rows.forEach((r) => {
           if (!bySlot[r.meal_slot]) bySlot[r.meal_slot] = [];
-          bySlot[r.meal_slot].push({ id: r.id, name: r.name, grams: r.grams, kcal: r.kcal, p: r.protein, c: r.carbs, f: r.fat });
+          bySlot[r.meal_slot].push({
+            id: r.id, name: r.name, grams: r.grams, kcal: r.kcal, p: r.protein, c: r.carbs, f: r.fat,
+            na: r.sodium_mg, k: r.potassium_mg, fe: r.iron_mg, ca: r.calcium_mg, mg: r.magnesium_mg,
+          });
         });
         setPastMeals(bySlot);
       })
@@ -7435,7 +7438,8 @@ function NutritionTabs({
   const [grams, setGrams] = useState("");
   const [dropOpen, setDropOpen] = useState(false);
   const [manualAddOpen, setManualAddOpen] = useState(false);
-  const [manualMacros, setManualMacros] = useState({ kcal: "", p: "", c: "", f: "" });
+  const [manualMicrosOpen, setManualMicrosOpen] = useState(false);
+  const [manualMacros, setManualMacros] = useState({ kcal: "", p: "", c: "", f: "", na: "", k: "", fe: "", ca: "", mg: "" });
   // Modifica grammi di un alimento già nel diario: niente più
   // cancella-e-ricerca per correggere una quantità sbagliata o cambiata.
   const [editingGramsKey, setEditingGramsKey] = useState(null); // `${slotId}-${index}`
@@ -7596,6 +7600,8 @@ function NutritionTabs({
     const food = {
       name, kcal: Number(manualMacros.kcal) || 0, p: Number(manualMacros.p) || 0,
       c: Number(manualMacros.c) || 0, f: Number(manualMacros.f) || 0,
+      na: Number(manualMacros.na) || 0, k: Number(manualMacros.k) || 0, fe: Number(manualMacros.fe) || 0,
+      ca: Number(manualMacros.ca) || 0, mg: Number(manualMacros.mg) || 0,
     };
     haptic("confirm");
     onAddCustomFood && onAddCustomFood(food);
@@ -7871,6 +7877,28 @@ function NutritionTabs({
                               </label>
                             ))}
                           </div>
+                          {/* Micronutrienti: opzionali e ripiegati di default — un
+                              alimento aggiunto a mano senza compilarli qui non
+                              contribuiva MAI ai totali di sodio/potassio/ferro/
+                              calcio/magnesio del diario, nemmeno dopo il fix dello
+                              schema (nutrition_logs/custom_foods hanno le colonne,
+                              ma restano vuote se nessuno le scrive). */}
+                          <button type="button" onClick={() => setManualMicrosOpen((v) => !v)}
+                            className="text-xs font-medium mb-2" style={{ color: accent }}>
+                            {manualMicrosOpen ? "− Nascondi micronutrienti" : "+ Aggiungi micronutrienti (opzionale)"}
+                          </button>
+                          {manualMicrosOpen && (
+                            <div className="grid grid-cols-2 gap-2 mb-3">
+                              {[["na", "Sodio mg"], ["k", "Potassio mg"], ["fe", "Ferro mg"], ["ca", "Calcio mg"], ["mg", "Magnesio mg"]].map(([k, lab]) => (
+                                <label key={k} className="block">
+                                  <span className="label block mb-1" style={{ fontSize: "0.62rem" }}>{lab}</span>
+                                  <input type="number" min="0" value={manualMacros[k]}
+                                    onChange={(e) => setManualMacros((m) => ({ ...m, [k]: e.target.value }))}
+                                    placeholder="0" className="input w-full px-3 py-2.5 text-sm font-data" aria-label={lab} />
+                                </label>
+                              ))}
+                            </div>
+                          )}
                           <button onClick={saveManualFood}
                             className="w-full rounded-full px-4 py-3 text-sm btn-3d transition-transform active:scale-[0.98]"
                             style={{ backgroundImage: `linear-gradient(120deg, ${accent}, ${accent}CC)`, color: "#FFFFFF", fontWeight: 700, boxShadow: `0 6px 16px ${accent}40` }}>
@@ -11000,6 +11028,8 @@ export default function HomePreview({
           bySlot[r.meal_slot].push({
             id: r.id, name: r.name, grams: Number(r.grams) || 0,
             kcal: Number(r.kcal), p: Number(r.protein), c: Number(r.carbs), f: Number(r.fat),
+            na: Number(r.sodium_mg) || 0, k: Number(r.potassium_mg) || 0, fe: Number(r.iron_mg) || 0,
+            ca: Number(r.calcium_mg) || 0, mg: Number(r.magnesium_mg) || 0,
           });
         });
         setMeals((m) => {
@@ -11148,12 +11178,16 @@ export default function HomePreview({
       const todayIso = toLocalISODate();
       const saved = await Promise.all(rows.map((r) =>
         addNutritionLogItem(supabaseProp, userId, todayIso, r.meal_slot,
-          { name: r.name, grams: r.grams, kcal: r.kcal, p: r.protein, c: r.carbs, f: r.fat })
+          { name: r.name, grams: r.grams, kcal: r.kcal, p: r.protein, c: r.carbs, f: r.fat,
+            na: r.sodium_mg, k: r.potassium_mg, fe: r.iron_mg, ca: r.calcium_mg, mg: r.magnesium_mg })
       ));
       setMeals((m) => {
         const next = { ...m };
         saved.forEach((s) => {
-          const item = { id: s.id, name: s.name, grams: s.grams, kcal: s.kcal, p: s.protein, c: s.carbs, f: s.fat };
+          const item = {
+            id: s.id, name: s.name, grams: s.grams, kcal: s.kcal, p: s.protein, c: s.carbs, f: s.fat,
+            na: s.sodium_mg, k: s.potassium_mg, fe: s.iron_mg, ca: s.calcium_mg, mg: s.magnesium_mg,
+          };
           next[s.meal_slot] = [...(next[s.meal_slot] || []), item];
         });
         return next;

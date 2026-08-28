@@ -1944,6 +1944,11 @@ export function SettingsDrawer({
         { label: "Proteine (g)", get: (r) => r.protein },
         { label: "Carboidrati (g)", get: (r) => r.carbs },
         { label: "Grassi (g)", get: (r) => r.fat },
+        { label: "Sodio (mg)", get: (r) => r.sodium_mg },
+        { label: "Potassio (mg)", get: (r) => r.potassium_mg },
+        { label: "Ferro (mg)", get: (r) => r.iron_mg },
+        { label: "Calcio (mg)", get: (r) => r.calcium_mg },
+        { label: "Magnesio (mg)", get: (r) => r.magnesium_mg },
       ]);
       exportCsv(`perform-allenamento-${todayISO}.csv`, sets, [
         { label: "Data", get: (r) => r.workout_logs?.date },
