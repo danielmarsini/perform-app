@@ -539,6 +539,10 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
       aria-label={label}
       aria-current={on ? "page" : undefined}
       title={label}
+      // Punto di aggancio per la guida interattiva PERFORM (05_HomeDashboard.jsx,
+      // SpotlightTour): solo il tab Chat serve come bersaglio reale — nessun
+      // altro tab è referenziato dai passi della guida.
+      data-tour={id === "chat" ? "nav-chat" : undefined}
     >
       {bouncing && (
         <span
