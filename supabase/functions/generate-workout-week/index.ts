@@ -55,6 +55,42 @@ const MUSCLE_TARGETS = [
   "Bicipiti", "Tricipiti", "Addome", "Glutei",
   "Quadricipiti", "Femorali", "Adduttori", "Polpacci",
 ];
+
+// Rete di sicurezza per un caso reale già osservato: il vocabolario sopra ha
+// "Adduttori" ma NON "Abduttori" (macchina abductor per medio-gluteo — molto
+// comune nelle schede reali) — se il modello scrive "Abduttori"/"Abductor"
+// fuori vocabolario nonostante l'istruzione nel prompt, l'intera settimana
+// veniva scartata da isValidDay invece di scartare solo quel singolo dato.
+// Qui si ripara il valore PRIMA della validazione — non un enum più permissivo
+// (Volume Matrix e le altre feature contano sul vocabolario chiuso), solo un
+// mapping esplicito per gli alias già noti. Se una nuova variante fuori
+// vocabolario dovesse ripresentarsi, il log dettagliato più sotto la mostra
+// per intero: si aggiunge qui, non si allarga il vocabolario a caso.
+const MUSCLE_TARGET_ALIASES = {
+  "abduttori": "Glutei",
+  "abductor": "Glutei",
+  "abduttore": "Glutei",
+};
+function normalizeMuscleTarget(value) {
+  if (MUSCLE_TARGETS.includes(value)) return value;
+  return MUSCLE_TARGET_ALIASES[String(value ?? "").trim().toLowerCase()] ?? value;
+}
+// Applica normalizeMuscleTarget a muscleTarget/synergists di ogni esercizio
+// di ogni giorno, senza toccare nient'altro (warmup/stretching/label/cardio
+// restano come li ha scritti l'AI).
+function normalizeWorkoutDays(days) {
+  return days.map((day) => day && {
+    ...day,
+    // Se "exercises" non è nemmeno un array, lo si lascia intatto: lo
+    // scarterà isValidDay con un log leggibile invece di far esplodere qui
+    // un TypeError generico che finirebbe nel catch esterno senza dettagli.
+    exercises: Array.isArray(day.exercises) ? day.exercises.map((ex) => (ex.kind === "cardio" ? ex : {
+      ...ex,
+      muscleTarget: normalizeMuscleTarget(ex.muscleTarget),
+      synergists: Array.isArray(ex.synergists) ? ex.synergists.map(normalizeMuscleTarget) : ex.synergists,
+    })) : day.exercises,
+  });
+}
 const TECHNIQUES = ["Nessuna", "Rest-Pause", "Drop-set", "Stripping", "Super-set"];
 
 // Contenuto del vecchio JSON_CONTRACT, spogliato delle istruzioni "scrivi
@@ -85,7 +121,7 @@ const IMPORT_SYSTEM_PROMPT = `Il coach ti ha già scritto (a mano, o in un PDF/f
 
 1. Riporta esattamente gli esercizi, l'ordine dei giorni, le serie, le ripetizioni e i recuperi così come scritti dal coach — mai inventare, aggiungere, togliere o "migliorare" un esercizio che non c'è nel testo/PDF originale.
 2. Se un giorno del testo originale non specifica un dato (es. recupero o RIR/intensità non scritti), usa un valore di buon senso per quel tipo di esercizio invece di inventare un numero a caso, ma SOLO per riempire un vuoto — mai per sovrascrivere un numero che il coach ha già scritto.
-3. Il testo del coach userà quasi certamente nomi di gruppi muscolari o terminologia diversa dal vocabolario fisso dell'app — mappa ogni esercizio al valore più corretto tra quelli consentiti, non lasciare mai "muscleTarget" fuori vocabolario.
+3. Il testo del coach userà quasi certamente nomi di gruppi muscolari o terminologia diversa dal vocabolario fisso dell'app — mappa ogni esercizio al valore più corretto tra quelli consentiti, non lasciare MAI "muscleTarget" fuori vocabolario, nemmeno per un distretto che sembra ovvio ma non è elencato (es. "abductor"/abduttori dell'anca, macchina molto comune ma senza una voce dedicata → "Glutei", il motore primario reale di quel movimento).
 4. Se un giorno del testo/PDF è esplicitamente un giorno di riposo (o non è menzionato), quel giorno è null.
 5. Se il testo/PDF originale scrive già un riscaldamento o uno stretching per un giorno, trascrivili fedelmente in "warmup"/"stretching" invece di inventarli. Se non li scrive, componili tu in base agli esercizi di quel giorno (stessa logica della generazione da zero) — non lasciarli mai vuoti su un giorno di allenamento.
 
@@ -248,7 +284,21 @@ Deno.serve(async (req) => {
       );
     }
     const parsed = toolUse.input;
-    if (!Array.isArray(parsed.days) || parsed.days.length !== 7 || !parsed.days.every(isValidDay)) {
+    if (!Array.isArray(parsed.days) || parsed.days.length !== 7) {
+      console.error("PERFORM: struttura settimana non valida — days non è un array di 7 elementi", { daysLength: Array.isArray(parsed.days) ? parsed.days.length : typeof parsed.days });
+      throw new Error("struttura settimana non valida");
+    }
+    // Ripara gli alias noti (es. "Abduttori" fuori vocabolario) PRIMA di
+    // validare — un singolo valore fuori dal vocabolario fisso non deve
+    // scartare l'intera settimana se è un caso già mappato.
+    parsed.days = normalizeWorkoutDays(parsed.days);
+    const invalidIdx = parsed.days.findIndex((d) => !isValidDay(d));
+    if (invalidIdx !== -1) {
+      // Log completo del giorno che ha fatto fallire la validazione — senza
+      // questo, ogni volta bisogna indovinare alla cieca quale campo non
+      // rispetta lo schema (è già successo con "Abduttori" fuori
+      // vocabolario, vedi MUSCLE_TARGET_ALIASES sopra).
+      console.error("PERFORM: struttura settimana non valida — giorno non valido", { index: invalidIdx, day: parsed.days[invalidIdx] });
       throw new Error("struttura settimana non valida");
     }
 
