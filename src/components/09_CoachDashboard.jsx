@@ -265,9 +265,10 @@ const WEEK_DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 const INTENSITY_TECHNIQUES = ["Nessuna", "Drop-set", "Rest-Pause", "Stripping", "Super-set"];
 
 // RIR target prescritto dal coach per un esercizio (workout_logs.rir_target,
-// SCHEMA_v21): testo libero perché deve accettare anche "A cedimento", non
-// solo un numero 1-4. Distinto dall'RIR realmente svolto dal cliente.
-const RIR_TARGET_OPTIONS = ["1", "2", "3", "4", "A cedimento"];
+// SCHEMA_v21): testo libero, non un enum reale — "0" sostituisce la vecchia
+// voce "A cedimento" (RIR 0 = a cedimento, terminologia standard invece di un
+// testo libero a sé). Distinto dall'RIR realmente svolto dal cliente.
+const RIR_TARGET_OPTIONS = ["0", "1", "2", "3", "4"];
 
 /* Timing dell'integrazione: 4 momenti biologici (non più 9 fasce libere),
    per allinearsi al Master Prompt nutrizionale — HRV al mattino, cortisolo
