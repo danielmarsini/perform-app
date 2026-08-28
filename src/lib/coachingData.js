@@ -195,25 +195,6 @@ async function saveExerciseGuide(supabase, name, direct, indirect, { howTo, avoi
   if (error) throw error;
 }
 
-// Elenco SOLO delle righe reali in libreria (mai i ~20 esercizi di base
-// hardcoded in DEFAULT_EXERCISE_LIB, che non esistono come riga da
-// correggere/eliminare) — usato dal pannello coach per rivedere un
-// esercizio personalizzato già salvato: nome sbagliato o dimenticato,
-// muscoli da rivedere, o un doppione da eliminare.
-async function fetchCustomExerciseLibraryRows(supabase) {
-  let { data, error } = await supabase.from("exercise_library")
-    .select("name, direct, indirect, how_to, avoid, video_url")
-    .order("name");
-  if (error?.code === "42703" || error?.code === "PGRST204") {
-    ({ data, error } = await supabase.from("exercise_library").select("name, direct, indirect").order("name"));
-  }
-  if (error) throw error;
-  return (data ?? []).map((row) => ({
-    name: row.name, direct: row.direct ?? [], indirect: row.indirect ?? [],
-    howTo: row.how_to || null, avoid: row.avoid || null, videoUrl: row.video_url || null,
-  }));
-}
-
 // Corregge una riga già in libreria — rinomina inclusa: "name" è la primary
 // key, quindi questo è un UPDATE sulla riga esistente (WHERE name = vecchio
 // nome), mai un nuovo insert. Prima l'unico modo di "correggere" un
@@ -3353,7 +3334,7 @@ export function recompositionReading(weightPoints, circPoints) {
   return { label, detail, tone, weightDeltaPct, waistDeltaPct };
 }
 
-export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, saveExerciseGuide, fetchCustomExerciseLibraryRows, updateExerciseLibraryEntry, deleteExerciseFromLibrary, computeVolume, parseRepsTarget };
+export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, saveExerciseGuide, updateExerciseLibraryEntry, deleteExerciseFromLibrary, computeVolume, parseRepsTarget };
 
 // Giorni con un allenamento REALMENTE completato (status 'done' in
 // workout_logs) in un range — per il pallino "saltato" nel calendario
