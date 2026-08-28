@@ -3515,6 +3515,24 @@ export async function fetchWorkoutDoneDates(supabase, userId, fromISO, toISO) {
   return doneDates;
 }
 
+// Giorni con ALMENO un esercizio già assegnato dal coach in un range —
+// "verde" nel Calendario mesociclo Allenamento (09_CoachDashboard.jsx),
+// stesso principio di fetchNutritionProgramsRange per l'alimentazione ma qui
+// non c'è una tabella a intervalli: ogni riga di workout_logs è già per data
+// singola (scritta da saveWeekWorkout/applyWorkoutSplitToDateRange), quindi
+// "programmato" è semplicemente "esiste almeno una riga quel giorno" —
+// prescrittivo o già svolto, non fa differenza per il calendario del coach.
+export async function fetchWorkoutProgrammedDates(supabase, userId, fromISO, toISO) {
+  const { data, error } = await supabase
+    .from("workout_logs")
+    .select("date")
+    .eq("user_id", userId)
+    .gte("date", fromISO)
+    .lte("date", toISO);
+  if (error) throw error;
+  return new Set((data ?? []).map((r) => r.date));
+}
+
 // Giorni con ALMENO un pasto registrato in un range — per il pallino
 // "non registrato" nel calendario Alimentazione della Home.
 export async function fetchNutritionLoggedDates(supabase, userId, fromISO, toISO) {
