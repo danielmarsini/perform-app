@@ -88,7 +88,7 @@ import {
   xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, EXERCISE_LIB_MUSCLE_TO_DB, resolveMuscleTarget,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
-  fetchCustomExerciseLibraryRows, updateExerciseLibraryEntry, deleteExerciseFromLibrary,
+  updateExerciseLibraryEntry, deleteExerciseFromLibrary,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage,
   fetchReferrals, REAL_COACHING_PLANS_DB, awardXpBonus, askCoachAssistant, generateWorkoutWeekDraft,
@@ -3121,11 +3121,11 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
               </button>
               <button onClick={() => setApplyTemplateOpen(true)} disabled={templates.length === 0}
                 className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
-                📋 Applica split
+                📚 Libreria split
               </button>
               <button onClick={() => setLibraryManagerOpen(true)}
                 className="c-ghost px-3.5 py-2.5 rounded-lg text-sm font-medium">
-                📚 Correggi libreria
+                📚 Libreria esercizi
               </button>
               {realWorkout && realWorkout.every((d) => !d) && anamnesis?.sessioni && (
                 <button onClick={() => setGenPlanOpen(true)} className="c-btn px-3.5 py-2.5 rounded-lg text-sm font-medium">
@@ -3157,7 +3157,8 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
           onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates} />
       )}
       {libraryManagerOpen && (
-        <ExerciseLibraryManagerModal supabase={supabase}
+        <ExerciseLibraryManagerModal supabase={supabase} coachId={coachId}
+          exerciseLib={exerciseLib} groupedNames={EX_NAMES_BY_MUSCLE}
           onClose={() => setLibraryManagerOpen(false)} onChanged={reloadExerciseLib} />
       )}
       {genPlanOpen && (
@@ -3457,82 +3458,83 @@ function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supa
   );
 }
 
-/* Corregge un esercizio già salvato nella libreria condivisa (nome, muscoli,
-   guida) o lo elimina se è un doppione/voce sbagliata — a differenza di
-   "Salva in libreria" (upsert per NOME dentro WeekWorkoutEditor), qui una
-   correzione al nome AGGIORNA la riga esistente invece di lasciarne una
-   nuova a fianco della vecchia, sbagliata. Elenca solo le righe reali del
-   DB (fetchCustomExerciseLibraryRows) — i ~20 esercizi di base dell'app
-   non sono qui: sono fissi nel codice, non hanno una riga da correggere. */
-function ExerciseLibraryManagerModal({ supabase, onClose, onChanged }) {
-  const [rows, setRows] = useState(null);
-  const [loadError, setLoadError] = useState("");
+/* Libreria esercizi: TUTTI gli esercizi del catalogo (i ~20 di base +
+   quelli personalizzati salvati nel tempo), raggruppati per muscolo nello
+   stesso ordine del menu a tendina dell'editor (EX_NAMES_BY_MUSCLE, passato
+   dal chiamante) — non più solo i personalizzati come "Correggi libreria"
+   prima. Da qui si corregge muscoli/guida di QUALUNQUE esercizio (upsert
+   per nome, come "Salva in libreria" nella riga), si aggiungono esercizi
+   nuovi, e si rinomina/elimina un esercizio personalizzato — i ~20 di base
+   restano fissi nel codice (DEFAULT_EXERCISE_LIB): si possono correggere ma
+   non rinominare/eliminare, altrimenti ricomparirebbero comunque uguali al
+   prossimo caricamento. Nessun fetch proprio: usa exerciseLib/groupedNames
+   già caricati dal chiamante, sempre in sync con l'editor. */
+function ExerciseLibraryManagerModal({ supabase, coachId, exerciseLib, groupedNames, onClose, onChanged }) {
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState(null); // riga selezionata per la modifica
+  const [editing, setEditing] = useState(null); // {name, direct, indirect, howTo, avoid, videoUrl, isCustom, isNew}
 
-  const load = useCallback(() => {
-    setLoadError("");
-    fetchCustomExerciseLibraryRows(supabase)
-      .then(setRows)
-      .catch((err) => {
-        console.error("PERFORM: errore caricamento libreria per gestione", err);
-        setLoadError("Non sono riuscito a caricare la libreria.");
-        setRows([]);
-      });
-  }, [supabase]);
-  useEffect(() => { load(); }, [load]);
+  const isCustomName = (name) => !(name in DEFAULT_EXERCISE_LIB);
 
-  const filtered = useMemo(() => {
+  const filteredGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!rows) return [];
-    return q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
-  }, [rows, query]);
+    if (!q) return groupedNames;
+    return groupedNames
+      .map(([muscle, names]) => [muscle, names.filter((n) => n.toLowerCase().includes(q))])
+      .filter(([, names]) => names.length > 0);
+  }, [groupedNames, query]);
 
-  const handleSaved = (oldName, saved) => {
-    setRows((rs) => rs.map((r) => (r.name === oldName ? saved : r)));
-    onChanged();
-    setEditing(null);
+  const openEntry = (name) => {
+    const e = exerciseLib[name] || {};
+    setEditing({
+      name, direct: e.direct || [], indirect: e.indirect || [],
+      howTo: e.howTo || "", avoid: e.avoid || "", videoUrl: e.videoUrl || "",
+      isCustom: isCustomName(name), isNew: false,
+    });
   };
-  const handleDeleted = (name) => {
-    setRows((rs) => rs.filter((r) => r.name !== name));
-    onChanged();
-    setEditing(null);
-  };
+  const openNew = () => setEditing({ name: "", direct: [], indirect: [], howTo: "", avoid: "", videoUrl: "", isCustom: true, isNew: true });
+
+  const handleSaved = () => { onChanged(); setEditing(null); };
+  const handleDeleted = () => { onChanged(); setEditing(null); };
 
   return (
     <Portal>
       <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} onClick={editing ? undefined : onClose}>
         <div onClick={(e) => e.stopPropagation()} className="c-card w-full max-w-md" style={{ maxHeight: "85vh", overflowY: "auto" }}>
           {editing ? (
-            <ExerciseLibraryEditForm supabase={supabase} entry={editing}
+            <ExerciseLibraryEditForm supabase={supabase} coachId={coachId} entry={editing}
               onBack={() => setEditing(null)} onSaved={handleSaved} onDeleted={handleDeleted} />
           ) : (
             <>
               <div className="flex items-center justify-between mb-1">
-                <p className="c-heading font-display font-bold">Correggi libreria</p>
+                <p className="c-heading font-display font-bold">Libreria esercizi</p>
                 <button onClick={onClose} aria-label="Chiudi" className="p-1"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
               </div>
               <p className="c-muted text-xs mb-3">
-                Solo gli esercizi personalizzati che hai già salvato — correggi nome, muscoli o guida, oppure elimina un doppione.
+                Tutti gli esercizi del catalogo, per gruppo muscolare — tocca per correggere muscoli/guida, rinominare o eliminare.
               </p>
+              <button onClick={openNew} className="c-btn w-full px-4 py-2.5 rounded-lg text-sm font-medium mb-3">+ Nuovo esercizio</button>
               <div className="relative mb-3">
                 <Search size={14} className="absolute top-1/2 left-3 -translate-y-1/2" style={{ color: "var(--ink-tertiary)" }} />
                 <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
                   placeholder="Cerca per nome…" className="c-ghost w-full pl-9 pr-3 py-2.5 rounded-lg text-sm" />
               </div>
-              {loadError && <p className="text-xs mb-3" style={{ color: "#DC2626" }}>{loadError}</p>}
-              {rows === null ? (
-                <p className="c-muted text-sm">Caricamento…</p>
-              ) : filtered.length === 0 ? (
-                <p className="c-muted text-sm">{rows.length === 0 ? "Nessun esercizio personalizzato salvato finora." : "Nessun risultato."}</p>
+              {filteredGroups.length === 0 ? (
+                <p className="c-muted text-sm">Nessun risultato.</p>
               ) : (
-                <div className="space-y-1.5" style={{ maxHeight: 360, overflowY: "auto" }}>
-                  {filtered.map((r) => (
-                    <button key={r.name} onClick={() => setEditing(r)}
-                      className="w-full text-left px-3 py-2.5 rounded-lg flex items-center justify-between gap-2 t-inner">
-                      <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>{r.name}</span>
-                      <span className="c-muted text-[11px] shrink-0">{r.direct[0] || "—"}</span>
-                    </button>
+                <div style={{ maxHeight: 360, overflowY: "auto" }}>
+                  {filteredGroups.map(([muscle, names]) => (
+                    <div key={muscle} className="mb-2.5">
+                      <p className="c-label mb-1">{muscle}</p>
+                      <div className="space-y-1.5">
+                        {names.map((n) => (
+                          <button key={n} onClick={() => openEntry(n)}
+                            className="w-full text-left px-3 py-2.5 rounded-lg flex items-center justify-between gap-2 t-inner">
+                            <span className="text-sm font-medium" style={{ color: "var(--ink)" }}>{n}</span>
+                            {!isCustomName(n) && <span className="c-muted text-[10px] shrink-0">base</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -3545,7 +3547,7 @@ function ExerciseLibraryManagerModal({ supabase, onClose, onChanged }) {
   );
 }
 
-function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }) {
+function ExerciseLibraryEditForm({ supabase, coachId, entry, onBack, onSaved, onDeleted }) {
   const [name, setName] = useState(entry.name);
   const [muscleTarget, setMuscleTarget] = useState(EXERCISE_LIB_MUSCLE_TO_DB[entry.direct[0]] || entry.direct[0] || "");
   // Richiesta esplicita: molti esercizi (dip, chin-up, squat, affondi, stacco
@@ -3565,6 +3567,11 @@ function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }
   const [confirmDelete, setConfirmDelete] = useState(false);
   const deleteRef = useRef(null);
   useEffect(() => () => clearTimeout(deleteRef.current), []);
+  // Un esercizio di base (DEFAULT_EXERCISE_LIB, fisso nel codice) non ha una
+  // riga propria da rinominare/eliminare — ricomparirebbe comunque identico
+  // al prossimo caricamento. Si può solo correggerne muscoli/guida (upsert
+  // per nome, stesso meccanismo di "Salva in libreria").
+  const canRenameOrDelete = entry.isCustom && !entry.isNew;
 
   const toggleSynergist = (m) => setSynergists((s) => (s.includes(m) ? s.filter((x) => x !== m) : [...s, m]));
 
@@ -3578,8 +3585,16 @@ function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }
     if (muscleTarget2) direct.push(DB_MUSCLE_TO_CHART[muscleTarget2] || muscleTarget2);
     const indirect = synergists.map((m) => DB_MUSCLE_TO_CHART[m] || m);
     try {
-      await updateExerciseLibraryEntry(supabase, entry.name, { name: trimmed, direct, indirect, howTo, avoid, videoUrl });
-      onSaved(entry.name, { name: trimmed, direct, indirect, howTo: howTo || null, avoid: avoid || null, videoUrl: videoUrl || null });
+      if (canRenameOrDelete && trimmed !== entry.name) {
+        // Vera rinomina di una riga già presente in DB.
+        await updateExerciseLibraryEntry(supabase, entry.name, { name: trimmed, direct, indirect, howTo, avoid, videoUrl });
+      } else {
+        // Nome invariato (o esercizio nuovo/di base senza ancora una riga
+        // propria): upsert per nome, mai un doppione — stesso meccanismo di
+        // "Salva in libreria" nella riga dell'editor.
+        await saveExerciseGuide(supabase, trimmed, direct, indirect, { howTo, avoid, videoUrl }, coachId);
+      }
+      onSaved();
     } catch (e) {
       console.error("PERFORM: errore correzione esercizio in libreria", e);
       setErr(e?.message || "Non sono riuscito a salvare le modifiche.");
@@ -3599,7 +3614,7 @@ function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }
     setErr("");
     try {
       await deleteExerciseFromLibrary(supabase, entry.name);
-      onDeleted(entry.name);
+      onDeleted();
     } catch (e) {
       console.error("PERFORM: errore eliminazione esercizio da libreria", e);
       setErr(e?.message || "Non sono riuscito a eliminare l'esercizio.");
@@ -3612,11 +3627,15 @@ function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }
     <>
       <div className="flex items-center gap-2 mb-3">
         <button onClick={onBack} aria-label="Indietro" className="p-1"><ArrowLeft size={18} style={{ color: "var(--ink-2)" }} /></button>
-        <p className="c-heading font-display font-bold">Correggi esercizio</p>
+        <p className="c-heading font-display font-bold">{entry.isNew ? "Nuovo esercizio" : "Correggi esercizio"}</p>
       </div>
       <label className="block mb-3">
         <span className="c-label block mb-1">Nome</span>
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+        <input type="text" value={name} onChange={(e) => setName(e.target.value)} disabled={!entry.isNew && !canRenameOrDelete}
+          className="t-input w-full text-sm rounded-md px-2.5 py-2 disabled:opacity-60" />
+        {!entry.isNew && !canRenameOrDelete && (
+          <p className="c-muted text-[11px] mt-1">Fa parte del catalogo base dell'app — nome non modificabile, solo muscoli e guida.</p>
+        )}
       </label>
       <label className="block mb-3">
         <span className="c-label block mb-1">Distretto muscolare (diretto, 100%)</span>
@@ -3678,14 +3697,16 @@ function ExerciseLibraryEditForm({ supabase, entry, onBack, onSaved, onDeleted }
       <div className="flex gap-2 mb-2">
         <button onClick={onBack} disabled={busy} className="c-ghost flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">Annulla</button>
         <button onClick={save} disabled={busy} className="c-btn flex-1 px-4 py-2.5 rounded-lg text-sm font-medium">
-          {busy ? "Salvo…" : "Salva modifiche"}
+          {busy ? "Salvo…" : entry.isNew ? "Aggiungi" : "Salva modifiche"}
         </button>
       </div>
-      <button onClick={requestDelete} disabled={busy}
-        className="w-full px-4 py-2.5 rounded-lg text-sm font-medium"
-        style={{ border: confirmDelete ? "1px solid #DC2626" : "1px solid var(--line-strong)", color: confirmDelete ? "#DC2626" : "var(--ink-2)" }}>
-        {confirmDelete ? "Tocca di nuovo per confermare — elimina per sempre" : "🗑 Elimina questo esercizio dalla libreria"}
-      </button>
+      {canRenameOrDelete && (
+        <button onClick={requestDelete} disabled={busy}
+          className="w-full px-4 py-2.5 rounded-lg text-sm font-medium"
+          style={{ border: confirmDelete ? "1px solid #DC2626" : "1px solid var(--line-strong)", color: confirmDelete ? "#DC2626" : "var(--ink-2)" }}>
+          {confirmDelete ? "Tocca di nuovo per confermare — elimina per sempre" : "🗑 Elimina questo esercizio dalla libreria"}
+        </button>
+      )}
     </>
   );
 }
