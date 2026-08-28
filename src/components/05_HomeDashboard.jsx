@@ -3378,10 +3378,15 @@ export function HomeDashboard({
 
               <div className="flex items-center justify-between gap-3 pt-3 mb-3" style={{ borderTop: "1px solid var(--line)" }}>
                 <div className="flex items-center gap-2 min-w-0">
+                  {/* Prima grigio neutro con icona blu spenta — si confondeva con
+                      lo sfondo della card, niente segnalava che andava premuto
+                      per registrare l'acqua. Ora blu acceso finché l'obiettivo
+                      non è raggiunto (icona bianca a contrasto), oro a target
+                      raggiunto — sempre riconoscibile come pulsante da toccare. */}
                   <button onClick={() => { haptic("tap"); onAddWater(); }} aria-label="Aggiungi 250 ml"
                           className="rounded-full flex items-center justify-center shrink-0 transition-transform active:scale-90"
-                          style={{ width: 32, height: 32, backgroundColor: water >= waterTarget ? accent : "var(--surface-2)", border: "1px solid var(--line)" }}>
-                    <Droplets size={15} style={{ color: water >= waterTarget ? "#111111" : "#4A6B7C" }} />
+                          style={{ width: 32, height: 32, backgroundColor: water >= waterTarget ? accent : "#0EA5E9", border: "1px solid var(--line)" }}>
+                    <Droplets size={15} style={{ color: water >= waterTarget ? "#111111" : "#FFFFFF" }} />
                   </button>
                   <p className="font-data" style={{ color: "var(--ink)", fontSize: "0.85rem", fontWeight: 700 }}>
                     {(water / 1000).toFixed(2)}<span className="meta" style={{ fontWeight: 500 }}>/{(waterTarget / 1000).toFixed(1)} L</span>

@@ -1736,11 +1736,19 @@ function validateWorkoutDays(days, dates) {
         if (!ex.name || !ex.name.trim()) missing.push(`voce cardio senza nome (${dates[i]})`);
         return;
       }
-      if (!MUSCLE_TARGETS.includes(ex.muscleTarget)) missing.push(`"${ex.name || "esercizio senza nome"}" (${dates[i]})`);
+      const label = `"${ex.name || "esercizio senza nome"}" (${dates[i]})`;
+      if (!MUSCLE_TARGETS.includes(ex.muscleTarget)) missing.push(`${label}: distretto muscolare mancante o non valido`);
+      // Serie/rep/recupero ora partono VUOTI nell'editor (richiesta esplicita:
+      // mai un numero prestabilito da cancellare) — senza questo controllo, un
+      // esercizio mai toccato dal coach si sarebbe salvato in silenzio con 0
+      // serie invece di essere segnalato come da completare.
+      else if (!(Number(ex.sets) >= 1) || !String(ex.reps ?? "").trim() || !Number.isFinite(Number(ex.rest)) || Number(ex.rest) < 0) {
+        missing.push(`${label}: serie/rep/recupero da compilare`);
+      }
     });
   });
   if (missing.length > 0) {
-    throw new Error(`Distretto muscolare mancante o non valido per: ${missing.join(", ")}.`);
+    throw new Error(`Dati mancanti per: ${missing.join(", ")}.`);
   }
 }
 
