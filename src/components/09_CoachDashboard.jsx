@@ -3123,11 +3123,25 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
             // con una voce di libreria restano nel select; tutti gli altri
             // diventano "esercizio libero" (testo libero), mantenendo nome e
             // muscleTarget/synergists così come li ha scritti l'AI.
+            // L'AI scrive la guida (come si esegue/cosa evitare) SOLO alla
+            // prima occorrenza di ogni nome esercizio nella settimana (per
+            // non sprecare token ripetendo lo stesso paragrafo su ogni
+            // giorno in cui compare) — qui la propaghiamo su TUTTE le
+            // occorrenze dello stesso nome, così ex.howTo/ex.avoid (letti
+            // dal textarea guida più sotto, guideDrafts[ex.id] ?? ex.howTo)
+            // la mostrano ovunque compaia, pronta per "Salva in libreria":
+            // il coach la rivede e la salva lui stesso, mai in automatico.
+            const guideByName = new Map();
+            days.forEach((d) => d && d.exercises.forEach((e) => {
+              if (e.kind !== "cardio" && (e.howTo || e.avoid) && !guideByName.has(e.name)) {
+                guideByName.set(e.name, { howTo: e.howTo || "", avoid: e.avoid || "" });
+              }
+            }));
             const withIds = days.map((d) => d && {
               ...d,
               exercises: d.exercises.map((e) => (e.kind === "cardio"
                 ? { ...e, id: uid() }
-                : { ...e, id: uid(), custom: !exerciseLib[e.name] })),
+                : { ...e, id: uid(), custom: !exerciseLib[e.name], ...(guideByName.get(e.name) || {}) })),
             });
             setRealWorkout(withIds);
             setWorkoutSaved(false);

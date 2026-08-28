@@ -64,9 +64,13 @@ const TECHNIQUES = ["Nessuna", "Rest-Pause", "Drop-set", "Stripping", "Super-set
 // stretching, esclusione cardio).
 const CONTENT_RULES = `Chiama SEMPRE ed ESCLUSIVAMENTE lo strumento "report_workout_week" con l'intera settimana — non rispondere mai a parole, nemmeno per spiegazioni o dubbi.
 
-"days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica (un giorno di riposo è null). "synergists" sono distretti sinergici tra gli stessi valori di "muscleTarget" — mai il distretto primario ripetuto lì dentro. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero, "sets" è il numero di serie dirette, "rirTarget" è una stringa (es. "2") o stringa vuota se non applicabile.
+"days" ha ESATTAMENTE 7 elementi, indice 0 = lunedì, indice 6 = domenica (un giorno di riposo è null). "synergists" sono distretti sinergici tra gli stessi valori di "muscleTarget" — mai il distretto primario ripetuto lì dentro. "reps" è una stringa (es. "8-10" o "6"), "rest" sono i secondi di recupero, "sets" è il numero di serie dirette.
 
-"warmup" e "stretching" sono testo libero SU UNA RIGA SOLA (poche frasi separate da virgole), scritti in base agli esercizi/gruppi muscolari di QUEL giorno specifico — mai generici, mai identici tra un giorno gambe e un giorno spalle. "warmup" è la mobilità articolare e l'attivazione da fare PRIMA della sessione (es. "Cyclette leggera 5 minuti, Hip circles 2x10 per lato, Band pull-apart 2x15"); "stretching" sono gli allungamenti statici da fare a fine sessione sui gruppi appena allenati (es. "Stretching quadricipiti 2x30 sec per lato, Stretching flessori dell'anca 2x30 sec"). Includi sempre serie/ripetizioni o una durata quando ha senso. Un giorno di riposo (null) non ha né warmup né stretching. MAI includere sessioni di cardio tra gli esercizi o altrove: il cardio lo assegna il coach a parte, non è compito tuo.`;
+"rirTarget" (RIR = reps in reserve, "0" = a cedimento) va SEMPRE valorizzato con criterio da coach di bodybuilding professionista anche quando la fonte non lo scrive esplicitamente: più basso (0-1) su esercizi di isolamento/fine sessione o settimane di intensificazione, più alto (2-4) su multiarticolari pesanti/inizio sessione o con un principiante, mai lasciato vuoto per pigrizia — è una stringa (es. "2").
+
+"warmup" e "stretching" sono testo libero SU UNA RIGA SOLA (poche frasi separate da virgole), scritti in base agli esercizi/gruppi muscolari di QUEL giorno specifico — mai generici, mai identici tra un giorno gambe e un giorno spalle. "warmup" è la mobilità articolare e l'attivazione da fare PRIMA della sessione (es. "Cyclette leggera 5 minuti, Hip circles 2x10 per lato, Band pull-apart 2x15"); "stretching" sono gli allungamenti statici da fare a fine sessione sui gruppi appena allenati (es. "Stretching quadricipiti 2x30 sec per lato, Stretching flessori dell'anca 2x30 sec"). Includi sempre serie/ripetizioni o una durata quando ha senso. Un giorno di riposo (null) non ha né warmup né stretching. MAI includere sessioni di cardio tra gli esercizi o altrove: il cardio lo assegna il coach a parte, non è compito tuo.
+
+"howTo" e "avoid" (guida esercizio) vanno scritti SOLO alla PRIMA occorrenza di ciascun nome esercizio nella settimana, leggendo i giorni in ordine — se lo stesso esercizio ricompare in un giorno successivo, lascia "howTo"/"avoid" vuoti per quell'occorrenza (non ripetere lo stesso testo, sprechi token). Quando li scrivi, usa un registro scientifico da professore universitario di scienze motorie che spiega a 360 gradi, non un elenco puntato breve: "howTo" è un paragrafo completo su setup, esecuzione, respirazione, range di movimento e controllo del tempo sotto tensione; "avoid" è un paragrafo su errori tecnici comuni, compensi articolari e situazioni/infortuni in cui l'esercizio va evitato o modificato. Per gli esercizi cardio non scrivere mai howTo/avoid (non fanno parte di "exercises", vedi sopra).`;
 
 const GENERATE_SYSTEM_PROMPT = `Sei un luminare in chinesiologia, biomeccanica e metodologia dell'allenamento per Bodybuilding, Powerlifting, Fitness e recupero infortuni. Il tuo compito è generare la BOZZA di una settimana di allenamento (7 giorni, lunedì-domenica) per un cliente di coaching, seguendo queste regole non negoziabili:
 
@@ -80,7 +84,7 @@ ${CONTENT_RULES}`;
 const IMPORT_SYSTEM_PROMPT = `Il coach ti ha già scritto (a mano, o in un PDF/foto) una scheda di allenamento completa. Il tuo compito è TRASCRIVERLA fedelmente nello strumento — NON è una generazione da zero:
 
 1. Riporta esattamente gli esercizi, l'ordine dei giorni, le serie, le ripetizioni e i recuperi così come scritti dal coach — mai inventare, aggiungere, togliere o "migliorare" un esercizio che non c'è nel testo/PDF originale.
-2. Se un giorno del testo originale non specifica un dato (es. recupero non scritto), usa un valore di buon senso per quel tipo di esercizio invece di inventare un numero a caso, ma SOLO per riempire un vuoto — mai per sovrascrivere un numero che il coach ha già scritto.
+2. Se un giorno del testo originale non specifica un dato (es. recupero o RIR/intensità non scritti), usa un valore di buon senso per quel tipo di esercizio invece di inventare un numero a caso, ma SOLO per riempire un vuoto — mai per sovrascrivere un numero che il coach ha già scritto.
 3. Il testo del coach userà quasi certamente nomi di gruppi muscolari o terminologia diversa dal vocabolario fisso dell'app — mappa ogni esercizio al valore più corretto tra quelli consentiti, non lasciare mai "muscleTarget" fuori vocabolario.
 4. Se un giorno del testo/PDF è esplicitamente un giorno di riposo (o non è menzionato), quel giorno è null.
 5. Se il testo/PDF originale scrive già un riscaldamento o uno stretching per un giorno, trascrivili fedelmente in "warmup"/"stretching" invece di inventarli. Se non li scrive, componili tu in base agli esercizi di quel giorno (stessa logica della generazione da zero) — non lasciarli mai vuoti su un giorno di allenamento.
@@ -108,10 +112,12 @@ const DAY_SCHEMA = {
           sets: { type: "number" },
           reps: { type: "string" },
           rest: { type: "number", description: "Secondi di recupero." },
-          rirTarget: { type: "string" },
+          rirTarget: { type: "string", description: "RIR (reps in reserve), sempre valorizzato — vedi istruzioni." },
           technique: { type: "string", enum: TECHNIQUES },
+          howTo: { type: "string", description: "Guida esecuzione scientifica — SOLO alla prima occorrenza del nome esercizio nella settimana, altrimenti omesso." },
+          avoid: { type: "string", description: "Errori comuni/controindicazioni — SOLO alla prima occorrenza del nome esercizio nella settimana, altrimenti omesso." },
         },
-        required: ["name", "muscleTarget", "sets", "reps", "rest", "technique"],
+        required: ["name", "muscleTarget", "sets", "reps", "rest", "technique", "rirTarget"],
       },
     },
   },
@@ -164,7 +170,9 @@ function isValidDay(day) {
     ex && typeof ex.name === "string" && ex.name.trim() &&
     MUSCLE_TARGETS.includes(ex.muscleTarget) &&
     (ex.synergists === undefined || Array.isArray(ex.synergists)) &&
-    Number.isFinite(Number(ex.sets)) && Number.isFinite(Number(ex.rest)));
+    Number.isFinite(Number(ex.sets)) && Number.isFinite(Number(ex.rest)) &&
+    (ex.howTo === undefined || typeof ex.howTo === "string") &&
+    (ex.avoid === undefined || typeof ex.avoid === "string"));
 }
 
 Deno.serve(async (req) => {
