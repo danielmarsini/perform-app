@@ -2708,7 +2708,9 @@ export async function fetchMonthlyLeaderboard(supabase, monthKey) {
         nickname: p.full_name || p.nickname || "Atleta",
         xpThisMonth: Math.max(0, end - start),
         streakDays: p.current_streak ?? 0,
-        level: xpToLevelInfo(p.xp_total ?? 0).title, // livello LIFETIME, non del singolo mese
+        // livello LIFETIME, non del singolo mese — solo il numero, i nomi dei
+        // gradi (Neofita/Intermedio/...) sono stati rimossi ovunque nell'app.
+        level: `Livello ${xpToLevelInfo(p.xp_total ?? 0).level + 1}`,
         avatarUrl: p.avatar_url || null,
         bio: p.bio || "",
         xpTotal: p.xp_total ?? 0,          // lifetime, non il guadagno del mese — per il dettaglio atleta

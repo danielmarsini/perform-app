@@ -28,7 +28,7 @@ function toBoardShape(rows, meId) {
     top10: withXp,
     userResult: me
       ? { rank: me.rank, xp: me.xp, level: me.level, streakDays: me.streakDays }
-      : { rank: null, xp: 0, level: xpToLevelInfo(0).title, streakDays: 0 },
+      : { rank: null, xp: 0, level: `Livello ${xpToLevelInfo(0).level + 1}`, streakDays: 0 },
   };
 }
 
@@ -78,7 +78,9 @@ function athlete(nickname, rank, xp, streakDays, level) {
   return { rank, nickname, avatarUrl: AVATARS[nickname], xp, streakDays, level };
 }
 
-const LEVELS = ['Recruit', 'Hardworker', 'Iron Mind', 'Bio-Hacker', 'Livello Élite'];
+// Nomi dei gradi (Recruit/Hardworker/...) rimossi su richiesta esplicita —
+// solo numeri di livello plausibili per i dati demo.
+const LEVELS = ['Livello 6', 'Livello 11', 'Livello 16', 'Livello 21', 'Livello 26'];
 
 const MONTH_ARCHIVE = [
   {
@@ -87,18 +89,18 @@ const MONTH_ARCHIVE = [
     monthName: 'agosto',
     isCurrent: true,
     top10: [
-      athlete('LupoAcciaio', 1, 2850, 21, 'Livello Élite'),
-      athlete('FenicediFerro', 2, 2790, 18, 'Bio-Hacker'),
-      athlete('TitanoRosso', 3, 2705, 15, 'Livello Élite'),
-      athlete('AquilaNera', 4, 2610, 12, 'Iron Mind'),
-      athlete('GuerrieroAlpha', 5, 2540, 19, 'Bio-Hacker'),
-      athlete('TigreBronzo', 6, 2475, 9, 'Hardworker'),
-      athlete('FalcoRapido', 7, 2390, 14, 'Iron Mind'),
-      athlete('OrsoPolare', 8, 2310, 7, 'Hardworker'),
-      athlete('ScorpioneBlu', 9, 2255, 11, 'Recruit'),
-      athlete('LeoneSelvaggio', 10, 2190, 6, 'Iron Mind'),
+      athlete('LupoAcciaio', 1, 2850, 21, 'Livello 26'),
+      athlete('FenicediFerro', 2, 2790, 18, 'Livello 21'),
+      athlete('TitanoRosso', 3, 2705, 15, 'Livello 26'),
+      athlete('AquilaNera', 4, 2610, 12, 'Livello 16'),
+      athlete('GuerrieroAlpha', 5, 2540, 19, 'Livello 21'),
+      athlete('TigreBronzo', 6, 2475, 9, 'Livello 11'),
+      athlete('FalcoRapido', 7, 2390, 14, 'Livello 16'),
+      athlete('OrsoPolare', 8, 2310, 7, 'Livello 11'),
+      athlete('ScorpioneBlu', 9, 2255, 11, 'Livello 6'),
+      athlete('LeoneSelvaggio', 10, 2190, 6, 'Livello 16'),
     ],
-    userResult: { rank: 14, xp: 1450, level: 'Hardworker', streakDays: 9 },
+    userResult: { rank: 14, xp: 1450, level: 'Livello 11', streakDays: 9 },
   },
   {
     id: 'luglio2026',
@@ -106,18 +108,18 @@ const MONTH_ARCHIVE = [
     monthName: 'luglio',
     isCurrent: false,
     top10: [
-      athlete('TitanoRosso', 1, 2920, 30, 'Livello Élite'),
-      athlete('LupoAcciaio', 2, 2880, 25, 'Livello Élite'),
-      athlete('GuerrieroAlpha', 3, 2790, 22, 'Bio-Hacker'),
-      athlete('FenicediFerro', 4, 2705, 20, 'Bio-Hacker'),
-      athlete('AquilaNera', 5, 2640, 16, 'Iron Mind'),
-      athlete('FalcoRapido', 6, 2560, 18, 'Iron Mind'),
-      athlete('TigreBronzo', 7, 2480, 12, 'Hardworker'),
-      athlete('LeoneSelvaggio', 8, 2400, 10, 'Iron Mind'),
-      athlete('OrsoPolare', 9, 2320, 9, 'Hardworker'),
-      athlete('ScorpioneBlu', 10, 2240, 13, 'Recruit'),
+      athlete('TitanoRosso', 1, 2920, 30, 'Livello 26'),
+      athlete('LupoAcciaio', 2, 2880, 25, 'Livello 26'),
+      athlete('GuerrieroAlpha', 3, 2790, 22, 'Livello 21'),
+      athlete('FenicediFerro', 4, 2705, 20, 'Livello 21'),
+      athlete('AquilaNera', 5, 2640, 16, 'Livello 16'),
+      athlete('FalcoRapido', 6, 2560, 18, 'Livello 16'),
+      athlete('TigreBronzo', 7, 2480, 12, 'Livello 11'),
+      athlete('LeoneSelvaggio', 8, 2400, 10, 'Livello 16'),
+      athlete('OrsoPolare', 9, 2320, 9, 'Livello 11'),
+      athlete('ScorpioneBlu', 10, 2240, 13, 'Livello 6'),
     ],
-    userResult: { rank: 12, xp: 2100, level: 'Hardworker', streakDays: null },
+    userResult: { rank: 12, xp: 2100, level: 'Livello 11', streakDays: null },
   },
   {
     id: 'giugno2026',
@@ -125,18 +127,18 @@ const MONTH_ARCHIVE = [
     monthName: 'giugno',
     isCurrent: false,
     top10: [
-      athlete('LupoAcciaio', 1, 2760, 19, 'Livello Élite'),
-      athlete('TitanoRosso', 2, 2690, 17, 'Livello Élite'),
-      athlete('FenicediFerro', 3, 2615, 14, 'Bio-Hacker'),
-      athlete('GuerrieroAlpha', 4, 2540, 20, 'Bio-Hacker'),
-      athlete('FalcoRapido', 5, 2470, 11, 'Iron Mind'),
-      athlete('AquilaNera', 6, 2400, 9, 'Iron Mind'),
-      athlete('OrsoPolare', 7, 2330, 6, 'Hardworker'),
-      athlete('TigreBronzo', 8, 2260, 8, 'Hardworker'),
-      athlete('LeoneSelvaggio', 9, 2190, 5, 'Iron Mind'),
-      athlete('ScorpioneBlu', 10, 2120, 7, 'Recruit'),
+      athlete('LupoAcciaio', 1, 2760, 19, 'Livello 26'),
+      athlete('TitanoRosso', 2, 2690, 17, 'Livello 26'),
+      athlete('FenicediFerro', 3, 2615, 14, 'Livello 21'),
+      athlete('GuerrieroAlpha', 4, 2540, 20, 'Livello 21'),
+      athlete('FalcoRapido', 5, 2470, 11, 'Livello 16'),
+      athlete('AquilaNera', 6, 2400, 9, 'Livello 16'),
+      athlete('OrsoPolare', 7, 2330, 6, 'Livello 11'),
+      athlete('TigreBronzo', 8, 2260, 8, 'Livello 11'),
+      athlete('LeoneSelvaggio', 9, 2190, 5, 'Livello 16'),
+      athlete('ScorpioneBlu', 10, 2120, 7, 'Livello 6'),
     ],
-    userResult: { rank: 16, xp: 1320, level: 'Recruit', streakDays: null },
+    userResult: { rank: 16, xp: 1320, level: 'Livello 6', streakDays: null },
   },
   {
     id: 'maggio2026',
@@ -144,18 +146,18 @@ const MONTH_ARCHIVE = [
     monthName: 'maggio',
     isCurrent: false,
     top10: [
-      athlete('FenicediFerro', 1, 2680, 25, 'Bio-Hacker'),
-      athlete('LupoAcciaio', 2, 2610, 22, 'Livello Élite'),
-      athlete('AquilaNera', 3, 2540, 15, 'Iron Mind'),
-      athlete('TitanoRosso', 4, 2470, 18, 'Livello Élite'),
-      athlete('TigreBronzo', 5, 2400, 10, 'Hardworker'),
-      athlete('GuerrieroAlpha', 6, 2330, 16, 'Bio-Hacker'),
-      athlete('ScorpioneBlu', 7, 2260, 9, 'Recruit'),
-      athlete('FalcoRapido', 8, 2190, 12, 'Iron Mind'),
-      athlete('OrsoPolare', 9, 2120, 6, 'Hardworker'),
-      athlete('LeoneSelvaggio', 10, 2050, 4, 'Iron Mind'),
+      athlete('FenicediFerro', 1, 2680, 25, 'Livello 21'),
+      athlete('LupoAcciaio', 2, 2610, 22, 'Livello 26'),
+      athlete('AquilaNera', 3, 2540, 15, 'Livello 16'),
+      athlete('TitanoRosso', 4, 2470, 18, 'Livello 26'),
+      athlete('TigreBronzo', 5, 2400, 10, 'Livello 11'),
+      athlete('GuerrieroAlpha', 6, 2330, 16, 'Livello 21'),
+      athlete('ScorpioneBlu', 7, 2260, 9, 'Livello 6'),
+      athlete('FalcoRapido', 8, 2190, 12, 'Livello 16'),
+      athlete('OrsoPolare', 9, 2120, 6, 'Livello 11'),
+      athlete('LeoneSelvaggio', 10, 2050, 4, 'Livello 16'),
     ],
-    userResult: { rank: 19, xp: 980, level: 'Recruit', streakDays: null },
+    userResult: { rank: 19, xp: 980, level: 'Livello 6', streakDays: null },
   },
 ];
 
@@ -548,7 +550,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
       })
       .catch((err) => {
         console.error('PERFORM: errore caricamento classifica reale', err);
-        if (!cancelled) setRealBoard({ monthName: '', isCurrent: true, top10: [], userResult: { rank: null, xp: 0, level: 'RECRUIT', streakDays: 0 } });
+        if (!cancelled) setRealBoard({ monthName: '', isCurrent: true, top10: [], userResult: { rank: null, xp: 0, level: 'Livello 1', streakDays: 0 } });
       });
     return () => { cancelled = true; };
   }, [isRealMode, supabase, meId, currentMonthKey]);
@@ -595,7 +597,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
   // nella JSX finale, mai come return anticipato della funzione.
   const isLoadingRealBoard = isRealMode && realBoard === null;
   const currentMonth = isRealMode
-    ? (realBoard ?? { top10: [], userResult: { rank: null, xp: 0, level: 'RECRUIT', streakDays: 0 }, isCurrent: true, monthName: '' })
+    ? (realBoard ?? { top10: [], userResult: { rank: null, xp: 0, level: 'Livello 1', streakDays: 0 }, isCurrent: true, monthName: '' })
     : demoCurrentMonth;
   // Il podio si aspetta SEMPRE almeno i rank 1/2/3: se ci sono meno di 3
   // atleti reali (community appena nata, o dati non ancora caricati),
@@ -607,7 +609,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         ...currentMonth.top10,
         ...[1, 2, 3]
           .filter((r) => !currentMonth.top10.some((a) => a.rank === r))
-          .map((r) => ({ rank: r, nickname: '—', avatarUrl: null, xp: 0, streakDays: 0, level: 'RECRUIT' })),
+          .map((r) => ({ rank: r, nickname: '—', avatarUrl: null, xp: 0, streakDays: 0, level: 'Livello 1' })),
       ];
   const maxXP = top10[0].xp;
 

@@ -1258,16 +1258,21 @@ function LevelRoadmapModal({ currentXp, onClose }) {
             <p className="meta mb-4">{currentInfo.xp.toLocaleString("it-IT")} XP totali</p>
           </div>
           <div className="space-y-2">
+            {/* Nomi dei gradi (Neofita/Intermedio/...) rimossi — ogni riga
+                mostra ora il range di livelli numerici che copre, coerente
+                col resto dell'app dopo la rimozione dei nomi. */}
             {LEVEL_TIERS.map((tier, i) => {
               const startXp = levelMinXp(i * LEVELS_PER_TIER);
               const isCurrent = i === currentTierIdx;
               const isPast = i < currentTierIdx;
+              const rangeStart = i * LEVELS_PER_TIER + 1;
+              const rangeEnd = rangeStart + LEVELS_PER_TIER - 1;
               return (
-                <div key={tier.title} className="inner flex items-center justify-between gap-3 px-4 py-3"
+                <div key={i} className="inner flex items-center justify-between gap-3 px-4 py-3"
                      style={isCurrent ? { border: `1.5px solid var(--ink)` } : undefined}>
                   <span className="flex items-center gap-2.5 min-w-0">
                     <span className="text-sm truncate" style={{ color: isPast || isCurrent ? "var(--ink)" : "var(--ink-2)", fontWeight: isCurrent ? 700 : 500 }}>
-                      {tier.title}{isCurrent ? ` ${currentInfo.level - i * LEVELS_PER_TIER + 1}` : ""}
+                      {isCurrent ? `Livello ${currentInfo.level + 1}` : `Livello ${rangeStart}–${rangeEnd}`}
                     </span>
                   </span>
                   <span className="font-data text-xs shrink-0" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
@@ -1481,13 +1486,6 @@ function useCountUp(value, durationMs = 900) {
    ========================================================================== */
 
 /* Saluto dinamico in base all'orario locale del dispositivo. */
-/* Titolo di gamification coordinato al livello raggiunto. */
-function levelTitle(lvl) {
-  if (lvl >= 6) return "🏆 LIVELLO LEGGENDARIO";
-  if (lvl >= 4) return "🏆 LIVELLO ÉLITE";
-  if (lvl >= 2) return "💪 LIVELLO AVANZATO";
-  return "🌱 LIVELLO PRINCIPIANTE";
-}
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -2932,16 +2930,15 @@ export function HomeDashboard({
           <button onClick={() => setLevelRoadmapOpen(true)} className="w-full text-left mt-4 pt-4"
                   style={{ borderTop: "1px solid var(--line)", background: "none" }}
                   aria-label="Vedi tutti i livelli">
-            <div className="mb-2">
+            {/* Il nome del grado (Neofita/Intermedio/...) è stato rimosso su
+                richiesta esplicita — resta solo il numero di livello, meno
+                gamificato/"cringe" e comunque già sufficiente a mostrare il
+                progresso insieme alla barra XP sotto. */}
+            <div className="mb-2 flex items-center justify-between">
               <p className="title-shine" style={{ fontSize: "0.95rem", fontWeight: 700 }}>
-                {isRealMode ? `${realLevelInfo.icon} ${realLevelInfo.title}` : levelTitle(level)}
+                Livello {level}
               </p>
-              <div className="flex items-center justify-between mt-0.5">
-                <span style={{ color: "var(--ink-2)", fontSize: "0.78rem", fontWeight: 500 }}>
-                  Livello {level}
-                </span>
-                <span className="meta font-data">{xpBarDisplay} / {xpNeeded} XP</span>
-              </div>
+              <span className="meta font-data">{xpBarDisplay} / {xpNeeded} XP</span>
             </div>
             <div className="rounded-full overflow-hidden" style={{ height: 10, backgroundColor: "var(--surface-2)" }}>
               <div className="xp-bar xp-bar-shine relative h-full rounded-full overflow-hidden"

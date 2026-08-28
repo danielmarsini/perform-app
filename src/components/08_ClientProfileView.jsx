@@ -733,10 +733,13 @@ function computeTrophies({ level, streak, checkinsCount, recompGood }) {
       unlocked: (streak ?? 0) >= days,
     });
   });
+  // Nomi dei gradi (Neofita/Intermedio/...) rimossi su richiesta esplicita:
+  // il trofeo ora cita il livello numerico raggiunto, non più il rango.
   LEVEL_TIERS.forEach((tier, i) => {
+    const startLevel = i * LEVELS_PER_TIER + 1;
     trophies.push({
-      id: `tier-${i}`, icon: tier.icon, label: tier.title,
-      requirement: `Raggiungi il rango "${tier.title}"`,
+      id: `tier-${i}`, icon: tier.icon, label: `Livello ${startLevel}`,
+      requirement: `Raggiungi il livello ${startLevel}`,
       unlocked: (level ?? 0) >= i * LEVELS_PER_TIER,
     });
   });
@@ -1404,12 +1407,10 @@ export function ClientProfileView({
           </div>
         </div>
 
-        {/* Livello: il titolo leggibile (es. "Principiante 3", stessa scala
-            di Home/pannello coach) al posto del solo numero grezzo — è
-            questo, non un numero isolato, il "livello" che il resto
-            dell'app mostra al cliente. */}
+        {/* Livello: solo il numero (i nomi dei gradi Neofita/Intermedio/...
+            sono stati rimossi ovunque nell'app, su richiesta esplicita). */}
         <div className="grid grid-cols-2 gap-2 mt-5">
-          {[[t.stats.level, levelInfo.title], [t.stats.xp, xp.toLocaleString()]].map(([k, v]) => (
+          {[[t.stats.level, `Livello ${levelInfo.level + 1}`], [t.stats.xp, xp.toLocaleString()]].map(([k, v]) => (
             <div key={k} className="inner px-2 py-2.5 text-center">
               <p className="label" style={{ fontSize: "0.52rem" }}>{k}</p>
               <GradientText gender={gender} className="block mt-0.5" style={{ fontSize: "0.95rem", fontWeight: 800 }}>
