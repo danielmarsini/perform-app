@@ -42,6 +42,7 @@
 
 import React, { useState, useEffect, useId } from "react";
 import { BarChart3, Newspaper, Trophy, User, Settings, Activity, SlidersHorizontal, ShieldCheck, MessageCircle } from "lucide-react";
+import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
 
 export const BRAND = {
   gold: "#C5A059",
@@ -818,10 +819,26 @@ export function AppShell({
     setVisitedTabs((v) => (v.has(activeTab) ? v : new Set(v).add(activeTab)));
   }, [activeTab]);
 
-  // Stessa correzione di HomeDashboard: cambiare tab (Home/News/Classifica/
-  // Profilo) non deve lasciare la nuova schermata scrollata dov'era rimasta
-  // quella precedente.
-  useEffect(() => { window.scrollTo(0, 0); }, [activeTab]);
+  // BUG PRESO: qui c'era un window.scrollTo(0, 0) fisso a ogni cambio tab —
+  // pensato per non ereditare lo scroll della tab precedente su quella
+  // nuova, ma nel farlo buttava via anche la posizione di scroll DELLA TAB
+  // STESSA da una visita all'altra: tornare su Alimentazione dopo essere
+  // stati su Allenamento riportava sempre in cima invece che al punto
+  // esatto lasciato prima. Ora ogni tab ricorda la propria posizione
+  // (scrollMemory.js, sessionStorage) — resta scrollata a 0 solo la prima
+  // volta che si visita, poi torna sempre dov'era rimasta. La stessa
+  // memoria sopravvive anche a un reload dell'app (es. il sistema
+  // operativo scarica la pagina dopo qualche minuto in background):
+  // perform_last_tab (sotto) sceglie la tab giusta, questa riporta allo
+  // scroll giusto dentro di essa.
+  useEffect(() => {
+    window.scrollTo(0, getScrollPosition(`tab:${activeTab}`));
+  }, [activeTab]);
+  useEffect(() => {
+    const onScroll = () => saveScrollPosition(`tab:${activeTab}`, window.scrollY);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [activeTab]);
 
   // Altezza reale di header e barra di navigazione, misurata a runtime (non
   // un numero fisso indovinato): serve SOLO alla tab Chat qui sotto, per

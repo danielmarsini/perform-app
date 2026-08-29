@@ -3824,6 +3824,18 @@ function ExerciseLibraryManagerModal({ supabase, coachId, exerciseLib, groupedNa
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(null); // {name, direct, indirect, howTo, avoid, videoUrl, isCustom, isNew}
 
+  // BUG PRESO: aprire un esercizio per vederlo/modificarlo smonta l'intera
+  // lista (il ramo "else" del ternario più sotto, ricerca inclusa) e
+  // "Indietro" la rimonta da zero — un nuovo elemento scrollabile parte
+  // sempre da cima, anche se l'esercizio aperto era a metà di un elenco
+  // lungo. Cattura lo scroll della lista appena prima di aprire una voce,
+  // lo riapplica quando si torna alla lista (editing torna null).
+  const listScrollRef = useRef(null);
+  const savedListScroll = useRef(0);
+  useEffect(() => {
+    if (!editing && listScrollRef.current) listScrollRef.current.scrollTop = savedListScroll.current;
+  }, [editing]);
+
   const isCustomName = (name) => !(name in DEFAULT_EXERCISE_LIB);
 
   const filteredGroups = useMemo(() => {
@@ -3835,6 +3847,7 @@ function ExerciseLibraryManagerModal({ supabase, coachId, exerciseLib, groupedNa
   }, [groupedNames, query]);
 
   const openEntry = (name) => {
+    if (listScrollRef.current) savedListScroll.current = listScrollRef.current.scrollTop;
     const e = exerciseLib[name] || {};
     setEditing({
       name, direct: e.direct || [], indirect: e.indirect || [],
@@ -3842,7 +3855,10 @@ function ExerciseLibraryManagerModal({ supabase, coachId, exerciseLib, groupedNa
       isCustom: isCustomName(name), isNew: false,
     });
   };
-  const openNew = () => setEditing({ name: "", direct: [], indirect: [], howTo: "", avoid: "", videoUrl: "", isCustom: true, isNew: true });
+  const openNew = () => {
+    if (listScrollRef.current) savedListScroll.current = listScrollRef.current.scrollTop;
+    setEditing({ name: "", direct: [], indirect: [], howTo: "", avoid: "", videoUrl: "", isCustom: true, isNew: true });
+  };
 
   const handleSaved = () => { onChanged(); setEditing(null); };
   const handleDeleted = () => { onChanged(); setEditing(null); };
@@ -3872,7 +3888,7 @@ function ExerciseLibraryManagerModal({ supabase, coachId, exerciseLib, groupedNa
               {filteredGroups.length === 0 ? (
                 <p className="c-muted text-sm">Nessun risultato.</p>
               ) : (
-                <div style={{ maxHeight: 360, overflowY: "auto" }}>
+                <div ref={listScrollRef} style={{ maxHeight: 360, overflowY: "auto" }}>
                   {filteredGroups.map(([muscle, names]) => (
                     <div key={muscle} className="mb-2.5">
                       <p className="c-label mb-1">{muscle}</p>

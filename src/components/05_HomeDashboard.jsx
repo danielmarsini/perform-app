@@ -31,6 +31,7 @@ import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchW
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
+import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
 import { haptic } from "../lib/haptics.js";
 import { playSound } from "../lib/sounds.js";
 import { isMapboxConfigured, snapRouteToRoads, generateLoopRoute } from "../lib/mapbox.js";
@@ -2498,12 +2499,27 @@ export function HomeDashboard({
   // sempre visibile in fondo alla pagina Pesi).
   const [workoutTab, setWorkoutTab] = useState("pesi"); // pesi | cardio | wiki
 
-  // BUG PRESO: cambiare schermata (Allenamento/Alimentazione/Recupero/
+  // BUG PRESO (v1): cambiare schermata (Allenamento/Alimentazione/Recupero/
   // Integrazione, o tornare alla Home) lasciava la pagina alla stessa
   // posizione di scroll di prima — la nuova schermata poteva apparire già
-  // scrollata a metà invece che dall'inizio. Swipe da bordo sinistro →
-  // stesso "indietro" del pulsante freccia, come il gesto nativo iOS.
-  useEffect(() => { window.scrollTo(0, 0); }, [screen]);
+  // scrollata a metà invece che dall'inizio. Fix era un window.scrollTo(0,0)
+  // fisso, che però buttava via anche lo scroll DELLA SCHERMATA STESSA da
+  // una visita all'altra — es. scorrere a metà della lista esercizi in
+  // Allenamento, tornare alla Home, riaprire Allenamento e ritrovarsi di
+  // nuovo in cima. Ora ogni schermata ricorda la propria posizione
+  // (scrollMemory.js): resta a 0 solo alla prima visita, poi torna sempre
+  // dove l'utente l'aveva lasciata — anche dopo un reload dell'app causato
+  // dal sistema operativo che scarica la pagina in background.
+  // Swipe da bordo sinistro → stesso "indietro" del pulsante freccia, come
+  // il gesto nativo iOS.
+  useEffect(() => {
+    window.scrollTo(0, getScrollPosition(`home:${screen}`));
+  }, [screen]);
+  useEffect(() => {
+    const onScroll = () => saveScrollPosition(`home:${screen}`, window.scrollY);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [screen]);
   useEdgeSwipeBack(() => setScreen("dash"), screen !== "dash");
 
   /* Check settimanale: non più legato al lunedì — si ripropone ad ogni
