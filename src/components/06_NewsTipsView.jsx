@@ -674,15 +674,23 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
   const expires = channelExpires(channel);
   const aiUnlocked = hasAIAccess(plan);
 
-  const rootRef = useRef(null);
-  useSwipeDownClose(rootRef, onClose);
+  // BUG PRESO: useSwipeDownClose era attaccato a tutto l'overlay (contenuto
+  // scrollabile incluso) — ogni trascinamento verticale dentro il testo
+  // (tipico quando si torna su per rileggere un passaggio) veniva letto
+  // anche come "chiudi", e lo scroll si sentiva scattoso/in conflitto con
+  // se stesso. Il hook stesso lo vieta esplicitamente (vedi il commento in
+  // useSwipeGesture.js) — va agganciato solo alla riga header, mai al
+  // contenitore scrollabile, esattamente come già fatto altrove
+  // (08_ClientProfileView.jsx, openDocHeaderRef).
+  const headerRef = useRef(null);
+  useSwipeDownClose(headerRef, onClose);
   useEdgeSwipeBack(onClose, true);
 
   return (
-    <div ref={rootRef} className="expand-overlay" style={{ zIndex, paddingTop: "env(safe-area-inset-top)" }}>
+    <div className="expand-overlay" style={{ zIndex, paddingTop: "env(safe-area-inset-top)" }}>
       <div className="expand-sheet spring-in">
         <div className="expand-scroll">
-          <div className="flex items-center justify-between mb-6">
+          <div ref={headerRef} className="flex items-center justify-between mb-6">
             <button className="expand-close" onClick={onClose} aria-label="Torna al feed">
               <ArrowLeft size={17} />
             </button>
@@ -704,9 +712,9 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
             {item.displayTitle}
           </GradientTitle>
 
-          <div className="expand-body">
-            {(item.displayBodyExtended && item.displayBodyExtended.length ? item.displayBodyExtended : [item.displayBody]).map((p, i) => (
-              <p key={i} style={{ fontSize: "1rem", fontWeight: 400, color: "var(--satin-gray)", lineHeight: 1.85, marginBottom: "1.1rem" }}>
+          <div className="expand-body card">
+            {(item.displayBodyExtended && item.displayBodyExtended.length ? item.displayBodyExtended : [item.displayBody]).map((p, i, arr) => (
+              <p key={i} style={{ fontSize: "1rem", fontWeight: 400, color: "var(--satin-gray)", lineHeight: 1.85, marginBottom: i === arr.length - 1 ? 0 : "1.1rem" }}>
                 {p}
               </p>
             ))}
@@ -1201,7 +1209,15 @@ export function NewsTipsViewStyles() {
         background: var(--page);
         overflow: hidden; display: flex; flex-direction: column;
       }
-      .expand-scroll { overflow-y: auto; padding: 1.2rem 1.5rem 2.4rem; flex: 1; }
+      .expand-scroll {
+        overflow-y: auto; padding: 1.2rem 1.5rem 2.4rem; flex: 1;
+        -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
+      }
+      /* Il report esteso vive nella stessa card arrotondata usata ovunque
+         nell'app (.card, 04_AppShell.jsx) invece che come testo nudo sulla
+         pagina: coerenza visiva con il resto dell'app e un blocco di
+         lettura ben delimitato, più facile da seguire riga dopo riga. */
+      .expand-body.card { margin-bottom: 1.4rem; }
       .expand-close {
         width: 40px; height: 40px; border-radius: 999px; border: 1px solid var(--line);
         background: var(--surface-2); color: var(--ink); display: flex; align-items: center; justify-content: center;
