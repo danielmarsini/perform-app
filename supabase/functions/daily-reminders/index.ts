@@ -7,7 +7,7 @@
 //   · PASSI, 23:45 (ora di Roma): a chi non ha ancora registrato i passi di
 //     oggi in daily_metrics, ricorda di segnarli prima di andare a dormire.
 //   · SONNO, 12:00 (ora di Roma): a chi non ha ancora registrato il sonno
-//     della notte appena passata, ricorda di segnarlo prima di pranzo.
+//     della notte appena passata, ricorda di segnarlo.
 //
 // Il cron va schedulato ogni 10-15 minuti (vedi istruzioni), non alle due
 // ore esatte: la funzione stessa controlla l'ora di Roma e agisce solo
@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
   }
 
   if (doSleep) {
-    const payload = JSON.stringify({ title: "Registra il sonno di stanotte", body: "Prima di pranzo, ricordati di segnare quante ore hai dormito.", url: "/" });
+    const payload = JSON.stringify({ title: "Registra il sonno di stanotte", body: "Ricordati di segnare quante ore hai dormito.", url: "/" });
     for (const userId of userIds) {
       if (pausedUserIds.has(userId)) continue;
       if (sleepByUser.get(userId) != null) continue; // già registrato
