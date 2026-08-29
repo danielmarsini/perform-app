@@ -3407,7 +3407,7 @@ function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supa
                 <div className="flex items-center gap-2">
                   <button onClick={() => setTemplateId((cur) => (cur === t.id ? "" : t.id))}
                     className="flex-1 text-left px-3 py-2.5 rounded-lg text-sm"
-                    style={templateId === t.id ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)" }}>
+                    style={templateId === t.id ? { backgroundColor: "#111111", color: "#FFFFFF" } : { backgroundColor: "var(--pill-off-bg)", border: "1px solid var(--line-strong)", color: "var(--ink-tertiary)" }}>
                     {t.name}
                   </button>
                   <button onClick={() => removeTemplate(t.id)} aria-label={`Elimina split ${t.name}`}
