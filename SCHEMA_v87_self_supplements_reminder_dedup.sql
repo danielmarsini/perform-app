@@ -1,0 +1,21 @@
+-- =====================================================================
+-- PERFORM — Schema v87: colonna di dedup per i promemoria push integratori
+-- autogestiti (self_supplements)
+-- =====================================================================
+--
+-- Richiesta esplicita: "attiva le notifiche per ricordarsi di prendere gli
+-- integratori nel momento giusto della giornata". reminder_time/reminder_on
+-- esistevano già (SCHEMA_v56) e la UI (SupplementsFreeDiary) li imposta
+-- correttamente, ma "l'invio" era solo new Notification() lato client —
+-- funziona SOLO se l'app è già aperta in quel momento esatto, cioè quasi
+-- mai: non era un vero promemoria push, solo una simulazione visibile in
+-- sessione. La Edge Function supplement-reminders manda ora un push reale
+-- (stesso VAPID/push_subscriptions già usato da daily-reminders/
+-- streak-reminder) — le serve una colonna di dedup PER RIGA (non fissa
+-- come push_subscriptions.last_steps_reminder_date/last_sleep_reminder_date,
+-- SCHEMA_v79): qui l'orario è scelto dall'utente riga per riga, non uno dei
+-- soli 2 slot fissi di quella funzione.
+--
+-- Script idempotente.
+
+alter table public.self_supplements add column if not exists last_reminder_date date;

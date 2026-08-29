@@ -8968,7 +8968,12 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
   };
 
   /* Orologio locale: controlla ogni 30 secondi se è ora di un promemoria e,
-     se il permesso è stato concesso, simula l'invio della notifica al telefono. */
+     se il permesso è stato concesso, mostra subito una notifica LOCALE — utile
+     solo se l'app è già aperta in quel momento esatto. Il vero promemoria che
+     arriva anche ad app chiusa è la Edge Function supplement-reminders (push
+     reale via VAPID, stesso meccanismo di daily-reminders): questa resta come
+     rinforzo immediato quando capita di avere l'app aperta all'orario giusto,
+     non l'unico canale come prima. */
   useEffect(() => {
     const id = setInterval(() => {
       const hhmm = new Date().toTimeString().slice(0, 5);
