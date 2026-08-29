@@ -2640,6 +2640,25 @@ function WeekSuppsEditor({ supplements, onChange, client }) {
    ogni volta che il coach naviga in una settimana mai vista prima. */
 function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   const { supabase, isRealMode, exerciseLib, coachId, clients: CLIENTS, reloadExerciseLib } = useContext(CoachDataContext);
+  // BUG PRESO: "Libreria esercizi" da qui passava groupedNames={EX_NAMES_BY_MUSCLE}
+  // — un identificatore che esiste SOLO dentro WeekWorkoutEditor (altro
+  // componente), mai definito qui. Referenziarlo non falliva alla build
+  // (esbuild non fa scope-checking statico su un identificatore libero, lo
+  // lascia com'è), ma esplodeva in ReferenceError a runtime non appena si
+  // apriva davvero la libreria da questa schermata — da qui "certe volte,
+  // sopratutto cliccando la libreria esercizi". Stessa identica logica di
+  // raggruppamento già usata in WeekWorkoutEditor, ricalcolata qui.
+  const exNamesByMuscle = useMemo(() => {
+    const groups = new Map(MUSCLES.map((m) => [m, []]));
+    groups.set("Altro", []);
+    Object.keys(exerciseLib).forEach((name) => {
+      const muscle = exerciseLib[name]?.direct?.[0];
+      const key = muscle && groups.has(muscle) ? muscle : "Altro";
+      groups.get(key).push(name);
+    });
+    groups.forEach((arr) => arr.sort((a, b) => a.localeCompare(b, "it")));
+    return [...groups.entries()].filter(([, arr]) => arr.length > 0);
+  }, [exerciseLib]);
   const myQuickTarget = quickTargets?.[client.id];
   const [weeksByOffset, setWeeksByOffset] = useState(() => ({ 0: makeDefaultWeek(client, 0, myQuickTarget) }));
   const [selOffset, setSelOffset] = useState(0);
@@ -3162,7 +3181,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       )}
       {libraryManagerOpen && (
         <ExerciseLibraryManagerModal supabase={supabase} coachId={coachId}
-          exerciseLib={exerciseLib} groupedNames={EX_NAMES_BY_MUSCLE}
+          exerciseLib={exerciseLib} groupedNames={exNamesByMuscle}
           onClose={() => setLibraryManagerOpen(false)} onChanged={reloadExerciseLib} />
       )}
       {genPlanOpen && (
