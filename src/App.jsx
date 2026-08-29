@@ -577,6 +577,7 @@ export default function App() {
               userId={session.user.id}
               onUpgrade={openUpgradeSettings}
               onOpenChat={() => setTab("chat")}
+              onNavigateTab={(t) => setTab(t)}
               profileOverride={{
                 name: profile?.full_name || session.user.user_metadata?.full_name || "Atleta",
                 // BUG PRESO: leggeva session.user.user_metadata?.nickname (mai

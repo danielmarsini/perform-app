@@ -1314,7 +1314,7 @@ export function ClientProfileView({
   return (
     <div className="spring-in">
       {/* ---------- avatar in cima, cornice brand animata oro/rosa vivo ---------- */}
-      <div className="relative rounded-2xl mb-4"
+      <div className="relative rounded-2xl mb-4" data-tour="profile-identity"
            style={{
              padding: 2,
              backgroundImage: gender === "F"
