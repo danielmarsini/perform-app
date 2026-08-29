@@ -1114,7 +1114,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         <CrewView supabase={supabase} meId={meId} gender={gender === 'female' ? 'female' : 'male'} />
       ) : (
         <>
-          <div className="pc-podium">
+          <div className="pc-podium" data-tour="ranking-podium">
             {podiumOrder.map(({ athlete: a, position, delay }) => (
               <PodiumCard key={a.rank} athlete={a} position={position} delay={delay} onSelect={setSelectedAthlete} isMe={isRealMode && a.id === meId} />
             ))}

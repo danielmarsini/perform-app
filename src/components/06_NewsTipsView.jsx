@@ -1007,7 +1007,7 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
         <VaultButton count={Object.keys(vault).length} onClick={() => setVaultOpen(true)} />
       </div>
 
-      <div className="mt-7">
+      <div className="mt-7" data-tour="news-feed">
         {Object.keys(CHANNELS).map((ch) => (
           <div key={ch} style={{ display: active === ch ? "block" : "none" }}>
             {ch === "team" && isCoach && real && <TeamComposer supabase={supabase} />}

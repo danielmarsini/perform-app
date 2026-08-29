@@ -432,6 +432,7 @@ export function AppHeader({ dark, onOpenSettings }) {
                 WebkitBackdropFilter: "blur(10px)",
               }}
               aria-label="Impostazioni"
+              data-tour="header-settings"
             >
               <Settings size={17} strokeWidth={1.6} style={{ color: dark ? "#FAFAFA" : "#111111" }} />
             </button>

@@ -23,6 +23,7 @@ import {
   ArrowLeft, Plus, X, Search, Barcode, Camera, RefreshCw, Sparkles, ShoppingCart,
   CheckCircle2, Flame, Timer, Droplets, Footprints, Pill, Lock, Route, Trash2,
   Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check, Navigation, Trophy,
+  Newspaper, Medal, User, Settings,
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
@@ -1554,6 +1555,14 @@ const GUIDE_TOUR_STEPS = {
       body: "Registrali ogni giorno da qui e dalla card Integrazione qui sotto: alimentano il cerchio Recupero e ti aiutano a capire quando serve rallentare." },
     { icon: Trophy, kicker: "Streak e livelli", target: "xp", title: "Ogni giorno registrato conta.",
       body: "Anche solo un pasto segnato mantiene viva la streak (il numero accanto alla fiamma). Tocca questa barra quando vuoi per vedere quanto manca al prossimo livello — trofei e storico li trovi nel tuo Profilo." },
+    { icon: Newspaper, kicker: "News & Tips", target: "news-feed", tab: "news", title: "Contenuti scientifici, non chiacchiere.",
+      body: "Articoli su allenamento e alimentazione, tradotti e spiegati in modo semplice. Salva quelli utili nella tua Cassaforte personale per ritrovarli quando vuoi." },
+    { icon: Medal, kicker: "Classifica", target: "ranking-podium", tab: "ranking", title: "Ti alleni, guadagni XP, scali la classifica.",
+      body: "Confrontati con la community PERFORM: ogni allenamento e pasto registrato ti fa salire. Un modo in più per restare motivato ogni giorno." },
+    { icon: User, kicker: "Profilo", target: "profile-identity", tab: "profile", title: "Livello, XP e i tuoi progressi in un colpo d'occhio.",
+      body: "Qui trovi il tuo Archivio Check, i trofei guadagnati e puoi modificare foto e bio quando vuoi." },
+    { icon: Settings, kicker: "Impostazioni", target: "header-settings", tab: "home", title: "Sempre a portata di tocco.",
+      body: "La rotella in alto ti segue su ogni schermata: da qui gestisci abbonamento, notifiche, tema chiaro/scuro e account." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Con un piano a pagamento sblocchi grafici storici avanzati, la guida biomeccanica di ogni esercizio e — dalla Scheda Personalizzata in su — un coach vero che segue i tuoi progressi. Vedi gli abbonamenti quando vuoi, dalle Impostazioni." },
   ],
@@ -1570,6 +1579,14 @@ const GUIDE_TOUR_STEPS = {
       body: "Tocca questa card: sonno, passi, HRV — l'andamento nel tempo, non solo il numero di oggi." },
     { icon: Trophy, kicker: "Streak e livelli", target: "xp", title: "Ogni giorno registrato conta.",
       body: "Anche solo un pasto segnato mantiene viva la streak. Tocca questa barra per vedere il tuo progresso — livelli e trofei li trovi nel tuo Profilo." },
+    { icon: Newspaper, kicker: "News & Tips", target: "news-feed", tab: "news", title: "Contenuti scientifici, non chiacchiere.",
+      body: "Articoli su allenamento e alimentazione, tradotti e spiegati in modo semplice. Salva quelli utili nella tua Cassaforte personale per ritrovarli quando vuoi." },
+    { icon: Medal, kicker: "Classifica", target: "ranking-podium", tab: "ranking", title: "Ti alleni, guadagni XP, scali la classifica.",
+      body: "Confrontati con la community PERFORM: ogni allenamento e pasto registrato ti fa salire. Un modo in più per restare motivato ogni giorno." },
+    { icon: User, kicker: "Profilo", target: "profile-identity", tab: "profile", title: "Livello, XP e i tuoi progressi in un colpo d'occhio.",
+      body: "Qui trovi il tuo Archivio Check, i trofei guadagnati e puoi modificare foto e bio quando vuoi." },
+    { icon: Settings, kicker: "Impostazioni", target: "header-settings", tab: "home", title: "Sempre a portata di tocco.",
+      body: "La rotella in alto ti segue su ogni schermata: da qui gestisci abbonamento, notifiche, tema chiaro/scuro e account." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Se vuoi una scheda costruita su misura da un coach vero, con follow-up diretto, dalla Scheda Personalizzata in su hai anche quello. Vedi gli abbonamenti quando vuoi, dalle Impostazioni." },
   ],
@@ -1586,6 +1603,14 @@ const GUIDE_TOUR_STEPS = {
       body: "Diario pasti (qui) e integratori (nella card Integrazione qui sotto) li registri tu — se in futuro vuoi anche il piano alimentare costruito dal coach, lo trovi tra gli abbonamenti a coaching completo." },
     { icon: Trophy, kicker: "Streak e livelli", target: "streak", title: "Ogni giorno registrato conta.",
       body: "Anche solo un pasto segnato mantiene viva questa fiamma. Livelli e trofei nel tuo Profilo." },
+    { icon: Newspaper, kicker: "News & Tips", target: "news-feed", tab: "news", title: "Contenuti scientifici, non chiacchiere.",
+      body: "Articoli su allenamento e alimentazione, tradotti e spiegati in modo semplice. Salva quelli utili nella tua Cassaforte personale per ritrovarli quando vuoi." },
+    { icon: Medal, kicker: "Classifica", target: "ranking-podium", tab: "ranking", title: "Ti alleni, guadagni XP, scali la classifica.",
+      body: "Confrontati con la community PERFORM: ogni allenamento e pasto registrato ti fa salire. Un modo in più per restare motivato ogni giorno." },
+    { icon: User, kicker: "Profilo", target: "profile-identity", tab: "profile", title: "Livello, XP e i tuoi progressi in un colpo d'occhio.",
+      body: "Qui trovi il tuo Archivio Check, i trofei guadagnati e puoi modificare foto e bio quando vuoi." },
+    { icon: Settings, kicker: "Impostazioni", target: "header-settings", tab: "home", title: "Sempre a portata di tocco.",
+      body: "La rotella in alto ti segue su ogni schermata: da qui gestisci abbonamento, notifiche, tema chiaro/scuro e account." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Buon lavoro — il coach legge davvero quello che registri per calibrare i tuoi prossimi allenamenti." },
   ],
@@ -1602,6 +1627,14 @@ const GUIDE_TOUR_STEPS = {
       body: "Compilalo quando te lo propone l'app: è quello che il coach legge per capire se serve scaricare, spingere di più, o cambiare rotta." },
     { icon: Trophy, kicker: "Streak e livelli", target: "streak", title: "Ogni giorno registrato conta.",
       body: "Anche solo un pasto segnato mantiene viva questa fiamma. Livelli e trofei nel tuo Profilo." },
+    { icon: Newspaper, kicker: "News & Tips", target: "news-feed", tab: "news", title: "Contenuti scientifici, non chiacchiere.",
+      body: "Articoli su allenamento e alimentazione, tradotti e spiegati in modo semplice. Salva quelli utili nella tua Cassaforte personale per ritrovarli quando vuoi." },
+    { icon: Medal, kicker: "Classifica", target: "ranking-podium", tab: "ranking", title: "Ti alleni, guadagni XP, scali la classifica.",
+      body: "Confrontati con la community PERFORM: ogni allenamento e pasto registrato ti fa salire. Un modo in più per restare motivato ogni giorno." },
+    { icon: User, kicker: "Profilo", target: "profile-identity", tab: "profile", title: "Livello, XP e i tuoi progressi in un colpo d'occhio.",
+      body: "Qui trovi il tuo Archivio Check, i trofei guadagnati e puoi modificare foto e bio quando vuoi." },
+    { icon: Settings, kicker: "Impostazioni", target: "header-settings", tab: "home", title: "Sempre a portata di tocco.",
+      body: "La rotella in alto ti segue su ogni schermata: da qui gestisci abbonamento, notifiche, tema chiaro/scuro e account." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Hai un coach vero che segue i tuoi progressi passo passo — più registri con costanza, più preciso può essere il suo lavoro." },
   ],
@@ -1620,6 +1653,14 @@ const GUIDE_TOUR_STEPS = {
       body: "Chat diretta qui in basso e check settimanale (peso e sensazioni): è così che il coach calibra ogni cosa sui tuoi progressi reali, non su un piano scritto una volta e dimenticato." },
     { icon: Trophy, kicker: "Streak e livelli", target: "streak", title: "Ogni giorno registrato conta.",
       body: "Anche solo un pasto segnato mantiene viva questa fiamma. Livelli e trofei nel tuo Profilo." },
+    { icon: Newspaper, kicker: "News & Tips", target: "news-feed", tab: "news", title: "Contenuti scientifici, non chiacchiere.",
+      body: "Articoli su allenamento e alimentazione, tradotti e spiegati in modo semplice. Salva quelli utili nella tua Cassaforte personale per ritrovarli quando vuoi." },
+    { icon: Medal, kicker: "Classifica", target: "ranking-podium", tab: "ranking", title: "Ti alleni, guadagni XP, scali la classifica.",
+      body: "Confrontati con la community PERFORM: ogni allenamento e pasto registrato ti fa salire. Un modo in più per restare motivato ogni giorno." },
+    { icon: User, kicker: "Profilo", target: "profile-identity", tab: "profile", title: "Livello, XP e i tuoi progressi in un colpo d'occhio.",
+      body: "Qui trovi il tuo Archivio Check, i trofei guadagnati e puoi modificare foto e bio quando vuoi." },
+    { icon: Settings, kicker: "Impostazioni", target: "header-settings", tab: "home", title: "Sempre a portata di tocco.",
+      body: "La rotella in alto ti segue su ogni schermata: da qui gestisci abbonamento, notifiche, tema chiaro/scuro e account." },
     { icon: Sparkles, kicker: "Pronto a iniziare", title: "Comincia da qui.",
       body: "Hai tutto il necessario e un coach vero che segue ogni aspetto del tuo percorso — più registri con costanza, più preciso può essere il suo lavoro." },
   ],
@@ -1676,7 +1717,7 @@ function TourSpotlight({ rect }) {
    volta (guide_tour_completed, SCHEMA_v70) subito dopo l'onboarding.
    onFinish marca il flag sia al completamento sia al salto: chi salta ha
    scelto di saltare, non va ripresentata al prossimo accesso. */
-function SpotlightTour({ plan, gender, onFinish }) {
+function SpotlightTour({ plan, gender, onFinish, onNavigateTab }) {
   const steps = GUIDE_TOUR_STEPS[plan] || GUIDE_TOUR_STEPS.free;
   const [step, setStep] = useState(0);
   const last = step === steps.length - 1;
@@ -1688,15 +1729,26 @@ function SpotlightTour({ plan, gender, onFinish }) {
 
   const next = useCallback(() => setStep((n) => Math.min(n + 1, steps.length - 1)), [steps.length]);
 
+  // Step con `tab`: News/Classifica/Profilo vivono su un altro tab, non sulla
+  // Home. AppShell tiene ogni tab visitato montato (solo display:none sugli
+  // inattivi, mai smontato) — cambiare tab qui non fa perdere il Portal della
+  // guida, che resta ancorato dentro l'albero Home. onNavigateTab è lo stesso
+  // callback già passato come onOpenChat (setTab di App.jsx).
+  useEffect(() => {
+    if (s.tab && onNavigateTab) onNavigateTab(s.tab);
+  }, [step, s.tab, onNavigateTab]);
+
   // Un target mai trovato (elemento non montato per questo piano/stato, es.
   // Recupero bloccato per Free) non deve bloccare la guida a metà: dopo una
   // breve attesa si passa avanti da soli invece di restare su un overlay
-  // scuro senza ritaglio e senza spiegazione.
+  // scuro senza ritaglio e senza spiegazione. Uno step che ha appena cambiato
+  // tab ha bisogno di più tempo (es. Classifica è lazy-loaded via
+  // React.lazy: deve ancora scaricarsi e montare al primo utilizzo).
   useEffect(() => {
     if (!s.target || rect) return undefined;
-    const t = setTimeout(() => { if (!last) next(); }, 1200);
+    const t = setTimeout(() => { if (!last) next(); }, s.tab ? 2600 : 1200);
     return () => clearTimeout(t);
-  }, [step, s.target, rect, last, next]);
+  }, [step, s.target, s.tab, rect, last, next]);
 
   const cardWidth = 320;
   const pos = (() => {
@@ -1712,7 +1764,11 @@ function SpotlightTour({ plan, gender, onFinish }) {
     return { top, left };
   })();
 
-  const finish = () => (last ? onFinish() : next());
+  // Chi salta o finisce la guida da un altro tab (News/Classifica/Profilo)
+  // torna sulla Home: la guida è partita lì, non deve lasciare l'utente su
+  // uno step di passaggio senza spiegazione.
+  const finishAndReturnHome = () => { if (onNavigateTab) onNavigateTab("home"); onFinish(); };
+  const finish = () => (last ? finishAndReturnHome() : next());
 
   return (
     <Portal>
@@ -1748,7 +1804,7 @@ function SpotlightTour({ plan, gender, onFinish }) {
           </p>
 
           <div className="flex items-center justify-between gap-2">
-            <button onClick={onFinish} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
+            <button onClick={finishAndReturnHome} className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
               Salta la guida
             </button>
             <div className="flex items-center gap-2">
@@ -2339,7 +2395,7 @@ export function HomeDashboard({
   targetOn, targetOff, isTrainingDay, onToggleTrainingDay,
   onAddFood, onRemoveFood, onUpdateFood, onOpenScanner, onAddCustomFood, onCopyYesterday,
   onApplyReschedule, onDismissReschedule,
-  onUpgrade, onOpenChat, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
+  onUpgrade, onOpenChat, onNavigateTab, onCoachSync, lastCoachSync, coachSyncCount, coachFeed, onSimulateInactivity, onResetActivityToday,
   pendingSyncCount,
   userPlan, // 'free' | 'performance_pack' | 'scheda_personalizzata' | 'training' | 'full_coaching' — letta da Supabase
   schedaAddonChatActive, // add-on Scheda Personalizzata (SCHEMA_v68): chat col coach attiva a prescindere da userPlan
@@ -3100,7 +3156,7 @@ export function HomeDashboard({
           </div>
         )}
         {isRealMode && guideTourSeen === false && (
-          <SpotlightTour plan={userPlan} gender={profile.gender} onFinish={finishGuideTour} />
+          <SpotlightTour plan={userPlan} gender={profile.gender} onFinish={finishGuideTour} onNavigateTab={onNavigateTab} />
         )}
 
         {/* La prontezza di oggi non è più una card separata qui: vive dentro
@@ -10888,6 +10944,7 @@ export default function HomePreview({
   userId,
   onUpgrade: onUpgradeProp,   // apre le impostazioni/abbonamento (App.jsx) — no-op in preview isolata
   onOpenChat: onOpenChatProp, // passa al tab Chat (App.jsx) — no-op in preview isolata
+  onNavigateTab: onNavigateTabProp, // cambia tab (App.jsx: setTab) — usato dalla guida interattiva per News/Classifica/Profilo, no-op in preview isolata
 } = {}) {
   // Controlled/uncontrolled ibrido: se App.jsx passa le prop, questo componente
   // segue lo stato condiviso (tema/genere/piano); altrimenti resta autonomo
@@ -11690,6 +11747,7 @@ export default function HomePreview({
           onApplyReschedule={() => {}} onDismissReschedule={() => {}}
           onUpgrade={onUpgradeProp || (() => {})}
           onOpenChat={onOpenChatProp || (() => {})}
+          onNavigateTab={onNavigateTabProp || (() => {})}
         />
       </main>
     </div>
