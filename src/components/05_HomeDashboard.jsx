@@ -1202,6 +1202,11 @@ function CompliancePopup({ ring, onClose, readiness }) {
           </div>
           <p style={{ fontSize: "2.6rem", fontWeight: 700, color: tier.color, lineHeight: 1 }}>{isNeutral ? "n/d" : `${ring.pct}%`}</p>
           <p className="meta mb-4 mt-1">{isNeutral ? tier.label : `${tier.label} · media ultimi 7 giorni`}</p>
+          {ring.insight && (
+            <div className="rounded-2xl px-4 py-3.5 mb-4" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+              <p className="text-sm" style={{ color: "var(--ink)", lineHeight: 1.5, fontWeight: 500 }}>{ring.insight}</p>
+            </div>
+          )}
           {ring.id === "recovery" && readiness && (
             <div className="rounded-2xl px-4 py-3.5 mb-4" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
               <div className="flex items-center justify-between mb-1.5">
@@ -2850,9 +2855,59 @@ export function HomeDashboard({
 
   const progressionLabel = { positive: "In crescita", negative: "In calo", neutral: "Stabile" };
 
+  // Messaggio diagnostico per popup — richiesta esplicita: i 3 cerchi
+  // "sembrano messi lì solo per bellezza" se il tap mostra solo numeri grezzi
+  // senza spiegare COSA li sta tenendo bassi/alti né cosa fare. Un'unica
+  // frase concreta per cerchio, calcolata dai dati già letti sopra (nessuna
+  // nuova query): la causa principale del voto attuale + un'indicazione
+  // pratica, non solo la statistica.
+  const trainInsight = isRealMode && realTrainCompliance?.status === "ok"
+    ? (() => {
+        const { completionPct, progression, improved, worsened, comparable } = realTrainCompliance;
+        if (completionPct < 70) {
+          return `Hai completato circa il ${completionPct}% delle serie previste nelle ultime sessioni: è il motivo principale per cui il cerchio non è più alto. Punta a chiudere ogni serie assegnata, anche a peso ridotto se serve.`;
+        }
+        if (progression === "positive" && comparable > 0) {
+          return `Il carico è salito in ${improved} esercizi su ${comparable} rispetto alla sessione precedente: stai progredendo bene, continua così.`;
+        }
+        if (progression === "negative" && comparable > 0) {
+          return `Il carico è sceso in tutti gli esercizi confrontabili (${worsened}/${comparable}) rispetto alla sessione precedente: valuta se hai recuperato a sufficienza — sonno, stress, giorni di riposo.`;
+        }
+        return "Stai completando le sessioni come previsto: continua così per mantenere il cerchio alto.";
+      })()
+    : null;
+
+  const nutriInsight = isRealMode && target?.kcal > 0
+    ? (() => {
+        const dims = [
+          { key: "p", label: "le proteine" },
+          { key: "c", label: "i carboidrati" },
+          { key: "f", label: "i grassi" },
+        ].filter((d) => target[d.key] > 0);
+        if (dims.length === 0) return null;
+        const worst = dims.reduce((a, b) =>
+          (Math.abs(consumed[b.key] - target[b.key]) > Math.abs(consumed[a.key] - target[a.key]) ? b : a));
+        const dev = Math.round(consumed[worst.key] - target[worst.key]);
+        if (Math.abs(dev) < 8) return "Sei in target su tutti i macro principali oggi: continua così.";
+        return `Oggi ${worst.label} sono il macro più lontano dal target: ${Math.round(consumed[worst.key])}g su ${Math.round(target[worst.key])}g (${dev > 0 ? "+" : ""}${dev}g) — è la prima cosa da aggiustare.`;
+      })()
+    : null;
+
+  const recoveryInsight = isRealMode && realRecoveryCompliance
+    ? (() => {
+        if (recoveryWindowDays > 0 && recoveryTrackedDays / recoveryWindowDays < 0.6) {
+          return `Hai registrato sonno/passi solo ${recoveryTrackedDays} giorni su ${recoveryWindowDays}: i giorni non tracciati pesano come pessimi nella media. Registra più spesso per un dato preciso.`;
+        }
+        if (realRecoveryCompliance.sleepAvg != null && realRecoveryCompliance.sleepAvg < 7) {
+          return `Il sonno medio (${realRecoveryCompliance.sleepAvg}h) è sotto le 7–7,5h consigliate per un buon recupero: è probabilmente ciò che tiene basso il cerchio.`;
+        }
+        return "Sonno e passi sono nella norma: il recupero sta procedendo bene.";
+      })()
+    : null;
+
   const complianceRings = [
     {
-      id: "train", label: "Allenamento", icon: Dumbbell, pct: trainPct,
+      id: "train", label: "Allenamento", icon: Dumbbell, pct: trainPct, insight: trainInsight,
       details: isRealMode
         ? [
             { label: "Completamento sessioni recenti", value: realTrainCompliance?.completionPct != null ? `${realTrainCompliance.completionPct}%` : "…" },
@@ -2865,7 +2920,7 @@ export function HomeDashboard({
           ],
     },
     {
-      id: "nutri", label: "Alimentazione", icon: Salad, pct: nutriPct,
+      id: "nutri", label: "Alimentazione", icon: Salad, pct: nutriPct, insight: nutriInsight,
       details: isRealMode
         ? [
             { label: "Kcal oggi", value: `${consumed.kcal} / ${target.kcal}` },
@@ -2878,7 +2933,7 @@ export function HomeDashboard({
           ],
     },
     {
-      id: "recovery", label: "Recupero", icon: BedDouble, pct: recoveryPct,
+      id: "recovery", label: "Recupero", icon: BedDouble, pct: recoveryPct, insight: recoveryInsight,
       details: isRealMode
         ? [
             { label: "Sonno medio", value: realRecoveryCompliance?.sleepAvg != null ? `${realRecoveryCompliance.sleepAvg} h` : "…" },

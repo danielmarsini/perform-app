@@ -1479,7 +1479,11 @@ function trainingComplianceFromRows(assignedRows, setsJoined, currentDates, prio
   // allenati davvero, la progressione del carico è un extra, non un
   // requisito — vedi nota sopra la funzione.
   const pct = progression === "positive" ? Math.min(100, completionPct + 10) : completionPct;
-  return { status: "ok", pct, completionPct, progression };
+  // improved/worsened/comparable (SCHEMA n/a, nessuna nuova colonna — solo
+  // esposti dal calcolo già esistente sopra): alimentano il messaggio
+  // diagnostico del popup cerchio Allenamento (05_HomeDashboard.jsx) — "il
+  // carico è salito in N esercizi su M" invece del solo pct astratto.
+  return { status: "ok", pct, completionPct, progression, improved, worsened, comparable };
 }
 export async function computeTrainingCompliance(supabase, userId) {
   // Le date più recenti con almeno un esercizio assegnato. PostgREST non fa
