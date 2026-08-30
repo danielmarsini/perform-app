@@ -712,9 +712,19 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
             {item.displayTitle}
           </GradientTitle>
 
-          <div className="expand-body card">
+          {/* BUG PRESO: la card qui usava .card (var(--surface)) — in tema
+              chiaro var(--surface) e var(--page), lo sfondo della pagina
+              intera dietro di lei, sono LO STESSO bianco: la card era
+              invisibile, si vedeva solo il rettangolo netto dello schermo
+              (i "bordi rettangolari" segnalati). Nero esplicito e scritta
+              chiara, stesso trattamento "editoriale" già usato altrove
+              nell'app per i contenuti in risalto (es. le pillole selezionate
+              in Libreria Split, 09_CoachDashboard.jsx) — sempre nero, non
+              legato al tema chiaro/scuro, così la card si distingue sempre
+              davvero dalla pagina dietro. */}
+          <div className="expand-body" style={{ backgroundColor: "#111111", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "1.25rem", padding: "1.5rem" }}>
             {(item.displayBodyExtended && item.displayBodyExtended.length ? item.displayBodyExtended : [item.displayBody]).map((p, i, arr) => (
-              <p key={i} style={{ fontSize: "1rem", fontWeight: 400, color: "var(--satin-gray)", lineHeight: 1.85, marginBottom: i === arr.length - 1 ? 0 : "1.1rem" }}>
+              <p key={i} style={{ fontSize: "1rem", fontWeight: 400, color: "#E4E4E7", lineHeight: 1.85, marginBottom: i === arr.length - 1 ? 0 : "1.1rem" }}>
                 {p}
               </p>
             ))}
@@ -1210,10 +1220,16 @@ export function NewsTipsViewStyles() {
         overflow: hidden; display: flex; flex-direction: column;
       }
       .expand-scroll {
-        overflow-y: auto; padding: 1.2rem 1.5rem 2.4rem; flex: 1;
+        overflow-y: auto; padding: 1.2rem 1.5rem 2.4rem; flex: 1; min-height: 0;
         -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
       }
-      /* Il report esteso vive nella stessa card arrotondata usata ovunque
+      /* min-height: 0 sopra: senza, un figlio flex con altezza automatica
+         può non ridursi mai sotto l'altezza del proprio contenuto — su
+         alcuni motori di rendering (WebView Android più datate incluse)
+         questo impedisce il vero overflow interno, quindi lo scroll
+         "sembra" non funzionare bene: il contenitore giusto non è mai
+         davvero più piccolo del testo che contiene.
+         Il report esteso vive nella stessa card arrotondata usata ovunque
          nell'app (.card, 04_AppShell.jsx) invece che come testo nudo sulla
          pagina: coerenza visiva con il resto dell'app e un blocco di
          lettura ben delimitato, più facile da seguire riga dopo riga. */
