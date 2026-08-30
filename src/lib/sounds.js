@@ -60,3 +60,14 @@ export function playSound(kind = "xp") {
   if (!isSoundEnabled()) return;
   try { (KINDS[kind] || KINDS.xp)(); } catch { /* best-effort, mai bloccare l'azione per questo */ }
 }
+
+// Beep del countdown Recupero (Smart Rest Timer, 05_HomeDashboard.jsx):
+// richiesta esplicita "attiviamo la suoneria nel recupero gli ultimi 10
+// secondi a ogni secondo deve emettere un suono così l'utente si prepara
+// per il prossimo esercizio". A differenza di playSound() sopra (XP/trofei,
+// premi decorativi disattivati di default) questo è un avviso FUNZIONALE
+// — come la vibrazione di fine recupero già esistente, mai gestibile da un
+// interruttore Impostazioni — quindi ignora isSoundEnabled() di proposito.
+export function playRestTick(secondsLeft) {
+  try { tone([secondsLeft > 0 ? 784 : 1046.5], { noteDur: 0.1, gain: 0.045 }); } catch { /* best-effort */ }
+}
