@@ -33,7 +33,7 @@ import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
 import { haptic } from "../lib/haptics.js";
-import { playSound } from "../lib/sounds.js";
+import { playSound, playRestTick } from "../lib/sounds.js";
 import { isMapboxConfigured, snapRouteToRoads, generateLoopRoute } from "../lib/mapbox.js";
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
@@ -5255,7 +5255,17 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
     onCoachSync && onCoachSync({ type: "workout", exercise: ex.name, exerciseId: ex.id, ...payload });
 
   /* Smart Rest Timer: alla spunta di completamento di una serie parte in automatico
-     il conto alla rovescia tarato sul recupero previsto; al termine, feedback aptico. */
+     il conto alla rovescia tarato sul recupero previsto; al termine, feedback aptico.
+     Richiesta esplicita: un beep ogni secondo negli ultimi 10 secondi, per
+     prepararsi alla serie successiva, più un tentativo di notifica se il
+     recupero finisce mentre l'app è in background (cambio app/schermata per
+     un secondo). BUG NOTO E DOCUMENTATO (vedi useTodayIso più sopra in questo
+     stesso file): un tab/PWA in background viene sospeso dal browser mobile,
+     questo stesso setInterval compreso — la notifica qui sotto parte solo se
+     il browser lascia ancora eseguire questo codice in quel momento (di solito
+     vero per un cambio app breve, non garantito se il telefono si blocca o
+     resta in background a lungo: stessa identica limitazione già accettata
+     per il vecchio promemoria integratori locale, prima della push reale). */
   useEffect(() => {
     if (!timer || timer.remaining <= 0) return undefined;
     const id = setInterval(() => {
@@ -5263,13 +5273,19 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
         if (!t) return t;
         if (t.remaining <= 1) {
           try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (err) { /* non supportato: nessun problema */ }
+          playRestTick(0);
+          if (document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+            try { new Notification("Recupero finito", { body: `${ex.name}: è ora della prossima serie.`, tag: "rest-timer" }); } catch (err) { /* best-effort */ }
+          }
           return null;
         }
-        return { ...t, remaining: t.remaining - 1 };
+        const next = t.remaining - 1;
+        if (next <= 10) playRestTick(next);
+        return { ...t, remaining: next };
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [timer]);
+  }, [timer, ex.name]);
 
   // Registrazione automatica: niente più spunta manuale — appena kg e reps
   // sono entrambi inseriti la serie si considera fatta. Il confronto è per
