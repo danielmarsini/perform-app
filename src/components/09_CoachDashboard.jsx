@@ -1670,6 +1670,45 @@ function AccessControlTable() {
 }
 
 
+// Routine pronte di riscaldamento/mobilità e stretching (~10 minuti l'una),
+// da inserire in Riscaldamento & Mobilità/Stretching con un click invece di
+// riscriverle ogni volta per ogni cliente — richiesta esplicita: "creiamo
+// delle routine di riscaldamento mobilità da fare all'inizio allenamento e
+// stretching a fine allenamento da inserire con due click ai clienti in
+// base alla giornata di allenamento". Le 3 varianti coprono le articolazioni
+// e i gruppi muscolari coinvolti in quel tipo di sessione (Lower: anca,
+// caviglia, ginocchio, gambe — Upper: spalla, dorso, petto — Full Body:
+// un misto leggero di entrambe). Testo libero, stessa natura di
+// day.warmup/day.stretching: solo da leggere, mai serie/carichi da
+// monitorare — il coach può comunque modificarlo a mano dopo l'inserimento.
+const WARMUP_ROUTINES = {
+  lower: "Cyclette o camminata in leggera pendenza — 3′\nHip circles a corpo libero — 2×10 per lato\nAir squat con pausa in basso — 2×10\nAffondo in camminata con rotazione del busto — 2×8 per lato\nAnkle circles + calf raises a corpo libero — 2×15\nGlute bridge — 2×12",
+  upper: "Cyclette o vogatore leggero — 3′\nRotazioni di spalle avanti/indietro — 2×15\nBand pull-apart o elastico — 2×15\nCat-cow per mobilità toracica — 2×8\nWall slide (scapole a muro) — 2×10\nPush-up a ginocchia/plank progressivo — 1×8",
+  full: "Cyclette o corda leggera — 3′\nWorld's greatest stretch — 2×5 per lato\nAir squat — 2×10\nPush-up a ginocchia — 2×8\nHip circles + ankle circles — 2×10 per lato\nPlank attivazione core — 2×20″",
+};
+const STRETCHING_ROUTINES = {
+  lower: "Stretching quadricipite in piedi — 2×30″ per gamba\nStretching ischiocrurali da seduto — 2×30″ per gamba\nStretching polpaccio al muro — 2×30″ per gamba\nStretching flessori dell'anca (affondo statico) — 2×30″ per lato\nFigura a 4 per i glutei da sdraiato — 2×30″ per lato\nRespirazione diaframmatica — 2′",
+  upper: "Stretching pettorale sulla porta/parete — 2×30″ per lato\nChild's pose con braccia estese — 1×45″\nStretching tricipite dietro la testa — 2×30″ per lato\nStretching bicipite a braccio esteso — 2×30″ per lato\nStretching del collo (laterale + rotazione) — 2×20″ per lato\nRespirazione diaframmatica — 2′",
+  full: "Stretching quadricipite in piedi — 2×20″ per gamba\nStretching pettorale sulla porta — 2×20″ per lato\nStretching ischiocrurali da seduto — 2×20″ per gamba\nChild's pose con braccia estese — 1×30″\nStretching polpaccio al muro — 2×20″ per gamba\nRespirazione diaframmatica — 2′",
+};
+const ROUTINE_DAY_TYPES = [["lower", "Lower"], ["upper", "Upper"], ["full", "Full Body"]];
+
+// Riga di 3 pulsanti "Lower/Upper/Full Body": un click sovrascrive il campo
+// col testo pronto — coerente con "due click" (tipo giornata + inserisci),
+// il coach può poi ritoccarlo a mano come un testo qualunque.
+function RoutineQuickInsert({ routines, onPick }) {
+  return (
+    <div className="flex items-center gap-1.5 mb-1.5">
+      {ROUTINE_DAY_TYPES.map(([key, label]) => (
+        <button key={key} type="button" onClick={() => onPick(routines[key])}
+          className="c-ghost px-2.5 py-1 rounded-full text-[11px] font-medium">
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ------------------------------ TIMELINE EDITOR -----------------------------
    [A1] Allenamento Libero + Intensità: esercizio a testo libero se assente
    dal menu, Tempi di Recupero per esercizio, e le 4 Tecniche d'Intensità
@@ -1951,7 +1990,8 @@ function WeekWorkoutEditor({ week, onChange, client }) {
               modificarli qui a mano in qualunque momento. */}
           <label className="block mb-3">
             <span className="c-label block mb-1">🔥 Riscaldamento & Mobilità (prima della sessione)</span>
-            <textarea value={day.warmup || ""} rows={2} onChange={(e) => setDay((d) => ({ ...d, warmup: e.target.value }))}
+            <RoutineQuickInsert routines={WARMUP_ROUTINES} onPick={(text) => setDay((d) => ({ ...d, warmup: text }))} />
+            <textarea value={day.warmup || ""} rows={5} onChange={(e) => setDay((d) => ({ ...d, warmup: e.target.value }))}
               placeholder="Es. Cyclette leggera 5', Rotazioni di spalle 2x15, Hip circles 2x10 per lato…"
               className="t-input w-full text-sm rounded-md px-2.5 py-2" />
           </label>
@@ -2175,7 +2215,8 @@ function WeekWorkoutEditor({ week, onChange, client }) {
 
           <label className="block mb-3">
             <span className="c-label block mb-1">🧘 Stretching (a fine sessione)</span>
-            <textarea value={day.stretching || ""} rows={2} onChange={(e) => setDay((d) => ({ ...d, stretching: e.target.value }))}
+            <RoutineQuickInsert routines={STRETCHING_ROUTINES} onPick={(text) => setDay((d) => ({ ...d, stretching: text }))} />
+            <textarea value={day.stretching || ""} rows={5} onChange={(e) => setDay((d) => ({ ...d, stretching: e.target.value }))}
               placeholder="Es. Stretching pettorali 2x30 sec, Stretching quadricipiti 2x30 sec per lato…"
               className="t-input w-full text-sm rounded-md px-2.5 py-2" />
           </label>
