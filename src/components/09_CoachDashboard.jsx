@@ -85,7 +85,7 @@ import {
   notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
-  fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutSplitToDateRange, fetchWorkoutProgrammedDates,
+  fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutSplitToDateRange, previewWorkoutSplitOverwrite, fetchWorkoutProgrammedDates,
   xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, EXERCISE_LIB_MUSCLE_TO_DB, resolveMuscleTarget,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
@@ -3191,12 +3191,26 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       )}
 
       {saveTemplateOpen && (
-        <SaveTemplateModal days={realWorkout} coachId={coachId} supabase={supabase}
+        // BUG PRESO (segnalato): days={realWorkout} passava lo stato GREZZO
+        // dell'editor — per un esercizio scelto da libreria (custom: false),
+        // ex.muscleTarget resta undefined finché il coach non lo tocca a
+        // mano: nell'editor si vede comunque il valore giusto (effMuscleTarget,
+        // calcolato al volo per la sola visualizzazione, mai scritto in
+        // ex.muscleTarget), ma nel JSON salvato in workout_templates.days
+        // quel campo mancava davvero. Applicare in seguito quello split
+        // (applyWorkoutSplitToDateRange → validateWorkoutDays) falliva la
+        // validazione del distretto muscolare per OGNI esercizio da
+        // libreria — cioè quasi ogni split reale — e non scriveva nulla per
+        // nessun cliente selezionato: "la split non si assegna" segnalato.
+        // saveWorkout() (salvataggio esplicito della settimana, sopra)
+        // risolve sempre con resolveDays() prima di scrivere — stesso
+        // passaggio, mai saltato, anche qui.
+        <SaveTemplateModal days={resolveDays(realWorkout)} coachId={coachId} supabase={supabase}
           onClose={() => setSaveTemplateOpen(false)} onSaved={() => { setSaveTemplateOpen(false); loadTemplates(); }} />
       )}
       {applyTemplateOpen && (
         <ApplyTemplateModal templates={templates} clients={CLIENTS} currentClientId={client.id}
-          coachId={coachId} supabase={supabase}
+          coachId={coachId} supabase={supabase} exerciseLib={exerciseLib}
           onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates} />
       )}
       {mesocicloCalendarOpen && (
@@ -3382,7 +3396,7 @@ const MAX_APPLY_SPLIT_DAYS_AHEAD = MAX_FORWARD_WEEKS * 7;
    coach come una prenotazione volo/hotel, non più settimane intere da
    clonare una per una. Il click su uno split ne mostra anche un'anteprima
    (giorni + nomi esercizi, senza serie/rep) per un colpo d'occhio. */
-function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supabase, onClose, onDeleted }) {
+function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supabase, exerciseLib, onClose, onDeleted }) {
   const [templateId, setTemplateId] = useState(templates[0]?.id || "");
   const [selectedIds, setSelectedIds] = useState(() => new Set([currentClientId]));
   const [busy, setBusy] = useState(false);
@@ -3407,7 +3421,19 @@ function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supa
     setBusy(true);
     setErr("");
     try {
-      const outcome = await applyWorkoutSplitToDateRange(supabase, template.days, [...selectedIds], startDate, endDate, coachId);
+      // BUG CRITICO PRESO (segnalato, scheda di un cliente persa): applicare
+      // uno split su un intervallo che copre date con già una scheda vera
+      // assegnata cancellava quei giorni in silenzio, senza nessun avviso —
+      // vedi previewWorkoutSplitOverwrite in coachingData.js. Blocco duro
+      // prima di scrivere qualunque cosa, non un'opzione da ignorare.
+      const preview = await previewWorkoutSplitOverwrite(supabase, template.days, [...selectedIds], startDate, endDate);
+      if (preview.lossCount > 0) {
+        const ok = window.confirm(
+          `Attenzione: ${preview.lossCount} ${preview.lossCount === 1 ? "giorno ha" : "giorni hanno"} già un allenamento assegnato in questo intervallo, e questo split lo lascia vuoto (riposo) — verr${preview.lossCount === 1 ? "à" : "anno"} cancellat${preview.lossCount === 1 ? "o" : "i"}. Continuare comunque?`
+        );
+        if (!ok) { setBusy(false); return; }
+      }
+      const outcome = await applyWorkoutSplitToDateRange(supabase, template.days, [...selectedIds], startDate, endDate, coachId, exerciseLib);
       setResult(outcome);
     } catch (e) {
       console.error("PERFORM: errore applicazione split", e);
@@ -3635,6 +3661,19 @@ function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase,
     setBusy(true);
     setErr("");
     try {
+      // BUG CRITICO PRESO (segnalato, scheda di un cliente persa): programmare
+      // questa scheda su un intervallo che copre date con già un allenamento
+      // vero assegnato (un'altra settimana, un altro split) cancellava quei
+      // giorni in silenzio ogni volta che questo pattern li lasciava vuoti —
+      // vedi previewWorkoutSplitOverwrite in coachingData.js. Blocco duro
+      // prima di scrivere qualunque cosa, non un'opzione da ignorare.
+      const preview = await previewWorkoutSplitOverwrite(supabase, days, [clientId], selStart, selEnd);
+      if (preview.lossCount > 0) {
+        const ok = window.confirm(
+          `Attenzione: ${preview.lossCount} ${preview.lossCount === 1 ? "giorno ha" : "giorni hanno"} già un allenamento assegnato in questo intervallo, e questa scheda lo lascia vuoto (riposo) — verr${preview.lossCount === 1 ? "à" : "anno"} cancellat${preview.lossCount === 1 ? "o" : "i"}. Continuare comunque?`
+        );
+        if (!ok) { setBusy(false); return; }
+      }
       const outcome = await applyWorkoutSplitToDateRange(supabase, days, [clientId], selStart, selEnd, coachId);
       setResult(outcome);
       if (outcome.failed.length === 0) { loadProgrammed(); onApplied(); }

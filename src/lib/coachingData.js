@@ -2018,7 +2018,7 @@ export async function saveWeekWorkout(supabase, userId, weekStartDateISO, workou
 // writeSingleDayWorkout — non saveWeekWorkout, che opera per settimane
 // intere e toccherebbe anche i giorni fuori dal range scelto sulla prima/
 // ultima settimana parziale.
-export async function applyWorkoutSplitToDateRange(supabase, splitDays, clientIds, startDateISO, endDateISO, coachId) {
+export async function applyWorkoutSplitToDateRange(supabase, splitDays, clientIds, startDateISO, endDateISO, coachId, exerciseLib) {
   if (!Array.isArray(splitDays) || splitDays.length !== 7) {
     throw new Error("applyWorkoutSplitToDateRange: lo split deve avere 7 elementi (Lunedì→Domenica).");
   }
@@ -2033,7 +2033,24 @@ export async function applyWorkoutSplitToDateRange(supabase, splitDays, clientId
   // (getDay() + 6) % 7: stessa formula già usata da mondayOf/09_CoachDashboard
   // per ottenere lunedì=0…domenica=6 dal giorno-della-settimana nativo di JS
   // (che parte da domenica=0).
-  const daysForDates = dates.map((iso) => splitDays[(new Date(`${iso}T00:00:00`).getDay() + 6) % 7]);
+  let daysForDates = dates.map((iso) => splitDays[(new Date(`${iso}T00:00:00`).getDay() + 6) % 7]);
+  // BUG PRESO (segnalato): gli split salvati in libreria (SaveTemplateModal,
+  // 09_CoachDashboard.jsx) potevano avere muscleTarget mancante per gli
+  // esercizi da libreria — il coach lo vedeva comunque giusto nell'editor
+  // (calcolato solo per la visualizzazione), ma il JSON salvato no. Un
+  // template già in libreria da prima del fix a monte resterebbe comunque
+  // inapplicabile senza questo: ri-risolve qui, all'applicazione, esattamente
+  // come farebbe resolveDays nell'editor — non tocca gli esercizi "liberi"
+  // (custom), mai un valore scelto a mano dal coach.
+  if (exerciseLib) {
+    daysForDates = daysForDates.map((day) => day && {
+      ...day,
+      exercises: day.exercises.map((ex) => (ex.kind === "cardio" || ex.custom ? ex : {
+        ...ex,
+        muscleTarget: ex.muscleTarget || resolveMuscleTarget(ex.name, exerciseLib),
+      })),
+    });
+  }
   validateWorkoutDays(daysForDates, dates);
 
   const ok = [];
@@ -2054,6 +2071,48 @@ export async function applyWorkoutSplitToDateRange(supabase, splitDays, clientId
     }
   }
   return { ok, failed, dayCount: dates.length };
+}
+
+// BUG CRITICO PRESO (segnalato, dati reali di un cliente persi): applicare
+// uno split/pattern su un intervallo di date con applyWorkoutSplitToDateRange
+// scrive giorno per giorno via writeSingleDayWorkout, che CANCELLA senza
+// preavviso ogni riga già esistente su una data che il pattern lascia vuota
+// (riposo, o un giorno con exercises: [] — es. una settimana ancora a metà
+// di essere costruita nell'editor, con solo 2 esercizi di lunedì). Se
+// l'intervallo scelto copre date che avevano già una scheda vera assegnata
+// in precedenza (da un'altra settimana/split), quei giorni sparivano
+// silenziosamente — l'app non lo segnalava mai prima di scrivere.
+// Questa preview NON scrive nulla: dice al chiamante (la UI) quante date
+// nell'intervallo hanno già righe reali che il pattern scelto lascerebbe
+// vuote, così la UI può chiedere conferma esplicita PRIMA di applicare —
+// mai più un salvataggio parziale che cancella dati esistenti in silenzio.
+export async function previewWorkoutSplitOverwrite(supabase, splitDays, clientIds, startDateISO, endDateISO) {
+  const start = new Date(`${startDateISO}T00:00:00`);
+  const end = new Date(`${endDateISO}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return { lossCount: 0, lossDates: [] };
+  }
+  const dates = [];
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) dates.push(toLocalISODate(d));
+  const daysForDates = dates.map((iso) => splitDays[(new Date(`${iso}T00:00:00`).getDay() + 6) % 7]);
+  // Solo le date che il pattern lascia VUOTE possono perdere dati: quelle
+  // che il pattern popola comunque vengono sostituite consapevolmente (è
+  // esattamente lo scopo di "Applica split"), non serve avvisare per quelle.
+  const emptyDates = dates.filter((_, i) => !((daysForDates[i]?.exercises?.length ?? 0) > 0));
+  if (emptyDates.length === 0) return { lossCount: 0, lossDates: [] };
+
+  const lossDatesSet = new Set();
+  for (const clientId of clientIds) {
+    const { data, error } = await supabase
+      .from("workout_logs")
+      .select("date")
+      .eq("user_id", clientId)
+      .in("date", emptyDates);
+    if (error) throw error;
+    (data ?? []).forEach((r) => lossDatesSet.add(r.date));
+  }
+  const lossDates = [...lossDatesSet].sort();
+  return { lossCount: lossDates.length, lossDates };
 }
 
 // Clona una settimana di allenamento su un'altra: legge le righe della
