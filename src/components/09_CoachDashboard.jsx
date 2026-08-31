@@ -3211,7 +3211,12 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       {applyTemplateOpen && (
         <ApplyTemplateModal templates={templates} clients={CLIENTS} currentClientId={client.id}
           coachId={coachId} supabase={supabase} exerciseLib={exerciseLib}
-          onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates} />
+          onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates}
+          onApplied={() => {
+            fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name])
+              .then(setRealWorkout)
+              .catch((err) => console.error("PERFORM: errore ricarica allenamento dopo applicazione split", err));
+          }} />
       )}
       {mesocicloCalendarOpen && (
         <MesocicloCalendarModal days={resolveDays(realWorkout || [])} clientId={client.id} clientName={client.name}
@@ -3396,7 +3401,7 @@ const MAX_APPLY_SPLIT_DAYS_AHEAD = MAX_FORWARD_WEEKS * 7;
    coach come una prenotazione volo/hotel, non più settimane intere da
    clonare una per una. Il click su uno split ne mostra anche un'anteprima
    (giorni + nomi esercizi, senza serie/rep) per un colpo d'occhio. */
-function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supabase, exerciseLib, onClose, onDeleted }) {
+function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supabase, exerciseLib, onClose, onDeleted, onApplied }) {
   const [templateId, setTemplateId] = useState(templates[0]?.id || "");
   const [selectedIds, setSelectedIds] = useState(() => new Set([currentClientId]));
   const [busy, setBusy] = useState(false);
@@ -3435,6 +3440,13 @@ function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supa
       }
       const outcome = await applyWorkoutSplitToDateRange(supabase, template.days, [...selectedIds], startDate, endDate, coachId, exerciseLib);
       setResult(outcome);
+      // BUG PRESO (segnalato: "applico lo split ma i giorni non si
+      // riempiono"): lo split veniva scritto correttamente su Supabase, ma
+      // questo modale non avvisava mai ClientTimeline di ricaricare la
+      // settimana aperta nell'editor — a differenza di MesocicloCalendarModal,
+      // che lo fa già. Il coach restava a guardare lo stato pre-applicazione
+      // finché non cambiava manualmente settimana/cliente e tornava indietro.
+      if (outcome.ok.includes(currentClientId)) onApplied?.();
     } catch (e) {
       console.error("PERFORM: errore applicazione split", e);
       setErr(e?.message || "Non sono riuscito ad applicare lo split.");
