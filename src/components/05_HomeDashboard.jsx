@@ -2704,6 +2704,18 @@ export function HomeDashboard({
   // riletto). Ora si ricalcola anche ad ogni nuovo evento (coachSyncCount,
   // che cresce a ogni serie completata) e periodicamente come rete di
   // sicurezza per gli altri casi (pasto aggiunto, sonno/passi salvati).
+  // BUG PRESO (segnalato: "l'utente sale di livello ma la Home mostra
+  // ancora il livello precedente"): il rinfresco periodico ogni 20s si
+  // affidava a un setInterval — sui browser mobile un tab/PWA in background
+  // sospende (o rallenta pesantemente) i setInterval, esattamente come
+  // successo al timer di recupero (vedi readRestTimer/writeRestTimer più
+  // sopra). Se il livello cambiava mentre l'app era in background (es. XP
+  // bonus assegnato dal coach da un altro dispositivo, o un ricalcolo che
+  // scatta a mezzanotte) e non era passato da coachSyncCount, tornando
+  // sull'app poteva volerci ben più dei 20s dichiarati prima del prossimo
+  // tick — a volte "per sempre" finché non si toccava di nuovo qualcosa. Un
+  // rinfresco immediato al rientro (visibilitychange) chiude questo buco
+  // senza aspettare il timer.
   useEffect(() => {
     if (!isRealMode) return undefined;
     let cancelled = false;
@@ -2717,7 +2729,9 @@ export function HomeDashboard({
     };
     refresh();
     const id = setInterval(refresh, 20000);
-    return () => { cancelled = true; clearInterval(id); };
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRealMode, supabase, userId, coachSyncCount]);
   const realLevelInfo = isRealMode ? xpToLevelInfo(realXpStreak?.xpTotal ?? 0) : null;
@@ -5208,10 +5222,47 @@ function PastSessionCard({ session, supabase, userId, missed = false }) {
   );
 }
 
+// BUG PRESO (segnalato): "esco dall'app (es. Spotify) e rientro, il timer
+// sparisce o si azzera" — il timer di recupero viveva SOLO come stato React
+// in memoria (un countdown a scalare, un secondo alla volta). Un cambio app
+// breve su mobile spesso ricarica la pagina PWA da zero al rientro, che
+// azzera qualunque stato React incluso questo; anche senza reload completo,
+// un setInterval in background viene sospeso dai browser mobile e non
+// recupera mai i secondi persi. Fix: un solo timer di recupero "attivo" per
+// volta, salvato in localStorage come timestamp assoluto di fine (endAt) —
+// sopravvive a reload/chiusura perché al rientro basta ricalcolare quanto
+// manca rispetto all'orologio di sistema, mai contare "quanti tick ho perso".
+const REST_TIMER_KEY = "perform_rest_timer";
+function readRestTimer() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(REST_TIMER_KEY) || "null");
+    if (!saved || typeof saved.endAt !== "number" || typeof saved.total !== "number" || !saved.exerciseId) return null;
+    return saved;
+  } catch { return null; }
+}
+function writeRestTimer(entry) {
+  try {
+    if (entry) localStorage.setItem(REST_TIMER_KEY, JSON.stringify(entry));
+    else localStorage.removeItem(REST_TIMER_KEY);
+  } catch { /* best-effort, mai bloccare il timer per questo */ }
+}
+
 function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId }) {
   const [guideOpen, setGuideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [timer, setTimer] = useState(null); // { total, remaining } in secondi
+  const [timer, setTimer] = useState(null); // { total, remaining, endAt } — endAt: epoch ms di fine, fonte di verità
+
+  // Ripristina un timer già in corso per QUESTO esercizio al mount — copre
+  // sia il rientro in un tab già aperto (setTimer perso per unmount/remount
+  // di ExerciseCard) sia un reload completo della pagina.
+  useEffect(() => {
+    const saved = readRestTimer();
+    if (!saved || saved.exerciseId !== ex.id) return;
+    const remaining = Math.ceil((saved.endAt - Date.now()) / 1000);
+    if (remaining > 0) setTimer({ total: saved.total, remaining, endAt: saved.endAt });
+    else writeRestTimer(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [prToast, setPrToast] = useState(null);
 
   const isMaxEffort = index < 2;
@@ -5267,25 +5318,39 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
      resta in background a lungo: stessa identica limitazione già accettata
      per il vecchio promemoria integratori locale, prima della push reale). */
   useEffect(() => {
-    if (!timer || timer.remaining <= 0) return undefined;
-    const id = setInterval(() => {
-      setTimer((t) => {
-        if (!t) return t;
-        if (t.remaining <= 1) {
-          try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (err) { /* non supportato: nessun problema */ }
-          playRestTick(0);
-          if (document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
-            try { new Notification("Recupero finito", { body: `${ex.name}: è ora della prossima serie.`, tag: "rest-timer" }); } catch (err) { /* best-effort */ }
-          }
-          return null;
+    if (!timer) return undefined;
+    const endAt = timer.endAt;
+    // BUG PRESO: ricalcola SEMPRE il tempo rimanente da endAt (timestamp
+    // assoluto) confrontato con l'orologio di sistema, invece di scalare un
+    // contatore un secondo alla volta — così un setInterval sospeso o
+    // ritardato dal browser (tab in background, telefono che si blocca) non
+    // perde mai la sincronizzazione: al prossimo tick, o al rientro
+    // (visibilitychange), il countdown mostra il valore corretto in un colpo,
+    // mai "recuperato" ticchettando in fretta o congelato al vecchio valore.
+    let lastBeepedSecond = null;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+      if (remaining <= 0) {
+        try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (err) { /* non supportato: nessun problema */ }
+        playRestTick(0);
+        if (document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+          try { new Notification("Recupero finito", { body: `${ex.name}: è ora della prossima serie.`, tag: "rest-timer" }); } catch (err) { /* best-effort */ }
         }
-        const next = t.remaining - 1;
-        if (next <= 10) playRestTick(next);
-        return { ...t, remaining: next };
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [timer, ex.name]);
+        writeRestTimer(null);
+        setTimer(null);
+        return;
+      }
+      if (remaining <= 10 && remaining !== lastBeepedSecond) {
+        lastBeepedSecond = remaining;
+        playRestTick(remaining);
+      }
+      setTimer((t) => (t && t.endAt === endAt ? { ...t, remaining } : t));
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", tick); };
+  }, [timer?.endAt, ex.name]);
 
   // Registrazione automatica: niente più spunta manuale — appena kg e reps
   // sono entrambi inseriti la serie si considera fatta. Il confronto è per
@@ -5310,7 +5375,9 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
         // azioni molto meno frequenti (acqua, cibo, cardio) lo avevano già.
         haptic("confirm");
         const dur = ex.rests?.[i] ?? 120;
-        setTimer({ total: dur, remaining: dur });
+        const endAt = Date.now() + dur * 1000;
+        setTimer({ total: dur, remaining: dur, endAt });
+        writeRestTimer({ total: dur, endAt, exerciseId: ex.id, exerciseName: ex.name });
         // Celebrazione automatica: questa serie appena completata batte il
         // carico massimo storico di questo esercizio (mai il primo giorno
         // registrato, best === 0 non è un vero confronto).
@@ -5442,7 +5509,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
             <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Recupero in corso</p>
             <p className="meta mt-0.5">Al termine, una vibrazione ti avvisa che è ora della prossima serie.</p>
           </div>
-          <button onClick={() => setTimer(null)} className="shrink-0 label" style={{ fontSize: "0.6rem" }}>
+          <button onClick={() => { setTimer(null); writeRestTimer(null); }} className="shrink-0 label" style={{ fontSize: "0.6rem" }}>
             salta
           </button>
         </div>

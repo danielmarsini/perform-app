@@ -87,7 +87,7 @@ import {
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
   fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutSplitToDateRange, previewWorkoutSplitOverwrite, fetchWorkoutProgrammedDates,
   xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
-  MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, EXERCISE_LIB_MUSCLE_TO_DB, resolveMuscleTarget,
+  MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, EXERCISE_LIB_MUSCLE_TO_DB, resolveMuscleTarget, resolveSynergists,
   fetchExerciseLibrary, saveExerciseGuide, computeVolume,
   updateExerciseLibraryEntry, deleteExerciseFromLibrary,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
@@ -2853,12 +2853,22 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
   // dalla libreria collettiva" usato sia dal salvataggio manuale sia
   // dall'autosalvataggio — un'unica versione, mai due percorsi che
   // potrebbero disallinearsi.
+  // BUG PRESO (segnalato: "seleziono i muscoli sinergici, dopo 2-3 secondi
+  // la selezione si resetta da sola"): per un esercizio da libreria questa
+  // riga scriveva SEMPRE synergists: [] a ogni salvataggio — incluso
+  // l'autosalvataggio 2.5s dopo l'ultima modifica — cancellando qualunque
+  // selezione il coach avesse appena fatto coi pulsanti "Muscoli sinergici"
+  // (che, a differenza del distretto muscolare, restano modificabili anche
+  // per un esercizio di libreria). Ora si preserva sempre la selezione
+  // esplicita del coach (ex.synergists), e si risolve dalla libreria SOLO
+  // quando non è mai stata toccata (undefined) — stesso identico fallback
+  // già mostrato in UI (effSynergists = ex.synergists ?? libIndirect).
   const resolveDays = (days) => days.map((day) => day && {
     ...day,
     exercises: day.exercises.map((ex) => (ex.kind === "cardio" ? ex : {
       ...ex,
       muscleTarget: ex.custom ? ex.muscleTarget : resolveMuscleTarget(ex.name, exerciseLib),
-      synergists: ex.custom ? ex.synergists : [],
+      synergists: ex.custom ? ex.synergists : (ex.synergists ?? resolveSynergists(ex.name, exerciseLib)),
     })),
   });
 

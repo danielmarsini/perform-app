@@ -1,0 +1,21 @@
+-- =====================================================================
+-- PERFORM — Schema v88: split_label su workout_day_notes
+-- Script idempotente.
+-- =====================================================================
+
+-- BUG PRESO (segnalato): "trasformo un giorno di riposo in allenamento e
+-- digito il nome della sessione, dopo pochi secondi torna riposo cancellando
+-- il testo digitato". Causa: un giorno "attivo" nel DB esiste SOLO come
+-- effetto collaterale di avere almeno una riga workout_logs (il nome della
+-- sessione, split_label, è denormalizzato su ogni riga esercizio — vedi
+-- SCHEMA_v65). Finché il coach non ha ancora aggiunto un esercizio, un
+-- giorno appena trasformato da riposo ha ZERO righe workout_logs: al primo
+-- autosalvataggio (o refetch) fetchWeekWorkout non trova nessuna riga per
+-- quella data e lo ricostruisce come null (riposo) — il nome appena scritto
+-- non aveva nessun posto dove sopravvivere.
+-- Aggiungendo split_label anche qui (già la tabella per i dati "per
+-- giornata, non per esercizio": warmup/stretching), un giorno attivo con
+-- ancora zero esercizi ha comunque una riga persistente che lo distingue da
+-- un vero giorno di riposo — fetchWeekWorkout la usa come fallback quando
+-- non ci sono righe workout_logs.
+alter table public.workout_day_notes add column if not exists split_label text;
