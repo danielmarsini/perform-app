@@ -3210,7 +3210,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       )}
       {applyTemplateOpen && (
         <ApplyTemplateModal templates={templates} clients={CLIENTS} currentClientId={client.id}
-          coachId={coachId} supabase={supabase} exerciseLib={exerciseLib}
+          coachId={coachId} supabase={supabase} exerciseLib={exerciseLib} weekStartISO={weekStartISO}
           onClose={() => setApplyTemplateOpen(false)} onDeleted={loadTemplates}
           onApplied={() => {
             fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name])
@@ -3220,7 +3220,7 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       )}
       {mesocicloCalendarOpen && (
         <MesocicloCalendarModal days={resolveDays(realWorkout || [])} clientId={client.id} clientName={client.name}
-          coachId={coachId} supabase={supabase}
+          coachId={coachId} supabase={supabase} weekStartISO={weekStartISO}
           onClose={() => setMesocicloCalendarOpen(false)}
           onApplied={() => {
             fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name])
@@ -3401,7 +3401,7 @@ const MAX_APPLY_SPLIT_DAYS_AHEAD = MAX_FORWARD_WEEKS * 7;
    coach come una prenotazione volo/hotel, non più settimane intere da
    clonare una per una. Il click su uno split ne mostra anche un'anteprima
    (giorni + nomi esercizi, senza serie/rep) per un colpo d'occhio. */
-function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supabase, exerciseLib, onClose, onDeleted, onApplied }) {
+function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supabase, exerciseLib, weekStartISO, onClose, onDeleted, onApplied }) {
   const [templateId, setTemplateId] = useState(templates[0]?.id || "");
   const [selectedIds, setSelectedIds] = useState(() => new Set([currentClientId]));
   const [busy, setBusy] = useState(false);
@@ -3410,8 +3410,22 @@ function ApplyTemplateModal({ templates, clients, currentClientId, coachId, supa
 
   const today = toLocalISODate(new Date());
   const maxDate = toLocalISODate(new Date(Date.now() + MAX_APPLY_SPLIT_DAYS_AHEAD * 86400000));
+  // BUG PRESO (segnalato: "impostata la split ma solo un giorno si è
+  // riempito, gli altri no"): il default Dal/Al giorno era "solo oggi" —
+  // il coach apre "Libreria split" dalla settimana che sta guardando
+  // nell'editor (es. 31/08–06/09) aspettandosi che lo split copra quella
+  // settimana intera, non un singolo giorno. Se non tocca le date a mano
+  // (facile da non notare) applica un pattern di 7 giorni a un intervallo
+  // di 1 giorno solo, riempiendo solo il giorno corrente. Ora il default
+  // copre da oggi fino alla domenica della settimana visualizzata
+  // nell'editor — il coach può comunque restringere/allargare prima di
+  // applicare, ma il caso comune ("applica alla settimana che sto
+  // guardando") ora funziona senza dover toccare i campi data.
+  const weekEndISO = weekStartISO
+    ? toLocalISODate(new Date(new Date(`${weekStartISO}T00:00:00`).getTime() + 6 * 86400000))
+    : today;
   const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
+  const [endDate, setEndDate] = useState(weekEndISO > today ? weekEndISO : today);
   const dayCount = Math.round((new Date(`${endDate}T00:00:00`) - new Date(`${startDate}T00:00:00`)) / 86400000) + 1;
 
   const toggleClient = (id) => setSelectedIds((s) => {
@@ -3630,14 +3644,23 @@ function MesocicloGrid({ monthCursor, onShiftMonth, todayISO, isCovered, selStar
    dell'intervallo resta sempre inequivocabile anche con un solo tocco.
    Stessa applyWorkoutSplitToDateRange già usata da "Libreria split": qui la
    sorgente è la bozza corrente invece di uno split salvato. */
-function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase, onClose, onApplied }) {
+function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase, weekStartISO, onClose, onApplied }) {
   const todayISO = toLocalISODate();
   const maxDateISO = toLocalISODate(new Date(Date.now() + MAX_APPLY_SPLIT_DAYS_AHEAD * 86400000));
   const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [programmedDates, setProgrammedDates] = useState(new Set());
   const [loading, setLoading] = useState(true);
+  // BUG PRESO (segnalato: "impostata la split ma solo un giorno si è
+  // riempito, gli altri no", stesso difetto di ApplyTemplateModal): il
+  // default Dal/Al giorno era "solo oggi", ma il coach programma da qui la
+  // settimana che sta guardando nell'editor — default esteso fino alla
+  // domenica di quella settimana, così premere subito "Programma" copre
+  // l'intera settimana invece di un solo giorno.
+  const weekEndISO = weekStartISO
+    ? toLocalISODate(new Date(new Date(`${weekStartISO}T00:00:00`).getTime() + 6 * 86400000))
+    : todayISO;
   const [selStart, setSelStart] = useState(todayISO);
-  const [selEnd, setSelEnd] = useState(todayISO);
+  const [selEnd, setSelEnd] = useState(weekEndISO > todayISO ? weekEndISO : todayISO);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { ok, failed, dayCount }
   const [err, setErr] = useState("");
