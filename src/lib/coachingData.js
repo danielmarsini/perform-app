@@ -113,6 +113,15 @@ function resolveMuscleTarget(exerciseName, lib) {
   return EXERCISE_LIB_MUSCLE_TO_DB[libMuscle] || libMuscle;
 }
 
+// Sinergici DI DEFAULT della libreria per un esercizio — usato SOLO come
+// fallback quando il coach non ha mai toccato i sinergici di QUESTA riga
+// (ex.synergists === undefined), mai per sovrascrivere una selezione già
+// fatta. Vedi resolveDays in 09_CoachDashboard.jsx.
+function resolveSynergists(exerciseName, lib) {
+  const libIndirect = (lib || DEFAULT_EXERCISE_LIB)[exerciseName]?.indirect || [];
+  return libIndirect.map((m) => EXERCISE_LIB_MUSCLE_TO_DB[m] || m);
+}
+
 // Libreria collettiva reale (SCHEMA_v39): parte da DEFAULT_EXERCISE_LIB e la
 // estende con ogni esercizio custom che coach o clienti Premium hanno già
 // registrato in passato — mai più ridigitare muscoli target già scelti per
@@ -1792,7 +1801,7 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
   // si caricano comunque senza queste due note opzionali.
   const { data: notesData } = await supabase
     .from("workout_day_notes")
-    .select("date, warmup_text, stretching_text")
+    .select("date, warmup_text, stretching_text, split_label")
     .eq("user_id", userId)
     .in("date", dates);
   const notesByDate = new Map((notesData ?? []).map((n) => [n.date, n]));
@@ -1805,13 +1814,20 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
 
   return dates.map((date) => {
     const rows = byDate.get(date);
-    if (!rows || rows.length === 0) return null;
     const notes = notesByDate.get(date);
+    // BUG PRESO (segnalato): un giorno appena trasformato da riposo ad
+    // allenamento, con un nome digitato ma ancora zero esercizi aggiunti,
+    // non aveva NESSUNA riga workout_logs — veniva sempre ricostruito come
+    // riposo (return null), cancellando il nome appena scritto al primo
+    // refetch/autosalvataggio. workout_day_notes.split_label (SCHEMA_v88) è
+    // la sola traccia che sopravvive in questo caso: un giorno è davvero un
+    // riposo solo se non ha NÉ righe esercizio NÉ una nota di alcun tipo.
+    if ((!rows || rows.length === 0) && !notes?.split_label && !notes?.warmup_text && !notes?.stretching_text) return null;
     return {
-      label: rows[0].split_label || "Sessione",
+      label: rows?.[0]?.split_label || notes?.split_label || "Sessione",
       warmup: notes?.warmup_text || "",
       stretching: notes?.stretching_text || "",
-      exercises: rows.map((r) => ({
+      exercises: (rows ?? []).map((r) => ({
         id: r.id,
         name: r.exercise_name,
         custom: typeof isCustomExercise === "function" ? isCustomExercise(r.exercise_name) : false,
@@ -1829,21 +1845,30 @@ export async function fetchWeekWorkout(supabase, userId, weekStartDateISO, isCus
   });
 }
 
-// Scrive/cancella riscaldamento/mobilità + stretching di UN giorno
-// (workout_day_notes, SCHEMA_v84) — chiamata da saveWeekWorkout per ognuna
-// delle 7 date della settimana, mai da sola: è sempre parte dello stesso
-// salvataggio degli esercizi di quel giorno. Un giorno senza nessuno dei due
-// testi cancella la riga invece di lasciarne una vuota.
-async function saveWorkoutDayNotes(supabase, coachId, userId, date, warmupText, stretchingText) {
+// Scrive/cancella riscaldamento/mobilità + stretching + nome sessione di UN
+// giorno (workout_day_notes, SCHEMA_v84/v88) — chiamata da saveWeekWorkout
+// per ognuna delle 7 date della settimana, mai da sola: è sempre parte
+// dello stesso salvataggio degli esercizi di quel giorno. Un giorno senza
+// nessuno dei tre cancella la riga invece di lasciarne una vuota.
+// BUG PRESO (segnalato: "trasformo riposo in allenamento e digito il nome,
+// dopo pochi secondi torna riposo cancellando il testo"): split_label
+// (nome sessione) viveva SOLO denormalizzato su ogni riga workout_logs — un
+// giorno appena attivato ma ancora senza esercizi non aveva ZERO righe
+// dove salvarlo, quindi il refetch successivo (fetchWeekWorkout: nessuna
+// riga per quella data → giorno ricostruito come riposo) lo cancellava.
+// Salvando label anche qui, un giorno attivo con ancora zero esercizi ha
+// comunque una riga persistente che lo distingue da un vero riposo.
+async function saveWorkoutDayNotes(supabase, coachId, userId, date, warmupText, stretchingText, label) {
   const warmup = (warmupText || "").trim();
   const stretching = (stretchingText || "").trim();
-  if (!warmup && !stretching) {
+  const splitLabel = (label || "").trim();
+  if (!warmup && !stretching && !splitLabel) {
     const { error } = await supabase.from("workout_day_notes").delete().eq("user_id", userId).eq("date", date);
     if (error) throw error;
     return;
   }
   const { error } = await supabase.from("workout_day_notes").upsert(
-    { user_id: userId, coach_id: coachId || null, date, warmup_text: warmup || null, stretching_text: stretching || null, updated_at: new Date().toISOString() },
+    { user_id: userId, coach_id: coachId || null, date, warmup_text: warmup || null, stretching_text: stretching || null, split_label: splitLabel || null, updated_at: new Date().toISOString() },
     { onConflict: "user_id,date" },
   );
   if (error) throw error;
@@ -1971,7 +1996,7 @@ async function writeSingleDayWorkout(supabase, userId, date, day, coachId) {
     }
   }
 
-  await saveWorkoutDayNotes(supabase, coachId, userId, date, day?.warmup, day?.stretching);
+  await saveWorkoutDayNotes(supabase, coachId, userId, date, day?.warmup, day?.stretching, day?.label);
 }
 
 // Add-on Scheda Personalizzata (SCHEMA_v68): la scheda resta "attiva"
@@ -3559,7 +3584,7 @@ export function recompositionReading(weightPoints, circPoints) {
   return { label, detail, tone, weightDeltaPct, waistDeltaPct };
 }
 
-export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, fetchExerciseLibrary, learnExercise, saveExerciseGuide, updateExerciseLibraryEntry, deleteExerciseFromLibrary, computeVolume, parseRepsTarget };
+export { MUSCLE_TARGETS, MUSCLES, DEFAULT_EXERCISE_LIB, EXERCISE_LIB_MUSCLE_TO_DB, DB_MUSCLE_TO_CHART, resolveMuscleTarget, resolveSynergists, fetchExerciseLibrary, learnExercise, saveExerciseGuide, updateExerciseLibraryEntry, deleteExerciseFromLibrary, computeVolume, parseRepsTarget };
 
 // Giorni con un allenamento REALMENTE completato (status 'done' in
 // workout_logs) in un range — per il pallino "saltato" nel calendario
