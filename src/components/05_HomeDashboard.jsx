@@ -2737,7 +2737,16 @@ export function HomeDashboard({
   const realLevelInfo = isRealMode ? xpToLevelInfo(realXpStreak?.xpTotal ?? 0) : null;
   if (isRealMode) {
     streak = realXpStreak?.streak ?? 0;
-    level = realLevelInfo.level;
+    // BUG PRESO (segnalato: "il livello è rimasto sempre a livello 1 anche
+    // se ho fatto la progressione fino al livello 2"): xpToLevelInfo().level
+    // è 0-indicizzato (0 = primo livello) — ogni altro punto dell'app che lo
+    // mostra aggiunge sempre +1 per la UI (LevelRoadmapModal poco sopra in
+    // questo stesso file, Classifica, Profilo). Solo questo badge, sopra la
+    // barra XP in Home, mostrava il numero grezzo non scalato: un atleta al
+    // secondo vero livello (level interno 1) vedeva "Livello 1" invece di
+    // "Livello 2", sempre indietro di uno rispetto a dove si vede ovunque
+    // altrove nell'app.
+    level = realLevelInfo.level + 1;
     xp = realLevelInfo.xp;
     xpInLevel = realLevelInfo.xpInLevel;
     // Barra di progresso: xpNeeded è l'ampiezza TOTALE del livello corrente
