@@ -24,27 +24,42 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Overlay "ruota il telefono": fallback per gli schermi/browser dove
-         manifest.json orientation:portrait-primary non basta da solo (iOS
-         Safari lo ignora del tutto). Nascosto via CSS in src/index.css,
-         mostrato solo in @media (orientation: landscape) su dispositivi
-         touch — mai su desktop, dove il landscape è normale. -->
-    <div id="orientation-lock-overlay" aria-hidden="true">
-      <div class="orientation-lock-content">
-        <div class="orientation-lock-icon">📱</div>
-        <p>Ruota il telefono in verticale<br />per usare Perform</p>
-      </div>
-    </div>
     <script>
-      // Tentativo best-effort di lock nativo (funziona solo in PWA
-      // standalone su alcuni browser Android) — fallisce silenziosamente
-      // ovunque non sia supportato, il fallback CSS resta la vera rete di
-      // sicurezza.
+      // Blocco orientamento verticale, stile Instagram/WhatsApp: mai un
+      // messaggio "ruota il telefono", l'app resta semplicemente verticale
+      // qualunque cosa faccia il telefono fisico.
+      //
+      // 1) Tentativo di lock nativo — se il browser lo supporta (PWA
+      //    standalone su Android/Chrome) il sistema operativo impedisce
+      //    davvero la rotazione, punto. Fallisce silenziosamente ovunque
+      //    non sia supportato (iOS Safari non lo offre mai).
+      // 2) Rete di sicurezza CSS (src/index.css, regola
+      //    @media (orientation: landscape) and (pointer: coarse)): se il
+      //    lock nativo non c'è o non basta e il telefono gira comunque in
+      //    orizzontale, il contenuto viene ruotato di nuovo in senso
+      //    opposto e resta visivamente verticale — nessuna schermata di
+      //    richiesta, il verso corretto (orario o antiorario) è calcolato
+      //    qui da screen.orientation.angle così funziona da entrambi i lati.
       try {
         if (window.matchMedia("(display-mode: standalone)").matches && screen.orientation && screen.orientation.lock) {
           screen.orientation.lock("portrait").catch(() => {});
         }
       } catch {}
+
+      function updatePortraitLockDir() {
+        try {
+          const angle = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+          // angle 90 = telefono ruotato verso sinistra (verso "a", il caso più
+          // comune) → contro-ruota di -90deg; 270/-90 = ruotato verso destra
+          // (verso "b") → contro-ruota di +90deg. Vedi src/index.css per la
+          // regola completa (rotazione + posizionamento, diversi per verso).
+          const dir = (angle === 270 || angle === -90) ? "b" : "a";
+          document.documentElement.setAttribute("data-portrait-lock-dir", dir);
+        } catch {}
+      }
+      updatePortraitLockDir();
+      window.addEventListener("orientationchange", updatePortraitLockDir);
+      try { screen.orientation && screen.orientation.addEventListener("change", updatePortraitLockDir); } catch {}
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
