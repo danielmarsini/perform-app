@@ -10,6 +10,7 @@ import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
 import LandingIntro from "./components/LandingIntro.jsx";
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import ChatThread from "./components/ChatThread.jsx";
 import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, countUnreadChatMessages, hasUnseenTeamPost, updateUserLang } from "./lib/coachingData.js";
 
@@ -148,6 +149,27 @@ function CoachChatInboxScreen({ supabase, coachId, accent, gender }) {
 // restano eager: le loro esportazioni SettingsDrawer/NewsTipsViewStyles sono
 // montate sempre, a prescindere dalla tab attiva, quindi il loro modulo
 // verrebbe comunque scaricato subito — lazy-caricarle non risparmierebbe nulla.
+// Rete di sicurezza per-scheda: con un solo ErrorBoundary globale (main.jsx),
+// un crash in UNA scheda (es. Alimentazione dentro Home, o Coach Dashboard)
+// smontava l'INTERA app — bug reale già capitato (guessBodyFocusLabel non
+// importata). Ogni scheda principale ora ha il suo boundary: un problema
+// resta isolato lì, le altre schede (raggiungibili dalla bottom nav, che
+// vive fuori da qui in AppShell) restano utilizzabili.
+function TabCrashFallback() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-6" style={{ minHeight: "60vh", textAlign: "center" }}>
+      <p style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--ink)" }}>Non sono riuscito a caricare questa sezione</p>
+      <p style={{ fontSize: "0.85rem", color: "var(--ink-2)", maxWidth: 280, lineHeight: 1.5 }}>
+        Prova a passare a un'altra scheda dal menu in basso, o ricarica l'app.
+      </p>
+      <button onClick={() => window.location.reload()}
+        style={{ backgroundColor: "var(--ink)", color: "var(--page)", fontWeight: 600, borderRadius: 999, padding: "10px 22px", border: "none", fontSize: "0.85rem" }}>
+        Ricarica
+      </button>
+    </div>
+  );
+}
+
 const ClassificaView = lazy(() => import("./components/07_ClassificaView.jsx"));
 // NOTA: per CoachDashboard questo lazy() è corretto ma oggi NON produce
 // ancora un chunk separato — 11_OnboardingFlow.jsx importa staticamente
@@ -566,6 +588,7 @@ export default function App() {
         newsHasUnseen={newsHasUnseen}
         screens={{
           home: (
+            <ErrorBoundary fallback={<TabCrashFallback />}>
             <HomeScreen
               gender={gender}
               dark={dark}
@@ -588,8 +611,10 @@ export default function App() {
                 nickname: profile?.nickname || session.user.email?.split("@")[0],
               }}
             />
+            </ErrorBoundary>
           ),
           news: (
+            <ErrorBoundary fallback={<TabCrashFallback />}>
             <NewsTipsView
               meId={session.user.id}
               supabase={supabase}
@@ -600,13 +625,15 @@ export default function App() {
               onTeamSeen={() => setNewsHasUnseen(false)}
               lang={lang}
             />
+            </ErrorBoundary>
           ),
           // CoachDashboard non ha ancora una prop surface: resta un'isola
           // autonoma finché non viene fatto il refactor dedicato (vedi nota
           // in cima al file). ClassificaView ora riceve supabase/meId/gender
           // per la classifica globale reale.
-          ranking: <ClassificaView supabase={supabase} meId={session.user.id} genderOverride={gender} dark={dark} />,
+          ranking: <ErrorBoundary fallback={<TabCrashFallback />}><ClassificaView supabase={supabase} meId={session.user.id} genderOverride={gender} dark={dark} /></ErrorBoundary>,
           profile: (
+            <ErrorBoundary fallback={<TabCrashFallback />}>
             <ProfileScreen
               gender={gender}
               dark={dark}
@@ -623,21 +650,26 @@ export default function App() {
                 email: session.user.email,
               }}
             />
+            </ErrorBoundary>
           ),
           // Il toggle "Assegna scheda/target" (CoachAssignPanel) \u00e8 stato
           // rimosso: era ridondante con l'editor gi\u00e0 raggiungibile cliccando
           // il nome di un cliente dentro il Pannello Coach (ClientDetail \u2192
           // tab "editor"), due percorsi per la stessa azione.
-          coach: isCoach ? <CoachDashboard supabase={supabase} coachId={session.user.id} dark={dark} /> : null,
+          coach: isCoach ? <ErrorBoundary fallback={<TabCrashFallback />}><CoachDashboard supabase={supabase} coachId={session.user.id} dark={dark} /></ErrorBoundary> : null,
           // Il coach non ha "una" conversazione (con se stesso) ma una per
           // ogni cliente: sul suo account il tab Chat è l'inbox di tutte le
           // conversazioni, non la ChatScreen dell'atleta.
-          chat: isCoach
-            ? <CoachChatInboxScreen supabase={supabase} coachId={session.user.id} accent={accent} gender={gender} />
-            : (hasCoachChat
-                ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} gender={gender} />
-                : <LockedChatScreen accent={accent} onUpgrade={openUpgradeSettings}
-                    expiredAddonUntil={profile?.scheda_addon_chat_until ? new Date(profile.scheda_addon_chat_until) : null} />),
+          chat: (
+            <ErrorBoundary fallback={<TabCrashFallback />}>
+              {isCoach
+                ? <CoachChatInboxScreen supabase={supabase} coachId={session.user.id} accent={accent} gender={gender} />
+                : (hasCoachChat
+                    ? <ChatScreen supabase={supabase} userId={session.user.id} accent={accent} gender={gender} />
+                    : <LockedChatScreen accent={accent} onUpgrade={openUpgradeSettings}
+                        expiredAddonUntil={profile?.scheda_addon_chat_until ? new Date(profile.scheda_addon_chat_until) : null} />)}
+            </ErrorBoundary>
+          ),
         }}
       />
       </Suspense>
