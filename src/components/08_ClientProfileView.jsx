@@ -1569,34 +1569,19 @@ export const STRIPE_PLANS = [
    non rischiare due sconti diversi mostrati in punti diversi dell'app.
    annualPriceId parte a null: finché il coach non crea i Price ID reali sul
    dashboard Stripe (uno per ciascun piano ricorrente, importo mensile × 10,
-   ricorrenza annuale) il toggle Mensile/Annuale resta nascosto — mai un
-   pulsante "passa a questo piano" che punta a un prezzo che non esiste. */
+   ricorrenza annuale) il pulsante annuale resta nascosto per quel piano —
+   mai un pulsante "passa a questo piano" che punta a un prezzo che non
+   esiste. Il toggle vive dentro ogni PlanCard (stato locale), non più come
+   segmented control globale sopra la lista: il coach ha chiesto di non
+   avere "due pagine diverse" mensile/annuale, un pulsante per-card che
+   mostra subito il risparmio è la stessa pagina. */
 export const ANNUAL_MONTHS = 10;
-export const hasAnnualPricing = STRIPE_PLANS.some((p) => p.annualPriceId);
 
 export function withBillingCycle(plans, cycle) {
   if (cycle !== "annual") return plans;
   return plans.map((p) => (p.billing !== "recurring" || !p.annualPriceId) ? p : {
     ...p, price: p.price * ANNUAL_MONTHS, billing: "annual", priceId: p.annualPriceId,
   });
-}
-
-/* Toggle Mensile/Annuale — stesso linguaggio visivo degli altri segmented
-   control dell'app (es. i tab Pesi/Cardio/Wiki in Allenamento). */
-export function BillingCycleToggle({ cycle, onChange, accent, t }) {
-  return (
-    <div className="grid grid-cols-2 gap-1.5 mb-4 p-1 rounded-full" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
-      {["monthly", "annual"].map((c) => (
-        <button key={c} onClick={() => onChange(c)}
-          className="rounded-full py-2 text-xs transition-all duration-200"
-          style={cycle === c
-            ? { backgroundColor: accent, color: "#111111", fontWeight: 700 }
-            : { color: "var(--ink-2)", fontWeight: 600 }}>
-          {c === "monthly" ? t.plan.billingMonthly : t.plan.billingAnnual}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 /* Marketing & Scarsità (richiesta esplicita): "banner dinamici con offerte
@@ -1681,10 +1666,19 @@ function Toggle({ on, onClick, label, desc }) {
    luminescente + badge fisso bilingue "CONSIGLIATO / RECOMMENDED" (testo
    letterale richiesto dal committente, non tradotto dal motore i18n).
    Se isOwner e plan.id === 'full', mostra "👑 PROPRIETARIO / OWNER" al posto
-   del bottone: sblocco nativo, nessun redirect a Stripe. */
+   del bottone: sblocco nativo, nessun redirect a Stripe.
+   Annuale: niente più un toggle globale che ridisegna TUTTA la lista piani
+   (sembrava "due pagine diverse", voce esplicita del coach) — ogni card
+   gestisce il proprio stato mensile/annuale e mostra un pulsante "accendi
+   promo annuale" accanto al prezzo, con il risparmio in €, SOLO se quel
+   piano ha un annualPriceId reale (vedi STRIPE_PLANS). */
 export function PlanCard({ plan, active, accent, accentText, gender, dark, t, onChangePlan, isOwner, signupContext }) {
   const copy = t.plans[plan.id];
-  const period = t.periods[plan.billing];
+  const hasAnnual = plan.billing === "recurring" && !!plan.annualPriceId;
+  const [annual, setAnnual] = useState(false);
+  const displayPlan = hasAnnual && annual ? withBillingCycle([plan], "annual")[0] : plan;
+  const period = t.periods[displayPlan.billing];
+  const yearlySavings = plan.price * (ANNUAL_MONTHS === 10 ? 2 : 12 - ANNUAL_MONTHS);
   const ownerOverride = isOwner && plan.id === "full";
   const glow = !!plan.highlight;
 
@@ -1707,15 +1701,31 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
           CONSIGLIATO / RECOMMENDED
         </span>
       )}
-      <div className="flex items-baseline justify-between gap-3 mb-2 mt-1.5">
+      <div className="flex items-baseline justify-between gap-3 mb-1 mt-1.5">
         <span className="flex items-baseline gap-1.5" style={{ fontSize: "1.02rem", fontWeight: 700, letterSpacing: "-0.01em" }}>
           {plan.emoji}
           <GradientText gender={gender}>{copy.name}</GradientText>
         </span>
-        <GradientText gender={gender} className="shrink-0" style={{ fontWeight: 800, fontSize: "1.05rem" }}>
-          {plan.price} €<span style={{ fontWeight: 500, fontSize: "0.68rem" }}> {period}</span>
-        </GradientText>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <GradientText gender={gender} style={{ fontWeight: 800, fontSize: "1.05rem" }}>
+            {displayPlan.price} €<span style={{ fontWeight: 500, fontSize: "0.68rem" }}> {period}</span>
+          </GradientText>
+          {hasAnnual && (
+            <button onClick={() => setAnnual((a) => !a)}
+              className="rounded-full px-2.5 py-1 whitespace-nowrap"
+              style={annual
+                ? { backgroundColor: accent, color: "#111111", fontWeight: 700, fontSize: "0.6rem" }
+                : { border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600, fontSize: "0.6rem" }}>
+              {annual ? t.plan.billingMonthly : `🎁 ${t.plan.billingAnnual}`}
+            </button>
+          )}
+        </div>
       </div>
+      {hasAnnual && annual && (
+        <p className="mb-2" style={{ color: accent, fontSize: "0.72rem", fontWeight: 700 }}>
+          Risparmi {yearlySavings} € all'anno rispetto al mensile
+        </p>
+      )}
       {/* Icona colorata (verde/rosso), testo SEMPRE pulito in var(--ink):
           troppo colore sul testo affianco rendeva la card confusa e "vendeva
           male" (voce esplicita del coach) — il check/la X bastano da soli a
@@ -1749,7 +1759,7 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
         <p style={{ color: accentText, fontSize: "0.68rem", fontWeight: 700,
                      letterSpacing: "0.08em", textTransform: "uppercase" }}>{t.plan.current}</p>
       ) : (
-        <button onClick={() => onChangePlan(plan)}
+        <button onClick={() => onChangePlan(displayPlan)}
           className="w-full rounded-full px-4 py-2.5 text-sm"
           style={plan.highlight
             ? { backgroundColor: accent, color: "#111111", fontWeight: 700 }
@@ -2062,7 +2072,6 @@ export function SettingsDrawer({
   // già preso e risolto una volta in ClassificaView, non ripeterlo qui.
   const [checkoutBusyId, setCheckoutBusyId] = useState(null);
   const [checkoutError, setCheckoutError] = useState("");
-  const [billingCycle, setBillingCycle] = useState("monthly"); // 'monthly' | 'annual'
 
   if (!open) return null;
 
@@ -2215,17 +2224,7 @@ export function SettingsDrawer({
                   {checkoutError}
                 </p>
               )}
-              {hasAnnualPricing && (
-                <>
-                  <BillingCycleToggle cycle={billingCycle} onChange={setBillingCycle} accent={accent} t={t} />
-                  {billingCycle === "annual" && (
-                    <p className="text-xs leading-relaxed mb-4 px-1" style={{ color: "var(--ink-2)" }}>
-                      {t.plan.annualPitch}
-                    </p>
-                  )}
-                </>
-              )}
-              {withBillingCycle(STRIPE_PLANS, billingCycle).map((p) => (
+              {STRIPE_PLANS.map((p) => (
                 <PlanCard key={p.id} plan={p} active={p.id === activePlan.id}
                           accent={accent} accentText={accentText} gender={gender} dark={dark} t={t}
                           onChangePlan={checkoutBusyId ? () => {} : startStripeCheckout} isOwner={isOwner} />
