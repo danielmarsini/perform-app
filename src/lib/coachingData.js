@@ -4301,3 +4301,16 @@ export async function fetchSectionNovelty(supabase, userId) {
     supplements: isNew(data?.supplements_updated_at, data?.supplements_seen_at),
   };
 }
+
+// Formato compatto "3x8-10" al posto di "3 serie x 8-10 rep" — richiesta
+// esplicita del coach: si deve leggere a colpo d'occhio. sets/reps possono
+// essere vuoti finché il coach non li compila (vedi addEx in
+// WeekWorkoutEditor): in quel caso non mostra nulla di fuorviante.
+export function formatSetsReps(sets, reps) {
+  const s = String(sets ?? "").trim();
+  const r = String(reps ?? "").trim();
+  if (!s && !r) return "";
+  if (!s) return r;
+  if (!r) return `${s}x`;
+  return `${s}x${r}`;
+}

@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, LEVEL_REWARDS, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -5239,7 +5239,7 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
             return (
               <div key={ex.id || ex.name} className="card">
                 <p className="h2 mb-1" style={{ fontSize: "1rem" }}>{ex.name}</p>
-                <p className="meta mb-2">{ex.sets} serie × {ex.reps} reps previste</p>
+                <p className="meta mb-2">{formatSetsReps(ex.sets, ex.reps)} previste</p>
                 {entry ? (
                   <div className="inner px-4 py-3.5 flex items-center justify-between">
                     <span className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
@@ -5625,7 +5625,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       <p className="meta mt-0.5">
         {hasPerSetTargets
           ? repsTargets.map((t, i) => `S${i + 1}: ${t}`).join(" · ")
-          : `${ex.sets} serie × ${ex.reps} reps`} · RIR {ex.rirTarget}
+          : formatSetsReps(ex.sets, ex.reps)} · RIR {ex.rirTarget}
       </p>
       {ex.technique && <p className="mt-1 text-sm" style={{ color: "var(--ink-2)", fontWeight: 500 }}>Tecnica: {ex.technique}</p>}
       {lastSessionSets.length > 0 ? (
