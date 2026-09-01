@@ -1237,6 +1237,22 @@ export async function setSelfSupplementTaken(supabase, userId, selfSupplementId,
 //                            registrate per la riga workout_logs di
 //                            QUESTA settimana (per precompilare i campi
 //                            kg/reps), indipendentemente da status/esercizio.
+// BUG PRESO (segnalato): "il carico progressivo confronta l'esercizio in
+// assoluto" — la Pectoral Machine come 1° esercizio di lunedì veniva
+// confrontata anche con un'occorrenza dello stesso nome svolta mercoledì
+// (magari 4° esercizio, atleta già affaticato): stesso nome, contesto di
+// sessione tutt'altro che equivalente — il carico più basso sembrava una
+// regressione che non c'era davvero. La chiave "nomeEsercizio::giorno
+// della settimana" (lunedì=0…domenica=6, stessa convenzione locale usata
+// altrove nell'app) fa sì che lo storico di un'occorrenza di questa
+// settimana confronti SOLO le occorrenze passate dello STESSO esercizio
+// nello STESSO giorno della settimana — mai un giorno diverso, anche se
+// il nome coincide.
+export function weekExerciseHistoryKey(exerciseName, dateISO) {
+  const weekday = (new Date(`${dateISO}T00:00:00`).getDay() + 6) % 7;
+  return `${exerciseName}::${weekday}`;
+}
+
 export async function fetchWeekExerciseHistories(supabase, userId, thisWeekRows) {
   const historyByExerciseName = new Map();
   const setHistoryByExerciseName = new Map();
@@ -1271,16 +1287,21 @@ export async function fetchWeekExerciseHistories(supabase, userId, thisWeekRows)
   const doneLogs = (pastLogs ?? []).filter((l) => l.status === "done");
   const missedLogs = (pastLogs ?? []).filter((l) => l.status !== "done");
 
-  const logsByExercise = new Map();
+  // Raggruppate per nomeEsercizio::giornoSettimana (vedi weekExerciseHistoryKey
+  // sopra), non più per solo nome — stesso identico giorno della settimana
+  // richiesto tra l'occorrenza passata e quella di questa settimana.
+  const logsByKey = new Map();
   doneLogs.forEach((l) => {
-    if (!logsByExercise.has(l.exercise_name)) logsByExercise.set(l.exercise_name, []);
-    logsByExercise.get(l.exercise_name).push(l); // già in ordine desc (query globale ordinata per data)
+    const key = weekExerciseHistoryKey(l.exercise_name, l.date);
+    if (!logsByKey.has(key)) logsByKey.set(key, []);
+    logsByKey.get(key).push(l); // già in ordine desc (query globale ordinata per data)
   });
 
-  const missedByExercise = new Map();
+  const missedByKey = new Map();
   missedLogs.forEach((l) => {
-    if (!missedByExercise.has(l.exercise_name)) missedByExercise.set(l.exercise_name, []);
-    missedByExercise.get(l.exercise_name).push(l);
+    const key = weekExerciseHistoryKey(l.exercise_name, l.date);
+    if (!missedByKey.has(key)) missedByKey.set(key, []);
+    missedByKey.get(key).push(l);
   });
 
   const allLogIds = new Set(thisWeekLogIds);
@@ -1307,8 +1328,14 @@ export async function fetchWeekExerciseHistories(supabase, userId, thisWeekRows)
     loggedSetsByLogId.set(logId, setsByLog.get(logId) ?? []);
   });
 
-  exerciseNames.forEach((name) => {
-    const logs = logsByExercise.get(name) ?? [];
+  // Solo le chiavi nomeEsercizio::giornoSettimana EFFETTIVAMENTE presenti
+  // in questa settimana (mai tutte le combinazioni possibili) — se lo
+  // stesso esercizio compare più volte nella settimana su giorni diversi,
+  // ognuno costruisce il proprio storico indipendentemente.
+  const weekKeys = new Set((thisWeekRows ?? []).map((r) => weekExerciseHistoryKey(r.exercise_name, r.date)));
+
+  weekKeys.forEach((key) => {
+    const logs = logsByKey.get(key) ?? [];
 
     // Equivalente di fetchExerciseHistory: top-8 sessioni, un punto per
     // sessione (il TOP SET reale — mai workout_logs.load_kg, sovrascritto
@@ -1322,7 +1349,7 @@ export async function fetchWeekExerciseHistories(supabase, userId, thisWeekRows)
         const top = withLoad.reduce((a, b) => (Number(b.load_kg) > Number(a.load_kg) ? b : a));
         return { kg: Number(top.load_kg), reps: top.reps_completed };
       });
-    historyByExerciseName.set(name, history);
+    historyByExerciseName.set(key, history);
 
     // Equivalente di fetchExerciseSetHistory: top-6 sessioni, TUTTE le serie.
     const setHistory = logs
@@ -1337,18 +1364,19 @@ export async function fetchWeekExerciseHistories(supabase, userId, thisWeekRows)
         // mai in UI.
         sets: (setsByLog.get(l.id) ?? []).map((s) => ({ setNumber: s.set_number, kg: s.load_kg != null ? Number(s.load_kg) : null, reps: s.reps_completed, rir: s.rir })),
       }));
-    setHistoryByExerciseName.set(name, setHistory);
+    setHistoryByExerciseName.set(key, setHistory);
 
-    // Giorni assegnati ma MAI registrati per questo esercizio (status ancora
-    // "missed"): fino a 10 più recenti, più vecchio prima — così l'atleta
-    // può recuperare una sessione fatta ma mai spuntata in app invece di
-    // perderla per sempre. Nessuna serie precompilata (mai stata salvata):
-    // il chiamante costruisce righe vuote da 1 a setsCount.
-    const missed = (missedByExercise.get(name) ?? [])
+    // Giorni assegnati ma MAI registrati per questo esercizio nello stesso
+    // giorno della settimana (status ancora "missed"): fino a 10 più
+    // recenti, più vecchio prima — così l'atleta può recuperare una
+    // sessione fatta ma mai spuntata in app invece di perderla per
+    // sempre. Nessuna serie precompilata (mai stata salvata): il chiamante
+    // costruisce righe vuote da 1 a setsCount.
+    const missed = (missedByKey.get(key) ?? [])
       .slice(0, 10)
       .reverse()
       .map((l) => ({ workoutLogId: l.id, date: l.date, setsCount: Number(l.sets_count) || 0 }));
-    missedByExerciseName.set(name, missed);
+    missedByExerciseName.set(key, missed);
   });
 
   return { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId, missedByExerciseName };

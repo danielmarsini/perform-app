@@ -15,7 +15,7 @@ import {
   computeRecoveryCompliance, computeBatchRecoveryCompliance,
   computeNutritionCompliance, computeBatchNutritionCompliance,
   computeTrainingCompliance, computeBatchTrainingCompliance,
-  fetchWeekExerciseHistories,
+  fetchWeekExerciseHistories, weekExerciseHistoryKey,
   computeCrewWeeklyActivity, computeCrewStreak,
   fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
   countUnreadChatMessages, streakXpMultiplier,
@@ -546,9 +546,15 @@ describe("Reattività oggi: il cerchio si muove appena si registra qualcosa", ()
 
 describe("fetchWeekExerciseHistories", () => {
   it("costruisce storico (top set) e set-history da un'unica coppia di query, per più esercizi insieme", async () => {
+    // daysAgoISO(2) e daysAgoISO(9) differiscono di 7 giorni: stesso giorno
+    // della settimana. La riga "di questa settimana" usa daysAgoISO(-5),
+    // anch'esso a 7 giorni esatti da entrambe — stesso giorno della
+    // settimana di entrambe le sessioni passate di panca.
+    const panchaWeekday = daysAgoISO(-5);
+    const squatWeekday = daysAgoISO(-3); // 7 giorni esatti da daysAgoISO(4)
     const thisWeekRows = [
-      { id: "log_today_panca", exercise_name: "Panca piana bilanciere" },
-      { id: "log_today_squat", exercise_name: "Squat bilanciere" },
+      { id: "log_today_panca", exercise_name: "Panca piana bilanciere", date: panchaWeekday },
+      { id: "log_today_squat", exercise_name: "Squat bilanciere", date: squatWeekday },
     ];
     const tables = {
       workout_logs: [
@@ -569,16 +575,16 @@ describe("fetchWeekExerciseHistories", () => {
     const { historyByExerciseName, setHistoryByExerciseName, loggedSetsByLogId } =
       await fetchWeekExerciseHistories(supabase, "u1", thisWeekRows);
 
-    // history: top set per sessione, più vecchia prima (2 sessioni passate di panca)
-    const panchaHistory = historyByExerciseName.get("Panca piana bilanciere");
+    // history: top set per sessione, più vecchia prima (2 sessioni passate di panca, stesso giorno della settimana)
+    const panchaHistory = historyByExerciseName.get(weekExerciseHistoryKey("Panca piana bilanciere", panchaWeekday));
     expect(panchaHistory).toEqual([
       { kg: 77.5, reps: 8 },  // sessione più vecchia (9 giorni fa)
       { kg: 82.5, reps: 6 },  // sessione più recente (2 giorni fa), top set tra le 2 serie
     ]);
-    expect(historyByExerciseName.get("Squat bilanciere")).toEqual([{ kg: 100, reps: 5 }]);
+    expect(historyByExerciseName.get(weekExerciseHistoryKey("Squat bilanciere", squatWeekday))).toEqual([{ kg: 100, reps: 5 }]);
 
     // setHistory: tutte le serie, sessione più recente prima
-    const panchaSetHistory = setHistoryByExerciseName.get("Panca piana bilanciere");
+    const panchaSetHistory = setHistoryByExerciseName.get(weekExerciseHistoryKey("Panca piana bilanciere", panchaWeekday));
     expect(panchaSetHistory[0].workoutLogId).toBe("log_past_panca_1");
     expect(panchaSetHistory[0].sets).toEqual([
       { setNumber: 1, kg: 80, reps: 8, rir: 2 },
@@ -592,6 +598,30 @@ describe("fetchWeekExerciseHistories", () => {
     expect(loggedSetsByLogId.get("log_today_squat")).toEqual([]); // nessuna serie registrata oggi per lo squat
   });
 
+  it("BUG PRESO: un'occorrenza passata dello stesso esercizio in un giorno della settimana DIVERSO non entra nello storico (mai una falsa regressione)", async () => {
+    // Lunedì (questa settimana): Pectoral Machine 1° esercizio. daysAgoISO(7)
+    // è esattamente lo stesso giorno della settimana di "oggi" (7 giorni fa).
+    // daysAgoISO(2) invece è un giorno della settimana DIVERSO (a meno di
+    // un multiplo di 7, escluso qui: 2 non lo è).
+    const thisWeekRows = [{ id: "log_lun", exercise_name: "Pectoral Machine", date: daysAgoISO(0) }];
+    const tables = {
+      workout_logs: [
+        // stesso giorno della settimana di "oggi": lunedì scorso, carico basso, primo esercizio
+        { id: "log_lun_scorso", date: daysAgoISO(7), exercise_name: "Pectoral Machine", user_id: "u1", status: "done" },
+        // giorno della settimana diverso: mercoledì, carico alto ma 4° esercizio già affaticato — NON deve entrare nel confronto
+        { id: "log_mer", date: daysAgoISO(2), exercise_name: "Pectoral Machine", user_id: "u1", status: "done" },
+      ],
+      workout_sets: [
+        { workout_log_id: "log_lun_scorso", set_number: 1, load_kg: 40, reps_completed: 10, rir: 2 },
+        { workout_log_id: "log_mer", set_number: 1, load_kg: 60, reps_completed: 6, rir: 1 },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const { historyByExerciseName } = await fetchWeekExerciseHistories(supabase, "u1", thisWeekRows);
+    const history = historyByExerciseName.get(weekExerciseHistoryKey("Pectoral Machine", daysAgoISO(0)));
+    expect(history).toEqual([{ kg: 40, reps: 10 }]); // solo lunedì scorso, mai il mercoledì di un altro contesto
+  });
+
   it("nessun esercizio assegnato questa settimana => mappe vuote, mai un errore", async () => {
     const supabase = makeMockSupabase({ workout_logs: [], workout_sets: [] });
     const result = await fetchWeekExerciseHistories(supabase, "u1", []);
@@ -602,11 +632,15 @@ describe("fetchWeekExerciseHistories", () => {
   });
 
   it("un giorno passato assegnato ma mai registrato (status 'missed') compare in missedByExerciseName, mai in history/setHistory", async () => {
-    const thisWeekRows = [{ id: "log_today_panca", exercise_name: "Panca piana bilanciere" }];
+    // daysAgoISO(2) e daysAgoISO(9) differiscono di 7 giorni (stesso giorno
+    // della settimana); la riga di questa settimana usa daysAgoISO(-5),
+    // anch'esso a 7 giorni esatti da entrambe.
+    const weekday = daysAgoISO(-5);
+    const thisWeekRows = [{ id: "log_today_panca", exercise_name: "Panca piana bilanciere", date: weekday }];
     const tables = {
       workout_logs: [
         { id: "log_past_done", date: daysAgoISO(2), exercise_name: "Panca piana bilanciere", user_id: "u1", status: "done", sets_count: 3 },
-        { id: "log_past_missed", date: daysAgoISO(5), exercise_name: "Panca piana bilanciere", user_id: "u1", status: "missed", sets_count: 4 },
+        { id: "log_past_missed", date: daysAgoISO(9), exercise_name: "Panca piana bilanciere", user_id: "u1", status: "missed", sets_count: 4 },
       ],
       workout_sets: [
         { workout_log_id: "log_past_done", set_number: 1, load_kg: 80, reps_completed: 8, rir: 2 },
@@ -616,15 +650,16 @@ describe("fetchWeekExerciseHistories", () => {
     const { historyByExerciseName, setHistoryByExerciseName, missedByExerciseName } =
       await fetchWeekExerciseHistories(supabase, "u1", thisWeekRows);
 
-    expect(historyByExerciseName.get("Panca piana bilanciere")).toEqual([{ kg: 80, reps: 8 }]);
-    expect(setHistoryByExerciseName.get("Panca piana bilanciere").map((s) => s.workoutLogId)).toEqual(["log_past_done"]);
+    const key = weekExerciseHistoryKey("Panca piana bilanciere", weekday);
+    expect(historyByExerciseName.get(key)).toEqual([{ kg: 80, reps: 8 }]);
+    expect(setHistoryByExerciseName.get(key).map((s) => s.workoutLogId)).toEqual(["log_past_done"]);
 
-    const missed = missedByExerciseName.get("Panca piana bilanciere");
-    expect(missed).toEqual([{ workoutLogId: "log_past_missed", date: daysAgoISO(5), setsCount: 4 }]);
+    const missed = missedByExerciseName.get(key);
+    expect(missed).toEqual([{ workoutLogId: "log_past_missed", date: daysAgoISO(9), setsCount: 4 }]);
   });
 
   it("un giorno di OGGI o futuro assegnato non compare mai come 'dimenticato' (non è ancora scaduto)", async () => {
-    const thisWeekRows = [{ id: "log_today", exercise_name: "Squat bilanciere" }];
+    const thisWeekRows = [{ id: "log_today", exercise_name: "Squat bilanciere", date: daysAgoISO(0) }];
     const tables = {
       workout_logs: [
         { id: "log_today", date: daysAgoISO(0), exercise_name: "Squat bilanciere", user_id: "u1", status: "missed", sets_count: 3 },
@@ -634,7 +669,7 @@ describe("fetchWeekExerciseHistories", () => {
     };
     const supabase = makeMockSupabase(tables);
     const { missedByExerciseName } = await fetchWeekExerciseHistories(supabase, "u1", thisWeekRows);
-    expect(missedByExerciseName.get("Squat bilanciere")).toEqual([]);
+    expect(missedByExerciseName.get(weekExerciseHistoryKey("Squat bilanciere", daysAgoISO(0)))).toEqual([]);
   });
 });
 

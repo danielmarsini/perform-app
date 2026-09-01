@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -11272,9 +11272,16 @@ export default function HomePreview({
               rirTarget: r.rir_target || "—",   // prescrizione del coach (SCHEMA_v21); "—" solo se davvero non impostato
               technique: r.intensity_technique || "",
               rests: Array.from({ length: r.sets_count ?? 3 }, () => r.rest_seconds ?? 120),
-              history: historyByExerciseName.get(r.exercise_name) ?? [],
-              setHistory: setHistoryByExerciseName.get(r.exercise_name) ?? [], // [{workoutLogId, date, sets:[{setNumber, kg, reps}]}] — sessioni passate modificabili
-              missedSessions: missedByExerciseName.get(r.exercise_name) ?? [], // [{workoutLogId, date, setsCount}] — giorni assegnati mai registrati, recuperabili
+              // BUG PRESO (segnalato): "confronto in assoluto" — lo storico
+              // veniva letto per nome esercizio, ignorando su quale giorno
+              // della settimana ricorre. Stessa chiave nomeEsercizio::
+              // giornoSettimana usata da fetchWeekExerciseHistories
+              // (coachingData.js): un esercizio ripetuto più volte a
+              // settimana su giorni diversi costruisce lo storico solo
+              // dalle occorrenze passate nello STESSO giorno.
+              history: historyByExerciseName.get(weekExerciseHistoryKey(r.exercise_name, date)) ?? [],
+              setHistory: setHistoryByExerciseName.get(weekExerciseHistoryKey(r.exercise_name, date)) ?? [], // [{workoutLogId, date, sets:[{setNumber, kg, reps}]}] — sessioni passate modificabili
+              missedSessions: missedByExerciseName.get(weekExerciseHistoryKey(r.exercise_name, date)) ?? [], // [{workoutLogId, date, setsCount}] — giorni assegnati mai registrati, recuperabili
               splitLabel: r.split_label,
               // BUG PRESO: mancavano qui — computeVolume(weekPlan) per un
               // esercizio custom non ancora nella libreria condivisa si
