@@ -5451,8 +5451,16 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   const peak = Math.max(0, ...rows.map((r) => Number(r.kg) || 0));
   // "8-10" = stesso range per tutte le serie. "8/12" = target diverso per
   // ogni serie (prima 8, seconda 12). Vedi parseRepsTarget (coachingData.js).
-  const repsTargets = useMemo(() => parseRepsTarget(ex.reps, ex.sets), [ex.reps, ex.sets]);
-  const hasPerSetTargets = ex.reps?.includes("/");
+  // BUG PRESO (schermata nera "Qualcosa è andato storto" su Allenamento):
+  // ex.reps arriva da fonti diverse (scheda coach, routine libera, template)
+  // — non sempre garantito essere una stringa. .includes("/") su un ex.reps
+  // numerico mandava in crash l'intera card (e quindi l'intera schermata,
+  // niente error boundary locale). String(...) prima di ogni uso rende
+  // questo robusto qualunque sia il tipo originale, come già fa
+  // parseRepsTarget/formatSetsReps in coachingData.js.
+  const repsStr = ex.reps == null ? "" : String(ex.reps);
+  const repsTargets = useMemo(() => parseRepsTarget(repsStr, ex.sets), [repsStr, ex.sets]);
+  const hasPerSetTargets = repsStr.includes("/");
   // Guida: SOLO quella scritta dal coach (ex.howTo/avoid, libreria condivisa)
   // o un match esatto sul nome (exerciseHowTo/exerciseAvoid) — mai un
   // indovinello. hasGuide === false è uno stato legittimo (esercizio non
