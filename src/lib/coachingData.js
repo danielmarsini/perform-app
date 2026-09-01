@@ -3368,6 +3368,84 @@ export async function activateClient(supabase, clientId, plan) {
   if (error) throw error;
 }
 
+/* ---------------------------------------------------------------------------
+   MARKETING & SCARSITÀ (richiesta esplicita, SCHEMA_v89) — "banner dinamici
+   con offerte a scadenza, un contatore di posti limitati rimasti per il
+   coaching attivo". Coerente col resto dell'app: MAI un dato finto — i
+   valori li imposta il coach stesso (restano null finché non lo fa, il
+   frontend nasconde banner/contatore quando sono null) e il conteggio dei
+   posti "usati" è sempre quello VERO (client_status/plan reali), mai un
+   numero inventato.
+   ------------------------------------------------------------------------- */
+
+// Pura (testabile): quanti posti restano dato un tetto e un conteggio reale
+// di clienti attivi — null se il coach non ha impostato un tetto (nessuna
+// scarsità da mostrare, mai un "posti illimitati" travestito da urgenza).
+export function computeSpotsRemaining(maxActiveClients, activeCoachingCount) {
+  if (maxActiveClients == null) return null;
+  return Math.max(0, Number(maxActiveClients) - Number(activeCoachingCount || 0));
+}
+
+// Pura (testabile): un'offerta è "attiva" solo con una scadenza REALE nel
+// futuro — null/passata => niente banner, mai una scadenza finta o già
+// passata mostrata come se fosse ancora valida.
+export function isPromoActive(promoExpiresAt, nowISO = new Date().toISOString()) {
+  if (!promoExpiresAt) return false;
+  return new Date(promoExpiresAt).getTime() > new Date(nowISO).getTime();
+}
+
+// Letto dalla pagina piani (chiunque stia per abbonarsi, anche prima del
+// login in alcuni flussi) — un solo coach su questa piattaforma, quindi il
+// coachId è già noto lato chiamante (profilo del coach assegnato/unico).
+export async function fetchCoachMarketingSettings(supabase, coachId) {
+  const [{ data: profile, error: profileError }, { count: activeCoachingCount, error: countError }] = await Promise.all([
+    supabase.from("profiles").select("coach_max_active_clients, promo_title, promo_description, promo_expires_at").eq("id", coachId).maybeSingle(),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).eq("role", "user").eq("client_status", "active").in("plan", COACHING_PLANS),
+  ]);
+  if (profileError) throw profileError;
+  if (countError) throw countError;
+  return {
+    maxActiveClients: profile?.coach_max_active_clients ?? null,
+    activeCoachingCount: activeCoachingCount ?? 0,
+    promoTitle: profile?.promo_title ?? null,
+    promoDescription: profile?.promo_description ?? null,
+    promoExpiresAt: profile?.promo_expires_at ?? null,
+  };
+}
+
+// Letta dalla pagina piani (OnboardingFlow/SettingsDrawer) — chiunque, non
+// solo il coach: niente coachId da conoscere in anticipo, un solo coach su
+// questa piattaforma, la view (SCHEMA_v89) espone già solo la sua riga.
+// Bypassa la RLS di profiles (che limiterebbe un cliente normale a leggere
+// solo se stesso) esattamente come leaderboard_profiles per la Classifica
+// (SCHEMA_v45) — stesso identico principio.
+export async function fetchCoachMarketingPublic(supabase) {
+  const { data, error } = await supabase.from("coach_marketing_public").select("*").maybeSingle();
+  if (error) throw error;
+  return {
+    maxActiveClients: data?.coach_max_active_clients ?? null,
+    activeCoachingCount: data?.active_coaching_count ?? 0,
+    promoTitle: data?.promo_title ?? null,
+    promoDescription: data?.promo_description ?? null,
+    promoExpiresAt: data?.promo_expires_at ?? null,
+  };
+}
+
+// Scrittura coach-only (RLS: solo il coach può modificare il proprio
+// profilo) — un campo alla volta o tutti insieme, il chiamante decide cosa
+// passare; undefined = non toccare quel campo (a differenza di null, che lo
+// azzera esplicitamente, es. "rimuovi l'offerta").
+export async function updateCoachMarketingSettings(supabase, coachId, { maxActiveClients, promoTitle, promoDescription, promoExpiresAt } = {}) {
+  const patch = {};
+  if (maxActiveClients !== undefined) patch.coach_max_active_clients = maxActiveClients;
+  if (promoTitle !== undefined) patch.promo_title = promoTitle;
+  if (promoDescription !== undefined) patch.promo_description = promoDescription;
+  if (promoExpiresAt !== undefined) patch.promo_expires_at = promoExpiresAt;
+  if (Object.keys(patch).length === 0) return;
+  const { error } = await supabase.from("profiles").update(patch).eq("id", coachId);
+  if (error) throw error;
+}
+
 // Whitelist: il coach conosce la persona di persona e le dà accesso pieno
 // senza pagamento Stripe reale né anamnesi da compilare — bypassa entrambi
 // impostando onboarding_completed direttamente (stesso flag che App.jsx usa

@@ -21,6 +21,7 @@ import {
   countUnreadChatMessages, streakXpMultiplier,
   freezeBonusForLevel, fetchStreakFreezeStatus, LEVEL_REWARDS,
   computeProgramExpiryAlerts, fetchLastAssignedWorkoutDates,
+  computeSpotsRemaining, isPromoActive, fetchCoachMarketingPublic,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -1093,5 +1094,61 @@ describe("fetchLastAssignedWorkoutDates", () => {
     const supabase = makeMockSupabase({ workout_logs: [{ user_id: "u1", date: daysAgoISO(3) }] }); // solo passato
     const map = await fetchLastAssignedWorkoutDates(supabase, ["u1"]);
     expect(map.has("u1")).toBe(false);
+  });
+});
+
+// Marketing & scarsità (richiesta esplicita: "banner con offerte a
+// scadenza, un contatore di posti limitati") — MAI un dato finto: queste
+// funzioni pure devono restituire "niente da mostrare" quando il coach non
+// ha impostato nulla, mai un numero o una scadenza inventati.
+describe("computeSpotsRemaining", () => {
+  it("nessun tetto impostato (null) => null, mai un numero inventato", () => {
+    expect(computeSpotsRemaining(null, 5)).toBeNull();
+  });
+  it("tetto impostato: sottrae i clienti attivi reali", () => {
+    expect(computeSpotsRemaining(20, 14)).toBe(6);
+  });
+  it("più clienti attivi del tetto (il coach lo abbassa dopo averlo superato) => 0, mai negativo", () => {
+    expect(computeSpotsRemaining(10, 15)).toBe(0);
+  });
+  it("nessun cliente attivo ancora => tutti i posti del tetto disponibili", () => {
+    expect(computeSpotsRemaining(20, 0)).toBe(20);
+    expect(computeSpotsRemaining(20, undefined)).toBe(20);
+  });
+});
+
+describe("isPromoActive", () => {
+  it("nessuna scadenza impostata => false, mai un'offerta finta", () => {
+    expect(isPromoActive(null)).toBe(false);
+    expect(isPromoActive(undefined)).toBe(false);
+  });
+  it("scadenza nel futuro => true", () => {
+    const future = new Date(Date.now() + 3 * 86400000).toISOString();
+    expect(isPromoActive(future)).toBe(true);
+  });
+  it("scadenza già passata => false, mai un'offerta scaduta mostrata come attiva", () => {
+    const past = new Date(Date.now() - 3 * 86400000).toISOString();
+    expect(isPromoActive(past)).toBe(false);
+  });
+});
+
+describe("fetchCoachMarketingPublic", () => {
+  it("legge la riga del coach dalla view pubblica, valori assenti diventano null/0", async () => {
+    const supabase = makeMockSupabase({
+      coach_marketing_public: [{
+        coach_max_active_clients: 20, promo_title: "Sconto lancio", promo_description: "-10% sul Full Coaching",
+        promo_expires_at: "2026-12-31T00:00:00Z", active_coaching_count: 14,
+      }],
+    });
+    const data = await fetchCoachMarketingPublic(supabase);
+    expect(data).toEqual({
+      maxActiveClients: 20, activeCoachingCount: 14,
+      promoTitle: "Sconto lancio", promoDescription: "-10% sul Full Coaching", promoExpiresAt: "2026-12-31T00:00:00Z",
+    });
+  });
+  it("nessuna riga (view vuota) => tutto null/0, mai un crash", async () => {
+    const supabase = makeMockSupabase({ coach_marketing_public: [] });
+    const data = await fetchCoachMarketingPublic(supabase);
+    expect(data).toEqual({ maxActiveClients: null, activeCoachingCount: 0, promoTitle: null, promoDescription: null, promoExpiresAt: null });
   });
 });

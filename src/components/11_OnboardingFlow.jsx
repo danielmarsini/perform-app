@@ -33,7 +33,7 @@ import React, { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 
 import { DesignSystem, LiveBackground } from "./04_AppShell.jsx";
-import { STRIPE_PLANS, translations, GradientText, PlanCard, hasAnnualPricing, withBillingCycle, BillingCycleToggle } from "./08_ClientProfileView.jsx";
+import { STRIPE_PLANS, translations, GradientText, PlanCard, hasAnnualPricing, withBillingCycle, BillingCycleToggle, ScarcityMarketingBanner } from "./08_ClientProfileView.jsx";
 // Da AnamnesisShared.jsx (non più da 09_CoachDashboard.jsx): quel file è
 // 5000+ righe lazy-caricate solo per il coach — importare anche solo questi
 // 4 export da lì costringeva Vite a includerlo comunque nel bundle
@@ -302,6 +302,8 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
             {error}
           </p>
         )}
+
+        <ScarcityMarketingBanner supabase={supabase} accent={accent || "#C5A059"} />
 
         {hasAnnualPricing && (
           <>

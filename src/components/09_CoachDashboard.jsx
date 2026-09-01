@@ -85,6 +85,7 @@ import {
   fetchLastAssignedWorkoutDates, computeProgramExpiryAlerts,
   notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
+  fetchCoachMarketingSettings, updateCoachMarketingSettings, computeSpotsRemaining, isPromoActive,
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
   fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutSplitToDateRange, previewWorkoutSplitOverwrite, fetchWorkoutProgrammedDates,
   xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
@@ -6268,6 +6269,102 @@ function buildRevenueHistory(mrr) {
   return months.map((m, i) => ({ month: m, revenue: Math.round(mrr * growth[i]) }));
 }
 
+// Converte un ISO (UTC) nel formato locale richiesto da <input type="datetime-local">
+// (YYYY-MM-DDTHH:mm) — senza questo l'input mostrerebbe l'orario UTC invece
+// di quello del fuso del coach, disallineato da quanto scritto.
+function toDatetimeLocalValue(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/* Marketing & Scarsità (richiesta esplicita): "banner dinamici con offerte a
+   scadenza, un contatore di posti limitati rimasti per il coaching attivo".
+   Il coach imposta qui il tetto di posti e un'offerta a tempo — entrambi
+   restano nascosti sulla pagina piani finché non li compila (SCHEMA_v89):
+   mai un numero o una scadenza inventati mostrati a un potenziale cliente. */
+function MarketingSettingsCard() {
+  const { supabase, coachId, isRealMode } = useContext(CoachDataContext);
+  const [settings, setSettings] = useState(null); // null = non ancora caricato
+  const [maxDraft, setMaxDraft] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
+  const [descDraft, setDescDraft] = useState("");
+  const [expiresDraft, setExpiresDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(() => {
+    fetchCoachMarketingSettings(supabase, coachId)
+      .then((s) => {
+        setSettings(s);
+        setMaxDraft(s.maxActiveClients != null ? String(s.maxActiveClients) : "");
+        setTitleDraft(s.promoTitle || "");
+        setDescDraft(s.promoDescription || "");
+        setExpiresDraft(toDatetimeLocalValue(s.promoExpiresAt));
+      })
+      .catch((err2) => console.error("PERFORM: errore lettura impostazioni marketing", err2));
+  }, [supabase, coachId]);
+  useEffect(() => { if (isRealMode) load(); }, [isRealMode, load]);
+
+  if (!isRealMode) return null;
+  if (!settings) return <div className="c-card mb-5"><p className="c-muted text-sm">Caricamento impostazioni marketing…</p></div>;
+
+  const spotsRemaining = computeSpotsRemaining(settings.maxActiveClients, settings.activeCoachingCount);
+
+  const handleSave = () => {
+    setSaving(true); setErr(""); setSaved(false);
+    const maxActiveClients = maxDraft.trim() === "" ? null : Math.max(0, parseInt(maxDraft, 10) || 0);
+    const promoExpiresAt = expiresDraft ? new Date(expiresDraft).toISOString() : null;
+    updateCoachMarketingSettings(supabase, coachId, {
+      maxActiveClients, promoTitle: titleDraft.trim() || null, promoDescription: descDraft.trim() || null, promoExpiresAt,
+    })
+      .then(() => { setSaved(true); load(); })
+      .catch((err2) => { console.error("PERFORM: errore salvataggio impostazioni marketing", err2); setErr("Non sono riuscito a salvare le impostazioni marketing."); })
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <div className="c-card mb-5">
+      <p className="c-label mb-1">Marketing</p>
+      <h3 className="c-heading font-display font-bold mb-1" style={{ fontSize: "1.05rem" }}>Scarsità & offerte</h3>
+      <p className="c-muted text-xs mb-4">
+        Questi valori li imposti tu — restano nascosti sulla pagina piani finché non li compili, mai un numero o una scadenza inventati.
+      </p>
+      <label className="block mb-3">
+        <span className="c-label block mb-1">Posti massimi a coaching attivo</span>
+        <input type="number" min={0} value={maxDraft} onChange={(e) => setMaxDraft(e.target.value)} placeholder="Es. 20 — vuoto = nessun tetto"
+          className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+        <p className="c-muted text-[11px] mt-1">
+          {settings.activeCoachingCount} client{settings.activeCoachingCount === 1 ? "e" : "i"} a coaching attivo ora
+          {spotsRemaining != null && ` · ${spotsRemaining} post${spotsRemaining === 1 ? "o" : "i"} rimast${spotsRemaining === 1 ? "o" : "i"}`}
+        </p>
+      </label>
+      <label className="block mb-3">
+        <span className="c-label block mb-1">Titolo offerta (opzionale)</span>
+        <input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} placeholder="Es. Sconto di lancio"
+          className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+      </label>
+      <label className="block mb-3">
+        <span className="c-label block mb-1">Descrizione offerta (opzionale)</span>
+        <textarea value={descDraft} onChange={(e) => setDescDraft(e.target.value)} rows={2} placeholder="Es. -10% sul Full Coaching per i primi 10 iscritti"
+          className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+      </label>
+      <label className="block mb-4">
+        <span className="c-label block mb-1">Scadenza offerta</span>
+        <input type="datetime-local" value={expiresDraft} onChange={(e) => setExpiresDraft(e.target.value)}
+          className="t-input w-full text-sm rounded-md px-2.5 py-2" />
+        <p className="c-muted text-[11px] mt-1">Il banner sparisce da solo una volta passata questa data — mai un'offerta scaduta mostrata come attiva.</p>
+      </label>
+      <button onClick={handleSave} disabled={saving} className="c-btn rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-50">
+        {saving ? "Salvataggio…" : saved ? "✓ Salvato" : "Salva"}
+      </button>
+      {err && <p className="text-xs mt-2" style={{ color: "#B91C1C" }}>{err}</p>}
+    </div>
+  );
+}
+
 function FinanceModule({ isDark }) {
   const { clients: CLIENTS, supabase, isRealMode } = useContext(CoachDataContext);
   const demoMrr = useMemo(() => computeMRR(CLIENTS), [CLIENTS]);
@@ -6303,6 +6400,7 @@ function FinanceModule({ isDark }) {
     if (!real) return <div className="c-card"><p className="c-muted text-sm">Non sono riuscito a leggere i dati finanziari da Stripe. Riprova tra poco.</p></div>;
     return (
       <div>
+        <MarketingSettingsCard />
         <MonetaryWidgets mrr={real.mrr} transactions={real.transactions} isDark={isDark} />
         <TransactionLedger real transactions={real.transactions.map((t) => ({
           id: t.id, clientName: t.name || "—", email: t.email || "—",
