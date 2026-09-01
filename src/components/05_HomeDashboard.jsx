@@ -3532,7 +3532,7 @@ export function HomeDashboard({
                           </span>
                         </div>
                       ) : (
-                        <ExerciseCard
+                        <SafeExerciseCard
                           key={ex.id}
                           ex={ex}
                           index={exIdx}
@@ -5429,6 +5429,29 @@ function WarmupStretchCard({ icon, eyebrow, title, text }) {
   );
 }
 
+// Rete di sicurezza per-esercizio: un boundary locale (vedi ErrorBoundary.jsx,
+// fallback opzionale) attorno a OGNI singola card, non più solo quello
+// globale in main.jsx. BUG PRESO: dati reali imprevedibili (scheda coach,
+// routine libera, template applicati — provenienze diverse, forme diverse)
+// hanno già fatto crashare ExerciseCard più volte per proprietà mancanti non
+// ancora previste; con un solo boundary globale QUALUNQUE crash su UN
+// esercizio smontava l'intera pagina Allenamento ("Qualcosa è andato
+// storto" a schermo intero). Ora un problema resta isolato alla sua card:
+// il resto della lista (e dell'app) continua a funzionare.
+function SafeExerciseCard(props) {
+  return (
+    <ErrorBoundary fallback={
+      <div className="card">
+        <p className="body text-sm" style={{ color: "var(--ink-2)" }}>
+          Non sono riuscito a mostrare "{props.ex?.name || "questo esercizio"}" — riprova più tardi o contatta il coach se il problema resta.
+        </p>
+      </div>
+    }>
+      <ExerciseCard {...props} />
+    </ErrorBoundary>
+  );
+}
+
 function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId }) {
   const [guideOpen, setGuideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -6193,7 +6216,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                   reps: item.reps || "-", rirTarget: "-", technique: item.intensity || "",
                   rests: Array(Number(item.sets) || 3).fill(restNum), history: [] };
                 return (
-                  <ExerciseCard key={exObj.id} ex={exObj} index={exIdx} rows={setsFor(exObj)}
+                  <SafeExerciseCard key={exObj.id} ex={exObj} index={exIdx} rows={setsFor(exObj)}
                     onSetField={onSetField} accent={accent} accentText={accentText} onCoachSync={onCoachSync}
                     userPlan={userPlan} schedaAddonChatActive={schedaAddonChatActive} gender={gender} onUpgrade={onUpgrade} />
                 );

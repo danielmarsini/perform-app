@@ -24,79 +24,31 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Velo nero anti-scatto: durante il giro fisico del telefono il
-         browser mostra per una frazione di secondo il layout orizzontale
-         PRIMA che la regola CSS di contro-rotazione (src/index.css) faccia
-         effetto — senza questo velo si vede uno scatto brutto (ruota e poi
-         si raddrizza di colpo). Coperto a schermo intero appena parte il
-         cambio orientamento, tolto con una dissolvenza morbida subito dopo
-         che il layout si è stabilizzato: l'utente vede solo un breve
-         "respiro" nero, mai lo scatto. -->
-    <div id="portrait-lock-veil" aria-hidden="true"></div>
     <script>
-      // Blocco orientamento verticale, stile Instagram/WhatsApp: mai un
-      // messaggio "ruota il telefono", l'app resta semplicemente verticale
-      // qualunque cosa faccia il telefono fisico.
+      // Blocco orientamento verticale, stile Instagram/WhatsApp — SOLO il
+      // lock nativo del sistema operativo, mai un trucco CSS che ruota il
+      // contenuto "a mano": qualunque contro-rotazione via transform
+      // produce comunque un movimento visibile (il browser rifà comunque
+      // il layout in orizzontale per una frazione di secondo prima che il
+      // CSS intervenga, e la stessa animazione di rotazione fisica del
+      // telefono resta visibile sotto la contro-rotazione) — richiesta
+      // esplicita: la pagina non deve mai muoversi, né reagire in alcun
+      // modo al giro del telefono.
       //
-      // 1) Tentativo di lock nativo — se il browser lo supporta (PWA
-      //    standalone su Android/Chrome) il sistema operativo impedisce
-      //    davvero la rotazione, punto. Fallisce silenziosamente ovunque
-      //    non sia supportato (iOS Safari non lo offre mai).
-      // 2) Rete di sicurezza CSS (src/index.css, regola
-      //    @media (orientation: landscape) and (pointer: coarse)): se il
-      //    lock nativo non c'è o non basta e il telefono gira comunque in
-      //    orizzontale, il contenuto viene ruotato di nuovo in senso
-      //    opposto e resta visivamente verticale — nessuna schermata di
-      //    richiesta, il verso corretto (orario o antiorario) è calcolato
-      //    qui da screen.orientation.angle così funziona da entrambi i lati.
-      // 3) Velo nero (#portrait-lock-veil, vedi sopra) per nascondere lo
-      //    scatto visivo del punto 2 mentre il layout si stabilizza.
+      // screen.orientation.lock("portrait") impedisce DAVVERO la rotazione
+      // a livello di sistema operativo — zero movimento, zero reflow,
+      // proprio come un'app nativa — ma è supportato SOLO in PWA
+      // installata (standalone) su Android/Chrome; iOS Safari non lo offre
+      // mai, in nessuna modalità. Per chi ha installato l'app ("Aggiungi a
+      // Home", il modo in cui l'app è pensata per essere usata) il blocco è
+      // reale e invisibile. In una scheda di un browser normale — dove
+      // nessun sito, incluso Instagram o WhatsApp via browser, può bloccare
+      // davvero la rotazione — l'app si comporta come qualunque pagina web
+      // responsive, senza nessun trucco che la faccia scattare.
       try {
         if (window.matchMedia("(display-mode: standalone)").matches && screen.orientation && screen.orientation.lock) {
           screen.orientation.lock("portrait").catch(() => {});
         }
-      } catch {}
-
-      function updatePortraitLockDir() {
-        try {
-          const angle = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
-          // angle 90 = telefono ruotato verso sinistra (verso "a", il caso più
-          // comune) → contro-ruota di -90deg; 270/-90 = ruotato verso destra
-          // (verso "b") → contro-ruota di +90deg. Vedi src/index.css per la
-          // regola completa (rotazione + posizionamento, diversi per verso).
-          const dir = (angle === 270 || angle === -90) ? "b" : "a";
-          document.documentElement.setAttribute("data-portrait-lock-dir", dir);
-        } catch {}
-      }
-
-      var portraitLockVeilTimer = null;
-      function isCoarsePointer() {
-        try { return window.matchMedia("(pointer: coarse)").matches; } catch { return false; }
-      }
-      function flashPortraitLockVeil() {
-        if (!isCoarsePointer()) return; // niente velo su desktop: lì il landscape è normale
-        var veil = document.getElementById("portrait-lock-veil");
-        if (!veil) return;
-        clearTimeout(portraitLockVeilTimer);
-        veil.classList.remove("fade-out");
-        veil.classList.add("active");
-        // 350ms: tempo tipico per la sequenza resize→reflow→CSS del
-        // browser durante un cambio di orientamento reale su mobile —
-        // abbastanza per coprire lo scatto senza sentirsi un'attesa.
-        portraitLockVeilTimer = setTimeout(function () {
-          veil.classList.add("fade-out");
-          setTimeout(function () { veil.classList.remove("active", "fade-out"); }, 220);
-        }, 350);
-      }
-
-      // Solo updatePortraitLockDir() al caricamento (serve subito, per il
-      // verso corretto se l'app parte già in orizzontale) — MAI il velo qui:
-      // altrimenti ogni apertura dell'app mostrerebbe un flash nero anche
-      // senza nessuna rotazione reale in corso.
-      updatePortraitLockDir();
-      window.addEventListener("orientationchange", function () { updatePortraitLockDir(); flashPortraitLockVeil(); });
-      try {
-        screen.orientation && screen.orientation.addEventListener("change", function () { updatePortraitLockDir(); flashPortraitLockVeil(); });
       } catch {}
     </script>
     <script type="module" src="/src/main.jsx"></script>
