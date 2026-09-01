@@ -5789,7 +5789,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
                   supabase={supabase} userId={userId}
                 />
               ))}
-              {ex.setHistory.map((session) => (
+              {(ex.setHistory ?? []).map((session) => (
                 <PastSessionCard key={session.workoutLogId} session={session} supabase={supabase} userId={userId} />
               ))}
             </div>
