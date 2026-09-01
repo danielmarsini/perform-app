@@ -1770,13 +1770,23 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   // distretto, la card si collassa da sola in una riga compatta (nome + serie
   // × rep · RIR · recupero) — il resto (sinergici, guida, 2° distretto…)
   // resta dentro, un click sulla riga la riapre per modificarlo. Un
-  // esercizio nuovo/incompleto parte SEMPRE aperto. autoCollapsedIds (ref,
-  // non state: non deve causare render) traccia quali id sono già stati
-  // collassati automaticamente UNA VOLTA — così se il coach la riapre a
-  // mano per un ritocco, non si richiude da sola sotto le sue dita.
-  const [collapsedIds, setCollapsedIds] = useState({});
-  const autoCollapsedIds = useRef(new Set());
-  const toggleCollapsed = (exId) => setCollapsedIds((s) => ({ ...s, [exId]: !s[exId] }));
+  // esercizio nuovo/incompleto parte SEMPRE aperto.
+  //
+  // BUG PRESO (segnalato): "alcuni esercizi sono aperti a caso quando vedo
+  // un giorno" — la versione precedente collassava con un useEffect DOPO il
+  // primo render: un giorno già salvato arriva con tutti gli esercizi già
+  // completi, quindi al primo paint erano TUTTI aperti (collapsedIds={}) e
+  // solo un istante dopo, quando l'effetto girava, scattavano chiusi tutti
+  // insieme — un lampo percepito come "apertura/chiusura a caso",
+  // specialmente quando i dati arrivavano in più passaggi (libreria
+  // esercizi caricata dopo la settimana). Ora "collassato" è calcolato
+  // SEMPRE al volo dal contenuto stesso (isCollapsedFor sotto): nessun
+  // effect, nessun lampo, mai un valore che dipende da QUANDO gira un
+  // effetto. collapsedOverrides registra SOLO i tocchi manuali del coach
+  // (aprire/richiudere una riga già completa) — un override, una volta
+  // impostato, vince sempre sul calcolo automatico, così riaprire una riga
+  // per un ritocco non se la richiude da sola sotto le dita.
+  const [collapsedOverrides, setCollapsedOverrides] = useState({});
   const effMuscleTargetOf = (ex) => {
     const libEntry = exerciseLib[(ex.name || "").trim()];
     const libDirect0 = libEntry?.direct?.[0] ? (EXERCISE_LIB_MUSCLE_TO_DB[libEntry.direct[0]] || libEntry.direct[0]) : "";
@@ -1786,6 +1796,8 @@ function WeekWorkoutEditor({ week, onChange, client }) {
     Boolean(ex.name?.trim()) && ex.sets !== "" && ex.sets != null
     && String(ex.reps ?? "").trim() !== "" && ex.rest !== "" && ex.rest != null
     && ex.rirTarget !== "" && ex.rirTarget != null && Boolean(effMuscleTargetOf(ex));
+  const isCollapsedFor = (ex) => (ex.id in collapsedOverrides ? collapsedOverrides[ex.id] : isExerciseComplete(ex));
+  const toggleCollapsed = (ex) => setCollapsedOverrides((s) => ({ ...s, [ex.id]: !isCollapsedFor(ex) }));
   // BUG PRESO (segnalato): la riga compatta scriveva "RIR {valore}" per
   // intero — un dato più vecchio salvato prima che RIR_TARGET_OPTIONS
   // diventasse solo numerico ("0" = cedimento, vedi sopra) poteva ancora
@@ -1799,16 +1811,6 @@ function WeekWorkoutEditor({ week, onChange, client }) {
     if (!v) return "RIR—";
     return /cediment/i.test(v) ? "RIR0" : `RIR${v}`;
   };
-  useEffect(() => {
-    if (!day) return;
-    const toCollapse = [];
-    day.exercises.forEach((ex) => {
-      if (ex.kind === "cardio" || autoCollapsedIds.current.has(ex.id)) return;
-      if (isExerciseComplete(ex)) { autoCollapsedIds.current.add(ex.id); toCollapse.push(ex.id); }
-    });
-    if (toCollapse.length) setCollapsedIds((s) => { const next = { ...s }; toCollapse.forEach((id) => { next[id] = true; }); return next; });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day, exerciseLib]);
   const updateEx = (i, field, value) => setDay((d) => ({
     ...d,
     exercises: d.exercises.map((e, j) => (j === i ? {
@@ -2090,23 +2092,32 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                     <button onClick={() => removeEx(i)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
                   </div>
                 </div>
-              ) : collapsedIds[ex.id] ? (
+              ) : isCollapsedFor(ex) ? (
                 // Riga compatta (auto-collassata dopo nome/serie/rep/recupero/RIR/
-                // distretto già impostati, vedi effetto sopra): un click la riapre
-                // per modificare sinergici/2° distretto/guida biomeccanica.
-                <div key={ex.id} ref={reorder.setRowRef(i)} style={{ ...reorder.rowStyle(i) }} className="t-inner px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0" style={{ ...reorder.handleProps(i).style, color: "var(--ink-tertiary)" }}>
+                // distretto già impostati, vedi isCollapsedFor sopra): un click la
+                // riapre per modificare sinergici/2° distretto/guida biomeccanica.
+                // BUG PRESO (segnalato): nome esercizio scritto in nero e troncato
+                // — leggibilità a colpo d'occhio compromessa su un tema chiaro/
+                // sfondo affollato, e un nome lungo spariva a metà con "…". Sfondo
+                // nero pieno fisso (stesso chip alto contrasto usato durante il
+                // drag, mai dipendente dal tema) con nome per intero in bianco su
+                // riga propria, dettagli (serie/rep/RIR/recupero) sotto in grigio
+                // piccolo — un colpo d'occhio vero, mai un valore tagliato.
+                <div key={ex.id} ref={reorder.setRowRef(i)} className="rounded-lg px-3 py-2.5" style={{ backgroundColor: "#111111", ...reorder.rowStyle(i) }}>
+                  <div className="flex items-start gap-2">
+                    <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0 mt-0.5" style={{ ...reorder.handleProps(i).style, color: "#9CA3AF" }}>
                       <GripVertical size={15} />
                     </span>
-                    <button type="button" onClick={() => toggleCollapsed(ex.id)} className="flex-1 min-w-0 flex items-center gap-2 text-left">
-                      <span className="text-sm font-medium truncate">{ex.name}</span>
-                      <span className="c-muted text-[11px] font-data shrink-0 whitespace-nowrap">
-                        {ex.sets}×{ex.reps} · {formatRirBadge(ex.rirTarget)} · {ex.rest}s
-                      </span>
-                      <ChevronDown size={14} className="shrink-0 ml-auto" style={{ color: "var(--ink-tertiary)" }} />
+                    <button type="button" onClick={() => toggleCollapsed(ex)} className="flex-1 min-w-0 flex items-start justify-between gap-2 text-left">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold leading-snug" style={{ color: "#FFFFFF" }}>{ex.name}</p>
+                        <p className="text-[11px] font-data mt-0.5" style={{ color: "#9CA3AF" }}>
+                          {ex.sets} serie · {ex.reps} rep · {formatRirBadge(ex.rirTarget)} · {ex.rest}s rec
+                        </p>
+                      </div>
+                      <ChevronDown size={14} className="shrink-0 mt-0.5" style={{ color: "#9CA3AF" }} />
                     </button>
-                    <button onClick={() => removeEx(i)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
+                    <button onClick={() => removeEx(i)} className="w-8 h-8 rounded-md flex items-center justify-center shrink-0" style={{ color: "#9CA3AF" }} aria-label="Rimuovi"><Trash2 size={13} /></button>
                   </div>
                 </div>
               ) : (
@@ -2141,7 +2152,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                       recupero+RIR+distretto) — ma il coach deve poter
                       richiudere una card aperta in QUALUNQUE momento, anche a
                       metà compilazione, non solo a lavoro finito. */}
-                  <button onClick={() => toggleCollapsed(ex.id)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Comprimi" title="Comprimi">
+                  <button onClick={() => toggleCollapsed(ex)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Comprimi" title="Comprimi">
                     <ChevronUp size={15} />
                   </button>
                   <button onClick={() => removeEx(i)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
