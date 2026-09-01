@@ -6067,6 +6067,9 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
   const setDayLabel = (weekIdx, dayIdx, label) =>
     setWeeks((ws) => ws.map((w, wi) => (wi !== weekIdx ? w : w.map((d, di) => (di !== dayIdx ? d : { ...d, label })))));
 
+  const setDayStretching = (weekIdx, dayIdx, stretching) =>
+    setWeeks((ws) => ws.map((w, wi) => (wi !== weekIdx ? w : w.map((d, di) => (di !== dayIdx ? d : { ...d, stretching })))));
+
   const addExercise = (weekIdx, dayIdx, item) =>
     setWeeks((ws) => ws.map((w, wi) => (wi !== weekIdx ? w : w.map((d, di) => (di !== dayIdx ? d : { ...d, exercises: [...d.exercises, item] })))));
 
@@ -6262,6 +6265,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                 <DayEditor key={dIdx} label={dLabel} data={dayData}
                   onToggle={() => toggleDayTraining(activeWeek, dIdx)}
                   onLabel={(v) => setDayLabel(activeWeek, dIdx, v)}
+                  onStretching={(v) => setDayStretching(activeWeek, dIdx, v)}
                   onAdd={(item) => addExercise(activeWeek, dIdx, item)}
                   onRemove={(exIdx) => removeExercise(activeWeek, dIdx, exIdx)}
                   onUpdate={(exIdx, patch) => updateExercise(activeWeek, dIdx, exIdx, patch)}
@@ -6294,13 +6298,25 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
   );
 }
 
-function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, onReorder, accent, accentText, accentSoft, supabase, userId, exerciseLib, onLearned }) {
+// Stessa logica di collasso automatico/manuale del WeekWorkoutEditor coach
+// (richiesta esplicita: "stessa modalità di editor allenamento" anche per
+// free/premium) — "completo" qui non richiede un RIR target (il builder
+// autogestito usa il select Intensità/Tecnica al suo posto).
+function isFreeExerciseComplete(e) {
+  return Boolean(e.name?.trim()) && e.sets !== "" && e.sets != null
+    && String(e.reps ?? "").trim() !== "" && e.rest !== "" && e.rest != null && Boolean(e.intensity);
+}
+
+function DayEditor({ label, data, onToggle, onLabel, onStretching, onAdd, onRemove, onUpdate, onReorder, accent, accentText, accentSoft, supabase, userId, exerciseLib, onLearned }) {
   const [query, setQuery] = useState("");
   const reorder = useDragReorder({ length: data?.exercises?.length ?? 0, onReorder });
   const [dropOpen, setDropOpen] = useState(false);
   const [targetMuscle, setTargetMuscle] = useState("");
   const [setsVal, setSetsVal] = useState("3");
   const [reps, setReps] = useState("8-10");
+  const [collapsedOverrides, setCollapsedOverrides] = useState({});
+  const isCollapsedFor = (e, i) => (i in collapsedOverrides ? collapsedOverrides[i] : isFreeExerciseComplete(e));
+  const toggleCollapsed = (i, e) => setCollapsedOverrides((s) => ({ ...s, [i]: !isCollapsedFor(e, i) }));
 
   // Richiesta esplicita: gli esercizi particolari già classificati dal coach
   // (muscoli diretti/sinergici già assegnati "col suo occhio da
@@ -6368,14 +6384,39 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
 
           {data.exercises.length > 0 && (
             <div className="space-y-2 mb-3">
-              {data.exercises.map((e, i) => (
+              {data.exercises.map((e, i) => isCollapsedFor(e, i) ? (
+                <div key={i} ref={reorder.setRowRef(i)} className="rounded-lg px-3 py-2.5" style={{ backgroundColor: "#111111", ...reorder.rowStyle(i) }}>
+                  <div className="flex items-start gap-2">
+                    <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0 mt-0.5" style={{ ...reorder.handleProps(i).style, color: "#9CA3AF" }}>
+                      <GripVertical size={15} />
+                    </span>
+                    <button type="button" onClick={() => toggleCollapsed(i, e)} className="flex-1 min-w-0 flex items-start justify-between gap-2 text-left">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold leading-snug" style={{ color: "#FFFFFF" }}>
+                          {e.name}{e.targetMuscle ? ` · ${e.targetMuscle}` : ""}
+                        </p>
+                        <p className="text-[11px] font-data mt-0.5" style={{ color: "#9CA3AF" }}>
+                          {formatSetsReps(e.sets, e.reps)} · {e.intensity} · {e.rest}s rec
+                        </p>
+                      </div>
+                      <ChevronDown size={14} className="shrink-0 mt-0.5" style={{ color: "#9CA3AF" }} />
+                    </button>
+                    <button onClick={() => onRemove(i)} aria-label="Rimuovi esercizio" style={{ color: "#9CA3AF" }} className="shrink-0">
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <div key={i} ref={reorder.setRowRef(i)} style={reorder.rowStyle(i)} className="inner p-3">
                   <div className="flex items-center justify-between gap-3 mb-2">
-                    <span className="flex items-center gap-1.5 text-sm truncate min-w-0" style={{ color: "var(--ink)", fontWeight: 500 }}>
+                    <span className="flex items-center gap-1.5 text-sm min-w-0" style={{ color: "var(--ink)", fontWeight: 500 }}>
                       <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0" style={{ ...reorder.handleProps(i).style, color: "var(--ink-tertiary)" }}>
                         <GripVertical size={15} />
                       </span>
-                      <span className="truncate">
+                      <button type="button" onClick={() => toggleCollapsed(i, e)} aria-label="Comprimi esercizio" className="shrink-0" style={{ color: "var(--ink-2)" }}>
+                        <ChevronUp size={13} />
+                      </button>
+                      <span>
                         {e.name}
                         {e.targetMuscle && (
                           <span className="ml-1.5 meta" style={{ fontSize: "0.62rem" }}>· {e.targetMuscle}</span>
@@ -6470,6 +6511,13 @@ function DayEditor({ label, data, onToggle, onLabel, onAdd, onRemove, onUpdate, 
           <p className="meta mt-1.5" style={{ fontSize: "0.62rem" }}>
             Recupero (90″ di default) e intensità si impostano dopo l'aggiunta, direttamente su ogni esercizio.
           </p>
+
+          <label className="block mt-3">
+            <span className="label block mb-1">🧘 Stretching (a fine sessione)</span>
+            <textarea value={data.stretching || ""} rows={3} onChange={(e) => onStretching(e.target.value)}
+              placeholder="Es. Stretching pettorali 2x30 sec, Stretching quadricipiti 2x30 sec per lato…"
+              className="input w-full px-3 py-2.5 text-sm" style={{ resize: "vertical" }} />
+          </label>
         </>
       )}
     </div>
