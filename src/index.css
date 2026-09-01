@@ -109,3 +109,43 @@ button:active::after, [role="button"]:active::after {
   width: 0;
   height: 0;
 }
+
+/* App sempre verticale, come Instagram/WhatsApp — manifest.json ha già
+   orientation:portrait-primary (funziona in PWA standalone su Android), ma
+   iOS Safari lo ignora del tutto: qui il vero fallback universale. Mostra
+   un overlay "ruota il telefono" SOLO su dispositivi touch in landscape
+   (pointer:coarse esclude il desktop, dove il landscape è normale). */
+#orientation-lock-overlay {
+  display: none;
+}
+@media (orientation: landscape) and (pointer: coarse) {
+  #orientation-lock-overlay {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    background-color: #09090B;
+    color: #FFFFFF;
+    align-items: center;
+    justify-content: center;
+  }
+  .orientation-lock-content {
+    text-align: center;
+    padding: 24px;
+  }
+  .orientation-lock-icon {
+    font-size: 2.75rem;
+    margin-bottom: 12px;
+    display: inline-block;
+    animation: orientation-lock-rotate 1.8s ease-in-out infinite;
+  }
+  .orientation-lock-content p {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #E4E4E7;
+  }
+  @keyframes orientation-lock-rotate {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(-90deg); }
+  }
+}
