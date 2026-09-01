@@ -4323,3 +4323,22 @@ export function formatSetsReps(sets, reps) {
   if (!r) return `${s}x`;
   return `${s}x${r}`;
 }
+
+// Riscaldamento/stretching sono testo libero scritto dal coach (nessun
+// campo strutturato "distretto"): un'etichetta breve per la riga
+// collassata ("Riscaldamento Upper Body" invece del testo intero) si
+// deriva per euristica dalle parole usate — se compaiono parole di
+// entrambi i distretti è "Full Body", se nessuna corrisponde non si
+// aggiunge nulla (mai un'etichetta inventata su un testo che non la
+// giustifica).
+const LOWER_BODY_WORDS = /gamb|squat|femoral|glute|polpacc|quadricip|anca|caviglia|affond/i;
+const UPPER_BODY_WORDS = /pett|spall|dorsal|tricipit|bicipit|schiena|braccia|trazion|panca|rematore/i;
+export function guessBodyFocusLabel(text) {
+  if (!text) return null;
+  const hasLower = LOWER_BODY_WORDS.test(text);
+  const hasUpper = UPPER_BODY_WORDS.test(text);
+  if (hasLower && hasUpper) return "Full Body";
+  if (hasLower) return "Lower Body";
+  if (hasUpper) return "Upper Body";
+  return null;
+}
