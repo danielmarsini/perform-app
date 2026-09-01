@@ -110,60 +110,15 @@ button:active::after, [role="button"]:active::after {
   height: 0;
 }
 
-/* App sempre verticale, come Instagram/WhatsApp — MAI un messaggio "ruota
-   il telefono" (richiesta esplicita: le app vere non lo mostrano, restano
-   verticali e basta). manifest.json ha già orientation:portrait-primary
-   (funziona in PWA standalone su Android), ma iOS Safari lo ignora del
-   tutto — qui il vero fallback universale: se il telefono fisico gira
-   comunque in orizzontale, si ruota di nuovo l'intero documento nel verso
-   opposto così il contenuto resta visivamente verticale, esattamente come
-   farebbe un lock nativo. pointer:coarse esclude il desktop, dove il
-   landscape è normale e non va toccato. data-portrait-lock-dir è impostato
-   da index.html in base a screen.orientation.angle: il telefono può girare
-   in orizzontale da due lati opposti, e ognuno richiede verso di
-   rotazione E posizionamento diversi (la sola rotazione non basta, la
-   matematica del "top/left" cambia col verso) — "a" è il default finché lo
-   script non ha ancora letto l'angolo reale. */
-@media screen and (orientation: landscape) and (pointer: coarse) {
-  html {
-    width: 100vh;
-    height: 100vw;
-    overflow-x: hidden;
-    position: absolute;
-  }
-  html:not([data-portrait-lock-dir="b"]) {
-    transform: rotate(-90deg);
-    transform-origin: top left;
-    top: 100%;
-    left: 0;
-  }
-  html[data-portrait-lock-dir="b"] {
-    transform: rotate(90deg);
-    transform-origin: top left;
-    top: 0;
-    left: 100%;
-  }
-}
-
-/* Velo nero anti-scatto (vedi index.html per quando si attiva/disattiva):
-   invisibile e fuori dai piedi finché JS non aggiunge .active durante un
-   cambio di orientamento reale — mai visibile al caricamento normale
-   dell'app. z-index altissimo per stare sopra a qualunque overlay/modale
-   già aperto in quel momento. */
-#portrait-lock-veil {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 999999;
-  background-color: #09090B;
-  opacity: 0;
-  pointer-events: none;
-}
-#portrait-lock-veil.active {
-  display: block;
-  opacity: 1;
-}
-#portrait-lock-veil.active.fade-out {
-  opacity: 0;
-  transition: opacity 220ms ease-out;
-}
+/* App sempre verticale, come Instagram/WhatsApp: il blocco reale vive SOLO
+   in index.html (screen.orientation.lock, nativo, invisibile) e in
+   manifest.json (orientation:portrait-primary, PWA standalone Android).
+   NESSUN trucco CSS qui: un tentativo precedente contro-ruotava il
+   documento via transform quando il telefono girava, ma produceva
+   comunque uno scatto visibile (il browser rifà il layout in orizzontale
+   PRIMA che il CSS intervenga) — richiesta esplicita: la pagina non deve
+   mai muoversi o reagire al giro del telefono. Dove il lock nativo non è
+   disponibile (browser non installato, iOS Safari sempre) non esiste
+   alcun modo web di impedire la rotazione senza produrre un qualche
+   movimento visibile — in quel caso l'app si comporta come una normale
+   pagina responsive, senza finzioni. */

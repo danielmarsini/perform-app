@@ -19,6 +19,11 @@ export default class ErrorBoundary extends React.Component {
   }
   render() {
     if (!this.state.hasError) return this.props.children;
+    // fallback opzionale: un boundary "locale" attorno a un singolo elemento
+    // di una lista (es. una card esercizio) può passare un mini-messaggio
+    // invece di prendersi tutto lo schermo — un dato malformato su UN
+    // esercizio non deve più portare giù l'intera pagina.
+    if (this.props.fallback) return this.props.fallback;
     return (
       <div style={{
         minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
