@@ -1,0 +1,30 @@
+PERFORM — foto della presentazione iniziale (LandingIntro)
+============================================================
+
+Metti qui dentro le tue foto con ESATTAMENTE questi nomi file. Appena un
+file esiste con il nome giusto, compare da solo nella presentazione — non
+serve toccare nessun codice, nessuna modifica da chiedere.
+
+Finché un file non c'è, al suo posto compare un riquadro placeholder
+elegante (mai una foto finta) — quindi puoi aggiungere le foto quando
+vuoi, una alla volta, senza fretta.
+
+FOTO RICHIESTE (formato consigliato: JPG, verticale 3:4 o simile)
+-------------------------------------------------------------------
+coach-portrait.jpg              → il tuo ritratto (slide "professionista vero")
+
+transformation-1-before.jpg     → prima/dopo #1 — es. la tua trasformazione
+transformation-1-after.jpg
+
+transformation-2-before.jpg     → prima/dopo #2 — es. un cliente
+transformation-2-after.jpg
+
+transformation-3-before.jpg     → prima/dopo #3 — es. un cliente
+transformation-3-after.jpg
+
+Puoi aggiungerne anche solo una coppia (es. solo transformation-1-*): le
+altre restano placeholder finché non le aggiungi.
+
+Peso consigliato: sotto 300-400 KB per foto (comprimile prima di
+caricarle, es. su squoosh.app) — così l'app resta veloce da aprire anche
+con connessione debole.

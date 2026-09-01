@@ -7,7 +7,10 @@ import HomeScreen from "./components/05_HomeDashboard.jsx";
 import { NewsTipsView, NewsTipsViewStyles } from "./components/06_NewsTipsView.jsx";
 import ProfileScreen, { SettingsDrawer } from "./components/08_ClientProfileView.jsx";
 import OnboardingFlow from "./components/11_OnboardingFlow.jsx";
-import LandingIntro from "./components/LandingIntro.jsx";
+// Lazy: pesa framer-motion (usato solo qui per le transizioni animate) —
+// chi ha già un account/sessione valida non deve mai scaricarlo, solo un
+// visitatore che non ha ancora visto la presentazione iniziale.
+const LandingIntro = lazy(() => import("./components/LandingIntro.jsx"));
 import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -502,13 +505,15 @@ export default function App() {
   // prima volta: salta dritto oltre questo blocco.
   if (!session && !seenLanding) {
     return (
-      <LandingIntro
-        dark={dark}
-        onFinish={() => {
-          try { localStorage.setItem("perform_seen_landing", "1"); } catch (err) { /* best-effort */ }
-          setSeenLanding(true);
-        }}
-      />
+      <Suspense fallback={<ScreenFallback dark={dark} minHeight="100vh" />}>
+        <LandingIntro
+          dark={dark}
+          onFinish={() => {
+            try { localStorage.setItem("perform_seen_landing", "1"); } catch (err) { /* best-effort */ }
+            setSeenLanding(true);
+          }}
+        />
+      </Suspense>
     );
   }
 
