@@ -2655,6 +2655,7 @@ export function HomeDashboard({
   const [levelRoadmapOpen, setLevelRoadmapOpen] = useState(false);
   const [streakInfoOpen, setStreakInfoOpen] = useState(false);
   const [selectedCalendarIso, setSelectedCalendarIso] = useState(null); // null = oggi
+  const [pdfExportOpen, setPdfExportOpen] = useState(false); // esportazione PDF scheda, vedi WorkoutPdfExport
 
   // Giorni realmente "saltati" nelle due strisce calendario (Allenamento e
   // Alimentazione): letti una volta dal vero storico, mai un pattern finto.
@@ -3500,6 +3501,13 @@ export function HomeDashboard({
             )}
             {access.pro ? (
               <>
+                <div className="flex justify-end mb-2">
+                  <button onClick={() => setPdfExportOpen(true)} className="flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5"
+                          style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--ink-2)" }}>
+                    📄 Esporta PDF
+                  </button>
+                </div>
+                {pdfExportOpen && <WorkoutPdfExport weekPlan={weekPlan} onClose={() => setPdfExportOpen(false)} />}
                 <WorkoutCalendarStrip weekPlan={weekPlan} selectedIso={selectedCalendarIso} onSelectIso={setSelectedCalendarIso} doneDates={workoutDoneDates} />
                 {selectedCalendarIso ? (
                   <CalendarDayReadOnlyView date={new Date(selectedCalendarIso)} weekPlan={weekPlan} />
@@ -5048,6 +5056,81 @@ const RECORD_GOLD_GREEN = "#8CA832";
    passata), per tracciare il sovraccarico progressivo nel lungo termine. */
 /* Converte il giorno JS (0=Domenica) nella convenzione dell'app (0=Lunedì). */
 function isoWeekdayOf(date) { const d = date.getDay(); return d === 0 ? 6 : d - 1; }
+
+/* Esportazione PDF della scheda (richiesta esplicita): "pulsante dedicato
+   per esportare e scaricare la scheda in un file PDF formattato, pulito e
+   stampabile" — niente libreria di generazione PDF aggiunta al bundle (già
+   segnalato pesante in build, vedi warning chunk >500kB): il browser stesso
+   sa produrre un PDF vero da una pagina stampabile ("Salva come PDF" è una
+   destinazione di stampa su ogni browser moderno, desktop e mobile). Questo
+   componente monta un layout a tutto schermo pensato SOLO per la stampa
+   (CSS .pdf-export-print in HomeDashboard qui sotto nasconde tutto il resto
+   dell'app durante print, mostra solo lui) — il pulsante "Stampa / Salva
+   PDF" chiama semplicemente window.print(). */
+function WorkoutPdfExport({ weekPlan, onClose }) {
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 overflow-y-auto pdf-export-print" style={{ backgroundColor: "#FFFFFF" }}>
+        <div className="no-print flex items-center justify-between gap-3 px-4 py-3" style={{ borderBottom: "1px solid #E5E7EB", position: "sticky", top: 0, backgroundColor: "#FFFFFF", zIndex: 1 }}>
+          <button onClick={onClose} className="flex items-center gap-1.5 text-sm font-medium" style={{ color: "#111111" }}>
+            <ArrowLeft size={16} /> Chiudi
+          </button>
+          <button onClick={() => window.print()} className="rounded-lg px-4 py-2 text-sm font-semibold" style={{ backgroundColor: "#111111", color: "#FFFFFF" }}>
+            🖨️ Stampa / Salva PDF
+          </button>
+        </div>
+        <div className="pdf-export-content max-w-2xl mx-auto px-6 py-8">
+          <h1 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#111111", marginBottom: "0.2rem" }}>PERFORM — Scheda di Allenamento</h1>
+          <p style={{ fontSize: "0.8rem", color: "#6B7280", marginBottom: "1.6rem" }}>
+            Settimana del {new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" })}
+          </p>
+          {weekPlan.every((d) => !d) ? (
+            <p style={{ fontSize: "0.9rem", color: "#6B7280" }}>Nessun allenamento assegnato questa settimana.</p>
+          ) : (
+            weekPlan.map((day, i) => day && (
+              <div key={i} style={{ marginBottom: "1.8rem", pageBreakInside: "avoid" }}>
+                <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#111111", marginBottom: "0.6rem", borderBottom: "2px solid #111111", paddingBottom: "0.3rem" }}>
+                  {WEEK_DAYS[i]} — {day.label || "Sessione"}
+                </h2>
+                {day.warmup && (
+                  <p style={{ fontSize: "0.8rem", color: "#374151", marginBottom: "0.6rem" }}>
+                    <strong>Riscaldamento:</strong> {day.warmup}
+                  </p>
+                )}
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid #D1D5DB" }}>
+                      {["Esercizio", "Serie", "Rep", "RIR", "Recupero", "Tecnica"].map((h) => (
+                        <th key={h} style={{ textAlign: "left", padding: "0.35rem 0.4rem", color: "#6B7280", fontWeight: 600 }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(day.exercises || []).map((ex, j) => (
+                      <tr key={ex.id || j} style={{ borderBottom: "1px solid #F3F4F6" }}>
+                        <td style={{ padding: "0.35rem 0.4rem", color: "#111111", fontWeight: 500 }}>{ex.name}</td>
+                        <td style={{ padding: "0.35rem 0.4rem", color: "#111111" }}>{ex.kind === "cardio" ? "—" : ex.sets}</td>
+                        <td style={{ padding: "0.35rem 0.4rem", color: "#111111" }}>{ex.kind === "cardio" ? `${ex.durationMin ?? "—"} min` : ex.reps}</td>
+                        <td style={{ padding: "0.35rem 0.4rem", color: "#111111" }}>{ex.kind === "cardio" ? "—" : (ex.rirTarget ?? "—")}</td>
+                        <td style={{ padding: "0.35rem 0.4rem", color: "#111111" }}>{ex.kind === "cardio" ? "—" : `${(ex.rests && ex.rests[0]) ?? "—"}s`}</td>
+                        <td style={{ padding: "0.35rem 0.4rem", color: "#111111" }}>{ex.technique || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {day.stretching && (
+                  <p style={{ fontSize: "0.8rem", color: "#374151", marginTop: "0.6rem" }}>
+                    <strong>Stretching:</strong> {day.stretching}
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
 
 /* Calendario orizzontale a scorrimento libero (drag/swipe): stesso sfondo
    scuro per ogni giorno (mai più un pillolo colorato pieno), solo il testo
@@ -11715,6 +11798,17 @@ export default function HomePreview({
                   "--title-b": gender === "F" ? "#F4E0E6" : "#F3E5AB",
                   "--title-c": gender === "F" ? "#C896A6" : "#AA7C11" }}>
       <style>{`
+        /* Esportazione PDF scheda (WorkoutPdfExport sopra): in stampa,
+           nascondere TUTTO il resto dell'app (bottom nav, header, il resto
+           della pagina Home dietro l'overlay) e mostrare solo il contenuto
+           stampabile — altrimenti il PDF include anche i pulsanti "Chiudi"/
+           "Stampa" e tutta l'interfaccia interattiva intorno. */
+        @media print {
+          body * { visibility: hidden; }
+          .pdf-export-print, .pdf-export-print * { visibility: visible; }
+          .pdf-export-print { position: absolute; inset: 0; }
+          .pdf-export-print .no-print { display: none !important; }
+        }
         .app-root { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           --page:#FFFFFF; --surface:#FFFFFF; --surface-2:#FCFCFD; --line:rgba(17,17,17,0.06);
           --shadow:0 8px 30px rgba(0,0,0,0.02); --ink:#1A1A1A; --ink-2:#8E8E93; --ink-3:#52525B; }
