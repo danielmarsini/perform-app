@@ -144,3 +144,26 @@ button:active::after, [role="button"]:active::after {
     left: 100%;
   }
 }
+
+/* Velo nero anti-scatto (vedi index.html per quando si attiva/disattiva):
+   invisibile e fuori dai piedi finché JS non aggiunge .active durante un
+   cambio di orientamento reale — mai visibile al caricamento normale
+   dell'app. z-index altissimo per stare sopra a qualunque overlay/modale
+   già aperto in quel momento. */
+#portrait-lock-veil {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background-color: #09090B;
+  opacity: 0;
+  pointer-events: none;
+}
+#portrait-lock-veil.active {
+  display: block;
+  opacity: 1;
+}
+#portrait-lock-veil.active.fade-out {
+  opacity: 0;
+  transition: opacity 220ms ease-out;
+}
