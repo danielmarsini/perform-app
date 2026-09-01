@@ -3514,11 +3514,7 @@ export function HomeDashboard({
                         agli esercizi di oggi — mai serie/carichi da segnare,
                         solo da leggere prima di iniziare. */}
                     {day.warmup && (
-                      <div className="card">
-                        <p className="label mb-1">Prima di iniziare</p>
-                        <p className="h2 mb-2">🔥 Riscaldamento & Mobilità</p>
-                        <p className="body" style={{ whiteSpace: "pre-line" }}>{day.warmup}</p>
-                      </div>
+                      <WarmupStretchCard icon="🔥" eyebrow="Prima di iniziare" title="Riscaldamento" text={day.warmup} />
                     )}
                     {exercises.map((ex, exIdx) => (
                       ex.kind === "cardio" ? (
@@ -3559,11 +3555,7 @@ export function HomeDashboard({
                         principio del riscaldamento sopra, ma a chiusura
                         della lista esercizi invece che in apertura. */}
                     {day.stretching && (
-                      <div className="card">
-                        <p className="label mb-1">A fine sessione</p>
-                        <p className="h2 mb-2">🧘 Stretching</p>
-                        <p className="body" style={{ whiteSpace: "pre-line" }}>{day.stretching}</p>
-                      </div>
+                      <WarmupStretchCard icon="🧘" eyebrow="A fine sessione" title="Stretching" text={day.stretching} />
                     )}
                   </div>
                 )}
@@ -5201,11 +5193,7 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
         <>
           <p className="h2">{dayData.label}</p>
           {dayData.warmup && (
-            <div className="card">
-              <p className="label mb-1">Prima di iniziare</p>
-              <p className="h2 mb-2">🔥 Riscaldamento & Mobilità</p>
-              <p className="body" style={{ whiteSpace: "pre-line" }}>{dayData.warmup}</p>
-            </div>
+            <WarmupStretchCard icon="🔥" eyebrow="Prima di iniziare" title="Riscaldamento" text={dayData.warmup} />
           )}
           {dayData.exercises.map((ex) => {
             if (ex.kind === "cardio") {
@@ -5244,11 +5232,7 @@ function CalendarDayReadOnlyView({ date, weekPlan }) {
             );
           })}
           {dayData.stretching && (
-            <div className="card">
-              <p className="label mb-1">A fine sessione</p>
-              <p className="h2 mb-2">🧘 Stretching</p>
-              <p className="body" style={{ whiteSpace: "pre-line" }}>{dayData.stretching}</p>
-            </div>
+            <WarmupStretchCard icon="🧘" eyebrow="A fine sessione" title="Stretching" text={dayData.stretching} />
           )}
         </>
       )}
@@ -5421,6 +5405,28 @@ function writeRestTimer(entry) {
     if (entry) localStorage.setItem(REST_TIMER_KEY, JSON.stringify(entry));
     else localStorage.removeItem(REST_TIMER_KEY);
   } catch { /* best-effort, mai bloccare il timer per questo */ }
+}
+
+// Riscaldamento/stretching: collassati di default (richiesta esplicita —
+// occupavano spazio anche quando l'atleta non ha bisogno di rileggerli ogni
+// volta), un tap apre il testo intero scritto dal coach. L'etichetta breve
+// aggiunge il distretto SOLO se riconoscibile dal testo (guessBodyFocusLabel),
+// mai un'etichetta inventata.
+function WarmupStretchCard({ icon, eyebrow, title, text }) {
+  const [open, setOpen] = useState(false);
+  const focus = guessBodyFocusLabel(text);
+  return (
+    <div className="card">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 text-left">
+        <div className="min-w-0">
+          <p className="label mb-0.5">{eyebrow}</p>
+          <p className="h2" style={{ fontSize: "0.95rem" }}>{icon} {title}{focus ? ` ${focus}` : ""}</p>
+        </div>
+        {open ? <ChevronUp size={16} style={{ color: "var(--ink-2)" }} className="shrink-0" /> : <ChevronDown size={16} style={{ color: "var(--ink-2)" }} className="shrink-0" />}
+      </button>
+      {open && <p className="body mt-2" style={{ whiteSpace: "pre-line" }}>{text}</p>}
+    </div>
+  );
 }
 
 function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId }) {
@@ -5610,25 +5616,22 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       ) : (
         <p className="h2">{ex.name}</p>
       )}
-      <p className="meta mt-0.5">
+      {/* Riga compatta unica: "2x6-8 RIR0 120sec" — richiesta esplicita, si
+          legge a colpo d'occhio, niente "Tecnica: ..." (enum di 5 valori
+          brevi, ridondante qui) né testo prolisso. */}
+      <p className="meta mt-0.5 font-data">
         {hasPerSetTargets
           ? repsTargets.map((t, i) => `S${i + 1}: ${t}`).join(" · ")
-          : formatSetsReps(ex.sets, ex.reps)} · RIR {ex.rirTarget}
+          : formatSetsReps(ex.sets, ex.reps)} RIR{ex.rirTarget} {ex.rests?.[0] ?? 120}sec
       </p>
-      {ex.technique && <p className="mt-1 text-sm" style={{ color: "var(--ink-2)", fontWeight: 500 }}>Tecnica: {ex.technique}</p>}
-      {lastSessionSets.length > 0 ? (
-        <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
-          Scorsa sessione:{" "}
-          <span style={{ color: "var(--ink)", fontWeight: 700 }}>
-            {lastSessionSets.map((s, i) => `${s.kg} kg${s.reps != null ? ` × ${s.reps}` : ""}`).join(" · ")}
-          </span>
-          {best > 0 && <> · record da battere: <span style={{ color: RECORD_GOLD_GREEN, fontWeight: 700 }}>{best} kg</span></>}
-        </p>
-      ) : (
-        <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--ink-2)" }}>
-          Scorsa sessione: <span style={{ color: "var(--ink)", fontWeight: 700 }}>n/d</span>
-        </p>
-      )}
+      {/* "Scorsa sessione": kg×reps per ogni serie, senza fronzoli (niente
+          "record da battere" — il badge 🏆 RECORD sopra basta già). */}
+      <p className="mt-1 text-sm font-data" style={{ color: "var(--ink-2)" }}>
+        Scorsa:{" "}
+        <span style={{ color: "var(--ink)", fontWeight: 700 }}>
+          {lastSessionSets.length > 0 ? lastSessionSets.map((s) => `${s.kg}x${s.reps}`).join(" ") : "n/d"}
+        </span>
+      </p>
       <p className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: "var(--ink)" }}>
         <Timer size={13} style={{ color: accent }} />
         {curIdx === -1 ? "Serie completate" : `Serie ${restIdx + 1}`} · Rest{" "}

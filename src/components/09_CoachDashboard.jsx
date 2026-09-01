@@ -6164,21 +6164,30 @@ function RosterView({ onOpen }) {
 
   // Alert scadenze programmazione (richiesta esplicita): stesso pattern
   // batch di complianceByClient qui sopra — un giro solo per l'intero
-  // roster, mai una query per cliente.
-  const [expiryAlerts, setExpiryAlerts] = useState([]);
+  // roster, mai una query per cliente. BUG PRESO: prima computeProgramExpiryAlerts
+  // girava dentro il .then() dell'effetto, con CLIENTS catturato dalla
+  // closure al momento in cui l'effetto era partito (dipendenza solo su
+  // rosterIds, l'insieme di id) — se il coach assegnava una scheda a un
+  // cliente già nel roster, hasWorkoutAssigned cambiava ma l'id restava lo
+  // stesso: rosterIds non cambiava, l'effetto non ripartiva mai, l'alert
+  // restava calcolato su dati vecchi (o mai) finché non si ricaricava tutta
+  // la pagina. Fix: solo il fetch delle date resta legato a rosterIds (mai
+  // una richiesta di rete in più), il calcolo degli alert è un useMemo che
+  // si aggiorna a ogni cambio di CLIENTS — nessuna chiusura stantia.
+  const [lastAssignedByUser, setLastAssignedByUser] = useState(new Map());
   useEffect(() => {
-    if (!isRealMode || !rosterIds) { setExpiryAlerts([]); return; }
+    if (!isRealMode || !rosterIds) { setLastAssignedByUser(new Map()); return; }
     let cancelled = false;
     const ids = rosterIds.split(",");
     fetchLastAssignedWorkoutDates(supabase, ids)
-      .then((lastAssignedByUser) => {
-        if (cancelled) return;
-        setExpiryAlerts(computeProgramExpiryAlerts(CLIENTS, lastAssignedByUser, toLocalISODate()));
-      })
+      .then((map) => { if (!cancelled) setLastAssignedByUser(map); })
       .catch((err) => console.error("PERFORM: errore lettura scadenze programmazione", err));
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRealMode, supabase, rosterIds]);
+  const expiryAlerts = useMemo(
+    () => computeProgramExpiryAlerts(CLIENTS, lastAssignedByUser, toLocalISODate()),
+    [CLIENTS, lastAssignedByUser]
+  );
   const expiryByClientId = new Map(expiryAlerts.map((a) => [a.clientId, a]));
 
   return (

@@ -23,6 +23,7 @@ import {
   computeProgramExpiryAlerts, fetchLastAssignedWorkoutDates,
   computeSpotsRemaining, isPromoActive, fetchCoachMarketingPublic,
   formatSetsReps, fetchNutritionProgramsRange, deleteNutritionProgram,
+  guessBodyFocusLabel,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -1182,5 +1183,22 @@ describe("formatSetsReps", () => {
     expect(formatSetsReps(null, null)).toBe("");
     expect(formatSetsReps("", "8-10")).toBe("8-10");
     expect(formatSetsReps(3, "")).toBe("3x");
+  });
+});
+
+describe("guessBodyFocusLabel", () => {
+  it("riconosce lower body da parole chiave gambe/squat", () => {
+    expect(guessBodyFocusLabel("Squat mobility, caviglia e anca")).toBe("Lower Body");
+  });
+  it("riconosce upper body da parole chiave petto/spalle", () => {
+    expect(guessBodyFocusLabel("Stretching pettorali e dorsali")).toBe("Upper Body");
+  });
+  it("entrambe le zone presenti => Full Body", () => {
+    expect(guessBodyFocusLabel("Gambe e spalle mobility")).toBe("Full Body");
+  });
+  it("nessuna parola riconosciuta => null, mai un'etichetta inventata", () => {
+    expect(guessBodyFocusLabel("Respirazione diaframmatica 5 minuti")).toBe(null);
+    expect(guessBodyFocusLabel("")).toBe(null);
+    expect(guessBodyFocusLabel(null)).toBe(null);
   });
 });
