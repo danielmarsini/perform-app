@@ -25,7 +25,7 @@ import {
   Loader2, AlertTriangle, Mic, MicOff, MessageCircle, GripVertical, History, Pencil, Check, Navigation, Trophy,
   Newspaper, Medal, User, Settings,
 } from "lucide-react";
-import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
+import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, LEVEL_REWARDS, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
@@ -1343,12 +1343,24 @@ function LevelRoadmapModal({ currentXp, onClose }) {
               const isPast = i < currentTierIdx;
               const rangeStart = i * LEVELS_PER_TIER + 1;
               const rangeEnd = rangeStart + LEVELS_PER_TIER - 1;
+              // Ricompensa di livello (LEVEL_REWARDS, richiesta esplicita):
+              // ogni grado nella roadmap mostra anche COSA sblocca, non solo
+              // la soglia XP — l'incentivo diventa concreto, non solo un nome.
+              const reward = LEVEL_REWARDS.find((r) => r.level === rangeStart);
+              const rewardUnlocked = (currentInfo.level + 1) >= rangeStart;
               return (
                 <div key={i} className="inner flex items-center justify-between gap-3 px-4 py-3"
                      style={isCurrent ? { border: `1.5px solid var(--ink)` } : undefined}>
                   <span className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-sm truncate" style={{ color: isPast || isCurrent ? "var(--ink)" : "var(--ink-2)", fontWeight: isCurrent ? 700 : 500 }}>
-                      {isCurrent ? `Livello ${currentInfo.level + 1}` : `Livello ${rangeStart}–${rangeEnd}`}
+                    <span className="min-w-0">
+                      <span className="text-sm truncate block" style={{ color: isPast || isCurrent ? "var(--ink)" : "var(--ink-2)", fontWeight: isCurrent ? 700 : 500 }}>
+                        {isCurrent ? `Livello ${currentInfo.level + 1}` : `Livello ${rangeStart}–${rangeEnd}`}
+                      </span>
+                      {reward && (
+                        <span className="block mt-0.5" style={{ fontSize: "0.68rem", color: rewardUnlocked ? "var(--ink-2)" : "var(--ink-tertiary)" }}>
+                          {reward.icon} {reward.title}
+                        </span>
+                      )}
                     </span>
                   </span>
                   <span className="font-data text-xs shrink-0" style={{ color: "var(--ink-2)", fontWeight: 600 }}>
@@ -1418,7 +1430,7 @@ function PRCelebrationToast({ toast }) {
    una Home più professionale: qui il numero grande basta, il significato si
    scopre solo se serve). Contiene anche "Congela streak di oggi", spostato
    qui dentro invece di stare sempre visibile sotto il fuoco. */
-function StreakInfoModal({ streak, supabase, userId, accent, onClose }) {
+function StreakInfoModal({ streak, supabase, userId, accent, level, onClose }) {
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose);
   return (
@@ -1443,7 +1455,7 @@ function StreakInfoModal({ streak, supabase, userId, accent, onClose }) {
             Giorni consecutivi in cui hai registrato qualcosa — un allenamento, un pasto, sonno e passi. Se ti
             dimentichi un giorno hai fino a tutto il giorno dopo per recuperarlo prima che si azzeri davvero.
           </p>
-          {supabase && userId && <StreakFreezeButton supabase={supabase} userId={userId} accent={accent} />}
+          {supabase && userId && <StreakFreezeButton supabase={supabase} userId={userId} accent={accent} level={level} />}
         </div>
       </div>
     </Portal>
@@ -1455,16 +1467,19 @@ function StreakInfoModal({ streak, supabase, userId, accent, onClose }) {
    ha un coaching reale e richiede una richiesta), disponibile a TUTTI i
    piani, con un tetto di 2 congelamenti ogni 30 giorni per non svuotare di
    significato lo streak. */
-function StreakFreezeButton({ supabase, userId, accent }) {
-  const [status, setStatus] = useState(null); // { remaining, usedToday }
+function StreakFreezeButton({ supabase, userId, accent, level }) {
+  const [status, setStatus] = useState(null); // { remaining, usedToday, cap }
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  // Ricompensa di livello (LEVEL_REWARDS, coachingData.js): il tetto cresce
+  // con il livello reale del cliente, non più fisso a 2 — vedi
+  // freezeBonusForLevel.
   const load = useCallback(() => {
-    fetchStreakFreezeStatus(supabase, userId)
+    fetchStreakFreezeStatus(supabase, userId, level)
       .then(setStatus)
       .catch((err2) => console.error("PERFORM: errore lettura streak freeze", err2));
-  }, [supabase, userId]);
+  }, [supabase, userId, level]);
   useEffect(() => { load(); }, [load]);
 
   if (!status) return null;
@@ -1485,7 +1500,7 @@ function StreakFreezeButton({ supabase, userId, accent }) {
         style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)",
                  opacity: (status.usedToday || status.remaining === 0) ? 0.6 : 1, fontWeight: 600 }}>
         <span style={{ color: "var(--ink)" }}>🧊 {status.usedToday ? "Streak congelato oggi" : "Congela streak di oggi"}</span>
-        <span style={{ color: "var(--ink-2)" }}>{status.remaining}/2 rimasti (30 giorni)</span>
+        <span style={{ color: "var(--ink-2)" }}>{status.remaining}/{status.cap} rimasti (30 giorni)</span>
       </button>
       {err && <p className="text-xs mt-1" style={{ color: "#DC2626" }}>{err}</p>}
     </div>
@@ -3250,6 +3265,18 @@ export function HomeDashboard({
                        background: "linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0))" }} />
               </div>
             </div>
+            {/* Ricompensa di livello (richiesta esplicita, LEVEL_REWARDS):
+                anticipa COSA sblocca il prossimo grado, non solo QUANDO —
+                l'incentivo diventa concreto invece che un numero astratto. */}
+            {(() => {
+              const nextReward = LEVEL_REWARDS.find((r) => r.level > level);
+              if (!nextReward) return null;
+              return (
+                <p className="meta mt-2" style={{ fontSize: "0.72rem" }}>
+                  {nextReward.icon} Livello {nextReward.level}: {nextReward.title}
+                </p>
+              );
+            })()}
           </button>
           </div>
         </div>
@@ -3328,7 +3355,7 @@ export function HomeDashboard({
           <LevelRoadmapModal currentXp={isRealMode ? (realXpStreak?.xpTotal ?? 0) : xp} onClose={() => setLevelRoadmapOpen(false)} />
         )}
         {streakInfoOpen && (
-          <StreakInfoModal streak={streak} supabase={supabase} userId={userId} accent={accent}
+          <StreakInfoModal streak={streak} supabase={supabase} userId={userId} accent={accent} level={level}
                             onClose={() => setStreakInfoOpen(false)} />
         )}
 

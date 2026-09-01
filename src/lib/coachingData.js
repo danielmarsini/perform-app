@@ -2377,6 +2377,45 @@ export function xpToLevelInfo(xpTotal) {
   };
 }
 
+/* ---------------------------------------------------------------------------
+   GAMIFICATION: RICOMPENSE DI LIVELLO (richiesta esplicita) — "sistema di
+   ricompense di valore crescente sbloccabili automaticamente al
+   raggiungimento dei vari livelli, per incentivare l'aderenza al piano".
+   Due tipi di ricompensa, mai un contenuto A PAGAMENTO sbloccato gratis
+   (i piani restano una scelta separata, vedi PlansView — questo sistema
+   non deve MAI scavalcare il modello di business):
+     - "perk": un vantaggio funzionale REALE dentro l'app (qui: congelamenti
+       streak extra, vedi freezeBonusForLevel/fetchStreakFreezeStatus sotto)
+     - "badge": un traguardo motivazionale/di prestigio, nessun effetto
+       funzionale — il valore è simbolico (mostrato in Home/Profilo/roadmap)
+   Il livello qui è SEMPRE quello mostrato in UI (1-indicizzato, "Livello N"
+   — lo stesso +1 applicato in HomeDashboard su xpToLevelInfo().level), mai
+   il livello 0-indicizzato interno: chi legge questa lista vede esattamente
+   lo stesso numero che vede sulla barra XP.
+   ------------------------------------------------------------------------- */
+export const LEVEL_REWARDS = [
+  { level: 1, icon: "🎖️", kind: "badge", title: "Sei nel roster", description: "Ogni allenamento, pasto e check registrato ora conta verso i prossimi traguardi." },
+  { level: 6, icon: "🧊", kind: "perk", title: "+1 congelamento streak", description: "3 congelamenti ogni 30 giorni invece di 2: un margine in più per non spezzare la costanza." },
+  { level: 11, icon: "🧊", kind: "perk", title: "+1 congelamento streak", description: "4 congelamenti ogni 30 giorni." },
+  { level: 16, icon: "🏅", kind: "badge", title: "Livello 16 raggiunto", description: "Sei tra gli atleti più costanti della community PERFORM." },
+  { level: 21, icon: "🧊", kind: "perk", title: "+1 congelamento streak", description: "5 congelamenti ogni 30 giorni: il tetto massimo raggiungibile." },
+  { level: 26, icon: "👑", kind: "badge", title: "Livello 26 raggiunto", description: "Un traguardo che pochi raggiungono: la tua disciplina parla da sola." },
+  { level: 31, icon: "💠", kind: "badge", title: "Livello 31 raggiunto", description: "Costanza di lungo periodo, il fattore che conta davvero nei risultati reali." },
+  { level: 36, icon: "⭐", kind: "badge", title: "Livello 36 raggiunto", description: "Sei arrivato più lontano della stragrande maggioranza di chi inizia." },
+];
+
+// Vantaggio funzionale REALE dietro le ricompense "perk" sopra: congelamenti
+// streak extra oltre alla base (STREAK_FREEZE_CAP sotto) — +1 ogni tier di
+// livello raggiunto (6/11/16/21/26…), fino a un tetto (+4) per non svuotare
+// di significato lo streak anche ai livelli molto alti. Il numero qui e il
+// testo delle voci "perk" in LEVEL_REWARDS sopra DEVONO restare coerenti:
+// se cambi l'uno aggiorna anche l'altro.
+export function freezeBonusForLevel(displayLevel) {
+  const lvl = Math.max(1, Number(displayLevel) || 1);
+  const tier = Math.floor((lvl - 1) / LEVELS_PER_TIER);
+  return Math.min(4, tier);
+}
+
 // Una giornata "completa" ai fini dello streak: allenamento fatto SE era
 // previsto (nessuna scheda quel giorno = riposo, non penalizza), più almeno
 // un pasto registrato, più sonno e passi registrati. Le stesse 3 condizioni
@@ -2575,7 +2614,10 @@ const STREAK_FREEZE_WINDOW_DAYS = 30; // ...ogni N giorni
 // piani (SCHEMA_v58), non solo a chi ha un coach: a differenza di
 // pause_periods (vacanza concordata col coach), qui non serve alcuna
 // approvazione, solo un tetto per non svuotare di significato lo streak.
-export async function fetchStreakFreezeStatus(supabase, userId) {
+// displayLevel (opzionale, default 1 = nessun bonus): il tetto cresce con
+// il livello reale del cliente (freezeBonusForLevel/LEVEL_REWARDS sopra) —
+// una delle ricompense di livello richieste esplicitamente.
+export async function fetchStreakFreezeStatus(supabase, userId, displayLevel = 1) {
   const today = toLocalISODate();
   const fromDate = new Date(`${today}T00:00:00`);
   fromDate.setDate(fromDate.getDate() - (STREAK_FREEZE_WINDOW_DAYS - 1));
@@ -2586,9 +2628,11 @@ export async function fetchStreakFreezeStatus(supabase, userId) {
     .gte("date", toLocalISODate(fromDate));
   if (error) throw error;
   const dates = (data ?? []).map((r) => r.date);
+  const cap = STREAK_FREEZE_CAP + freezeBonusForLevel(displayLevel);
   return {
-    remaining: Math.max(0, STREAK_FREEZE_CAP - dates.length),
+    remaining: Math.max(0, cap - dates.length),
     usedToday: dates.includes(today),
+    cap,
   };
 }
 

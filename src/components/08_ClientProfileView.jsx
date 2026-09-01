@@ -39,7 +39,7 @@ import {
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video, Share2,
   ClipboardList,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, isRealCoachingPlan } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, LEVEL_REWARDS, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, isRealCoachingPlan } from "../lib/coachingData.js";
 import { GlobalStyle as AnamGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./AnamnesisShared.jsx";
 import { shareWrappedStory } from "../lib/wrappedShare.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
@@ -735,11 +735,18 @@ function computeTrophies({ level, streak, checkinsCount, recompGood }) {
   });
   // Nomi dei gradi (Neofita/Intermedio/...) rimossi su richiesta esplicita:
   // il trofeo ora cita il livello numerico raggiunto, non più il rango.
+  // Quando questo livello porta anche una ricompensa reale (LEVEL_REWARDS,
+  // coachingData.js — richiesta esplicita "sistema di ricompense di valore
+  // crescente"), il trofeo lo dice esplicitamente invece del generico
+  // "Raggiungi il livello X": la stessa Bacheca Trofei/celebrazione già
+  // esistente diventa il posto UNICO dove il cliente vede sia il traguardo
+  // sia il vantaggio reale che porta, mai due sistemi paralleli scollegati.
   LEVEL_TIERS.forEach((tier, i) => {
     const startLevel = i * LEVELS_PER_TIER + 1;
+    const reward = LEVEL_REWARDS.find((r) => r.level === startLevel);
     trophies.push({
-      id: `tier-${i}`, icon: tier.icon, label: `Livello ${startLevel}`,
-      requirement: `Raggiungi il livello ${startLevel}`,
+      id: `tier-${i}`, icon: reward?.icon || tier.icon, label: reward ? reward.title : `Livello ${startLevel}`,
+      requirement: reward ? `${reward.description} (livello ${startLevel})` : `Raggiungi il livello ${startLevel}`,
       unlocked: (level ?? 0) >= i * LEVELS_PER_TIER,
     });
   });
