@@ -1560,8 +1560,8 @@ export const STRIPE_PLANS = [
   { id: "free",        emoji: "🆓", price: 0,  billing: "none",      priceId: null },
   { id: "performance", emoji: "⚡", price: 5,  billing: "recurring", priceId: "price_1U53wlFifatHRNX6tkJAV4ni", annualPriceId: null },
   { id: "scheda",      emoji: "🏋️", price: 40, billing: "one_time",  priceId: "price_1U53w5FifatHRNX6KFotJfnc" },
-  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_1U53vHFifatHRNX6O2Y6fT5n", annualPriceId: null },
-  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_1U53tlFifatHRNX6fVb5k9HC", annualPriceId: null, highlight: true, recommended: true },
+  { id: "training",    emoji: "🔬", price: 50, billing: "recurring", priceId: "price_1U53vHFifatHRNX6O2Y6fT5n", annualPriceId: "price_1UAoZnFifatHRNX6777y3hZJ" },
+  { id: "full",        emoji: "👑", price: 60, billing: "recurring", priceId: "price_1U53tlFifatHRNX6fVb5k9HC", annualPriceId: "price_1UAofUFifatHRNX6rErpH9cY", highlight: true, recommended: true },
 ];
 
 /* Piani annuali: 2 mesi gratis rispetto al mensile (~17% di sconto), scelta
