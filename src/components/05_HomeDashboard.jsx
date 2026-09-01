@@ -1999,7 +1999,7 @@ function WorkoutFeedbackCard({ motivation, fatigue, onMotivationChange, onFatigu
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
    parametri biometrici storici su Supabase (legati all'ID utente) e sblocca
    di nuovo la navigazione della Home. */
-export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose, onSkip, fullCheckDue }) {
+export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose, onSkip }) {
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
   const [thigh, setThigh] = useState("");
@@ -2020,11 +2020,9 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
   // richiedeva TUTTI gli 8 campi anche qui, ed è il motivo per cui il
   // pulsante sembrava "non funzionare": restava disabilitato in silenzio.
   const isFreeMode = !!onClose;
-  // Circonferenze e foto: sempre disponibili nel check libero dal Profilo
-  // (il cliente le aggiunge quando vuole monitorarle), nel check periodico
-  // solo quando è passato un mese dall'ultima volta (fullCheckDue) — vedi
-  // gating in HomeDashboard.
-  const showFullSection = isFreeMode || fullCheckDue;
+  // Circonferenze e foto: sempre disponibili, in entrambi i flussi — nessuna
+  // cadenza mensile che le blocchi, l'utente le registra quando vuole.
+  const showFullSection = true;
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose, isFreeMode);
 
@@ -2613,19 +2611,14 @@ export function HomeDashboard({
      (access.pro), MAI per free/Premium, che registrano i propri
      dati quando vogliono dal Profilo ("Registra un check", sempre
      disponibile a tutti).
-     Circonferenze e foto sono state spostate su cadenza MENSILE (non più
-     settimanale): tenerne traccia ogni settimana per ogni cliente avrebbe
-     riempito il database di misure/foto che si leggono solo in un trend di
-     lungo periodo, mentre peso e sensazioni cambiano davvero settimana per
-     settimana. fullCheckDue segnala quando sono passati 30+ giorni dall'ultima
-     volta che sono state registrate (o mai, per un cliente nuovo): solo in
-     quel caso il pop-up mostra anche quella sezione. */
+     Circonferenze e foto: nessuna cadenza mensile che le blocchi — il
+     WeeklyCheckModal le mostra sempre, in entrambi i flussi (richiesta
+     esplicita: "non mi fa inserire foto quando mi pare"). */
   const [showWeeklyCheck, setShowWeeklyCheck] = useState(false);
   const [weeklyCheckDone, setWeeklyCheckDone] = useState(false);
-  const [fullCheckDue, setFullCheckDue] = useState(false);
   useEffect(() => {
     if (weeklyCheckDone || !access.pro) return undefined;
-    if (!(supabase && userId)) { setShowWeeklyCheck(true); setFullCheckDue(true); return undefined; } // anteprima demo
+    if (!(supabase && userId)) { setShowWeeklyCheck(true); return undefined; } // anteprima demo
     let cancelled = false;
     const mondayIso = toLocalISODate(mondayOfLocal());
     fetchCheckins(supabase, userId, 60)
@@ -2634,12 +2627,7 @@ export function HomeDashboard({
         const thisWeek = rows.filter((r) => r.date >= mondayIso);
         const weeklyAlreadyDone = thisWeek.some((r) =>
           r.weight != null && r.pain != null && r.stress != null && r.digestion != null && r.sleep_quality != null);
-        if (weeklyAlreadyDone) { setShowWeeklyCheck(false); return; }
-        const fullRows = rows.filter((r) => r.has_photos || r.waist != null || r.thigh != null || r.arm != null);
-        const lastFull = fullRows[fullRows.length - 1]; // fetchCheckins: dal più vecchio al più recente
-        const daysSinceFull = lastFull ? Math.floor((Date.now() - new Date(`${lastFull.date}T00:00:00`)) / 86400000) : Infinity;
-        setFullCheckDue(daysSinceFull >= 30);
-        setShowWeeklyCheck(true);
+        setShowWeeklyCheck(!weeklyAlreadyDone);
       })
       .catch((err) => console.error("PERFORM: errore verifica check settimanale già fatto", err));
     return () => { cancelled = true; };
@@ -3162,7 +3150,7 @@ export function HomeDashboard({
     return (
       <WeeklyCheckModal
         accent={accent} accentText={accentText} accentSoft={accentSoft} gender={profile.gender}
-        supabase={supabase} userId={userId} fullCheckDue={fullCheckDue}
+        supabase={supabase} userId={userId}
         onSkip={() => setShowWeeklyCheck(false)}
         onSubmit={(data) => {
           onCoachSync && onCoachSync({ type: "weekly-check", ...data });
