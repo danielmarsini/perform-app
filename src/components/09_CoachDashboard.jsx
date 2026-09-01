@@ -1786,6 +1786,19 @@ function WeekWorkoutEditor({ week, onChange, client }) {
     Boolean(ex.name?.trim()) && ex.sets !== "" && ex.sets != null
     && String(ex.reps ?? "").trim() !== "" && ex.rest !== "" && ex.rest != null
     && ex.rirTarget !== "" && ex.rirTarget != null && Boolean(effMuscleTargetOf(ex));
+  // BUG PRESO (segnalato): la riga compatta scriveva "RIR {valore}" per
+  // intero — un dato più vecchio salvato prima che RIR_TARGET_OPTIONS
+  // diventasse solo numerico ("0" = cedimento, vedi sopra) poteva ancora
+  // portare testo libero tipo "A cedimento", che nella riga compatta
+  // occupava troppo spazio. Qui si normalizza sempre a un numero (qualunque
+  // variante testuale con "cediment*" diventa "0", come da terminologia
+  // standard già in uso) e si scrive appiccicato "RIR0"/"RIR2"/… senza
+  // spazio, per restare compatto in ogni caso.
+  const formatRirBadge = (rirTarget) => {
+    const v = String(rirTarget ?? "").trim();
+    if (!v) return "RIR—";
+    return /cediment/i.test(v) ? "RIR0" : `RIR${v}`;
+  };
   useEffect(() => {
     if (!day) return;
     const toCollapse = [];
@@ -2089,7 +2102,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                     <button type="button" onClick={() => toggleCollapsed(ex.id)} className="flex-1 min-w-0 flex items-center gap-2 text-left">
                       <span className="text-sm font-medium truncate">{ex.name}</span>
                       <span className="c-muted text-[11px] font-data shrink-0 whitespace-nowrap">
-                        {ex.sets}×{ex.reps} · RIR {ex.rirTarget} · {ex.rest}s
+                        {ex.sets}×{ex.reps} · {formatRirBadge(ex.rirTarget)} · {ex.rest}s
                       </span>
                       <ChevronDown size={14} className="shrink-0 ml-auto" style={{ color: "var(--ink-tertiary)" }} />
                     </button>
@@ -2123,11 +2136,14 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                   <button onClick={() => toggleCustom(i)} className="c-ghost px-2.5 py-1.5 rounded-md text-[11px] font-data uppercase shrink-0" title="Esercizio personalizzato">
                     {ex.custom ? "↩ Libreria" : "✏️ Libero"}
                   </button>
-                  {isExerciseComplete(ex) && (
-                    <button onClick={() => toggleCollapsed(ex.id)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Comprimi" title="Comprimi">
-                      <ChevronUp size={15} />
-                    </button>
-                  )}
+                  {/* BUG PRESO (segnalato): il pulsante "comprimi" era nascosto
+                      finché l'esercizio non era "completo" (nome+serie+rep+
+                      recupero+RIR+distretto) — ma il coach deve poter
+                      richiudere una card aperta in QUALUNQUE momento, anche a
+                      metà compilazione, non solo a lavoro finito. */}
+                  <button onClick={() => toggleCollapsed(ex.id)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Comprimi" title="Comprimi">
+                    <ChevronUp size={15} />
+                  </button>
                   <button onClick={() => removeEx(i)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">

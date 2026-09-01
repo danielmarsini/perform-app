@@ -120,7 +120,16 @@ export function useDragReorder({ length, onReorder }) {
   const rowStyle = useCallback((i) => {
     if (dragIndex === null) return undefined;
     if (i === dragIndex) {
-      return { transform: `translateY(${dragOffset}px)`, position: "relative", zIndex: 10, boxShadow: "0 10px 24px rgba(0,0,0,0.18)", transition: "none" };
+      // BUG PRESO (segnalato): "durante il trascinamento non si legge il
+      // nome esercizio" — la riga trascinata si sollevava (zIndex/boxShadow)
+      // ma restava sullo sfondo/colore ereditato dal tema, che sopra le
+      // altre righe che le scorrono sotto risultava a basso contrasto (in
+      // certi temi/contenuti quasi illeggibile). Sfondo nero pieno + testo
+      // bianco forzati SOLO mentre è sollevata — stesso identico chip
+      // "#111111/#FFFFFF" già usato altrove nell'app (es. i pulsanti giorno
+      // selezionati in WEEK_DAYS) — garantisce leggibilità immediata a
+      // prescindere dal tema o da cosa le scorre sotto.
+      return { transform: `translateY(${dragOffset}px)`, position: "relative", zIndex: 10, boxShadow: "0 10px 24px rgba(0,0,0,0.35)", transition: "none", backgroundColor: "#111111", color: "#FFFFFF" };
     }
     if (overIndex !== null && overIndex !== dragIndex) {
       const lo = Math.min(dragIndex, overIndex);

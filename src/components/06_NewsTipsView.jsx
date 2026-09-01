@@ -30,6 +30,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Heart, Bookmark, Newspaper, ArrowLeft } from "lucide-react";
+import Portal from "./Portal.jsx";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel, publishTeamPost, deleteTeamPost, notifyTeamPost, markTeamSeen, translateNewsTipsItem } from "../lib/coachingData.js";
 
@@ -503,7 +504,20 @@ function ArticleReader({ item, channel, gender, accent, liked, likeCount, saved,
   useSwipeDownClose(headerRef, onClose);
   useEdgeSwipeBack(onClose, true);
 
+  // BUG PRESO (segnalato): "articoli lunghi non scorrono fino in fondo,
+  // neanche con la rotella del mouse su PC" — questo overlay (position:fixed,
+  // inset:0) viveva annidato dentro il wrapper della tab attiva in
+  // AppShell.jsx, che porta la classe "spring-in" (animation su transform +
+  // will-change:transform). Un antenato con will-change:transform diventa il
+  // "contenitore" per i figli position:fixed al posto del viewport (vedi
+  // Portal.jsx) — l'overlay si ritrovava alto quanto l'INTERO feed sotto
+  // (potenzialmente migliaia di px), non quanto lo schermo: lo scroll interno
+  // (.expand-scroll) sembrava non arrivare mai in fondo perché il vero
+  // scroll da fare era quello della pagina, non quello del suo contenitore.
+  // Portal monta fuori da quell'antenato (dentro .app-root), esattamente
+  // come già fa ogni altro overlay a tutto schermo dell'app (08_ClientProfileView.jsx).
   return (
+    <Portal>
     <div className="expand-overlay" style={{ zIndex, paddingTop: "env(safe-area-inset-top)" }}>
       <div className="expand-sheet spring-in">
         <div className="expand-scroll">
@@ -563,6 +577,7 @@ function ArticleReader({ item, channel, gender, accent, liked, likeCount, saved,
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 
@@ -573,6 +588,7 @@ function ArticleReader({ item, channel, gender, accent, liked, likeCount, saved,
 function VaultOverlay({ vault, gender, accent, onOpenItem, onRemove, onClose }) {
   const entries = Object.values(vault).sort((a, b) => b.savedAt - a.savedAt);
   return (
+    <Portal>
     <div className="expand-overlay" onClick={onClose}>
       <div className="expand-sheet spring-in" onClick={(e) => e.stopPropagation()}>
         <div className="expand-scroll">
@@ -612,6 +628,7 @@ function VaultOverlay({ vault, gender, accent, onOpenItem, onRemove, onClose }) 
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 
