@@ -9,7 +9,7 @@ import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
-import { VolumeBar, SUPP_WIKI, SUPP_MOMENTS, matchSuppMoment } from "./05_HomeDashboard.jsx";
+import { VolumeBar, VolumeDrillModal, SUPP_WIKI, SUPP_MOMENTS, matchSuppMoment } from "./05_HomeDashboard.jsx";
 // Spostati in un file a sé (AnamnesisShared.jsx) insieme ad AnamAreaSection/
 // ANAM_AREAS/ANAM_QUESTIONS: 11_OnboardingFlow.jsx li importava PRIMA
 // direttamente da qui, un import statico che costringeva Vite a includere
@@ -88,7 +88,7 @@ import {
   fetchWorkoutTemplates, saveWorkoutTemplate, deleteWorkoutTemplate, applyWorkoutSplitToDateRange, previewWorkoutSplitOverwrite, fetchWorkoutProgrammedDates,
   xpToLevelInfo, whitelistClient, clearWhitelist, unmanageClient,
   MUSCLES, DEFAULT_EXERCISE_LIB, DB_MUSCLE_TO_CHART, EXERCISE_LIB_MUSCLE_TO_DB, resolveMuscleTarget, resolveSynergists,
-  fetchExerciseLibrary, saveExerciseGuide, computeVolume,
+  fetchExerciseLibrary, saveExerciseGuide, computeVolume, computeVolumeContributions,
   updateExerciseLibraryEntry, deleteExerciseFromLibrary,
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage,
@@ -242,13 +242,27 @@ function simulateAnamnesis(client) {
    cliente visivamente colori scritte e graficamente". Prima questo file
    disegnava un istogramma SVG bianco/liste a parte, visivamente scollegato
    dalla pillola oro/rosa che il cliente vede davvero. */
-function VolumeBarChart({ volume, gender }) {
+// dayList/lib (richiesta esplicita, drill-down): la stessa fonte dati già
+// usata per calcolare "volume" qui sopra — mai un secondo calcolo, solo
+// filtrato al distretto aperto quando il coach tocca una barra.
+function VolumeBarChart({ volume, gender, dayList, lib }) {
   const accent = gender === "F" ? "#E5C1CD" : "#C5A059";
   const involved = MUSCLES.filter((m) => volume[m].direct + volume[m].indirect > 0);
+  const [drillMuscle, setDrillMuscle] = useState(null);
+  const drillContributions = useMemo(
+    () => (drillMuscle ? computeVolumeContributions(dayList, lib, drillMuscle) : []),
+    [drillMuscle, dayList, lib]
+  );
   if (involved.length === 0) return <p className="c-muted text-sm">Nessun esercizio ancora inserito questa settimana.</p>;
   return (
     <div className="space-y-2.5">
-      {involved.map((m) => <VolumeBar key={m} muscle={m} direct={volume[m].direct} indirect={volume[m].indirect} accent={accent} />)}
+      {involved.map((m) => (
+        <VolumeBar key={m} muscle={m} direct={volume[m].direct} indirect={volume[m].indirect} accent={accent}
+                   onClick={() => setDrillMuscle(m)} />
+      ))}
+      {drillMuscle && (
+        <VolumeDrillModal muscle={drillMuscle} contributions={drillContributions} accent={accent} onClose={() => setDrillMuscle(null)} />
+      )}
     </div>
   );
 }
@@ -2232,7 +2246,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
         <p className="c-label mb-1">Matrice dei Volumi</p>
         <h3 className="c-heading font-display font-bold mb-1" style={{ fontSize: "1.15rem" }}>Stimolo settimanale reale</h3>
         <p className="c-muted text-xs mb-4">Serie dirette al 100% (barra piena) · serie sui distretti sinergici al 50% (barra chiara).</p>
-        <VolumeBarChart volume={volume} gender={client.gender} />
+        <VolumeBarChart volume={volume} gender={client.gender} dayList={week.workout} lib={exerciseLib} />
         {unmapped.length > 0 && (
           <p className="font-data text-[10px] mt-3" style={{ color: "#92400E" }}>
             {unmapped.length === 1 ? "Esercizio personalizzato escluso" : "Esercizi personalizzati esclusi"} dal grafico volumi (nome non in libreria): {unmapped.join(", ")}
