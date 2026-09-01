@@ -39,7 +39,7 @@ import {
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video, Share2,
   ClipboardList,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, LEVEL_REWARDS, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, isRealCoachingPlan } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, LEVEL_REWARDS, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, isRealCoachingPlan, fetchCoachMarketingPublic, computeSpotsRemaining, isPromoActive } from "../lib/coachingData.js";
 import { GlobalStyle as AnamGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./AnamnesisShared.jsx";
 import { shareWrappedStory } from "../lib/wrappedShare.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
@@ -1599,6 +1599,65 @@ export function BillingCycleToggle({ cycle, onChange, accent, t }) {
   );
 }
 
+/* Marketing & Scarsità (richiesta esplicita): "banner dinamici con offerte
+   a scadenza, un contatore di posti limitati rimasti per il coaching
+   attivo". Letto da coach_marketing_public (SCHEMA_v89) — MAI un dato
+   finto: se il coach non ha impostato un tetto o un'offerta, questo
+   componente non mostra nulla (return null), piuttosto che inventare una
+   scarsità o un countdown che non esistono davvero. */
+function PromoCountdown({ expiresAt, accent }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000); // un tick al minuto: un countdown al secondo sarebbe eccessivo per un banner
+    return () => clearInterval(id);
+  }, []);
+  const msLeft = new Date(expiresAt).getTime() - now;
+  if (msLeft <= 0) return null;
+  const days = Math.floor(msLeft / 86400000);
+  const hours = Math.floor((msLeft % 86400000) / 3600000);
+  const minutes = Math.floor((msLeft % 3600000) / 60000);
+  const label = days > 0 ? `${days}g ${hours}h rimaste` : hours > 0 ? `${hours}h ${minutes}min rimasti` : `${minutes} minuti rimasti`;
+  return <p className="font-data text-[11px] font-bold mt-1.5" style={{ color: accent }}>⏳ {label}</p>;
+}
+
+export function ScarcityMarketingBanner({ supabase, accent }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchCoachMarketingPublic(supabase)
+      .then((d) => { if (!cancelled) setData(d); })
+      .catch((err) => console.error("PERFORM: errore lettura marketing pubblico", err));
+    return () => { cancelled = true; };
+  }, [supabase]);
+
+  if (!data) return null;
+  const spotsRemaining = computeSpotsRemaining(data.maxActiveClients, data.activeCoachingCount);
+  const promoLive = isPromoActive(data.promoExpiresAt);
+  if (spotsRemaining == null && !promoLive) return null;
+
+  return (
+    <div className="mb-4 space-y-2">
+      {promoLive && (
+        <div className="rounded-2xl px-4 py-3.5" style={{ backgroundColor: `${accent}1A`, border: `1px solid ${accent}55` }}>
+          {data.promoTitle && <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 700 }}>🔥 {data.promoTitle}</p>}
+          {data.promoDescription && <p className="text-xs mt-0.5" style={{ color: "var(--ink-2)", lineHeight: 1.5 }}>{data.promoDescription}</p>}
+          <PromoCountdown expiresAt={data.promoExpiresAt} accent={accent} />
+        </div>
+      )}
+      {spotsRemaining != null && (
+        <div className="rounded-2xl px-4 py-3 flex items-center gap-2.5" style={{ backgroundColor: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.25)" }}>
+          <span style={{ fontSize: "1.1rem" }} aria-hidden="true">⚠️</span>
+          <p className="text-xs" style={{ color: "#B91C1C", fontWeight: 600 }}>
+            {spotsRemaining === 0
+              ? "Nessun posto disponibile per il coaching attivo al momento."
+              : `Solo ${spotsRemaining} post${spotsRemaining === 1 ? "o" : "i"} rimast${spotsRemaining === 1 ? "o" : "i"} per il coaching attivo.`}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Toggle({ on, onClick, label, desc }) {
   return (
     <div className="inner flex items-center justify-between gap-3 px-4 py-3.5 mb-2.5">
@@ -2149,6 +2208,7 @@ export function SettingsDrawer({
 
               <ReferralCodeCard supabase={supabase} userId={userId} />
 
+              <ScarcityMarketingBanner supabase={supabase} accent={accent} />
               <p className="label mb-3">{t.plan.chooseTitle}</p>
               {checkoutError && (
                 <p className="text-xs mb-3 rounded-lg px-3 py-2" style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626", fontWeight: 500 }}>
