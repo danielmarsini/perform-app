@@ -3,45 +3,24 @@
    Il Multi-Feed Biologico Algoritmico · Coach Daniel Marsini
 
    Tre canali indipendenti, sola lettura:
-     🔬 NEWS          — scoperte scientifiche, fonte PubMed, vita 48h, chat PERFORM AI (Pro)
-     💡 TIPS          — pillole pratiche di bio-hacking, vita 48h, chat PERFORM AI (Pro)
-     📢 AVVISI TEAM   — bacheca umana del coach: NESSUNA scadenza, nessun countdown,
-                        nessuna chat AI (a prescindere dal piano). Firma corsiva del coach.
+     🔬 NEWS          — scoperte scientifiche, fonte PubMed, vita 48h
+     💡 TIPS          — pillole pratiche di bio-hacking, vita 48h
+     📢 AVVISI TEAM   — bacheca umana del coach: NESSUNA scadenza, nessun countdown.
+                        Firma corsiva del coach.
 
-   Novità di questa rifinitura — BLINDATURA COMMERCIALE DELLA CHAT AI:
-     · La chat "💬 Fai una domanda a PERFORM AI su questo studio" ora dipende
-       da 'userPlan', letto da Supabase con lo stesso pattern già usato per
-       genere e scadenza (useUserPlan, fallback locale).
-     · userPlan === "free"  → la chat resta visibile ma sfocata (Glassmorphism),
-       input disabilitato, e sopra compare un lucchetto satinato con l'invito
-       ad attivare il Premium (€5/mese).
-     · userPlan !== "free" (Premium o superiore) → chat interattiva
-       identica a prima, nessun blocco.
-     · Il blocco si applica SOLO dove la chat esisterebbe comunque (News/Tips):
-       sotto Avvisi Team non c'è paywall perché non c'è proprio chat, a
-       prescindere dal piano — non ha senso vendere l'accesso a qualcosa che
-       il canale non offre a nessuno.
-
-   IMPORTANTE — SICUREZZA DELLA CHAT "PERFORM AI":
-   <PerformAIChat> accetta una prop `endpoint`. Qui punta direttamente
-   a api.anthropic.com perché è l'unico contesto (l'ambiente artifact di
-   Claude.ai) in cui la chiamata funziona senza chiave API. In produzione
-   NON va mai chiamato api.anthropic.com dal client: crea una Supabase
-   Edge Function (es. "ask-perform-ai") che tiene la ANTHROPIC_API_KEY
-   lato server — e lì, server-side, verifica ANCHE il piano dell'utente
-   prima di inoltrare la richiesta a Claude. Il blocco lato client qui
-   sotto è UX, non sicurezza: un utente Free smaliziato potrebbe in teoria
-   chiamare l'endpoint direttamente bypassando l'interfaccia, quindi il
-   controllo reale sull'accesso Pro deve vivere nella Edge Function, non
-   solo in questo componente.
+   BUG PRESO (segnalato): la chat "Fai una domanda a PERFORM AI" nella
+   lettura profonda era rimasta come funzionalità morta — la feature
+   "Perform AI" è già stata rimossa altrove nell'app (vedi ExerciseCard,
+   05_HomeDashboard.jsx). Rimossa anche qui: nessun tasto "chiedi a
+   Perform AI" residuo.
 
    Contenuto:
      1. Utilità .............. tempo, canali, scadenza 48h, link PubMed, gradiente di genere
-     2. useUserGender / useUserPlan / useNewsFeed .... dati (Supabase con fallback locale)
+     2. useUserGender / useNewsFeed .... dati (Supabase con fallback locale)
      3. ChannelTabs / VaultButton / SourceLink / GradientTitle / NewReportBadge / ExpiryCountdown
      4. LikeButton / SaveButton / CoachSignature
      5. FeedCard .............. teaser in feed, testo puro, cliccabile
-     6. ArticleReader / PerformAIChat / AIChatPaywall .. lettura profonda + chat con paywall
+     6. ArticleReader ......... lettura profonda
      7. VaultOverlay .......... la Cassaforte Report Salvati (permanente, fuori scadenza)
      8. FeedColumn ............ scorrimento infinito per canale
      9. NewsTipsView .......... contenitore principale
@@ -50,7 +29,7 @@
    ========================================================================== */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Heart, Bookmark, Lock, Newspaper, ArrowLeft } from "lucide-react";
+import { Heart, Bookmark, Newspaper, ArrowLeft } from "lucide-react";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { fetchSavedTips, saveTip, unsaveTip, freshRealtimeChannel, publishTeamPost, deleteTeamPost, notifyTeamPost, markTeamSeen, translateNewsTipsItem } from "../lib/coachingData.js";
 
@@ -73,13 +52,6 @@ export const CHANNELS = {
   tips: { id: "tips", label: "Tips", emoji: "💡" },
   team: { id: "team", label: "Avvisi Team", emoji: "📢" },
 };
-
-/* Canali su cui la chat di approfondimento ha senso: rubriche automatiche
-   basate su evidenza, non comunicazioni personali del coach. */
-const AI_CHAT_CHANNELS = new Set(["news", "tips"]);
-
-/* Piani con accesso alla chat PERFORM AI: tutto tranne "free". */
-export function hasAIAccess(plan) { return plan !== "free"; }
 
 /* Vita massima di un contenuto "temporaneo": 48 ore. Gli Avvisi Team sono
    l'unico canale escluso — restano fissi e storici per costruzione. */
@@ -146,23 +118,6 @@ function useUserGender({ supabase, meId, fallback = "M" }) {
     return () => { alive = false; };
   }, [supabase, meId, fallback]);
   return gender;
-}
-
-/* Il piano determina l'accesso alla chat AI. Fallback deliberatamente
-   "free": in assenza di un dato certo, il paywall resta chiuso — è la
-   direzione più sicura per un blocco commerciale. */
-function useUserPlan({ supabase, meId, fallback = "free" }) {
-  const [plan, setPlan] = useState(fallback);
-  useEffect(() => {
-    if (!supabase) { setPlan(fallback); return; }
-    let alive = true;
-    (async () => {
-      const { data } = await supabase.from("client_profiles").select("plan").eq("user_id", meId).single();
-      if (alive && data?.plan) setPlan(data.plan);
-    })();
-    return () => { alive = false; };
-  }, [supabase, meId, fallback]);
-  return plan;
 }
 
 function useNewsFeed({ supabase, meId, channel, seedPool, pageSize = 3, lang = "it" }) {
@@ -530,149 +485,11 @@ function EndOfFeed() {
 }
 
 /* ============================================================================
-   6 · LETTURA PROFONDA — ESPANSIONE A TUTTO SCHERMO + CHAT PERFORM AI (con paywall)
+   6 · LETTURA PROFONDA — ESPANSIONE A TUTTO SCHERMO
    ========================================================================== */
 
-/* Identità visiva propria di PERFORM AI — stesso simbolo pulse/battito del
-   logo dell'app (public/favicon.svg), oro su nero: anche se sotto gira
-   Anthropic, in chat non deve mai sembrare un widget generico "powered by
-   Claude", ma un prodotto PERFORM con la sua faccia. */
-function PerformAIAvatar({ size = 22 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 512 512" style={{ flexShrink: 0 }} aria-hidden="true">
-      <rect width="512" height="512" rx="112" fill="#111111" />
-      <polyline points="118 262 190 262 222 156 290 356 330 262 394 262"
-        fill="none" stroke="#C5A059" strokeWidth="30" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function PerformAIChat({ item, accent, supabase }) {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const threadRef = useRef(null);
-
-  useEffect(() => {
-    threadRef.current?.scrollTo?.({ top: threadRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, loading]);
-
-  const ask = async () => {
-    const question = input.trim();
-    if (!question || loading || !supabase) return;
-    setInput("");
-    setError(false);
-    const nextMessages = [...messages, { role: "user", text: question }];
-    setMessages(nextMessages);
-    setLoading(true);
-    try {
-      const context = `Titolo: ${item.displayTitle}\nSintesi: ${item.displayBody}\nApprofondimento: ${(item.displayBodyExtended || []).join(" ")}`;
-      // Il system prompt e il controllo del piano vivono SOLO server-side
-      // (Edge Function ask-perform-ai) — qui si manda solo il contesto
-      // dell'articolo e la cronologia, mai la chiave Anthropic né un
-      // system prompt modificabile dal client.
-      const { data, error: fnError } = await supabase.functions.invoke("ask-perform-ai", {
-        body: {
-          context,
-          question,
-          history: messages.map((m) => ({ role: m.role, text: m.text })),
-        },
-      });
-      if (fnError) throw fnError;
-      const text = (data?.text || "").trim();
-      setMessages((m) => [...m, { role: "assistant", text: text || "Non sono riuscito a elaborare una risposta. Riprova tra poco." }]);
-    } catch (e) {
-      console.error("PERFORM: errore chat PERFORM AI", e);
-      // La Edge Function distingue casi reali (limite mensile raggiunto,
-      // domanda troppo lunga) da un errore generico — recupero il messaggio
-      // vero dal corpo della risposta invece di mostrare sempre lo stesso
-      // "riprova tra poco" anche quando il motivo è chiaro e diverso.
-      let friendly = "Connessione non disponibile in questo momento. Riprova tra poco.";
-      try {
-        const body = await e?.context?.json?.();
-        if (body?.error) friendly = body.error;
-      } catch { /* mantieni il messaggio generico */ }
-      setError(true);
-      setMessages((m) => [...m, { role: "assistant", text: friendly }]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="ai-chat" onClick={(e) => e.stopPropagation()}>
-      <p className="ai-chat-label"><PerformAIAvatar size={16} /> Fai una domanda a PERFORM AI su questo studio</p>
-
-      {messages.length > 0 && (
-        <div className="ai-chat-thread" ref={threadRef}>
-          {messages.map((m, i) => (
-            <div key={i} className={`ai-bubble ${m.role}`} style={m.role === "user" ? { "--accent": accent } : undefined}>
-              {m.role === "assistant" && <PerformAIAvatar size={18} />}
-              <span>{m.text}</span>
-            </div>
-          ))}
-          {loading && (
-            <div className="ai-bubble assistant ai-typing" aria-label="PERFORM AI sta scrivendo">
-              <PerformAIAvatar size={18} />
-              <span /><span /><span />
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="ai-chat-input-row">
-        <input value={input} onChange={(e) => setInput(e.target.value)}
-               onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
-               placeholder="Es. perché la soglia di leucina non dipende dal peso corporeo?"
-               aria-label="Fai una domanda a PERFORM AI" />
-        <button onClick={ask} disabled={loading || !input.trim()} style={{ "--accent": accent }} aria-label="Invia domanda">
-          Invia
-        </button>
-      </div>
-      {error && <p className="ai-chat-error">Impossibile contattare PERFORM AI in questo momento.</p>}
-    </div>
-  );
-}
-
-/* Paywall: la chat resta visivamente presente (sfocata, non interattiva)
-   dietro un lucchetto satinato — non sparisce, si intravede quello che
-   si sta perdendo. Coerente con l'estetica Glassmorphism del resto del modulo. */
-function AIChatPaywall({ accent }) {
-  return (
-    <div className="ai-chat-locked" onClick={(e) => e.stopPropagation()}>
-      <p className="ai-chat-label" style={{ opacity: 0.5 }}>💬 Fai una domanda a PERFORM AI su questo studio</p>
-
-      <div className="ai-chat-locked-ghost" aria-hidden="true">
-        <div className="ai-bubble assistant" style={{ maxWidth: "72%" }}>
-          La sintesi proteica muscolare resta elevata per diverse ore dopo l'allenamento…
-        </div>
-        <div className="ai-bubble user" style={{ "--accent": accent, alignSelf: "flex-end", maxWidth: "58%" }}>
-          E se mangio solo due pasti al giorno?
-        </div>
-        <div className="ai-chat-input-row">
-          <input disabled placeholder="Fai una domanda a PERFORM AI…" />
-          <button disabled style={{ "--accent": accent }}>Invia</button>
-        </div>
-      </div>
-
-      <div className="ai-chat-locked-overlay">
-        <div className="ai-chat-lock-icon" style={{ "--accent": accent }}>
-          <Lock size={20} strokeWidth={1.8} />
-        </div>
-        <p className="ai-chat-locked-text">
-          🔒 Chat Assistente AI bloccata. Passa al <strong>Premium (€5/mese)</strong> per sbloccare l'Intelligenza
-          Artificiale, fare domande profonde a PERFORM AI e sviscerare la scienza di ogni studio senza fake news.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, saved, onToggleLike, onToggleSave, onClose, supabase, zIndex = 100 }) {
-  const showChat = AI_CHAT_CHANNELS.has(channel);
+function ArticleReader({ item, channel, gender, accent, liked, likeCount, saved, onToggleLike, onToggleSave, onClose, zIndex = 100 }) {
   const expires = channelExpires(channel);
-  const aiUnlocked = hasAIAccess(plan);
 
   // BUG PRESO: useSwipeDownClose era attaccato a tutto l'overlay (contenuto
   // scrollabile incluso) — ogni trascinamento verticale dentro il testo
@@ -712,19 +529,23 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
             {item.displayTitle}
           </GradientTitle>
 
-          {/* BUG PRESO: la card qui usava .card (var(--surface)) — in tema
-              chiaro var(--surface) e var(--page), lo sfondo della pagina
-              intera dietro di lei, sono LO STESSO bianco: la card era
-              invisibile, si vedeva solo il rettangolo netto dello schermo
-              (i "bordi rettangolari" segnalati). Nero esplicito e scritta
-              chiara, stesso trattamento "editoriale" già usato altrove
-              nell'app per i contenuti in risalto (es. le pillole selezionate
-              in Libreria Split, 09_CoachDashboard.jsx) — sempre nero, non
-              legato al tema chiaro/scuro, così la card si distingue sempre
-              davvero dalla pagina dietro. */}
-          <div className="expand-body" style={{ backgroundColor: "#111111", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "1.25rem", padding: "1.5rem" }}>
+          {/* BUG PRESO (segnalato più volte): un primo giro aveva provato
+              .card (var(--surface)) — in tema chiaro var(--surface) e
+              var(--page), lo sfondo della pagina dietro, sono LO STESSO
+              bianco: la card risultava invisibile, si vedeva solo il
+              rettangolo netto dello schermo. Il giro successivo aveva
+              risolto forzando un nero fisso (#111111) — visibile, ma un
+              blocco piatto e scuro estraneo al resto dell'app, mai
+              davvero "coerente col design system" come richiesto.
+              var(--surface-2) è la superficie che il resto dell'app usa
+              apposta per un contenuto "incassato" da distinguere dalla
+              pagina (.inner, 04_AppShell.jsx) — diversa da var(--page) in
+              ENTRAMBI i temi, quindi resta visibile senza dover uscire
+              dalla palette dell'app: stessi bordi smussati, stesso
+              bordo/ombra "var(--line)"/"var(--shadow)" di ogni altra card. */}
+          <div className="expand-body" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: "1.25rem", padding: "1.5rem", boxShadow: "var(--shadow)" }}>
             {(item.displayBodyExtended && item.displayBodyExtended.length ? item.displayBodyExtended : [item.displayBody]).map((p, i, arr) => (
-              <p key={i} style={{ fontSize: "1rem", fontWeight: 400, color: "#E4E4E7", lineHeight: 1.85, marginBottom: i === arr.length - 1 ? 0 : "1.1rem" }}>
+              <p key={i} style={{ fontSize: "1rem", fontWeight: 400, color: "var(--ink)", lineHeight: 1.85, marginBottom: i === arr.length - 1 ? 0 : "1.1rem" }}>
                 {p}
               </p>
             ))}
@@ -739,10 +560,6 @@ function ArticleReader({ item, channel, gender, accent, plan, liked, likeCount, 
             </div>
             {channel === "team" && <CoachSignature />}
           </div>
-
-          {showChat && (aiUnlocked
-            ? <PerformAIChat item={item} accent={accent} supabase={supabase} />
-            : <AIChatPaywall accent={accent} />)}
         </div>
       </div>
     </div>
@@ -907,7 +724,7 @@ function FeedColumn({ channel, feed, gender, accent, vault, onOpen, onToggleSave
    9 · CONTENITORE PRINCIPALE
    ========================================================================== */
 
-export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverride, isCoach = false, onTeamSeen, lang = "it" }) {
+export function NewsTipsView({ meId, supabase, seeds, genderOverride, isCoach = false, onTeamSeen, lang = "it" }) {
   const [active, setActive] = useState("news");
   const [expanded, setExpanded] = useState(null);          // { channel, id } | null
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -942,9 +759,6 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
   const fetchedGender = useUserGender({ supabase, meId, fallback: "M" });
   const gender = genderOverride || fetchedGender;
   const accent = genderAccent(gender);
-
-  const fetchedPlan = useUserPlan({ supabase, meId, fallback: "free" });
-  const plan = planOverride || fetchedPlan;
 
   // Azzera il pallino "novità" avvisi team appena il cliente apre quel tab
   // (SCHEMA_v81) — non per il coach, che pubblica ma non "riceve" l'avviso.
@@ -1043,14 +857,13 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
 
       {expandedItem && (
         <ArticleReader
-          item={expandedItem} channel={expanded.channel} gender={gender} accent={accent} plan={plan}
+          item={expandedItem} channel={expanded.channel} gender={gender} accent={accent}
           liked={!!feeds[expanded.channel].likedMine[expandedItem.id]}
           likeCount={expandedItem.likeCount ?? expandedItem.like_count ?? 0}
           saved={!!vault[expandedItem.id]}
           onToggleLike={() => feeds[expanded.channel].toggleLike(expandedItem.id)}
           onToggleSave={() => toggleSave(expandedItem, expanded.channel, !!feeds[expanded.channel].likedMine[expandedItem.id])}
           onClose={() => setExpanded(null)}
-          supabase={supabase}
         />
       )}
 
@@ -1065,14 +878,13 @@ export function NewsTipsView({ meId, supabase, seeds, genderOverride, planOverri
 
       {readingVaultId && vault[readingVaultId] && (
         <ArticleReader
-          item={vault[readingVaultId].item} channel={vault[readingVaultId].channel} gender={gender} accent={accent} plan={plan}
+          item={vault[readingVaultId].item} channel={vault[readingVaultId].channel} gender={gender} accent={accent}
           liked={!!vault[readingVaultId].item.likedMine}
           likeCount={vault[readingVaultId].item.likeCount ?? 0}
           saved={true}
           onToggleLike={() => toggleVaultLike(readingVaultId)}
           onToggleSave={() => { removeFromVault(readingVaultId); setReadingVaultId(null); }}
           onClose={() => setReadingVaultId(null)}
-          supabase={supabase}
           zIndex={110}
         />
       )}
@@ -1253,60 +1065,6 @@ export function NewsTipsViewStyles() {
       .vault-row:last-child { border-bottom: none; }
       .vault-remove { flex-shrink: 0; display: flex; align-items: center; justify-content: center; padding: 0.4rem; }
 
-      /* PERFORM AI — chat minimale coordinata (sbloccata) */
-      .ai-chat { margin-top: 2rem; padding-top: 1.6rem; border-top: 1px solid var(--line); }
-      .ai-chat-label { font-size: 0.82rem; font-weight: 600; color: var(--ink); margin-bottom: 0.9rem; display: flex; align-items: center; gap: 0.5rem; }
-      .ai-chat-thread { display: flex; flex-direction: column; gap: 0.6rem; max-height: 260px; overflow-y: auto; margin-bottom: 0.9rem; }
-      .ai-bubble { font-size: 0.88rem; line-height: 1.6; padding: 0.7rem 1rem; border-radius: 1rem; max-width: 88%; display: flex; align-items: flex-start; gap: 0.55rem; }
-      .ai-bubble.user {
-        align-self: flex-end; background: color-mix(in srgb, var(--accent, #D4AF37) 16%, transparent);
-        color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent, #D4AF37) 40%, transparent);
-      }
-      .ai-bubble.assistant { align-self: flex-start; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); }
-      .ai-typing { display: flex; gap: 4px; align-items: center; padding: 0.9rem 1rem; }
-      .ai-typing span { width: 5px; height: 5px; border-radius: 999px; background: var(--ink-2); animation: aiTypingBounce 1.1s ease-in-out infinite; }
-      .ai-typing span:nth-child(2) { animation-delay: 0.15s; }
-      .ai-typing span:nth-child(3) { animation-delay: 0.3s; }
-      @keyframes aiTypingBounce { 0%,60%,100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
-      .ai-chat-input-row { display: flex; gap: 0.6rem; }
-      .ai-chat-input-row input {
-        flex: 1; min-width: 0; padding: 0.75rem 1rem; border-radius: 0.9rem;
-        border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); font-size: 0.88rem;
-      }
-      .ai-chat-input-row input::placeholder { color: var(--ink-2); }
-      .ai-chat-input-row input:disabled { opacity: 0.6; cursor: not-allowed; }
-      .ai-chat-input-row button {
-        padding: 0.75rem 1.2rem; border-radius: 0.9rem; border: none;
-        background: var(--accent, #D4AF37); color: #111111; font-size: 0.85rem; font-weight: 700;
-      }
-      .ai-chat-input-row button:disabled { opacity: 0.4; cursor: not-allowed; }
-      .ai-chat-error { margin-top: 0.6rem; font-size: 0.76rem; color: var(--ink-2); }
-
-      /* PERFORM AI — paywall Free: chat sfocata dietro un lucchetto satinato */
-      .ai-chat-locked { position: relative; margin-top: 2rem; padding-top: 1.6rem; border-top: 1px solid var(--line); }
-      .ai-chat-locked-ghost {
-        display: flex; flex-direction: column; gap: 0.6rem;
-        filter: blur(5px); opacity: 0.55; pointer-events: none; user-select: none;
-      }
-      .ai-chat-locked-overlay {
-        position: absolute; left: 0; right: 0; top: 2.4rem; bottom: 0;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        text-align: center; gap: 0.85rem; padding: 1.6rem 1.5rem;
-        background: rgba(255,255,255,0.6);
-        backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
-        border-radius: 1.1rem; border: 1px solid var(--line);
-      }
-      [data-theme="dark"] .ai-chat-locked-overlay { background: rgba(24,24,27,0.62); }
-      .ai-chat-lock-icon {
-        width: 46px; height: 46px; border-radius: 999px;
-        display: flex; align-items: center; justify-content: center;
-        background: color-mix(in srgb, var(--accent, #D4AF37) 18%, transparent);
-        border: 1px solid color-mix(in srgb, var(--accent, #D4AF37) 48%, transparent);
-        color: var(--accent, #D4AF37);
-      }
-      .ai-chat-locked-text { font-size: 0.85rem; line-height: 1.65; color: var(--ink-2); max-width: 380px; }
-      .ai-chat-locked-text strong { color: var(--ink); font-weight: 700; }
-
       @keyframes springIn {
         0%   { opacity: 0; transform: translateY(12px) scale(0.99); }
         55%  { opacity: 1; transform: translateY(-1px) scale(1.002); }
@@ -1318,7 +1076,7 @@ export function NewsTipsViewStyles() {
       .skeleton { background: var(--surface-2); border-radius: 1.25rem; animation: skeletonPulse 1.3s ease-in-out infinite; }
 
       @media (prefers-reduced-motion: reduce) {
-        .title-gradient, .spring-in, .skeleton, .expand-sheet.spring-in, .ai-typing span { animation: none !important; }
+        .title-gradient, .spring-in, .skeleton, .expand-sheet.spring-in { animation: none !important; }
       }
     `}</style>
   );
