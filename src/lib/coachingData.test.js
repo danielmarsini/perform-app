@@ -20,6 +20,7 @@ import {
   fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
   countUnreadChatMessages, streakXpMultiplier,
   freezeBonusForLevel, fetchStreakFreezeStatus, LEVEL_REWARDS,
+  computeProgramExpiryAlerts, fetchLastAssignedWorkoutDates,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -1020,5 +1021,77 @@ describe("fetchStreakFreezeStatus", () => {
     const supabase = makeMockSupabase({ streak_freezes: [] });
     const status = await fetchStreakFreezeStatus(supabase, "u1");
     expect(status.cap).toBe(2);
+  });
+});
+
+// Alert scadenze programmazione (richiesta esplicita: "notifica/alert
+// visivo... anticipo di 4-5 giorni quando la programmazione attiva di un
+// cliente sta per scadere").
+describe("computeProgramExpiryAlerts", () => {
+  const todayISO = daysAgoISO(0);
+  it("nessun alert per un cliente senza allenamento assegnato (hasWorkoutAssigned false)", () => {
+    const clients = [{ id: "u1", name: "Mario", hasWorkoutAssigned: false }];
+    const alerts = computeProgramExpiryAlerts(clients, new Map(), todayISO);
+    expect(alerts).toEqual([]);
+  });
+  it("copertura ampiamente sopra la finestra => nessun alert", () => {
+    const clients = [{ id: "u1", name: "Mario", hasWorkoutAssigned: true }];
+    const lastAssigned = new Map([["u1", daysAgoISO(-30)]]); // 30 giorni nel futuro
+    const alerts = computeProgramExpiryAlerts(clients, lastAssigned, todayISO);
+    expect(alerts).toEqual([]);
+  });
+  it("copertura entro la finestra di 5 giorni => alert 'expiring' con i giorni esatti", () => {
+    const clients = [{ id: "u1", name: "Mario", hasWorkoutAssigned: true }];
+    const lastAssigned = new Map([["u1", daysAgoISO(-3)]]); // 3 giorni nel futuro
+    const alerts = computeProgramExpiryAlerts(clients, lastAssigned, todayISO);
+    expect(alerts).toEqual([{ clientId: "u1", clientName: "Mario", lastDate: daysAgoISO(-3), daysRemaining: 3, status: "expiring" }]);
+  });
+  it("l'ultimo giorno assegnato è oggi stesso => daysRemaining 0, non un alert 'scaduto'", () => {
+    const clients = [{ id: "u1", name: "Mario", hasWorkoutAssigned: true }];
+    const lastAssigned = new Map([["u1", todayISO]]);
+    const alerts = computeProgramExpiryAlerts(clients, lastAssigned, todayISO);
+    expect(alerts[0]).toMatchObject({ daysRemaining: 0, status: "expiring" });
+  });
+  it("nessuna riga da oggi in poi (Map senza voce) => già scaduta, il caso più urgente", () => {
+    const clients = [{ id: "u1", name: "Mario", hasWorkoutAssigned: true }];
+    const alerts = computeProgramExpiryAlerts(clients, new Map(), todayISO);
+    expect(alerts).toEqual([{ clientId: "u1", clientName: "Mario", lastDate: null, daysRemaining: -1, status: "expired" }]);
+  });
+  it("più clienti: ordinati dal più urgente (scaduto prima, poi meno giorni rimasti)", () => {
+    const clients = [
+      { id: "u1", name: "Ampio margine", hasWorkoutAssigned: true },
+      { id: "u2", name: "Scaduto", hasWorkoutAssigned: true },
+      { id: "u3", name: "Domani", hasWorkoutAssigned: true },
+    ];
+    const lastAssigned = new Map([["u1", daysAgoISO(-30)], ["u3", daysAgoISO(-1)]]); // u2 assente => scaduto
+    const alerts = computeProgramExpiryAlerts(clients, lastAssigned, todayISO);
+    expect(alerts.map((a) => a.clientId)).toEqual(["u2", "u3"]);
+  });
+});
+
+describe("fetchLastAssignedWorkoutDates", () => {
+  it("prende la data più lontana nel futuro per ciascun utente, ignora le righe passate", async () => {
+    const tables = {
+      workout_logs: [
+        { user_id: "u1", date: daysAgoISO(1) },  // passato: ignorato
+        { user_id: "u1", date: daysAgoISO(-2) }, // futuro, più vicino
+        { user_id: "u1", date: daysAgoISO(-7) }, // futuro, più lontano => questo vince
+        { user_id: "u2", date: daysAgoISO(-1) },
+      ],
+    };
+    const supabase = makeMockSupabase(tables);
+    const map = await fetchLastAssignedWorkoutDates(supabase, ["u1", "u2"]);
+    expect(map.get("u1")).toBe(daysAgoISO(-7));
+    expect(map.get("u2")).toBe(daysAgoISO(-1));
+  });
+  it("nessun userId => Map vuota, mai una query inutile", async () => {
+    const supabase = makeMockSupabase({ workout_logs: [] });
+    const map = await fetchLastAssignedWorkoutDates(supabase, []);
+    expect(map.size).toBe(0);
+  });
+  it("cliente senza righe future => assente dalla Map (il chiamante lo tratta come scaduto)", async () => {
+    const supabase = makeMockSupabase({ workout_logs: [{ user_id: "u1", date: daysAgoISO(3) }] }); // solo passato
+    const map = await fetchLastAssignedWorkoutDates(supabase, ["u1"]);
+    expect(map.has("u1")).toBe(false);
   });
 });

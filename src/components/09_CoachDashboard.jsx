@@ -82,6 +82,7 @@ import {
   saveWeekDiet, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance,
   computeBatchTrainingCompliance, computeBatchRecoveryCompliance, computeBatchNutritionCompliance,
+  fetchLastAssignedWorkoutDates, computeProgramExpiryAlerts,
   notifyClientPlanChange, fetchClientPauses,
   renameClient, adminResetPassword, adminDeleteAccount,
   fetchCheckins, getCheckinPhotoUrl, fetchPrescribedSupplements, fetchDailyMetricsRange,
@@ -1156,7 +1157,7 @@ function ClientComplianceBadges({ pcts }) {
   );
 }
 
-function ClientRow({ client, onOpen, compliance }) {
+function ClientRow({ client, onOpen, compliance, expiryAlert }) {
   const status = computeStatus(client);
   const grado = client.evening.doloreGrado;
   const critical = grado >= 4;
@@ -1203,6 +1204,11 @@ function ClientRow({ client, onOpen, compliance }) {
       {client.billingStatus === "payment_failed" && (
         <p className="font-data text-[11px] mt-2.5 pl-5 font-semibold" style={{ color: "#B91C1C" }}>
           💳 Pagamento fallito · Billing Shield ha spostato l'account su Scaduti
+        </p>
+      )}
+      {expiryAlert && (
+        <p className="font-data text-[11px] mt-2.5 pl-5 font-semibold" style={{ color: expiryAlert.status === "expired" ? "#B91C1C" : "#92400E" }}>
+          ⏳ Programmazione {expiryAlert.status === "expired" ? "scaduta" : expiryAlert.daysRemaining === 0 ? "scade oggi" : `scade tra ${expiryAlert.daysRemaining}g`} · pianifica il prossimo ciclo
         </p>
       )}
     </div>
@@ -6053,8 +6059,45 @@ function RosterView({ onOpen }) {
     return () => { cancelled = true; };
   }, [isRealMode, supabase, rosterIds]);
 
+  // Alert scadenze programmazione (richiesta esplicita): stesso pattern
+  // batch di complianceByClient qui sopra — un giro solo per l'intero
+  // roster, mai una query per cliente.
+  const [expiryAlerts, setExpiryAlerts] = useState([]);
+  useEffect(() => {
+    if (!isRealMode || !rosterIds) { setExpiryAlerts([]); return; }
+    let cancelled = false;
+    const ids = rosterIds.split(",");
+    fetchLastAssignedWorkoutDates(supabase, ids)
+      .then((lastAssignedByUser) => {
+        if (cancelled) return;
+        setExpiryAlerts(computeProgramExpiryAlerts(CLIENTS, lastAssignedByUser, toLocalISODate()));
+      })
+      .catch((err) => console.error("PERFORM: errore lettura scadenze programmazione", err));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRealMode, supabase, rosterIds]);
+  const expiryByClientId = new Map(expiryAlerts.map((a) => [a.clientId, a]));
+
   return (
     <div>
+      {expiryAlerts.length > 0 && (
+        <div className="c-card mb-4" style={{ border: "1.5px solid #FDE68A", backgroundColor: "#FFFBEB" }}>
+          <p className="font-data text-[11px] uppercase font-bold mb-2" style={{ color: "#92400E" }}>
+            ⏳ Programmazione in scadenza ({expiryAlerts.length})
+          </p>
+          <div className="space-y-1.5">
+            {expiryAlerts.map((a) => (
+              <button key={a.clientId} onClick={() => onOpen(a.clientId)} className="w-full flex items-center justify-between gap-2 text-left">
+                <span className="text-sm truncate" style={{ color: "#78350F" }}>{a.clientName}</span>
+                <span className="font-data text-[11px] font-semibold shrink-0" style={{ color: a.status === "expired" ? "#B91C1C" : "#92400E" }}>
+                  {a.status === "expired" ? "Scaduta" : a.daysRemaining === 0 ? "Scade oggi" : `Scade tra ${a.daysRemaining}g`}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-1.5 mb-4">
         {DEPTS.map((d) => {
           const n = CLIENTS.filter((c) => deptOf(c) === d.id).length;
@@ -6077,7 +6120,7 @@ function RosterView({ onOpen }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {list.map((c) => <ClientRow key={c.id} client={c} onOpen={() => onOpen(c.id)} compliance={complianceByClient.get(c.id)} />)}
+        {list.map((c) => <ClientRow key={c.id} client={c} onOpen={() => onOpen(c.id)} compliance={complianceByClient.get(c.id)} expiryAlert={expiryByClientId.get(c.id)} />)}
         {list.length === 0 && <p className="c-muted text-sm py-8 md:col-span-2 text-center">Nessun cliente in questo reparto</p>}
       </div>
     </div>

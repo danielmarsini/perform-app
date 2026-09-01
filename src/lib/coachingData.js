@@ -1056,6 +1056,60 @@ export async function fetchAssignedWorkouts(supabase, userId, fromDateISO, toDat
   return data ?? [];
 }
 
+/* ---------------------------------------------------------------------------
+   ALERT SCADENZE PROGRAMMAZIONE (richiesta esplicita) — "sistema di
+   notifica/alert visivo nella dashboard del coach che segnali con un
+   anticipo di 4-5 giorni quando la programmazione attiva di un cliente sta
+   per scadere, ricordandogli di pianificare i cicli successivi". Non esiste
+   un record "programma" con una data di fine esplicita per l'allenamento
+   (a differenza di nutrition_programs) — stesso principio già in uso per
+   "Scheda Personalizzata: durata segue le settimane reali assegnate":
+   quanto lontano nel futuro il coach ha già scritto righe in workout_logs
+   PER QUEL cliente È la copertura reale della programmazione. Quando quella
+   copertura scende sotto la finestra d'anticipo (o è già esaurita), il
+   coach deve saperlo per pianificare il ciclo successivo in tempo.
+   ------------------------------------------------------------------------- */
+export const PROGRAM_EXPIRY_WINDOW_DAYS = 5;
+
+// Ultima data assegnata (oggi o nel futuro) per ciascun cliente — un solo
+// giro batch per l'intero roster, mai una query per cliente (stesso
+// principio delle altre funzioni batch, vedi computeBatchTrainingCompliance
+// e affini). Solo le righe da oggi in poi contano: quelle passate non
+// dicono nulla su "quanto è coperto il futuro".
+export async function fetchLastAssignedWorkoutDates(supabase, userIds) {
+  if (!userIds || userIds.length === 0) return new Map();
+  const todayISO = toLocalISODate();
+  const { data, error } = await supabase
+    .from("workout_logs")
+    .select("user_id, date")
+    .in("user_id", userIds)
+    .gte("date", todayISO)
+    .order("date", { ascending: false });
+  if (error) throw error;
+  const map = new Map();
+  (data ?? []).forEach((r) => { if (!map.has(r.user_id)) map.set(r.user_id, r.date); }); // ordinate desc: la prima vista per utente è la più lontana nel futuro
+  return map;
+}
+
+// Pura (testabile senza Supabase): quali clienti con un allenamento già
+// assegnato (hasWorkoutAssigned) hanno una copertura futura che sta per
+// esaurirsi entro windowDays, o già esaurita (nessuna riga da oggi in poi
+// — daysRemaining: -1, il caso più urgente). Ordinata dal più urgente.
+export function computeProgramExpiryAlerts(clients, lastAssignedDateByUser, todayISO, windowDays = PROGRAM_EXPIRY_WINDOW_DAYS) {
+  const today = new Date(`${todayISO}T00:00:00`);
+  const alerts = [];
+  (clients ?? []).forEach((c) => {
+    if (!c.hasWorkoutAssigned) return; // mai un alert per chi non ha ancora nessuna scheda
+    const lastDate = lastAssignedDateByUser.get(c.id);
+    const daysRemaining = lastDate ? Math.round((new Date(`${lastDate}T00:00:00`) - today) / 86400000) : -1;
+    if (daysRemaining <= windowDays) {
+      alerts.push({ clientId: c.id, clientName: c.name, lastDate: lastDate ?? null, daysRemaining, status: daysRemaining < 0 ? "expired" : "expiring" });
+    }
+  });
+  alerts.sort((a, b) => a.daysRemaining - b.daysRemaining);
+  return alerts;
+}
+
 // Riscaldamento/mobilità + stretching (workout_day_notes, SCHEMA_v84) per un
 // intervallo di date — sola lettura lato cliente, la scrittura vive solo in
 // saveWeekWorkout lato coach. Torna una Map(date -> {warmupText, stretchingText}).
