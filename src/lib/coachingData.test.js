@@ -19,6 +19,7 @@ import {
   computeCrewWeeklyActivity, computeCrewStreak,
   fetchFoodUsageStats, fetchCoachChatInbox, fetchClientRoster,
   countUnreadChatMessages, streakXpMultiplier,
+  freezeBonusForLevel, fetchStreakFreezeStatus, LEVEL_REWARDS,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -946,5 +947,78 @@ describe("countUnreadChatMessages", () => {
       chat_messages: [{ id: "m1", client_id: "u1", sender_id: "u1", read_at: null }],
     });
     expect(await countUnreadChatMessages(supabase, "u1", "u1")).toBe(0);
+  });
+});
+
+// Ricompense di livello (richiesta esplicita: "sistema di ricompense di
+// valore crescente sbloccabili automaticamente ai vari livelli") — il tetto
+// di congelamenti streak DEVE crescere esattamente in coordinata con
+// LEVEL_REWARDS: se le due liste si disallineano il testo mostrato al
+// cliente ("+1 congelamento a livello X") mentirebbe sul vantaggio reale.
+describe("freezeBonusForLevel", () => {
+  it("nessun bonus nel primo tier (livelli 1-5)", () => {
+    expect(freezeBonusForLevel(1)).toBe(0);
+    expect(freezeBonusForLevel(5)).toBe(0);
+  });
+  it("+1 al secondo tier (livelli 6-10)", () => {
+    expect(freezeBonusForLevel(6)).toBe(1);
+    expect(freezeBonusForLevel(10)).toBe(1);
+  });
+  it("+2/+3/+4 ai tier successivi (11, 16, 21)", () => {
+    expect(freezeBonusForLevel(11)).toBe(2);
+    expect(freezeBonusForLevel(16)).toBe(3);
+    expect(freezeBonusForLevel(21)).toBe(4);
+  });
+  it("tetto a +4 anche a livelli molto alti (mai un tetto streak svuotato di significato)", () => {
+    expect(freezeBonusForLevel(26)).toBe(4);
+    expect(freezeBonusForLevel(1000)).toBe(4);
+  });
+  it("un livello mancante/non valido non deve mai far crashare o restituire un bonus negativo", () => {
+    expect(freezeBonusForLevel(0)).toBe(0);
+    expect(freezeBonusForLevel(undefined)).toBe(0);
+  });
+});
+
+describe("LEVEL_REWARDS coerente con freezeBonusForLevel", () => {
+  it("ogni ricompensa 'perk' promette esattamente il bonus che freezeBonusForLevel calcola davvero", () => {
+    LEVEL_REWARDS.filter((r) => r.kind === "perk").forEach((r) => {
+      const bonus = freezeBonusForLevel(r.level);
+      const bonusOneLevelBefore = freezeBonusForLevel(r.level - 1);
+      // Una ricompensa "perk" a questo livello deve corrispondere a un
+      // aumento REALE del bonus rispetto al livello immediatamente
+      // precedente — altrimenti il testo "+1 congelamento streak" sarebbe
+      // una promessa vuota, mai davvero consegnata.
+      expect(bonus).toBeGreaterThan(bonusOneLevelBefore);
+    });
+  });
+});
+
+describe("fetchStreakFreezeStatus", () => {
+  it("livello 1 (nessun bonus): tetto di 2 congelamenti ogni 30 giorni", async () => {
+    const supabase = makeMockSupabase({ streak_freezes: [] });
+    const status = await fetchStreakFreezeStatus(supabase, "u1", 1);
+    expect(status).toEqual({ remaining: 2, usedToday: false, cap: 2 });
+  });
+  it("livello 11 (ricompensa di livello, +2 congelamenti): tetto di 4", async () => {
+    const supabase = makeMockSupabase({ streak_freezes: [] });
+    const status = await fetchStreakFreezeStatus(supabase, "u1", 11);
+    expect(status.cap).toBe(4);
+    expect(status.remaining).toBe(4);
+  });
+  it("congelamenti già usati nella finestra riducono 'remaining' rispetto al tetto reale del livello", async () => {
+    const supabase = makeMockSupabase({
+      streak_freezes: [
+        { user_id: "u1", date: daysAgoISO(1) },
+        { user_id: "u1", date: daysAgoISO(5) },
+      ],
+    });
+    const status = await fetchStreakFreezeStatus(supabase, "u1", 6); // tetto 3 (2 base + 1 bonus)
+    expect(status.cap).toBe(3);
+    expect(status.remaining).toBe(1);
+  });
+  it("displayLevel omesso => nessun bonus, comportamento identico a prima dell'introduzione delle ricompense", async () => {
+    const supabase = makeMockSupabase({ streak_freezes: [] });
+    const status = await fetchStreakFreezeStatus(supabase, "u1");
+    expect(status.cap).toBe(2);
   });
 });
