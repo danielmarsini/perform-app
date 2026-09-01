@@ -110,15 +110,39 @@ button:active::after, [role="button"]:active::after {
   height: 0;
 }
 
-/* App sempre verticale, come Instagram/WhatsApp: il blocco reale vive SOLO
-   in index.html (screen.orientation.lock, nativo, invisibile) e in
-   manifest.json (orientation:portrait-primary, PWA standalone Android).
-   NESSUN trucco CSS qui: un tentativo precedente contro-ruotava il
-   documento via transform quando il telefono girava, ma produceva
-   comunque uno scatto visibile (il browser rifà il layout in orizzontale
-   PRIMA che il CSS intervenga) — richiesta esplicita: la pagina non deve
-   mai muoversi o reagire al giro del telefono. Dove il lock nativo non è
-   disponibile (browser non installato, iOS Safari sempre) non esiste
-   alcun modo web di impedire la rotazione senza produrre un qualche
-   movimento visibile — in quel caso l'app si comporta come una normale
-   pagina responsive, senza finzioni. */
+/* App sempre verticale, come Instagram/WhatsApp. Il blocco vero (zero
+   movimento) vive in index.html via screen.orientation.lock — nativo,
+   invisibile, ma disponibile solo in PWA installata su Android/Chrome (mai
+   su iOS Safari, limite del sistema operativo Apple, non risolvibile lato
+   codice — un'app nativa vera sarebbe l'unico modo altrettanto perfetto su
+   iPhone, rimandata a un secondo momento). Qui sotto la rete di sicurezza
+   per ovunque il lock nativo non ci sia: contro-ruota il documento quando
+   il telefono fisico gira, così il contenuto resta visivamente verticale
+   — comporta un breve scatto visivo accettato come compromesso (il
+   browser mostra per una frazione di secondo il layout orizzontale prima
+   che questa regola intervenga), priorità ora su altri bug.
+   data-portrait-lock-dir (index.html, da screen.orientation.angle) sceglie
+   il verso giusto: il telefono può girare da due lati opposti, ognuno
+   richiede rotazione E posizionamento diversi — "a" è il default finché lo
+   script non ha ancora letto l'angolo reale. pointer:coarse esclude il
+   desktop, dove il landscape è normale. */
+@media screen and (orientation: landscape) and (pointer: coarse) {
+  html {
+    width: 100vh;
+    height: 100vw;
+    overflow-x: hidden;
+    position: absolute;
+  }
+  html:not([data-portrait-lock-dir="b"]) {
+    transform: rotate(-90deg);
+    transform-origin: top left;
+    top: 100%;
+    left: 0;
+  }
+  html[data-portrait-lock-dir="b"] {
+    transform: rotate(90deg);
+    transform-origin: top left;
+    top: 0;
+    left: 100%;
+  }
+}
