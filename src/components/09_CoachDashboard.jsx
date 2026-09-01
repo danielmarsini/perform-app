@@ -1766,6 +1766,36 @@ function WeekWorkoutEditor({ week, onChange, client }) {
   // — mai un riordino solo visivo che si perde al prossimo caricamento.
   const reorderEx = (fromIdx, toIdx) => setDay((d) => ({ ...d, exercises: moveItem(d.exercises, fromIdx, toIdx) }));
   const reorder = useDragReorder({ length: day?.exercises?.length ?? 0, onReorder: reorderEx });
+  // Richiesta esplicita: dopo aver impostato nome/serie/rep/recupero/RIR/
+  // distretto, la card si collassa da sola in una riga compatta (nome + serie
+  // × rep · RIR · recupero) — il resto (sinergici, guida, 2° distretto…)
+  // resta dentro, un click sulla riga la riapre per modificarlo. Un
+  // esercizio nuovo/incompleto parte SEMPRE aperto. autoCollapsedIds (ref,
+  // non state: non deve causare render) traccia quali id sono già stati
+  // collassati automaticamente UNA VOLTA — così se il coach la riapre a
+  // mano per un ritocco, non si richiude da sola sotto le sue dita.
+  const [collapsedIds, setCollapsedIds] = useState({});
+  const autoCollapsedIds = useRef(new Set());
+  const toggleCollapsed = (exId) => setCollapsedIds((s) => ({ ...s, [exId]: !s[exId] }));
+  const effMuscleTargetOf = (ex) => {
+    const libEntry = exerciseLib[(ex.name || "").trim()];
+    const libDirect0 = libEntry?.direct?.[0] ? (EXERCISE_LIB_MUSCLE_TO_DB[libEntry.direct[0]] || libEntry.direct[0]) : "";
+    return ex.muscleTarget ?? libDirect0;
+  };
+  const isExerciseComplete = (ex) =>
+    Boolean(ex.name?.trim()) && ex.sets !== "" && ex.sets != null
+    && String(ex.reps ?? "").trim() !== "" && ex.rest !== "" && ex.rest != null
+    && ex.rirTarget !== "" && ex.rirTarget != null && Boolean(effMuscleTargetOf(ex));
+  useEffect(() => {
+    if (!day) return;
+    const toCollapse = [];
+    day.exercises.forEach((ex) => {
+      if (ex.kind === "cardio" || autoCollapsedIds.current.has(ex.id)) return;
+      if (isExerciseComplete(ex)) { autoCollapsedIds.current.add(ex.id); toCollapse.push(ex.id); }
+    });
+    if (toCollapse.length) setCollapsedIds((s) => { const next = { ...s }; toCollapse.forEach((id) => { next[id] = true; }); return next; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day, exerciseLib]);
   const updateEx = (i, field, value) => setDay((d) => ({
     ...d,
     exercises: d.exercises.map((e, j) => (j === i ? {
@@ -2047,6 +2077,25 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                     <button onClick={() => removeEx(i)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
                   </div>
                 </div>
+              ) : collapsedIds[ex.id] ? (
+                // Riga compatta (auto-collassata dopo nome/serie/rep/recupero/RIR/
+                // distretto già impostati, vedi effetto sopra): un click la riapre
+                // per modificare sinergici/2° distretto/guida biomeccanica.
+                <div key={ex.id} ref={reorder.setRowRef(i)} style={{ ...reorder.rowStyle(i) }} className="t-inner px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <span {...reorder.handleProps(i)} aria-label="Trascina per riordinare" className="shrink-0" style={{ ...reorder.handleProps(i).style, color: "var(--ink-tertiary)" }}>
+                      <GripVertical size={15} />
+                    </span>
+                    <button type="button" onClick={() => toggleCollapsed(ex.id)} className="flex-1 min-w-0 flex items-center gap-2 text-left">
+                      <span className="text-sm font-medium truncate">{ex.name}</span>
+                      <span className="c-muted text-[11px] font-data shrink-0 whitespace-nowrap">
+                        {ex.sets}×{ex.reps} · RIR {ex.rirTarget} · {ex.rest}s
+                      </span>
+                      <ChevronDown size={14} className="shrink-0 ml-auto" style={{ color: "var(--ink-tertiary)" }} />
+                    </button>
+                    <button onClick={() => removeEx(i)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
+                  </div>
+                </div>
               ) : (
               <div key={ex.id} ref={reorder.setRowRef(i)} style={{ ...reorder.rowStyle(i) }} className="t-inner px-3 py-3">
                 <div className="flex items-center gap-2 flex-wrap mb-2">
@@ -2074,6 +2123,11 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                   <button onClick={() => toggleCustom(i)} className="c-ghost px-2.5 py-1.5 rounded-md text-[11px] font-data uppercase shrink-0" title="Esercizio personalizzato">
                     {ex.custom ? "↩ Libreria" : "✏️ Libero"}
                   </button>
+                  {isExerciseComplete(ex) && (
+                    <button onClick={() => toggleCollapsed(ex.id)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Comprimi" title="Comprimi">
+                      <ChevronUp size={15} />
+                    </button>
+                  )}
                   <button onClick={() => removeEx(i)} className="c-ghost w-8 h-8 rounded-md flex items-center justify-center shrink-0" aria-label="Rimuovi"><Trash2 size={13} /></button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">

@@ -94,12 +94,10 @@ export function useDragReorder({ length, onReorder }) {
   const handleProps = useCallback((i) => ({
     onPointerDown: (e) => {
       e.preventDefault();
-      const centers = rowRefs.current.slice(0, length).map((el) => {
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return r.top + r.height / 2;
-      });
-      drag.current = { originIndex: i, startY: e.clientY, centers, overIndex: i };
+      const rects = rowRefs.current.slice(0, length).map((el) => (el ? el.getBoundingClientRect() : null));
+      const centers = rects.map((r) => (r ? r.top + r.height / 2 : null));
+      const heights = rects.map((r) => (r ? r.height : 0));
+      drag.current = { originIndex: i, startY: e.clientY, centers, heights, overIndex: i };
       setDragIndex(i);
       setOverIndex(i);
       setDragOffset(0);
@@ -110,18 +108,30 @@ export function useDragReorder({ length, onReorder }) {
     style: { touchAction: "none", cursor: "grab" },
   }), [onPointerMove, endDrag, length]);
 
-  // Riga trascinata: si sposta col dito. Le altre: un piccolo margine per
-  // segnalare dove finirebbe se rilasciata ora (mai un reflow animato di
-  // tutta la lista, troppo costoso da calcolare per un semplice editor).
+  // Riga trascinata: si sposta col dito (transform istantaneo, mai in
+  // transizione — deve restare incollata al dito). Le righe comprese fra
+  // l'origine e la posizione attuale del rilascio si spostano insieme,
+  // con una transizione morbida, per "aprire" fisicamente lo spazio dove
+  // la riga trascinata andrebbe a finire — non più solo un bordo statico
+  // a indicare il punto di sgancio. Lo spostamento usa l'altezza REALE
+  // della riga trascinata (misurata all'inizio, vedi handleProps), corretto
+  // anche con righe di altezza diversa fra loro (un esercizio con la guida
+  // aperta è multiplo dell'altezza di uno compatto).
   const rowStyle = useCallback((i) => {
     if (dragIndex === null) return undefined;
     if (i === dragIndex) {
-      return { transform: `translateY(${dragOffset}px)`, position: "relative", zIndex: 10, boxShadow: "0 10px 24px rgba(0,0,0,0.18)" };
+      return { transform: `translateY(${dragOffset}px)`, position: "relative", zIndex: 10, boxShadow: "0 10px 24px rgba(0,0,0,0.18)", transition: "none" };
     }
-    if (i === overIndex) {
-      return { borderTop: overIndex < dragIndex ? "2px solid var(--ink)" : undefined, borderBottom: overIndex > dragIndex ? "2px solid var(--ink)" : undefined };
+    if (overIndex !== null && overIndex !== dragIndex) {
+      const lo = Math.min(dragIndex, overIndex);
+      const hi = Math.max(dragIndex, overIndex);
+      if (i >= lo && i <= hi) {
+        const draggedHeight = drag.current?.heights?.[dragIndex] ?? 0;
+        const shift = overIndex > dragIndex ? -draggedHeight : draggedHeight;
+        return { transform: `translateY(${shift}px)`, transition: "transform 140ms ease" };
+      }
     }
-    return undefined;
+    return { transition: "transform 140ms ease" };
   }, [dragIndex, overIndex, dragOffset]);
 
   return { dragIndex, setRowRef, handleProps, rowStyle };
