@@ -22,6 +22,7 @@ import {
   freezeBonusForLevel, fetchStreakFreezeStatus, LEVEL_REWARDS,
   computeProgramExpiryAlerts, fetchLastAssignedWorkoutDates,
   computeSpotsRemaining, isPromoActive, fetchCoachMarketingPublic,
+  formatSetsReps,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -1150,5 +1151,18 @@ describe("fetchCoachMarketingPublic", () => {
     const supabase = makeMockSupabase({ coach_marketing_public: [] });
     const data = await fetchCoachMarketingPublic(supabase);
     expect(data).toEqual({ maxActiveClients: null, activeCoachingCount: 0, promoTitle: null, promoDescription: null, promoExpiresAt: null });
+  });
+});
+
+describe("formatSetsReps", () => {
+  it("compone serie e reps nel formato compatto NxM", () => {
+    expect(formatSetsReps(3, "8-10")).toBe("3x8-10");
+    expect(formatSetsReps(4, "10")).toBe("4x10");
+  });
+  it("sets o reps vuoti non producono testo fuorviante", () => {
+    expect(formatSetsReps("", "")).toBe("");
+    expect(formatSetsReps(null, null)).toBe("");
+    expect(formatSetsReps("", "8-10")).toBe("8-10");
+    expect(formatSetsReps(3, "")).toBe("3x");
   });
 });

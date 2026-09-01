@@ -95,7 +95,7 @@ import {
   fetchAssignedWorkouts, fetchExerciseRecords, dayNutritionScore,
   detectPersistentPain, sendChatMessage,
   fetchReferrals, REAL_COACHING_PLANS_DB, awardXpBonus, askCoachAssistant, generateWorkoutWeekDraft,
-  generateNutritionWeekDraft, generateSupplementsPlanDraft,
+  generateNutritionWeekDraft, generateSupplementsPlanDraft, formatSetsReps,
 } from "../lib/coachingData.js";
 
 // Contesto condiviso: elenco clienti (reale o demo) + accesso a Supabase per
@@ -2119,7 +2119,7 @@ function WeekWorkoutEditor({ week, onChange, client }) {
                       <div className="min-w-0">
                         <p className="text-sm font-semibold leading-snug" style={{ color: "#FFFFFF" }}>{ex.name}</p>
                         <p className="text-[11px] font-data mt-0.5" style={{ color: "#9CA3AF" }}>
-                          {ex.sets} serie · {ex.reps} rep · {formatRirBadge(ex.rirTarget)} · {ex.rest}s rec
+                          {formatSetsReps(ex.sets, ex.reps)} · {formatRirBadge(ex.rirTarget)} · {ex.rest}s rec
                         </p>
                       </div>
                       <ChevronDown size={14} className="shrink-0 mt-0.5" style={{ color: "#9CA3AF" }} />
