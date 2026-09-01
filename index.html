@@ -24,6 +24,28 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Overlay "ruota il telefono": fallback per gli schermi/browser dove
+         manifest.json orientation:portrait-primary non basta da solo (iOS
+         Safari lo ignora del tutto). Nascosto via CSS in src/index.css,
+         mostrato solo in @media (orientation: landscape) su dispositivi
+         touch — mai su desktop, dove il landscape è normale. -->
+    <div id="orientation-lock-overlay" aria-hidden="true">
+      <div class="orientation-lock-content">
+        <div class="orientation-lock-icon">📱</div>
+        <p>Ruota il telefono in verticale<br />per usare Perform</p>
+      </div>
+    </div>
+    <script>
+      // Tentativo best-effort di lock nativo (funziona solo in PWA
+      // standalone su alcuni browser Android) — fallisce silenziosamente
+      // ovunque non sia supportato, il fallback CSS resta la vera rete di
+      // sicurezza.
+      try {
+        if (window.matchMedia("(display-mode: standalone)").matches && screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock("portrait").catch(() => {});
+        }
+      } catch {}
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

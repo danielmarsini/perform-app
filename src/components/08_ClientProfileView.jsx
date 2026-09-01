@@ -119,6 +119,7 @@ export const translations = {
       subscribed: "Abbonamento attivo",
       current: "Piano attuale",
       freeCta: "Torna al Free", freeCtaSignup: "Iscriviti gratis", oneTimeCta: "Acquista ora", switchCta: "Acquista abbonamento",
+      switchToAnnualCta: "Passa all'annuale",
       billingMonthly: "Mensile", billingAnnual: "Annuale · 2 mesi gratis",
       annualPitch: "Un percorso annuale segue cicli completi di allenamento e alimentazione — non uno scatto isolato, ma la programmazione vera che porta a risultati concreti e duraturi. Oltre al risparmio, ti impegni con me per il tempo che serve davvero a raggiungere l'obiettivo.",
     },
@@ -208,6 +209,7 @@ export const translations = {
       subscribed: "Subscription active",
       current: "Current plan",
       freeCta: "Back to Free", freeCtaSignup: "Sign up for free", oneTimeCta: "Buy now", switchCta: "Subscribe now",
+      switchToAnnualCta: "Switch to annual",
       billingMonthly: "Monthly", billingAnnual: "Annual · 2 months free",
       annualPitch: "A full year follows complete training and nutrition cycles — not an isolated push, but the real programming that leads to concrete, lasting results. Beyond the savings, you're committing with me for the time it actually takes to reach your goal.",
     },
@@ -293,6 +295,7 @@ export const translations = {
       subscribed: "Suscripción activa",
       current: "Plan actual",
       freeCta: "Volver al Gratis", freeCtaSignup: "Regístrate gratis", oneTimeCta: "Comprar ahora", switchCta: "Suscribirse ahora",
+      switchToAnnualCta: "Cambiar a anual",
       billingMonthly: "Mensual", billingAnnual: "Anual · 2 meses gratis",
       annualPitch: "Un año completo sigue ciclos enteros de entrenamiento y alimentación — no un impulso aislado, sino la programación real que lleva a resultados concretos y duraderos. Además del ahorro, te comprometes conmigo el tiempo que realmente hace falta para alcanzar tu objetivo.",
     },
@@ -378,6 +381,7 @@ export const translations = {
       subscribed: "Abonnement actif",
       current: "Plan actuel",
       freeCta: "Retour au Gratuit", freeCtaSignup: "Inscris-toi gratuitement", oneTimeCta: "Acheter maintenant", switchCta: "S'abonner maintenant",
+      switchToAnnualCta: "Passer à l'annuel",
       billingMonthly: "Mensuel", billingAnnual: "Annuel · 2 mois offerts",
       annualPitch: "Une année complète suit des cycles entiers d'entraînement et d'alimentation — pas une action isolée, mais la vraie programmation qui mène à des résultats concrets et durables. Au-delà de l'économie, tu t'engages avec moi pour le temps qu'il faut vraiment pour atteindre ton objectif.",
     },
@@ -1750,24 +1754,39 @@ export function PlanCard({ plan, active, accent, accentText, gender, dark, t, on
         </ul>
       )}
       {(!copy.excludes || copy.excludes.length === 0) && <div className="mb-3" />}
-      {ownerOverride ? (
-        <p className="flex items-center gap-1.5" style={{ color: accent, fontSize: "0.72rem", fontWeight: 800,
-                     letterSpacing: "0.06em", textTransform: "uppercase" }}>
-          <Crown size={13} /> 👑 PROPRIETARIO / OWNER
-        </p>
-      ) : active ? (
-        <p style={{ color: accentText, fontSize: "0.68rem", fontWeight: 700,
-                     letterSpacing: "0.08em", textTransform: "uppercase" }}>{t.plan.current}</p>
-      ) : (
-        <button onClick={() => onChangePlan(displayPlan)}
-          className="w-full rounded-full px-4 py-2.5 text-sm"
-          style={plan.highlight
-            ? { backgroundColor: accent, color: "#111111", fontWeight: 700 }
-            : { border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
-          {plan.billing === "none" ? (signupContext ? t.plan.freeCtaSignup : t.plan.freeCta)
-            : plan.billing === "one_time" ? t.plan.oneTimeCta : t.plan.switchCta}
-        </button>
-      )}
+      {(() => {
+        // Sulla card del piano già attivo: se il coach ha creato un prezzo
+        // annuale per questo piano e l'utente ha acceso la promo, deve
+        // poter davvero passare all'annuale — non solo vederne il prezzo.
+        // "Piano attuale" statico resta solo finché annual è spento (nulla
+        // da fare) o per il proprietario (non paga, non c'è un checkout).
+        const canSwitchToAnnual = active && hasAnnual && annual && !ownerOverride;
+        if (ownerOverride) {
+          return (
+            <p className="flex items-center gap-1.5" style={{ color: accent, fontSize: "0.72rem", fontWeight: 800,
+                         letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              <Crown size={13} /> 👑 PROPRIETARIO / OWNER
+            </p>
+          );
+        }
+        if (active && !canSwitchToAnnual) {
+          return (
+            <p style={{ color: accentText, fontSize: "0.68rem", fontWeight: 700,
+                         letterSpacing: "0.08em", textTransform: "uppercase" }}>{t.plan.current}</p>
+          );
+        }
+        return (
+          <button onClick={() => onChangePlan(displayPlan)}
+            className="w-full rounded-full px-4 py-2.5 text-sm"
+            style={plan.highlight
+              ? { backgroundColor: accent, color: "#111111", fontWeight: 700 }
+              : { border: "1px solid var(--line)", color: "var(--ink)", fontWeight: 600 }}>
+            {canSwitchToAnnual ? t.plan.switchToAnnualCta
+              : plan.billing === "none" ? (signupContext ? t.plan.freeCtaSignup : t.plan.freeCta)
+              : plan.billing === "one_time" ? t.plan.oneTimeCta : t.plan.switchCta}
+          </button>
+        );
+      })()}
     </div>
   );
 }
@@ -2580,7 +2599,7 @@ export default function ClientProfileViewPreview({
            stampato su carta scura sarebbe illeggibile e sprecherebbe inchiostro. */
         .report-overlay{position:fixed;inset:0;z-index:90;background:#F1F1F2;overflow-y:auto}
         .report-toolbar{position:sticky;top:0;z-index:2;display:flex;justify-content:flex-end;gap:10px;
-          padding:14px 20px;background:rgba(241,241,242,0.92);backdrop-filter:blur(10px)}
+          padding:calc(env(safe-area-inset-top, 0px) + 14px) 20px 14px;background:rgba(241,241,242,0.92);backdrop-filter:blur(10px)}
         .report-toolbar-btn{border-radius:999px;padding:10px 18px;font-size:0.85rem;font-weight:600;border:none;cursor:pointer}
         .report-toolbar-btn-ghost{background:#FFFFFF;color:#3F3F46;border:1px solid #E4E4E7}
         .report-toolbar-btn-solid{color:#FFFFFF}
