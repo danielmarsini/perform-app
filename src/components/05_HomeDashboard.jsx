@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen } from "../lib/coachingData.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -786,14 +786,22 @@ function MicronutrientGrid({ mealsBySlot, userPlan, gender, onUpgrade, onOpenCha
    semaforo rosso/arancio/verde: segmento pieno per le serie dirette,
    segmento più chiaro/trasparente aggiunto in coda per le serie indirette
    sullo stesso distretto — "prendendo la funzionalità di quello del coach
-   e la grafica di quello dei clienti", richiesta esplicita. */
-export function VolumeBar({ muscle, direct, indirect, accent }) {
+   e la grafica di quello dei clienti", richiesta esplicita.
+   onClick (opzionale): drill-down — richiesta esplicita "facendo clic su
+   un distretto specifico deve aprirsi un dettaglio che mostra esattamente
+   quali esercizi e serie hanno generato quel volume totale". Quando
+   passato, l'intera riga diventa un bottone (tap-friendly, non solo
+   l'etichetta) — quando assente la barra resta un elemento puramente
+   visivo com'era, invariata per chi non ha ancora un drill-down da offrire. */
+export function VolumeBar({ muscle, direct, indirect, accent, onClick }) {
   const total = direct + indirect;
   const maxScale = 30;
   const dPct = Math.max(0, Math.min(100, (direct / maxScale) * 100));
   const iPct = Math.max(0, Math.min(100 - dPct, (indirect / maxScale) * 100));
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="flex items-center gap-3">
+    <Tag onClick={onClick} className="flex items-center gap-3 w-full text-left" style={onClick ? { background: "none" } : undefined}
+         aria-label={onClick ? `Dettaglio volume ${muscle}` : undefined}>
       <span className="text-xs shrink-0 truncate" style={{ width: 92, color: "var(--ink)", fontWeight: 600 }}>{muscle}</span>
       <div className="flex-1 relative rounded-full overflow-hidden flex" style={{ height: 16, backgroundColor: "var(--surface-2)" }}>
         {dPct > 0 && (
@@ -813,7 +821,52 @@ export function VolumeBar({ muscle, direct, indirect, accent }) {
       <span className="text-xs shrink-0 text-right" style={{ width: 34, color: accent, fontWeight: 800 }}>
         {Number.isInteger(total) ? total : total.toFixed(1)}
       </span>
-    </div>
+    </Tag>
+  );
+}
+
+/* Popup di dettaglio del volume di UN distretto: quali esercizi e quante
+   serie (dirette al 100%, sinergiche al 50%) hanno generato il totale
+   mostrato in barra — richiesta esplicita di drill-down sul grafico volumi.
+   Stesso pattern di overlay di CompliancePopup più sopra in questo file. */
+export function VolumeDrillModal({ muscle, contributions, accent, onClose }) {
+  return (
+    <Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{
+             backgroundColor: "rgba(9,9,11,0.6)", backdropFilter: "blur(3px)", overflowY: "auto" }} onClick={onClose}>
+        <div className="spring-in w-full sm:max-w-sm rounded-3xl p-6 overflow-y-auto"
+             style={{ backgroundColor: "var(--surface)", border: "1px solid var(--line)", maxHeight: "88vh" }}
+             onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-4">
+            <p className="h1">{muscle}</p>
+            <button onClick={onClose} aria-label="Chiudi"><X size={18} style={{ color: "var(--ink-2)" }} /></button>
+          </div>
+          <p className="meta mb-4">
+            {contributions.length === 0
+              ? "Nessun esercizio contribuisce a questo distretto questa settimana."
+              : "Serie dirette (100%) e sinergiche (50%) per esercizio, questa settimana."}
+          </p>
+          <div className="space-y-2">
+            {contributions.map((c) => {
+              const total = c.directSets + c.indirectSets;
+              return (
+                <div key={c.exerciseName} className="inner flex items-center justify-between px-4 py-2.5 gap-3">
+                  <span className="text-sm truncate" style={{ color: "var(--ink)", fontWeight: 600 }}>{c.exerciseName}</span>
+                  <span className="text-sm shrink-0" style={{ color: accent, fontWeight: 800 }}>
+                    {Number.isInteger(total) ? total : total.toFixed(1)}
+                    {c.indirectSets > 0 && (
+                      <span className="meta ml-1.5" style={{ fontSize: "0.66rem", fontWeight: 600 }}>
+                        ({c.directSets > 0 ? `${c.directSets} dirette + ` : ""}{c.indirectSets} sinergiche)
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Portal>
   );
 }
 
@@ -836,6 +889,15 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
 
   const volume = useMemo(() => computeVolume(weekDays, libOverride || lib), [weekDays, lib, libOverride]);
   const involved = VOLUME_MUSCLES.filter((m) => volume[m].direct + volume[m].indirect > 0);
+
+  // Drill-down (richiesta esplicita): tocca un distretto per vedere quali
+  // esercizi/serie hanno generato quel totale — calcolato al volo solo per
+  // il distretto aperto, mai per tutti e 15 ad ogni render.
+  const [drillMuscle, setDrillMuscle] = useState(null);
+  const drillContributions = useMemo(
+    () => (drillMuscle ? computeVolumeContributions(weekDays, libOverride || lib, drillMuscle) : []),
+    [drillMuscle, weekDays, lib, libOverride]
+  );
 
   return (
     <div className="card mb-4">
@@ -860,12 +922,19 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
       ) : (
         <>
           <div className="space-y-2.5">
-            {involved.map((m) => <VolumeBar key={m} muscle={m} direct={volume[m].direct} indirect={volume[m].indirect} accent={accent} />)}
+            {involved.map((m) => (
+              <VolumeBar key={m} muscle={m} direct={volume[m].direct} indirect={volume[m].indirect} accent={accent}
+                         onClick={() => setDrillMuscle(m)} />
+            ))}
           </div>
           <p className="meta mt-3" style={{ fontSize: "0.68rem" }}>
-            Barra piena = serie dirette · barra chiara = stimolo indiretto (50% delle serie sui distretti sinergici)
+            Barra piena = serie dirette · barra chiara = stimolo indiretto (50% delle serie sui distretti sinergici) · tocca un distretto per il dettaglio
           </p>
         </>
+      )}
+
+      {drillMuscle && (
+        <VolumeDrillModal muscle={drillMuscle} contributions={drillContributions} accent={accent} onClose={() => setDrillMuscle(null)} />
       )}
     </div>
   );

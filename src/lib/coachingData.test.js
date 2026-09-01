@@ -10,7 +10,7 @@
 import { describe, it, expect } from "vitest";
 import {
   xpToLevelInfo, levelMinXp, dayNutritionScore, parseRepsTarget,
-  computeVolume, resolveMuscleTarget, MUSCLES, MUSCLE_TARGETS,
+  computeVolume, computeVolumeContributions, resolveMuscleTarget, MUSCLES, MUSCLE_TARGETS,
   DEFAULT_EXERCISE_LIB, isRealCoachingPlan, REAL_COACHING_PLANS_DB,
   computeRecoveryCompliance, computeBatchRecoveryCompliance,
   computeNutritionCompliance, computeBatchNutritionCompliance,
@@ -214,6 +214,53 @@ describe("computeVolume", () => {
   it("dayList vuoto o assente ritorna volume zero per tutti i muscoli, non un errore", () => {
     expect(() => computeVolume([], DEFAULT_EXERCISE_LIB)).not.toThrow();
     expect(() => computeVolume(undefined, DEFAULT_EXERCISE_LIB)).not.toThrow();
+  });
+});
+
+describe("computeVolumeContributions", () => {
+  it("elenca solo gli esercizi che contribuiscono al distretto richiesto", () => {
+    const day = [{ label: "Push", exercises: [
+      { name: "Panca piana bilanciere", sets: 4 },
+      { name: "Squat bilanciere", sets: 3 },
+    ] }];
+    const contributions = computeVolumeContributions(day, DEFAULT_EXERCISE_LIB, "Petto");
+    expect(contributions).toHaveLength(1);
+    expect(contributions[0].exerciseName).toBe("Panca piana bilanciere");
+    expect(contributions[0].directSets).toBe(4);
+    expect(contributions[0].indirectSets).toBe(0);
+  });
+  it("include il contributo indiretto (50%) per un esercizio sinergico sullo stesso distretto", () => {
+    const day = [{ label: "Push", exercises: [{ name: "Panca piana bilanciere", sets: 4 }] }];
+    const contributions = computeVolumeContributions(day, DEFAULT_EXERCISE_LIB, "Tricipiti");
+    expect(contributions).toHaveLength(1);
+    expect(contributions[0].directSets).toBe(0);
+    expect(contributions[0].indirectSets).toBe(2); // 4 * 0.5
+  });
+  it("somma le serie dello stesso esercizio su più giorni della settimana", () => {
+    const day = [
+      { label: "Push A", exercises: [{ name: "Panca piana bilanciere", sets: 4 }] },
+      { label: "Push B", exercises: [{ name: "Panca piana bilanciere", sets: 3 }] },
+    ];
+    const contributions = computeVolumeContributions(day, DEFAULT_EXERCISE_LIB, "Petto");
+    expect(contributions).toHaveLength(1);
+    expect(contributions[0].directSets).toBe(7);
+  });
+  it("distretto senza alcun contributo ritorna un elenco vuoto, non un errore", () => {
+    const day = [{ label: "Push", exercises: [{ name: "Panca piana bilanciere", sets: 4 }] }];
+    expect(() => computeVolumeContributions(day, DEFAULT_EXERCISE_LIB, "Polpacci")).not.toThrow();
+    expect(computeVolumeContributions(day, DEFAULT_EXERCISE_LIB, "Polpacci")).toEqual([]);
+  });
+  it("ordina per contributo totale decrescente (diretto + metà indiretto)", () => {
+    const lib = {
+      "Esercizio A": { direct: ["Petto"], indirect: [] },
+      "Esercizio B": { direct: [], indirect: ["Petto"] },
+    };
+    const day = [{ label: "Push", exercises: [
+      { name: "Esercizio B", sets: 10 }, // 5 equivalenti (10 * 0.5)
+      { name: "Esercizio A", sets: 2 },  // 2 diretti
+    ] }];
+    const contributions = computeVolumeContributions(day, lib, "Petto");
+    expect(contributions.map((c) => c.exerciseName)).toEqual(["Esercizio B", "Esercizio A"]);
   });
 });
 

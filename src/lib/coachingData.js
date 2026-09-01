@@ -270,6 +270,44 @@ function computeVolume(dayList, lib) {
   return vol;
 }
 
+// Drill-down del grafico volumi (richiesta esplicita): "quali esercizi e
+// serie hanno generato quel volume totale" per UN singolo distretto —
+// stessa identica iterazione di computeVolume, ma invece di sommare tutto
+// in un totale per distretto, aggrega per ESERCIZIO così la UI può
+// elencarli. Mai una seconda fonte di verità: qualunque numero coincide
+// sempre con quello che computeVolume ha già mostrato in barra, perché
+// entrambe leggono dagli stessi identici dati con la stessa identica
+// logica diretto/sinergico 100%/50%.
+export function computeVolumeContributions(dayList, lib, muscle) {
+  const activeLib = lib || DEFAULT_EXERCISE_LIB;
+  const byExercise = new Map(); // nome esercizio -> { exerciseName, directSets, indirectSets }
+  const add = (name, amount, isDirect) => {
+    const cur = byExercise.get(name) || { exerciseName: name, directSets: 0, indirectSets: 0 };
+    cur[isDirect ? "directSets" : "indirectSets"] += amount;
+    byExercise.set(name, cur);
+  };
+  (dayList || []).filter(Boolean).forEach((day) => {
+    (day.exercises || []).forEach((ex) => {
+      if (ex.kind === "cardio") return;
+      const sets = Number(ex.sets) || 0;
+      const entry = activeLib[ex.name];
+      if (entry) {
+        if (entry.direct.includes(muscle)) add(ex.name, sets, true);
+        if (entry.indirect.includes(muscle)) add(ex.name, sets * 0.5, false);
+        return;
+      }
+      const manualTarget = ex.muscleTarget || ex.targetMuscle;
+      if (!manualTarget) return;
+      const manualChart = DB_MUSCLE_TO_CHART[manualTarget] || manualTarget;
+      if (manualChart === muscle) add(ex.name, sets, true);
+      (ex.synergists || []).forEach((m) => {
+        if ((DB_MUSCLE_TO_CHART[m] || m) === muscle) add(ex.name, sets * 0.5, false);
+      });
+    });
+  });
+  return [...byExercise.values()].sort((a, b) => (b.directSets + b.indirectSets * 0.5) - (a.directSets + a.indirectSets * 0.5));
+}
+
 // Data (o "oggi") in formato YYYY-MM-DD LOCALE, mai da toISOString() — che
 // converte sempre in UTC e sposta la data di un giorno indietro per chiunque
 // sia in un fuso orario positivo (Italia inclusa) nelle ore vicine alla
