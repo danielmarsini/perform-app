@@ -22,7 +22,7 @@ import {
   freezeBonusForLevel, fetchStreakFreezeStatus, LEVEL_REWARDS,
   computeProgramExpiryAlerts, fetchLastAssignedWorkoutDates,
   computeSpotsRemaining, isPromoActive, fetchCoachMarketingPublic,
-  formatSetsReps,
+  formatSetsReps, fetchNutritionProgramsRange, deleteNutritionProgram,
 } from "./coachingData.js";
 
 describe("levelMinXp", () => {
@@ -314,6 +314,7 @@ function makeMockSupabase(tables) {
       let rows = [...(tables[table] || [])];
       const builder = {
         select() { return builder; },
+        delete() { return builder; },
         eq(col, val) { rows = rows.filter((r) => getPath(r, col) === val); return builder; },
         in(col, vals) { rows = rows.filter((r) => vals.includes(getPath(r, col))); return builder; },
         gte(col, val) { rows = rows.filter((r) => getPath(r, col) >= val); return builder; },
@@ -1151,6 +1152,23 @@ describe("fetchCoachMarketingPublic", () => {
     const supabase = makeMockSupabase({ coach_marketing_public: [] });
     const data = await fetchCoachMarketingPublic(supabase);
     expect(data).toEqual({ maxActiveClients: null, activeCoachingCount: 0, promoTitle: null, promoDescription: null, promoExpiresAt: null });
+  });
+});
+
+describe("fetchNutritionProgramsRange / deleteNutritionProgram", () => {
+  it("include l'id nella select, così il chiamante può poi cancellare quel programma specifico", async () => {
+    const supabase = makeMockSupabase({
+      nutrition_programs: [
+        { id: "prog1", user_id: "u1", start_date: "2026-01-01", end_date: "2026-01-07", on_kcal: 2200, on_protein: 180, on_carbs: 220, on_fat: 60, off_kcal: 1900, off_protein: 180, off_carbs: 150, off_fat: 55, created_at: "2026-01-01T00:00:00Z" },
+      ],
+    });
+    const rows = await fetchNutritionProgramsRange(supabase, "u1", "2026-01-01", "2026-01-31");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("prog1");
+  });
+  it("deleteNutritionProgram non lancia errore quando la delete va a buon fine", async () => {
+    const supabase = makeMockSupabase({ nutrition_programs: [{ id: "prog1" }] });
+    await expect(deleteNutritionProgram(supabase, "prog1")).resolves.toBeUndefined();
   });
 });
 

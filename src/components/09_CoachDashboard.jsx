@@ -78,7 +78,7 @@ const STATUS_META = {
 import {
   fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
-  assignNutritionTarget, fetchBothNutritionTargets, applyNutritionProgramToDateRange, fetchNutritionProgramsRange,
+  assignNutritionTarget, fetchBothNutritionTargets, applyNutritionProgramToDateRange, fetchNutritionProgramsRange, deleteNutritionProgram,
   saveWeekDiet, saveWeekSupplements, computeTrainingCompliance,
   computeRecoveryCompliance, computeNutritionCompliance,
   computeBatchTrainingCompliance, computeBatchRecoveryCompliance, computeBatchNutritionCompliance,
@@ -3332,7 +3332,8 @@ function ClientTimeline({ client, quickTargets, setQuickTargets }) {
       )}
       {mesocicloCalendarOpen && (
         <MesocicloCalendarModal days={resolveDays(realWorkout || [])} clientId={client.id} clientName={client.name}
-          coachId={coachId} supabase={supabase} weekStartISO={weekStartISO}
+          coachId={coachId} supabase={supabase} weekStartISO={weekStartISO} exerciseLib={exerciseLib}
+          onEditDate={(dateISO) => { setMesocicloCalendarOpen(false); goTo(offsetForDateISO(dateISO)); }}
           onClose={() => setMesocicloCalendarOpen(false)}
           onApplied={() => {
             fetchWeekWorkout(supabase, client.id, weekStartISO, (name) => !exerciseLib[name])
@@ -3756,7 +3757,7 @@ function MesocicloGrid({ monthCursor, onShiftMonth, todayISO, isCovered, selStar
    dell'intervallo resta sempre inequivocabile anche con un solo tocco.
    Stessa applyWorkoutSplitToDateRange già usata da "Libreria split": qui la
    sorgente è la bozza corrente invece di uno split salvato. */
-function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase, weekStartISO, onClose, onApplied }) {
+function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase, weekStartISO, exerciseLib, onEditDate, onClose, onApplied }) {
   const todayISO = toLocalISODate();
   const maxDateISO = toLocalISODate(new Date(Date.now() + MAX_APPLY_SPLIT_DAYS_AHEAD * 86400000));
   const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
@@ -3776,6 +3777,8 @@ function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase,
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { ok, failed, dayCount }
   const [err, setErr] = useState("");
+  const [selectedDayDetail, setSelectedDayDetail] = useState(null); // { dateISO, dayData } | null
+  const [selectedDayLoading, setSelectedDayLoading] = useState(false);
 
   const loadProgrammed = useCallback(() => {
     setLoading(true);
@@ -3794,8 +3797,22 @@ function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase,
   // (default "solo oggi"): un tap ridefinisce l'estremo più vicino alla
   // data toccata, così un solo tocco sposta subito l'intervallo invece di
   // dover sempre toccarne due.
+  // Cliccare un giorno GIÀ programmato mostra prima cosa c'è (richiesta
+  // esplicita: "aprimi cosa c'è in programma... per un controllo di
+  // routine") invece di limitarsi a spostare la selezione dell'intervallo.
   const handleDayClick = (dateISO) => {
     setResult(null);
+    if (programmedDates.has(dateISO)) {
+      setSelectedDayLoading(true);
+      const monday = toLocalISODate(mondayOf(new Date(`${dateISO}T00:00:00`)));
+      const weekdayIdx = (new Date(`${dateISO}T00:00:00`).getDay() + 6) % 7;
+      fetchWeekWorkout(supabase, clientId, monday, (name) => !exerciseLib?.[name])
+        .then((week) => setSelectedDayDetail({ dateISO, dayData: week[weekdayIdx] || null }))
+        .catch((err) => console.error("PERFORM: errore lettura dettaglio giorno allenamento", err))
+        .finally(() => setSelectedDayLoading(false));
+      return;
+    }
+    setSelectedDayDetail(null);
     if (dateISO < selStart) { setSelStart(dateISO); }
     else if (dateISO > selEnd) { setSelEnd(dateISO); }
     else { setSelStart(dateISO); setSelEnd(dateISO); }
@@ -3845,6 +3862,30 @@ function MesocicloCalendarModal({ days, clientId, clientName, coachId, supabase,
             todayISO={todayISO} isCovered={(dateISO) => programmedDates.has(dateISO)}
             selStart={selStart} selEnd={selEnd} onDayClick={handleDayClick} />
           {loading && <p className="c-muted text-[11px] mb-2">Carico programmazione…</p>}
+
+          {selectedDayLoading && <p className="c-muted text-[11px] mb-3">Carico il giorno…</p>}
+          {selectedDayDetail && !selectedDayLoading && (
+            <div className="rounded-lg px-3 py-3 mb-3" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+              <p className="text-xs font-semibold mb-1.5" style={{ color: "var(--ink)" }}>
+                {selectedDayDetail.dateISO}{selectedDayDetail.dayData?.label ? ` · ${selectedDayDetail.dayData.label}` : ""}
+              </p>
+              {!selectedDayDetail.dayData || selectedDayDetail.dayData.exercises.length === 0 ? (
+                <p className="c-muted text-[11px] mb-2.5">Nessun esercizio programmato per questo giorno.</p>
+              ) : (
+                <ul className="space-y-1 mb-2.5">
+                  {selectedDayDetail.dayData.exercises.map((ex, i) => (
+                    <li key={ex.id || i} className="c-muted text-[11px]">
+                      {ex.name} — {formatSetsReps(ex.sets, ex.reps)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button onClick={() => { onEditDate?.(selectedDayDetail.dateISO); }}
+                className="c-btn w-full px-3 py-2 rounded-lg text-xs font-medium">
+                Vai a modifica
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 mb-2">
             <label className="flex-1">
@@ -3911,6 +3952,8 @@ function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supaba
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
+  const [selectedProgram, setSelectedProgram] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const loadPrograms = useCallback(() => {
     setLoading(true);
@@ -3926,8 +3969,19 @@ function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supaba
 
   const isCovered = (dateISO) => programs.some((p) => p.start_date <= dateISO && p.end_date >= dateISO);
 
+  // Cliccare un giorno GIÀ programmato mostra cosa c'è (kcal/macro ON e OFF
+  // effettivamente salvati) invece di aprire subito una nuova selezione a
+  // caso — richiesta esplicita: "voglio vedere quando e quanto ho
+  // impostato". Un giorno libero continua a comportarsi come prima
+  // (selezione range per programmare da zero).
   const handleDayClick = (dateISO) => {
     setResult(null);
+    const found = programs.find((p) => p.start_date <= dateISO && p.end_date >= dateISO);
+    if (found) {
+      setSelectedProgram(found);
+      return;
+    }
+    setSelectedProgram(null);
     if (!selStart || selEnd) {
       setSelStart(dateISO);
       setSelEnd(null);
@@ -3935,6 +3989,30 @@ function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supaba
       setSelStart(dateISO);
     } else {
       setSelEnd(dateISO);
+    }
+  };
+
+  const editSelectedProgram = () => {
+    if (!selectedProgram) return;
+    setSelStart(selectedProgram.start_date);
+    setSelEnd(selectedProgram.end_date);
+    setSelectedProgram(null);
+  };
+
+  const deleteSelectedProgram = async () => {
+    if (!selectedProgram) return;
+    setDeleteBusy(true);
+    setErr("");
+    try {
+      await deleteNutritionProgram(supabase, selectedProgram.id);
+      setSelectedProgram(null);
+      loadPrograms();
+      onApplied();
+    } catch (e) {
+      console.error("PERFORM: errore cancellazione programmazione alimentazione", e);
+      setErr(e?.message || "Non sono riuscito a cancellare questa programmazione.");
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -3989,6 +4067,30 @@ function NutritionMesocicloCalendarModal({ clientId, clientName, coachId, supaba
             todayISO={todayISO} isCovered={isCovered}
             selStart={selStart} selEnd={selEnd} onDayClick={handleDayClick} />
           {loading && <p className="c-muted text-[11px] mb-2">Carico programmazione…</p>}
+
+          {selectedProgram && (
+            <div className="rounded-lg px-3 py-3 mb-3" style={{ backgroundColor: "var(--surface-2)", border: "1px solid var(--line)" }}>
+              <p className="text-xs font-semibold mb-1.5" style={{ color: "var(--ink)" }}>
+                {selectedProgram.start_date}{selectedProgram.end_date !== selectedProgram.start_date ? ` → ${selectedProgram.end_date}` : ""}
+              </p>
+              <p className="c-muted text-[11px] mb-0.5">
+                ON: {selectedProgram.on_kcal} kcal · P{selectedProgram.on_protein} C{selectedProgram.on_carbs} G{selectedProgram.on_fat}
+              </p>
+              <p className="c-muted text-[11px] mb-2.5">
+                OFF: {selectedProgram.off_kcal} kcal · P{selectedProgram.off_protein} C{selectedProgram.off_carbs} G{selectedProgram.off_fat}
+              </p>
+              <div className="flex gap-2">
+                <button onClick={editSelectedProgram} className="c-ghost flex-1 px-3 py-2 rounded-lg text-xs font-medium">
+                  Modifica intervallo
+                </button>
+                <button onClick={deleteSelectedProgram} disabled={deleteBusy}
+                  className="flex-1 px-3 py-2 rounded-lg text-xs font-medium"
+                  style={{ backgroundColor: "rgba(220,38,38,0.1)", color: "#DC2626" }}>
+                  {deleteBusy ? "Elimino…" : "Elimina"}
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 mb-2">
             <label className="flex-1">
