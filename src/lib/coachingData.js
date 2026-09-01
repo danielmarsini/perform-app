@@ -421,13 +421,22 @@ export async function applyNutritionProgramToDateRange(supabase, clientId, start
 export async function fetchNutritionProgramsRange(supabase, userId, fromISO, toISO) {
   const { data, error } = await supabase
     .from("nutrition_programs")
-    .select("start_date, end_date, on_kcal, on_protein, on_carbs, on_fat, off_kcal, off_protein, off_carbs, off_fat, created_at")
+    .select("id, start_date, end_date, on_kcal, on_protein, on_carbs, on_fat, off_kcal, off_protein, off_carbs, off_fat, created_at")
     .eq("user_id", userId)
     .lte("start_date", toISO)
     .gte("end_date", fromISO)
     .order("created_at", { ascending: true });
   if (error) throw error;
   return data ?? [];
+}
+
+// Cancella una programmazione alimentazione già fatta (richiesta esplicita:
+// il coach deve poter vedere e modificare/cancellare cosa ha già impostato,
+// non solo scrivere alla cieca su un form vuoto). RLS già permette il
+// delete al coach (SCHEMA_v86, nutrition_programs_delete).
+export async function deleteNutritionProgram(supabase, programId) {
+  const { error } = await supabase.from("nutrition_programs").delete().eq("id", programId);
+  if (error) throw error;
 }
 
 // Sonno/passi reali di un intervallo di date (daily_metrics), un giorno = una
