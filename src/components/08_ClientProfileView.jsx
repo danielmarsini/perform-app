@@ -39,7 +39,7 @@ import {
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video, Share2,
   ClipboardList,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, LEVEL_REWARDS, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, isRealCoachingPlan, fetchCoachMarketingPublic, computeSpotsRemaining, isPromoActive } from "../lib/coachingData.js";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, LEVEL_REWARDS, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, isRealCoachingPlan, fetchCoachMarketingPublic, computeSpotsRemaining, isPromoActive, computeTrainingCompliance, computeNutritionCompliance, computeRecoveryCompliance } from "../lib/coachingData.js";
 import { GlobalStyle as AnamGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./AnamnesisShared.jsx";
 import { shareWrappedStory } from "../lib/wrappedShare.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
@@ -48,7 +48,7 @@ import { isPushSupported, pushUnsupportedReason, getBrowserPushSubscription, sub
 import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
-import { WeeklyCheckModal, PauseSection } from "./05_HomeDashboard.jsx";
+import { WeeklyCheckModal, PauseSection, ComplianceCircle } from "./05_HomeDashboard.jsx";
 import { CONSENT_COPY } from "./03_AuthView.jsx";
 
 /* ============================================================================
@@ -946,8 +946,16 @@ function WrappedModal({ stats, profile, accent, onClose }) {
   const tiles = [
     { emoji: "🏋️", value: stats.workoutDays, label: stats.workoutDays === 1 ? "giorno di allenamento" : "giorni di allenamento" },
     { emoji: "🔢", value: stats.totalSets.toLocaleString("it-IT"), label: "serie totali svolte" },
-    { emoji: "🏔️", value: `${stats.totalVolumeKg.toLocaleString("it-IT")} kg`, label: "volume totale sollevato" },
     { emoji: "🍽️", value: stats.nutritionDays, label: "giorni con diario alimentare compilato" },
+  ];
+  // I 3 cerchi di compliance (allenamento/alimentazione/recupero) al posto
+  // del volume sollevato: sono gli stessi identici che l'atleta vede ogni
+  // giorno in Home — quelli "più belli da far vedere nelle storie",
+  // richiesta esplicita — non un nuovo widget solo per il Wrapped.
+  const rings = [
+    { id: "train", label: "Allenamento", pct: stats.trainPct },
+    { id: "nutri", label: "Alimentazione", pct: stats.nutriPct },
+    { id: "recovery", label: "Recupero", pct: stats.recoveryPct },
   ];
   const wellnessTiles = [
     stats.avgSleep != null && { emoji: "😴", value: `${stats.avgSleep}h`, label: "sonno medio" },
@@ -973,6 +981,21 @@ function WrappedModal({ stats, profile, accent, onClose }) {
           <p style={{ fontSize: "1.3rem", fontWeight: 800, marginBottom: "1.1rem" }}>
             {profile?.nickname ? `${profile.nickname}, ecco il tuo mese 🎉` : "Ecco il tuo mese 🎉"}
           </p>
+          {rings.some((r) => r.pct != null) && (
+            <div className="rounded-2xl p-4 mb-4" style={{ backgroundColor: "rgba(255,255,255,0.1)" }}>
+              <p style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.75, marginBottom: 12 }}>
+                Il tuo stato in 3 cerchi
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {rings.map((r) => (
+                  <div key={r.id} className="flex flex-col items-center gap-1.5">
+                    <ComplianceCircle pct={r.pct} size={72} stroke={7} />
+                    <span style={{ fontSize: "0.62rem", fontWeight: 700, opacity: 0.85, textAlign: "center" }}>{r.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 mb-4">
             {tiles.map((tl, i) => (
               <div key={i} className="rounded-2xl p-3.5" style={{ backgroundColor: "rgba(255,255,255,0.12)" }}>
@@ -1265,8 +1288,24 @@ export function ClientProfileView({
     const fromDate = new Date(today);
     fromDate.setDate(fromDate.getDate() - 29);
     const fromISO = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}-${String(fromDate.getDate()).padStart(2, "0")}`;
-    fetchMonthlyWrapped(supabase, userId, fromISO, todayISO)
-      .then(setWrapped)
+    // I 3 cerchi di compliance (Allenamento/Alimentazione/Recupero) sono lo
+    // STESSO calcolo già mostrato in Home (computeTrainingCompliance ecc,
+    // media 7 giorni) — nessun ricalcolo diverso, solo un altro punto dove
+    // mostrare lo stesso numero reale. Best-effort: se una fallisce il
+    // Wrapped resta comunque utilizzabile (n/d su quel cerchio) invece di
+    // bloccare tutto il resto già caricato.
+    Promise.all([
+      fetchMonthlyWrapped(supabase, userId, fromISO, todayISO),
+      computeTrainingCompliance(supabase, userId).catch(() => null),
+      computeNutritionCompliance(supabase, userId).catch(() => null),
+      computeRecoveryCompliance(supabase, userId).catch(() => null),
+    ])
+      .then(([monthly, train, nutri, recovery]) => setWrapped({
+        ...monthly,
+        trainPct: train?.pct ?? null,
+        nutriPct: nutri?.pct ?? null,
+        recoveryPct: recovery?.pct ?? null,
+      }))
       .catch((err) => {
         console.error("PERFORM: errore caricamento Wrapped mensile", err);
         setWrappedError("Non sono riuscito a caricare il tuo Wrapped — riprova.");

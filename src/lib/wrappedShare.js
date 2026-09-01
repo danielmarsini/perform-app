@@ -10,6 +10,8 @@
    per disegnare testo ed emoji su canvas esattamente come nel resto della UI.
    ========================================================================== */
 
+import { complianceHsl } from "../components/05_HomeDashboard.jsx";
+
 const WIDTH = 1080;
 const HEIGHT = 1920;
 const PAD_X = 84;
@@ -42,6 +44,57 @@ function wrapLines(ctx, text, maxWidth) {
   });
   if (current) lines.push(current);
   return lines;
+}
+
+// 3 cerchi di compliance (allenamento/alimentazione/recupero) disegnati a
+// mano su canvas — stessa curva colore a semaforo continua di ComplianceCircle
+// (05_HomeDashboard.jsx, via complianceHsl importato sopra), niente sheen
+// animato (un PNG statico non anima) ma stesso arco/stesso colore/stessa
+// percentuale al centro: è la STESSA misura che l'atleta vede ogni giorno in
+// Home, non un widget nuovo inventato solo per l'export.
+function drawComplianceRing(ctx, cx, cy, r, pct, label) {
+  const stroke = 14;
+  const isNeutral = pct == null;
+  ctx.lineCap = "round";
+
+  // Traccia di sfondo
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = stroke;
+  ctx.stroke();
+
+  if (!isNeutral) {
+    const { h, s, l } = complianceHsl(pct);
+    const color = `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+    const start = -Math.PI / 2;
+    const end = start + Math.PI * 2 * (Math.max(0, Math.min(100, pct)) / 100);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, start, end);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = stroke;
+    ctx.stroke();
+  }
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "800 46px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+  ctx.fillText(isNeutral ? "n/d" : `${Math.round(pct)}%`, cx, cy + 16);
+
+  ctx.font = "700 28px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+  ctx.globalAlpha = 0.85;
+  ctx.fillText(label, cx, cy + r + 56);
+  ctx.globalAlpha = 1;
+}
+
+function drawComplianceRingsRow(ctx, rings, top) {
+  const r = 92;
+  const colWidth = (WIDTH - PAD_X * 2) / 3;
+  rings.forEach((ring, i) => {
+    const cx = PAD_X + colWidth * i + colWidth / 2;
+    drawComplianceRing(ctx, cx, top + r, r, ring.pct, ring.label);
+  });
+  return top + r * 2 + 56;
 }
 
 function drawTileGrid(ctx, tiles, top, colWidth, gap) {
@@ -92,8 +145,12 @@ export function renderWrappedStoryImage(stats, profile, accent) {
   const tiles = [
     { emoji: "🏋️", value: stats.workoutDays, label: stats.workoutDays === 1 ? "giorno di allenamento" : "giorni di allenamento" },
     { emoji: "🔢", value: Number(stats.totalSets).toLocaleString("it-IT"), label: "serie totali svolte" },
-    { emoji: "🏔️", value: `${Number(stats.totalVolumeKg).toLocaleString("it-IT")} kg`, label: "volume totale sollevato" },
     { emoji: "🍽️", value: stats.nutritionDays, label: "giorni con diario alimentare compilato" },
+  ];
+  const rings = [
+    { label: "Allenamento", pct: stats.trainPct },
+    { label: "Alimentazione", pct: stats.nutriPct },
+    { label: "Recupero", pct: stats.recoveryPct },
   ];
   const wellnessTiles = [
     stats.avgSleep != null && { emoji: "😴", value: `${stats.avgSleep}h`, label: "sonno medio" },
@@ -118,6 +175,11 @@ export function renderWrappedStoryImage(stats, profile, accent) {
   const titleLines = wrapLines(ctx, greeting, WIDTH - PAD_X * 2);
   let cursorY = 240;
   titleLines.forEach((line) => { ctx.fillText(line, PAD_X, cursorY); cursorY += 78; });
+
+  if (rings.some((r) => r.pct != null)) {
+    cursorY += 30;
+    cursorY = drawComplianceRingsRow(ctx, rings, cursorY) + 20;
+  }
 
   cursorY += 40;
   cursorY = drawTileGrid(ctx, tiles, cursorY, colWidth, 28) + 28;

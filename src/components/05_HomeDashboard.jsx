@@ -1059,7 +1059,7 @@ const COMPLIANCE_COLOR_STOPS = [
 // Estratta da complianceColor così anche Chart3D (sonno/passi) può usare la
 // STESSA curva a semaforo continua dei cerchi di compliance, invece di 3
 // blocchi di colore netti — "come nei cerchi", richiesta esplicita.
-function complianceHsl(pct) {
+export function complianceHsl(pct) {
   const p = complPct(pct);
   let lo = COMPLIANCE_COLOR_STOPS[0], hi = COMPLIANCE_COLOR_STOPS[COMPLIANCE_COLOR_STOPS.length - 1];
   for (let i = 0; i < COMPLIANCE_COLOR_STOPS.length - 1; i++) {
@@ -1082,7 +1082,7 @@ const COMPLIANCE_TIERS = [
   { min: 55, label: "Pericolo" },
   { min: 0,  label: "Allarme" },
 ];
-function complianceTier(p) {
+export function complianceTier(p) {
   const t = COMPLIANCE_TIERS.find((t) => p >= t.min) || COMPLIANCE_TIERS[COMPLIANCE_TIERS.length - 1];
   return { ...t, color: complianceColor(p) };
 }
@@ -1148,7 +1148,7 @@ function nutritionPrecision(target, consumed) {
    normale, ed etichetta di stato in maiuscolo piccolo sotto la percentuale —
    nessuna emoji, nessun elemento giocoso: deve leggersi come lo strumento
    che misura le prestazioni di un atleta serio, non come un badge. */
-function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
+export function ComplianceCircle({ pct, size = 76, stroke = 8 }) {
   // pct === null → nulla da misurare questa settimana (es. niente assegnato):
   // stato neutro esplicito, non un 0% (allarme) né un 100% (falso completo).
   const isNeutral = pct == null;
