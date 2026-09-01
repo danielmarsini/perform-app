@@ -254,13 +254,23 @@ Deno.serve(async (req) => {
       }
       if (!article.title || !article.abstract) { debug.push(`[${channel}] efetch senza title/abstract (${pmid})`); continue; }
 
+      // BUG PRESO (segnalato): quando la trasformazione in italiano falliva
+      // (errore API, JSON malformato, rate limit...) qui si pubblicava
+      // l'abstract PubMed originale IN INGLESE così com'era ("meglio
+      // inglese che niente") — per un'app interamente italiana un cliente
+      // si ritrovava un report scientifico illeggibile in mezzo al feed.
+      // Ora un fallimento della trasformazione salta semplicemente questo
+      // pmid (nessun insert): al prossimo giro del cron (ogni 2 ore) o al
+      // prossimo pmid nella stessa rotazione arriva comunque altro
+      // materiale — mai un post pubblicato in una lingua che il cliente
+      // non ha scelto.
       let row;
       try {
         row = await transform(article);
       } catch (err) {
         console.error(`PERFORM: errore trasformazione ${channel}`, pmid, err);
-        debug.push(`[${channel}] trasformazione fallita (${pmid}): ${err.message}`);
-        row = { title: article.title, body: firstSentences(article.abstract, 3), bodyExtended: [article.abstract] }; // meglio inglese che niente
+        debug.push(`[${channel}] trasformazione fallita (${pmid}): ${err.message} — saltato, mai pubblicato in inglese`);
+        continue;
       }
 
       // News legge come una notizia scientifica: citazione (Rivista, Anno) in
