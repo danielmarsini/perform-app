@@ -26,8 +26,8 @@
    giusto per farli comparire, zero modifiche al codice.
    ========================================================================== */
 
-import React, { useState } from "react";
-import { motion, AnimatePresence, useMotionValue, useTransform, useReducedMotion } from "framer-motion";
+import React, { useState, useRef } from "react";
+import { motion, AnimatePresence, useMotionValue, useTransform, useReducedMotion, animate } from "framer-motion";
 import { Dumbbell, Salad, Moon, ChevronRight, ShieldCheck, Camera, Sparkles } from "lucide-react";
 import { DesignSystem, LiveBackground } from "./04_AppShell.jsx";
 import { GradientText } from "./08_ClientProfileView.jsx";
@@ -38,7 +38,7 @@ import { GradientText } from "./08_ClientProfileView.jsx";
    vuoi aggiungere titoli/anni di esperienza/certificazioni puntuali,
    modifica questa costante. */
 const COACH_NAME = "Daniel Marsini";
-const COACH_BIO = "Preparatore e coach evidence-based. Programmazione personalizzata su allenamento, alimentazione e recupero — aggiornata sui tuoi progressi reali, check dopo check.";
+const COACH_BIO = "Preparatore evidence-based. Ogni scheda nasce dai tuoi dati reali — non da un modello standard, copiato e incollato per tutti.";
 
 /* ----------------------------------------------------------------------
    Foto con fallback elegante: prova a caricare da /landing/<file>, se il
@@ -83,16 +83,16 @@ function TransformationPair({ n }) {
     <div className="flex gap-1.5" style={{ flex: 1, minWidth: 0 }}>
       <div style={{ flex: 1, position: "relative" }}>
         <LandingPhoto file={`transformation-${n}-before.jpg`} label="Prima" />
-        <span style={{ position: "absolute", top: 6, left: 6, fontSize: "0.5rem", fontWeight: 800, letterSpacing: "0.08em",
-                       color: "#fff", backgroundColor: "rgba(0,0,0,0.55)", padding: "2px 6px", borderRadius: 999 }}>
-          PRIMA
+        <span className="landing-tag" style={{ position: "absolute", top: 6, left: 6,
+                       color: "rgba(255,255,255,0.85)", backgroundColor: "rgba(0,0,0,0.5)", padding: "2px 8px", borderRadius: 999 }}>
+          Prima
         </span>
       </div>
       <div style={{ flex: 1, position: "relative" }}>
         <LandingPhoto file={`transformation-${n}-after.jpg`} label="Dopo" />
-        <span style={{ position: "absolute", top: 6, left: 6, fontSize: "0.5rem", fontWeight: 800, letterSpacing: "0.08em",
-                       color: "#111111", backgroundColor: "#C5A059", padding: "2px 6px", borderRadius: 999 }}>
-          DOPO
+        <span className="landing-tag" style={{ position: "absolute", top: 6, left: 6,
+                       color: "#1a1408", backgroundColor: "#D9B36A", padding: "2px 8px", borderRadius: 999 }}>
+          Dopo
         </span>
       </div>
     </div>
@@ -144,9 +144,9 @@ function FloatingChip({ icon: Icon, style, delay, reduce }) {
 function useSlides(reduce) {
   return [
     {
-      kicker: "Il problema",
+      kicker: "Il problema, in una frase",
       title: "Un'app per allenarti. Un'altra per la dieta. Un'altra ancora per il sonno.",
-      body: "Dati sparsi, mai messi a confronto — così anche il miglior impegno si perde per strada. Alla fine il quadro completo non lo vede nessuno. Nemmeno tu.",
+      body: "Dati sparsi che nessuno mette davvero insieme. Nemmeno tu.",
       visual: (
         <div style={{ position: "relative", width: "100%", height: 140 }}>
           <FloatingChip icon={Dumbbell} style={{ left: "18%", top: 4 }} delay={0.05} reduce={reduce} />
@@ -156,9 +156,9 @@ function useSlides(reduce) {
       ),
     },
     {
-      kicker: "La soluzione",
-      title: "Tutto quello che conta, in un unico posto.",
-      body: "Allenamento, alimentazione, recupero, integrazione: un solo sistema che li legge insieme e ti restituisce un quadro vero — per capire cosa funziona davvero, senza perdere tempo a incrociare numeri a mano.",
+      kicker: "Perché PERFORM è diverso",
+      title: "Non un'altra app per contare numeri.",
+      body: "Allenamento, alimentazione, recupero e integrazione letti come un solo corpo — non quattro tracker scollegati che non si parlano.",
       visual: (
         <div className="flex items-center justify-center gap-5" style={{ width: "100%", height: 140 }}>
           <MiniRing pct={88} label="Allenamento" color="#C5A059" delay={0.05} reduce={reduce} />
@@ -168,9 +168,9 @@ function useSlides(reduce) {
       ),
     },
     {
-      kicker: "Mai da solo, se non vuoi",
+      kicker: "Non un algoritmo con la tua faccia",
       title: "Dietro ogni numero, un professionista vero.",
-      body: "Chi sceglie un percorso di coaching ha una scheda e un piano costruiti su misura da chi studia fisiologia, biomeccanica e nutrizione per mestiere — non un algoritmo: una persona che legge i tuoi progressi reali e li aggiorna con te.",
+      body: "Fisiologia, biomeccanica, i tuoi progressi reali — letti da chi se ne occupa per mestiere. Non una scheda fotocopiata.",
       visual: (
         <div className="flex flex-col items-center gap-3" style={{ width: "100%" }}>
           <div style={{ width: 96 }}>
@@ -186,7 +186,7 @@ function useSlides(reduce) {
     {
       kicker: "Anche senza coach",
       title: "Autogestisciti come un atleta vero.",
-      body: "Registrazione gratuita, monitoraggio costante, la tua routine costruita e tracciata in modo sistematico — non un'altra app abbandonata dopo una settimana. Il metodo resta lo stesso: lo applichi tu.",
+      body: "Gratis, senza pubblicità e senza funzioni finte bloccate per farti pagare. Solo il metodo — lo applichi tu.",
       visual: (
         <motion.div
           initial={{ opacity: 0, scale: 0.7, rotate: -8 }}
@@ -203,9 +203,9 @@ function useSlides(reduce) {
       ),
     },
     {
-      kicker: "Risultati reali",
-      title: "Non promesse. Persone vere.",
-      body: "Percorsi costruiti nel tempo, un check alla volta.",
+      kicker: "Non promesse. Persone.",
+      title: "I risultati parlano da soli.",
+      body: "Percorsi reali, un check alla volta.",
       visual: (
         <div className="flex flex-col gap-2.5" style={{ width: "100%" }}>
           <div className="flex gap-2.5">
@@ -219,9 +219,9 @@ function useSlides(reduce) {
       ),
     },
     {
-      kicker: "Pronto a iniziare?",
+      kicker: "Pronto?",
       title: "Il tuo percorso comincia ora.",
-      body: "Crea il tuo account gratuito — nessuna carta richiesta per iniziare a monitorare in modo serio quello che fai davvero.",
+      body: "Account gratuito, zero carta di credito. Inizia a monitorarti come chi fa sul serio.",
       visual: (
         <motion.div
           initial={{ opacity: 0, scale: 0.7 }}
@@ -261,6 +261,20 @@ export default function LandingIntro({ dark, onFinish }) {
   // Parallax dello sfondo mentre si trascina: appena percettibile, dà
   // profondità al gesto senza staccarsi dal contenuto in primo piano.
   const bgShift = useTransform(dragX, [-200, 200], [12, -12]);
+  // Leggera rotazione mentre si trascina — come una carta che si solleva
+  // dal mazzo — per rendere lo swipe più dinamico e "fisico". Motion value
+  // indipendente da quella dei variants (mai sullo stesso "x", per lo
+  // stesso motivo spiegato sopra per bgShift): niente conflitti fra il
+  // gesto live e la transizione di ingresso/uscita della slide.
+  const rotateZ = useMotionValue(0);
+  // Un rilascio a fine trascinamento cade spesso nella metà sinistra dello
+  // schermo (dita che si muovono verso sinistra per far avanzare) — la
+  // stessa zona che onTap userebbe per tornare indietro. Senza questo
+  // guard, un vero swipe avanti veniva subito annullato da un onTap
+  // fantasma sullo stesso rilascio: il gesto avanzava e retrocedeva nello
+  // stesso istante. onDragEnd marca il gesto come "già gestito" e onTap lo
+  // ignora una volta sola.
+  const justDraggedRef = useRef(false);
 
   const go = (dir) => {
     setPage(([i]) => {
@@ -277,9 +291,51 @@ export default function LandingIntro({ dark, onFinish }) {
     <div className="app-root min-h-screen flex flex-col" data-theme={dark ? "dark" : "light"}
          style={{ backgroundColor: "var(--page)", overflow: "hidden" }}>
       <DesignSystem />
+      {/* Tipografia dedicata a questa sola schermata (il "biglietto da
+          visita"): un serif editoriale al posto del solito sans-bold in
+          maiuscolo da landing generata — quello che distingue un lavoro di
+          design curato da un template. Sfondo: oltre ai blob dorati di
+          LiveBackground (condivisi con tutta l'app), una vignetta che
+          scurisce i bordi verso un nero caldo e una sottile "lama" dorata
+          che attraversa lo schermo in loop — più movimento, più profondità,
+          senza mai coprire il testo. */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,500;0,600;1,400&display=swap');
+        .landing-kicker {
+          font-family: 'Fraunces', Georgia, serif;
+          font-style: italic;
+          font-weight: 400;
+          font-size: 0.85rem;
+          color: rgba(217,179,106,0.75);
+          letter-spacing: 0.01em;
+        }
+        .landing-title { font-family: 'Fraunces', Georgia, serif; }
+        .landing-tag { font-family: 'Fraunces', Georgia, serif; font-style: italic; font-size: 0.62rem; font-weight: 500; }
+        .landing-vignette {
+          position: fixed; inset: 0; z-index: 0; pointer-events: none;
+          background: radial-gradient(ellipse at 50% 38%, transparent 30%, rgba(4,3,1,0.6) 100%);
+        }
+        .landing-gold-sweep {
+          position: fixed; inset: -20%; z-index: 0; pointer-events: none; opacity: 0.4;
+          background: linear-gradient(115deg, transparent 42%, rgba(197,160,89,0.16) 48%, rgba(243,229,171,0.2) 50%, rgba(197,160,89,0.16) 52%, transparent 58%);
+          background-size: 220% 220%;
+          animation: landingGoldSweep 10s ease-in-out infinite;
+          mix-blend-mode: screen;
+        }
+        @keyframes landingGoldSweep {
+          0%   { background-position: 10% 0%; }
+          50%  { background-position: 90% 100%; }
+          100% { background-position: 10% 0%; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .landing-gold-sweep { animation: none; }
+        }
+      `}</style>
       <motion.div style={{ x: reduce ? 0 : bgShift }}>
         <LiveBackground gender={gender} dark={dark} />
       </motion.div>
+      <div className="landing-gold-sweep" aria-hidden="true" />
+      <div className="landing-vignette" aria-hidden="true" />
 
       <div style={{ position: "relative", zIndex: 1 }} className="min-h-screen flex flex-col">
         {/* Header: barra di avanzamento a segmenti (stile Storie) + Salta —
@@ -318,29 +374,46 @@ export default function LandingIntro({ dark, onFinish }) {
               drag={reduce ? false : "x"}
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={0.55}
-              onDrag={(e, info) => dragX.set(info.offset.x)}
+              onDrag={(e, info) => {
+                dragX.set(info.offset.x);
+                rotateZ.set(Math.max(-8, Math.min(8, info.offset.x / 18)));
+              }}
               onDragEnd={(e, info) => {
                 dragX.set(0);
+                animate(rotateZ, 0, { type: "spring", stiffness: 280, damping: 22 });
+                if (Math.abs(info.offset.x) > 4) justDraggedRef.current = true;
                 if (info.offset.x < -70 || info.velocity.x < -400) go(1);
                 else if (info.offset.x > 70 || info.velocity.x > 400) go(-1);
               }}
               onTap={(e) => {
+                if (justDraggedRef.current) { justDraggedRef.current = false; return; }
                 const x = e.clientX ?? (e.changedTouches && e.changedTouches[0]?.clientX) ?? window.innerWidth;
                 go(x < window.innerWidth * 0.32 ? -1 : 1);
               }}
               className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center"
-              style={{ maxWidth: 480, margin: "0 auto", cursor: "pointer" }}>
+              style={{ maxWidth: 480, margin: "0 auto", cursor: "pointer", rotate: reduce ? 0 : rotateZ }}>
               <div className="mb-7" style={{ width: "100%" }}>{s.visual}</div>
-              <p className="font-data mb-2.5" style={{ fontSize: "0.66rem", fontWeight: 700, letterSpacing: "0.14em",
-                          textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
+              <p className="landing-kicker mb-2.5">
                 {s.kicker}
               </p>
-              <GradientText gender={gender} style={{ fontSize: "1.55rem", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.22, display: "block" }}>
+              <GradientText gender={gender} className="landing-title" style={{ fontSize: "1.7rem", fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.2, display: "block" }}>
                 {s.title}
               </GradientText>
               <p className="mt-3.5 text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.62)", maxWidth: 340 }}>
                 {s.body}
               </p>
+              {index === 0 && (
+                <motion.div className="flex items-center justify-center gap-1.5 mt-8" aria-hidden="true"
+                  initial={{ opacity: 0 }} animate={{ opacity: reduce ? 0.5 : 1 }} transition={{ delay: 0.5, duration: 0.5 }}>
+                  <motion.span
+                    animate={reduce ? {} : { x: [6, -6, 6] }}
+                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                    style={{ width: 26, height: 2, borderRadius: 999, background: "linear-gradient(90deg, transparent, #C5A059)" }} />
+                  <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic", fontSize: "0.68rem", color: "rgba(255,255,255,0.4)" }}>
+                    scorri
+                  </span>
+                </motion.div>
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
