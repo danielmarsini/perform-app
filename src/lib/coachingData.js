@@ -26,6 +26,8 @@
    integratore). Mai aggiungere un pulsante "azione" senza tutte e 3.
    ========================================================================== */
 
+import { computeAgeFromBirthDate } from "./biometrics.js";
+
 const MUSCLE_TARGETS = [
   "Pettorali", "Gran Dorsale", "Lombari", "Trapezio",
   "Deltoide Anteriore", "Deltoide Laterale", "Deltoide Posteriore",
@@ -3333,8 +3335,13 @@ export async function fetchClientRoster(supabase) {
         fullName: p.full_name || null,
         nickname: p.nickname || null,
         whitelistedUntil: p.whitelisted_until || null,
-        age: answers.eta ?? null,
-        birthDate: null,
+        // BUG PRESO: leggeva answers.eta, un campo numerico che l'anamnesi
+        // non scrive mai — la domanda vera (AnamnesisShared.jsx) chiede la
+        // DATA di nascita ("nascita", input type=date), quindi l'età va
+        // sempre calcolata da lì. Per qualunque cliente con l'anamnesi vera
+        // compilata, età risultava sempre null.
+        age: computeAgeFromBirthDate(answers.nascita) ?? (answers.eta ?? null),
+        birthDate: answers.nascita ?? null,
         // BUG PRESO: leggeva solo answers.heightCm, una chiave inglese mai
         // scritta dall'anamnesi attuale (AnamnesisShared.jsx salva sotto
         // "altezza", in italiano) — per qualunque cliente che ha compilato
