@@ -3335,13 +3335,24 @@ export async function fetchClientRoster(supabase) {
         whitelistedUntil: p.whitelisted_until || null,
         age: answers.eta ?? null,
         birthDate: null,
-        heightCm: answers.heightCm ?? null,
+        // BUG PRESO: leggeva solo answers.heightCm, una chiave inglese mai
+        // scritta dall'anamnesi attuale (AnamnesisShared.jsx salva sotto
+        // "altezza", in italiano) — per qualunque cliente che ha compilato
+        // l'anamnesi vera questo campo era sempre null. answers.heightCm
+        // resta come fallback per i pochissimi record ancora col vecchio
+        // formato, mai rimosso per non rompere dati storici.
+        heightCm: answers.altezza ?? answers.heightCm ?? null,
         bodyFatPct: answers.bodyFatPct ?? null,
         activity: answers.activity ?? null,
         foodLikes: answers.foodLikes ?? [],
         foodDislikes: answers.foodDislikes ?? [],
         email: p.email,
         lastCheck: last ? { weight: Number(last.weight) } : { weight: null },
+        // Peso dell'anamnesi iniziale: unico dato disponibile per un
+        // cliente appena arrivato che non ha ancora registrato un check —
+        // usato SOLO come fallback (mai al posto di un check reale già
+        // presente) da chi calcola il dispendio energetico stimato.
+        initialWeightKg: Number(answers.peso) || null,
         lastCheckDate: last?.date || null, // per "chi è in ritardo" nel pannello coach
         weightHistory: ordered.map((c) => Number(c.weight)).filter((n) => !Number.isNaN(n)),
         waistCm: null,

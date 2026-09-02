@@ -9,6 +9,7 @@ import Portal from "./Portal.jsx";
 import SwipeHandle from "./SwipeHandle.jsx";
 import { useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
+import { computeEnergyExpenditure } from "../lib/biometrics.js";
 import { VolumeBar, VolumeDrillModal, SUPP_WIKI, SUPP_MOMENTS, matchSuppMoment } from "./05_HomeDashboard.jsx";
 // Spostati in un file a sé (AnamnesisShared.jsx) insieme ad AnamAreaSection/
 // ANAM_AREAS/ANAM_QUESTIONS: 11_OnboardingFlow.jsx li importava PRIMA
@@ -5439,16 +5440,53 @@ function BioritmiGrafici({ client }) {
           {!isRealMode || recoveryCompliance?.trackedDays === 0 || recoveryCompliance?.sleepAvg == null ? (
             <p className="c-muted text-sm">{isRealMode ? "Nessun dato di sonno/passi registrato in questa finestra." : "Disponibile in modalità reale."}</p>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="t-inner px-3 py-3 text-center">
-                <p className="c-label mb-1">Sonno medio</p>
-                <p className="font-data text-xl font-bold" style={{ color: "var(--ink)" }}>{recoveryCompliance.sleepAvg}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}> h/notte</span></p>
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="t-inner px-3 py-3 text-center">
+                  <p className="c-label mb-1">Sonno medio</p>
+                  <p className="font-data text-xl font-bold" style={{ color: "var(--ink)" }}>{recoveryCompliance.sleepAvg}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}> h/notte</span></p>
+                </div>
+                <div className="t-inner px-3 py-3 text-center">
+                  <p className="c-label mb-1">Passi medi</p>
+                  <p className="font-data text-xl font-bold" style={{ color: "var(--ink)" }}>{recoveryCompliance.stepsAvg.toLocaleString("it-IT")}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}> /giorno</span></p>
+                </div>
               </div>
-              <div className="t-inner px-3 py-3 text-center">
-                <p className="c-label mb-1">Passi medi</p>
-                <p className="font-data text-xl font-bold" style={{ color: "var(--ink)" }}>{recoveryCompliance.stepsAvg.toLocaleString("it-IT")}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}> /giorno</span></p>
-              </div>
-            </div>
+              {/* Bilancio energetico stimato del cliente: BMR (da anamnesi +
+                  peso dell'ultimo check) + calorie attive dai passi medi
+                  della stessa finestra qui sopra — vedi computeEnergyExpenditure
+                  in ../lib/biometrics.js. Peso: quello dell'ultimo check, o
+                  quello dell'anamnesi iniziale se non ha ancora fatto un
+                  check. Mai un numero se questi dati non ci sono davvero —
+                  in quel caso un invito esplicito a completarli. */}
+              {(() => {
+                const ee = computeEnergyExpenditure({
+                  weightKg: client.lastCheck?.weight ?? client.initialWeightKg ?? null,
+                  heightCm: client.heightCm ?? null,
+                  age: client.age ?? null,
+                  gender: client.gender,
+                  steps: recoveryCompliance.stepsAvg,
+                });
+                return (
+                  <div className="t-inner px-3 py-3 mt-3">
+                    <p className="c-label mb-1.5">Dispendio energetico stimato</p>
+                    {ee.complete ? (
+                      <>
+                        <p className="font-data text-xl font-bold" style={{ color: "var(--ink)" }}>
+                          {ee.total.toLocaleString("it-IT")}<span className="text-xs font-normal" style={{ color: "var(--ink-soft)" }}> kcal/giorno</span>
+                        </p>
+                        <p className="c-muted text-xs mt-1">
+                          Basale {ee.bmr.toLocaleString("it-IT")} + attività {ee.activeKcal.toLocaleString("it-IT")} (dai passi medi qui sopra)
+                        </p>
+                      </>
+                    ) : (
+                      <p className="c-muted text-sm">
+                        Manca {ee.missing.includes("heightCm") ? "l'altezza" : ee.missing.includes("age") ? "l'età" : "il peso"} in anamnesi/check per calcolarlo.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </>
           )}
         </div>
       )}
