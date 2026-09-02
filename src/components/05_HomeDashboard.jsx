@@ -27,7 +27,8 @@ import {
 } from "lucide-react";
 import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, LEVEL_REWARDS, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
-  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps, guessBodyFocusLabel } from "../lib/coachingData.js";
+  fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps, guessBodyFocusLabel, fetchAnamnesis } from "../lib/coachingData.js";
+import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure } from "../lib/biometrics.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -141,100 +142,13 @@ export const MACRO_COLORS = {
   f:    { light: "#7BEBA6", base: "#16A34A", dark: "#0D6B33" }, // Grassi · verde
 };
 
-/* Soglie dei colori delle candele: modificabili dalla console del coach.
-   invert:true = valori più bassi sono migliori (es. RHR: meno battiti a riposo
-   è meglio), quindi "bad" è il limite superiore da non superare. */
-export const THRESH = {
-  sleep: { bad: 6,    mid: 7.5,   fmt: (v) => `${v.toFixed(1)}h`, gridStep: 2 },
-  steps: { bad: 8000, mid: 10000, fmt: (v) => `${(v / 1000).toFixed(1)}k`, gridStep: 5000 },
-  hrv:   { bad: 40,   mid: 60,    fmt: (v) => `${Math.round(v)}ms`, gridStep: 20 },
-  rhr:   { bad: 75,   mid: 65,    fmt: (v) => `${Math.round(v)}bpm`, invert: true, gridStep: 20 },
-};
+// THRESH/chart3dPct/CANDLE/grade/computeReadinessScore: spostate in
+// ../lib/biometrics.js — modulo di calcolo dedicato (mai definizioni di
+// logica di dominio dentro un componente UI da 12.000+ righe), esteso lì
+// con HRV/RHR opzionali. Stessa formula, stesso comportamento: nessun
+// cambiamento visibile, vedi biometrics.js per i dettagli e i test.
 
-// Colore continuo (stessa curva a semaforo dei cerchi di compliance,
-// complianceHsl più sotto) invece dei 3 blocchi netti rosso/arancio/verde:
-// una progressione fluida rosso acceso → rosso spento → arancio → arancio
-// chiaro → giallo → verde → verde acceso man mano che il valore sale.
-// Per rhr (invert: più basso è meglio) la scala è specchiata.
-function chart3dPct(kind, v) {
-  const t = THRESH[kind];
-  if (t.invert) {
-    if (v >= t.bad) return 0;
-    if (v >= t.mid) return 55 * (t.bad - v) / (t.bad - t.mid || 1);
-    const span = t.mid * 0.4 || 1;
-    return Math.min(100, 55 + 45 * Math.min(1, (t.mid - v) / span));
-  }
-  if (v <= 0) return 0;
-  if (v < t.bad) return 55 * (v / t.bad);
-  if (v < t.mid) return 55 + 30 * (v - t.bad) / (t.mid - t.bad || 1);
-  const span = t.mid * 0.3 || 1;
-  return Math.min(100, 85 + 15 * Math.min(1, (v - t.mid) / span));
-}
-
-const CANDLE = {
-  bad:  { top: "#F87171", mid: "#EF4444", dark: "#B91C1C", label: "#DC2626" },
-  warn: { top: "#FBBF24", mid: "#F0A020", dark: "#B45309", label: "#B45309" },
-  good: { top: "#34D399", mid: "#10B981", dark: "#047857", label: "#10B981" },
-};
-
-const grade = (kind, v) => {
-  const t = THRESH[kind];
-  return t.invert
-    ? (v >= t.bad ? "bad" : v >= t.mid ? "warn" : "good")
-    : (v < t.bad ? "bad" : v < t.mid ? "warn" : "good");
-};
-
-/* ============================================================================
-   PUNTEGGIO DI PRONTEZZA — sonno, passi, motivazione e fatica di oggi
-   sintetizzati in UN numero azionabile (0-100), invece di 5 valori separati
-   da leggere e interpretare da soli. Stessa curva a semaforo di chart3dPct
-   qui sopra (mai una media grezza lineare): un valore appena sopra soglia
-   pesa già molto di più di uno appena sotto.
-
-   Ogni componente entra nel punteggio SOLO se il dato esiste davvero per
-   oggi — mai un fallback che finge un valore non registrato (stesso
-   principio di tutto il resto dell'app: un dato mancante è "non
-   disponibile", mai zero silenzioso). Se non c'è nessun dato per oggi,
-   ritorna null: il chiamante decide come mostrare "dati insufficienti".
-
-   Dolore e stress non sono giornalieri (arrivano solo dal check
-   settimanale/mensile in checkins), quindi entrano come una PENALITÀ
-   separata dal punteggio principale, che decade nei 7 giorni successivi
-   alla registrazione invece di continuare a pesare per sempre — un dolore
-   segnalato ieri conta più di uno segnalato 6 giorni fa. */
-export function computeReadinessScore({ sleepHours, steps, motivation, fatigue, recentSensations }) {
-  const parts = [];
-  if (sleepHours != null && sleepHours > 0) parts.push({ key: "sleep", pct: chart3dPct("sleep", sleepHours), label: "Sonno" });
-  if (steps != null && steps > 0) parts.push({ key: "steps", pct: chart3dPct("steps", steps), label: "Passi" });
-  if (motivation) parts.push({ key: "motivation", pct: (motivation / 10) * 100, label: "Motivazione" });
-  // fatigue: 1 = nessuna fatica (meglio), 10 = massima fatica (peggio) — scala invertita.
-  if (fatigue) parts.push({ key: "fatigue", pct: ((11 - fatigue) / 10) * 100, label: "Fatica" });
-
-  if (parts.length === 0) return null;
-
-  let score = parts.reduce((s, p) => s + p.pct, 0) / parts.length;
-
-  let penalty = 0;
-  const { pain, stress, daysAgo } = recentSensations || {};
-  if (daysAgo != null && daysAgo <= 7) {
-    const decay = 1 - daysAgo / 7;
-    if (pain != null && pain >= 3) penalty += (pain >= 6 ? 22 : pain >= 4 ? 14 : 7) * decay;
-    if (stress != null && stress >= 7) penalty += 10 * decay;
-  }
-  score = Math.max(0, Math.min(100, Math.round(score - penalty)));
-
-  const lowest = [...parts].sort((a, b) => a.pct - b.pct)[0];
-  // Soglie allineate a quelle dell'etichetta qui sotto (mai un colore che
-  // dice una cosa e un testo che ne dice un'altra): verde da "buona" in su,
-  // ambra per "media"/"bassa", rosso solo sotto "bassa".
-  const tone = score >= 65 ? "good" : score >= 30 ? "warn" : "bad";
-  const label = score >= 80 ? "Prontezza ottima" : score >= 65 ? "Prontezza buona"
-    : score >= 50 ? "Prontezza nella media" : score >= 30 ? "Prontezza bassa" : "Prontezza molto bassa";
-
-  return { score, tone, label, parts, lowest, penaltyApplied: penalty > 0.5 };
-}
-
-const READINESS_PART_ICON = { sleep: "😴", steps: "🚶", motivation: "🔥", fatigue: "🔋" };
+const READINESS_PART_ICON = { sleep: "😴", steps: "🚶", hrv: "🫀", rhr: "❤️", motivation: "🔥", fatigue: "🔋" };
 
 /* Transizione fluida: quando lo stato collegato cambia (es. i passi da 5.000
    a 12.000), la barra si alza/abbassa e ricolora da sola in tempo reale,
@@ -1095,6 +1009,12 @@ const NUTRI_HISTORY_6D  = [88, 95, 70, 100, 82, 91];
 const RECOVERY_SLEEP_6D = [7.6, 6.8, 0, 7.9, 5.6, 7.1];    // 0 = notte non tracciata
 const RECOVERY_STEPS_6D = [9200, 7400, 6100, 0, 10400, 12600]; // 0 = giorno non tracciato
 const RECOVERY_PAIN_6D  = [1, 1, 0, 1, 1, 1];              // 1 = nessun dolore, 0 = dolore segnalato
+
+// Dati biometrici SOLO per l'anteprima demo (nessuna sessione reale): stesso
+// principio delle altre costanti *_6D qui sopra, un valore plausibile fisso
+// per mostrare il Bilancio energetico funzionante prima del login. In
+// modalità reale questi non vengono mai usati — arrivano da anamnesi/check.
+const DEMO_BIOMETRICS = { weightKg: 82, heightCm: 179, age: 29 };
 
 /* Punteggio sonno di un giorno: quantità (ideale >7,5h, crollo sotto le 6h)
    — un giorno non tracciato (0) vale 0, punendo la mancanza di dato. */
@@ -2539,18 +2459,53 @@ export function HomeDashboard({
   // (che smette di girare una volta completato o per chi non è access.pro,
   // mentre il punteggio di prontezza serve a TUTTI i piani).
   const [recentSensations, setRecentSensations] = useState(null);
+  // Peso più recente: stesso fetch di recentSensations qui sopra (le righe
+  // di fetchCheckins portano già il campo weight, vedi coachingData.js) —
+  // niente query in più solo per prenderlo, coerente con il resto della
+  // codebase (BUG PRESO altrove nell'app per query duplicate evitabili).
+  // Serve per il Bilancio energetico (BMR + calorie attive dai passi) qui
+  // sotto: il peso corrente, non quello dell'anamnesi iniziale, che può
+  // risalire a mesi fa.
+  const [latestWeightKg, setLatestWeightKg] = useState(null);
   useEffect(() => {
     if (!supabase || !userId) return;
     let cancelled = false;
     fetchCheckins(supabase, userId, 10)
       .then((rows) => {
         if (cancelled) return;
-        const last = [...rows].reverse().find((r) => r.pain != null || r.stress != null);
-        if (!last) { setRecentSensations(null); return; }
-        const daysAgo = Math.floor((Date.now() - new Date(`${last.date}T00:00:00`)) / 86400000);
-        setRecentSensations({ pain: last.pain, stress: last.stress, daysAgo });
+        const reversed = [...rows].reverse(); // dal più recente
+        const lastSensation = reversed.find((r) => r.pain != null || r.stress != null);
+        if (!lastSensation) { setRecentSensations(null); }
+        else {
+          const daysAgo = Math.floor((Date.now() - new Date(`${lastSensation.date}T00:00:00`)) / 86400000);
+          setRecentSensations({ pain: lastSensation.pain, stress: lastSensation.stress, daysAgo });
+        }
+        const lastWeight = reversed.find((r) => r.weight != null);
+        setLatestWeightKg(lastWeight ? Number(lastWeight.weight) : null);
       })
-      .catch((err) => console.error("PERFORM: errore lettura sensazioni recenti", err));
+      .catch((err) => console.error("PERFORM: errore lettura sensazioni/peso recenti", err));
+    return () => { cancelled = true; };
+  }, [supabase, userId]);
+
+  // Altezza/età (anamnesi) + peso iniziale come fallback finché non esiste
+  // ancora un check registrato: serve, insieme a latestWeightKg sopra, al
+  // Bilancio energetico stimato più sotto. Fetch leggero (una singola riga
+  // JSON), gira per TUTTI i piani — l'anamnesi di base è compilabile da
+  // chiunque dal Profilo, non solo da chi ha un coach (vedi 08_ClientProfileView.jsx).
+  const [anamBio, setAnamBio] = useState(null); // { heightCm, age, initialWeightKg } | null finché non caricato
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let cancelled = false;
+    fetchAnamnesis(supabase, userId)
+      .then((answers) => {
+        if (cancelled) return;
+        setAnamBio({
+          heightCm: Number(answers?.altezza) || null,
+          age: Number(answers?.eta) || null,
+          initialWeightKg: Number(answers?.peso) || null,
+        });
+      })
+      .catch((err) => console.error("PERFORM: errore lettura anamnesi (dati biometrici)", err));
     return () => { cancelled = true; };
   }, [supabase, userId]);
 
@@ -2935,8 +2890,34 @@ export function HomeDashboard({
 
   // Punteggio di prontezza di oggi: calcolato una sola volta qui (non più
   // duplicato per ogni schermata che ne ha bisogno — Home, popup del cerchio
-  // Recupero, avviso pre-allenamento), vedi computeReadinessScore più sopra.
-  const readiness = computeReadinessScore({ sleepHours: sleep.hours, steps: Number(steps) || 0, motivation, fatigue, recentSensations });
+  // Recupero, avviso pre-allenamento), vedi computeReadinessScore in
+  // ../lib/biometrics.js. HRV/RHR entrano SOLO in modalità demo: in
+  // modalità reale nessun dispositivo li fornisce ancora (vedi "RHR e HRV
+  // in arrivo" più sotto), e gli stati hrv/rhr qui restano ai loro valori
+  // demo di default ("58"/"62") finché quell'integrazione non esiste —
+  // passarli sempre avrebbe iniettato un dato finto nel punteggio reale di
+  // un cliente vero, esattamente ciò che questa app non fa mai.
+  const readiness = computeReadinessScore({
+    sleepHours: sleep.hours, steps: Number(steps) || 0,
+    hrv: isRealMode ? null : Number(hrv) || null,
+    rhr: isRealMode ? null : Number(rhr) || null,
+    motivation, fatigue, recentSensations,
+  });
+
+  // Bilancio energetico stimato di oggi (BMR + calorie attive dai passi):
+  // vedi computeEnergyExpenditure in ../lib/biometrics.js. Peso: il più
+  // recente registrato in un check, o quello dell'anamnesi iniziale finché
+  // non esiste ancora un check; altezza/età: solo anamnesi (non cambiano
+  // giorno per giorno). In demo mostra numeri plausibili (DEMO_BIOMETRICS),
+  // MAI in modalità reale: lì, finché mancano dati veri, `missing` lo dice
+  // esplicitamente e la UI mostra un invito a completarli, non un numero.
+  const bioWeightKg = isRealMode ? (latestWeightKg ?? anamBio?.initialWeightKg ?? null) : DEMO_BIOMETRICS.weightKg;
+  const bioHeightCm = isRealMode ? (anamBio?.heightCm ?? null) : DEMO_BIOMETRICS.heightCm;
+  const bioAge = isRealMode ? (anamBio?.age ?? null) : DEMO_BIOMETRICS.age;
+  const energyExpenditure = computeEnergyExpenditure({
+    weightKg: bioWeightKg, heightCm: bioHeightCm, age: bioAge, gender: profile.gender,
+    steps: Number(steps) || 0,
+  });
 
   // Cerchio Allenamento reale: STESSA formula di ClientDetail (coach), mai
   // calcolata due volte — vedi computeTrainingCompliance in coachingData.js.
@@ -3846,6 +3827,44 @@ export function HomeDashboard({
                            backgroundColor: "#FFFFFF", boxShadow: "0 2px 6px rgba(0,0,0,0.22)" }} />
           </button>
         </div>
+        )}
+      </div>
+
+      {/* Bilancio energetico stimato: metabolismo basale (Mifflin-St Jeor,
+          da peso/altezza/età/sesso — anamnesi + peso dell'ultimo check) +
+          calorie attive stimate dai passi di oggi. Vedi
+          computeEnergyExpenditure in ../lib/biometrics.js. Mai un numero
+          quando mancano i dati per calcolarlo davvero: un invito onesto a
+          completare l'anamnesi, non una stima "a occhio". */}
+      <div className="card mb-4">
+        <p className="label mb-3">Bilancio energetico stimato · oggi</p>
+        {energyExpenditure.complete ? (
+          <>
+            <p className="font-data mb-1.5" style={{ fontSize: "1.4rem", fontWeight: 800 }}>
+              <span className="title-shine">{energyExpenditure.total.toLocaleString("it-IT")}</span>
+              <span className="meta" style={{ fontSize: "0.62rem", fontWeight: 600, marginLeft: 4 }}>kcal stimate</span>
+            </p>
+            <div className="flex gap-4 font-data" style={{ fontSize: "0.78rem", fontWeight: 700 }}>
+              <span style={{ color: "var(--ink-2)" }}>Basale <b style={{ color: "var(--ink)" }}>{energyExpenditure.bmr.toLocaleString("it-IT")}</b></span>
+              <span style={{ color: "var(--ink-2)" }}>Attività <b style={{ color: "var(--ink)" }}>+{energyExpenditure.activeKcal.toLocaleString("it-IT")}</b></span>
+            </div>
+            <p className="meta mt-2.5 leading-relaxed" style={{ fontSize: "0.68rem" }}>
+              Metabolismo basale (formula di Mifflin-St Jeor) + calorie attive stimate dai passi di oggi — una stima, non
+              una misura di calorimetria diretta. Non include l'allenamento coi pesi né altra attività non camminata.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>
+              {(energyExpenditure.missing.includes("weightKg") || energyExpenditure.missing.includes("heightCm") || energyExpenditure.missing.includes("age"))
+                ? "Completa peso, altezza ed età per calcolarlo"
+                : "Registra i passi di oggi per completare la stima"}
+            </p>
+            <p className="meta mt-1 leading-relaxed">
+              Basta compilare l'anamnesi dal Profilo (o registrare il tuo primo check) per vedere qui il tuo dispendio
+              energetico stimato — metabolismo basale più l'attività quotidiana.
+            </p>
+          </>
         )}
       </div>
 
