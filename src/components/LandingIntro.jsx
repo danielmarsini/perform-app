@@ -16,14 +16,17 @@
      2. La soluzione: tutto quello che conta in un unico sistema
      3. Il professionista vero dietro l'app (non un algoritmo)
      4. Anche senza coach: autogestione seria, da atleta vero
-     5. Risultati reali (foto prima/dopo — vedi LandingPhoto sotto)
+     5. Risultati reali (foto prima/dopo — vedi TransformationBackdrop sotto)
      6. Invito all'azione
 
-   FOTO: nessun dato finto qui dentro. I riquadri prima/dopo e il ritratto
-   del coach puntano a file in /public/landing/ (vedi LEGGIMI.txt lì
-   dentro) — finché quei file non esistono, compare un placeholder elegante
-   (mai una foto finta spacciata per reale). Bastano i file con il nome
-   giusto per farli comparire, zero modifiche al codice.
+   FOTO: nessun dato finto qui dentro. Il ritratto del coach e le coppie
+   prima/dopo puntano a file in /public/landing/ (vedi LEGGIMI.txt lì
+   dentro) — finché quei file non esistono, compare un placeholder discreto
+   (mai una foto finta spacciata per reale). Quando ci sono, NON sono
+   riquadri piccoli isolati: riempiono l'intera slide come sfondo, con Ken
+   Burns continuo (vedi KenBurnsPhoto) — è quello che dà il senso di
+   "pienezza"/"vividezza" richiesto. Bastano i file con il nome giusto per
+   farli comparire, zero modifiche al codice.
    ========================================================================== */
 
 import React, { useState, useRef } from "react";
@@ -41,60 +44,113 @@ const COACH_NAME = "Daniel Marsini";
 const COACH_BIO = "Preparatore evidence-based. Ogni scheda nasce dai tuoi dati reali — non da un modello standard, copiato e incollato per tutti.";
 
 /* ----------------------------------------------------------------------
-   Foto con fallback elegante: prova a caricare da /landing/<file>, se il
-   file non esiste ancora mostra un riquadro placeholder (icona + testo),
-   mai una foto finta. Basta aggiungere il file con il nome giusto in
-   public/landing/ perché compaia da solo, senza toccare questo codice. */
-function LandingPhoto({ file, label, rounded = "1rem" }) {
-  const [broken, setBroken] = useState(false);
-  const boxStyle = {
-    aspectRatio: "3 / 4",
-    borderRadius: rounded,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    border: broken ? "1px dashed rgba(255,255,255,0.18)" : "1px solid rgba(255,255,255,0.1)",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  };
-  if (broken) {
-    return (
-      <div style={boxStyle}>
-        <Camera size={18} style={{ color: "rgba(255,255,255,0.35)" }} />
-        <span style={{ fontSize: "0.58rem", color: "rgba(255,255,255,0.4)", textAlign: "center", padding: "0 8px", lineHeight: 1.3 }}>
-          {label}
-        </span>
-      </div>
-    );
-  }
+   Le foto vere non sono più riquadri piccoli isolati in mezzo al testo:
+   riempiono tutta la slide come sfondo, con uno zoom lentissimo continuo
+   (Ken Burns) + un pan leggero — è quello che dà "pienezza"/"vividezza"
+   invece di sembrare un'icona buttata lì. overflow:hidden sul contenitore
+   evita che lo zoom sconfini oltre i bordi della slide. */
+function KenBurnsPhoto({ file, reduce, focal = "center" }) {
   return (
-    <div style={boxStyle}>
-      <img src={`/landing/${file}`} alt="" onError={() => setBroken(true)}
-           style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    <motion.img
+      src={`/landing/${file}`} alt=""
+      initial={{ scale: 1.08, x: 0, y: 0 }}
+      animate={reduce ? {} : { scale: [1.08, 1.2, 1.08], x: [0, -12, 0], y: [0, 10, 0] }}
+      transition={reduce ? {} : { duration: 17, repeat: Infinity, ease: "easeInOut" }}
+      style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: focal, display: "block" }}
+    />
+  );
+}
+
+/* Verifica se un file esiste in /landing/ SENZA mai mostrarlo se manca —
+   stessa filosofia di "mai una foto finta", solo spostata a monte: qui si
+   decide se attivare la modalità sfondo pieno o restare sul placeholder
+   discreto, invece di scoprirlo dentro un <img> isolato dentro la slide. */
+function usePhotoStatus(file) {
+  const [status, setStatus] = useState("loading");
+  React.useEffect(() => {
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => { if (!cancelled) setStatus("ok"); };
+    img.onerror = () => { if (!cancelled) setStatus("error"); };
+    img.src = `/landing/${file}`;
+    return () => { cancelled = true; };
+  }, [file]);
+  return status;
+}
+
+/* Sfondo pieno della slide "professionista vero": la foto del coach
+   riempie tutta la slide con Ken Burns, uno scrim scuro la rende
+   leggibile, nome+bio diventano una didascalia in basso — non più un
+   ritratto piccolo isolato in mezzo al testo. */
+function CoachBackdrop({ reduce }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+      <KenBurnsPhoto file="coach-portrait.jpg" reduce={reduce} focal="center 20%" />
+      <div style={{ position: "absolute", inset: 0,
+        background: "linear-gradient(180deg, rgba(8,6,2,0.4) 0%, rgba(8,6,2,0.35) 40%, rgba(8,6,2,0.55) 70%, rgba(6,5,2,0.92) 100%)" }} />
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: "15%", padding: "0 1.75rem", textAlign: "left" }}>
+        <p style={{ fontSize: "1rem", fontWeight: 800, color: "#FAFAFA" }}>{COACH_NAME}</p>
+        <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.72)", marginTop: 3, lineHeight: 1.45, maxWidth: 320 }}>
+          {COACH_BIO}
+        </p>
+      </div>
     </div>
   );
 }
 
-/* Coppia prima/dopo compatta, per la slide "risultati reali". */
-function TransformationPair({ n }) {
+/* Placeholder discreto quando la foto non c'è ancora (mai una foto finta
+   spacciata per reale): solo un'icona, niente riquadro pieno — usato sia
+   per il coach sia per le trasformazioni quando nessuna coppia è pronta. */
+function PhotoComingSoon({ label }) {
   return (
-    <div className="flex gap-1.5" style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ flex: 1, position: "relative" }}>
-        <LandingPhoto file={`transformation-${n}-before.jpg`} label="Prima" />
-        <span className="landing-tag" style={{ position: "absolute", top: 6, left: 6,
-                       color: "rgba(255,255,255,0.85)", backgroundColor: "rgba(0,0,0,0.5)", padding: "2px 8px", borderRadius: 999 }}>
-          Prima
-        </span>
+    <div className="flex flex-col items-center gap-2" style={{ padding: "2.5rem 0" }}>
+      <div style={{ width: 64, height: 64, borderRadius: "999px", border: "1px dashed rgba(255,255,255,0.22)",
+        display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Camera size={20} style={{ color: "rgba(255,255,255,0.4)" }} />
       </div>
-      <div style={{ flex: 1, position: "relative" }}>
-        <LandingPhoto file={`transformation-${n}-after.jpg`} label="Dopo" />
-        <span className="landing-tag" style={{ position: "absolute", top: 6, left: 6,
-                       color: "#1a1408", backgroundColor: "#D9B36A", padding: "2px 8px", borderRadius: 999 }}>
-          Dopo
-        </span>
-      </div>
+      <span style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.4)" }}>{label}</span>
+    </div>
+  );
+}
+
+/* Sfondo pieno della slide "risultati reali": coppia prima/dopo divisa in
+   due metà verticali, ciascuna con Ken Burns indipendente. Se più coppie
+   sono disponibili (transformation-2-*, transformation-3-*…) ruotano da
+   sole ogni 5 secondi con una dissolvenza incrociata — è quello che dà il
+   senso di "sfondo vivo" invece di una foto ferma, non serve toccare il
+   codice: bastano i file con il nome giusto. */
+function TransformationBackdrop({ pairs, reduce }) {
+  const [i, setI] = useState(0);
+  React.useEffect(() => {
+    if (reduce || pairs.length < 2) return undefined;
+    const id = setInterval(() => setI((prev) => (prev + 1) % pairs.length), 5000);
+    return () => clearInterval(id);
+  }, [pairs.length, reduce]);
+  const n = pairs[i % pairs.length];
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+      <AnimatePresence mode="sync">
+        <motion.div key={n} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          transition={{ duration: reduce ? 0 : 1 }} style={{ position: "absolute", inset: 0, display: "flex" }}>
+          <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+            <KenBurnsPhoto file={`transformation-${n}-before.jpg`} reduce={reduce} focal="center 25%" />
+            <span className="landing-tag" style={{ position: "absolute", top: "14%", left: 14,
+              color: "rgba(255,255,255,0.9)", backgroundColor: "rgba(0,0,0,0.45)", padding: "2px 10px", borderRadius: 999 }}>
+              Prima
+            </span>
+          </div>
+          <div style={{ width: 1, backgroundColor: "rgba(217,179,106,0.35)" }} />
+          <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+            <KenBurnsPhoto file={`transformation-${n}-after.jpg`} reduce={reduce} focal="center 25%" />
+            <span className="landing-tag" style={{ position: "absolute", top: "14%", right: 14,
+              color: "#1a1408", backgroundColor: "#D9B36A", padding: "2px 10px", borderRadius: 999 }}>
+              Dopo
+            </span>
+          </div>
+        </motion.div>
+      </AnimatePresence>
+      <div style={{ position: "absolute", inset: 0,
+        background: "linear-gradient(180deg, rgba(8,6,2,0.5) 0%, rgba(8,6,2,0.45) 45%, rgba(8,6,2,0.5) 60%, rgba(6,5,2,0.88) 100%)" }} />
     </div>
   );
 }
@@ -142,6 +198,14 @@ function FloatingChip({ icon: Icon, style, delay, reduce }) {
    Contenuto delle 6 slide — testi + visual dedicato per ciascuna.
    ========================================================================== */
 function useSlides(reduce) {
+  const coachStatus = usePhotoStatus("coach-portrait.jpg");
+  const pairStatuses = [1, 2, 3].map((n) => ({
+    n,
+    before: usePhotoStatus(`transformation-${n}-before.jpg`),
+    after: usePhotoStatus(`transformation-${n}-after.jpg`),
+  }));
+  const okPairs = pairStatuses.filter((p) => p.before === "ok" && p.after === "ok").map((p) => p.n);
+
   return [
     {
       kicker: "Il problema, in una frase",
@@ -171,11 +235,10 @@ function useSlides(reduce) {
       kicker: "Non un algoritmo con la tua faccia",
       title: "Dietro ogni numero, un professionista vero.",
       body: "Fisiologia, biomeccanica, i tuoi progressi reali — letti da chi se ne occupa per mestiere. Non una scheda fotocopiata.",
-      visual: (
+      bg: coachStatus === "ok" ? <CoachBackdrop reduce={reduce} /> : null,
+      visual: coachStatus === "ok" ? null : (
         <div className="flex flex-col items-center gap-3" style={{ width: "100%" }}>
-          <div style={{ width: 96 }}>
-            <LandingPhoto file="coach-portrait.jpg" label="Foto in arrivo" rounded="999px" />
-          </div>
+          <PhotoComingSoon label="Foto in arrivo" />
           <div className="text-center" style={{ maxWidth: 280 }}>
             <p style={{ fontSize: "0.95rem", fontWeight: 800, color: "#FAFAFA" }}>{COACH_NAME}</p>
             <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginTop: 2, lineHeight: 1.4 }}>{COACH_BIO}</p>
@@ -206,17 +269,8 @@ function useSlides(reduce) {
       kicker: "Non promesse. Persone.",
       title: "I risultati parlano da soli.",
       body: "Percorsi reali, un check alla volta.",
-      visual: (
-        <div className="flex flex-col gap-2.5" style={{ width: "100%" }}>
-          <div className="flex gap-2.5">
-            <TransformationPair n={1} />
-            <TransformationPair n={2} />
-          </div>
-          <div style={{ width: "48%" }}>
-            <TransformationPair n={3} />
-          </div>
-        </div>
-      ),
+      bg: okPairs.length > 0 ? <TransformationBackdrop pairs={okPairs} reduce={reduce} /> : null,
+      visual: okPairs.length > 0 ? null : <PhotoComingSoon label="Trasformazioni in arrivo" />,
     },
     {
       kicker: "Pronto?",
@@ -391,29 +445,32 @@ export default function LandingIntro({ dark, onFinish }) {
                 go(x < window.innerWidth * 0.32 ? -1 : 1);
               }}
               className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center"
-              style={{ maxWidth: 480, margin: "0 auto", cursor: "pointer", rotate: reduce ? 0 : rotateZ }}>
-              <div className="mb-7" style={{ width: "100%" }}>{s.visual}</div>
-              <p className="landing-kicker mb-2.5">
-                {s.kicker}
-              </p>
-              <GradientText gender={gender} className="landing-title" style={{ fontSize: "1.7rem", fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.2, display: "block" }}>
-                {s.title}
-              </GradientText>
-              <p className="mt-3.5 text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.62)", maxWidth: 340 }}>
-                {s.body}
-              </p>
-              {index === 0 && (
-                <motion.div className="flex items-center justify-center gap-1.5 mt-8" aria-hidden="true"
-                  initial={{ opacity: 0 }} animate={{ opacity: reduce ? 0.5 : 1 }} transition={{ delay: 0.5, duration: 0.5 }}>
-                  <motion.span
-                    animate={reduce ? {} : { x: [6, -6, 6] }}
-                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-                    style={{ width: 26, height: 2, borderRadius: 999, background: "linear-gradient(90deg, transparent, #C5A059)" }} />
-                  <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic", fontSize: "0.68rem", color: "rgba(255,255,255,0.4)" }}>
-                    scorri
-                  </span>
-                </motion.div>
-              )}
+              style={{ maxWidth: 480, margin: "0 auto", cursor: "pointer", rotate: reduce ? 0 : rotateZ, overflow: "hidden" }}>
+              {s.bg}
+              <div style={{ position: "relative", zIndex: 1, width: "100%" }} className="flex flex-col items-center">
+                {s.visual && <div className="mb-7" style={{ width: "100%" }}>{s.visual}</div>}
+                <p className="landing-kicker mb-2.5">
+                  {s.kicker}
+                </p>
+                <GradientText gender={gender} className="landing-title" style={{ fontSize: "1.7rem", fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.2, display: "block" }}>
+                  {s.title}
+                </GradientText>
+                <p className="mt-3.5 text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.62)", maxWidth: 340 }}>
+                  {s.body}
+                </p>
+                {index === 0 && (
+                  <motion.div className="flex items-center justify-center gap-1.5 mt-8" aria-hidden="true"
+                    initial={{ opacity: 0 }} animate={{ opacity: reduce ? 0.5 : 1 }} transition={{ delay: 0.5, duration: 0.5 }}>
+                    <motion.span
+                      animate={reduce ? {} : { x: [6, -6, 6] }}
+                      transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                      style={{ width: 26, height: 2, borderRadius: 999, background: "linear-gradient(90deg, transparent, #C5A059)" }} />
+                    <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic", fontSize: "0.68rem", color: "rgba(255,255,255,0.4)" }}>
+                      scorri
+                    </span>
+                  </motion.div>
+                )}
+              </div>
             </motion.div>
           </AnimatePresence>
         </div>
