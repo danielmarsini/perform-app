@@ -2565,21 +2565,60 @@ export function HomeDashboard({
   }, [screen]);
   useEdgeSwipeBack(() => setScreen("dash"), screen !== "dash");
 
-  /* Check settimanale: non più legato al lunedì — si ripropone ad ogni
-     apertura dell'app finché l'atleta non lo compila almeno con peso e
-     sensazioni (dolori/stress/digestione/sonno), skippabile per quella
-     sessione ma non "per sempre": solo per chi ha davvero un coach
-     (access.pro), MAI per free/Premium, che registrano i propri
-     dati quando vogliono dal Profilo ("Registra un check", sempre
-     disponibile a tutti).
+  /* Check settimanale: non più legato al lunedì — resta un promemoria
+     finché l'atleta non lo compila almeno con peso e sensazioni (dolori/
+     stress/digestione/sonno), skippabile per quella comparsa ma non "per
+     sempre": solo per chi ha davvero un coach (access.pro), MAI per free/
+     Premium, che registrano i propri dati quando vogliono dal Profilo
+     ("Registra un check", sempre disponibile a tutti).
      Circonferenze e foto: nessuna cadenza mensile che le blocchi — il
      WeeklyCheckModal le mostra sempre, in entrambi i flussi (richiesta
-     esplicita: "non mi fa inserire foto quando mi pare"). */
+     esplicita: "non mi fa inserire foto quando mi pare").
+
+     BUG PRESO (segnalato: "invasivo, compare ogni volta che riapro l'app"):
+     l'effect sotto girava a OGNI mount di HomeDashboard (ogni riapertura
+     dell'app, ogni volta che si torna sulla tab Home da un'altra) e, se il
+     check della settimana non risultava ancora fatto, mostrava SEMPRE il
+     popup — anche riaprendo l'app dieci volte in un'ora solo per controllare
+     altro. Fix: al massimo una comparsa nella finestra "mattina" (6-12) e
+     una nella finestra "sera" (18-24) per giorno di calendario — mai più di
+     due popup/giorno, mai fuori da quelle due finestre — tracciato in
+     localStorage (per-dispositivo, si azzera da solo cambiando giorno). Se
+     l'atleta non lo compila mai, la stessa cadenza si ripete ogni giorno
+     finché non arriva lunedì mattina: da lì è semplicemente il check della
+     settimana NUOVA (weeklyAlreadyDone si ricalcola sempre dal lunedì
+     corrente, nessuna logica di "rinuncia" da gestire a parte). */
+  const WEEKLY_CHECK_PROMPT_KEY = "perform_weekly_check_prompts";
+  const weeklyCheckPromptWindow = () => {
+    const h = new Date().getHours();
+    if (h >= 6 && h < 12) return "morning";
+    if (h >= 18) return "evening";
+    return null; // fuori dalle due finestre: mai un popup qui, qualunque sia lo stato del check
+  };
+  const readWeeklyCheckPrompts = () => {
+    const today = toLocalISODate();
+    try {
+      const saved = JSON.parse(localStorage.getItem(WEEKLY_CHECK_PROMPT_KEY) || "null");
+      if (saved && saved.date === today && Array.isArray(saved.windows)) return saved;
+    } catch { /* dato corrotto: riparte pulito */ }
+    return { date: today, windows: [] };
+  };
+  const markWeeklyCheckPrompted = (windowName) => {
+    try {
+      const state = readWeeklyCheckPrompts();
+      if (!state.windows.includes(windowName)) state.windows.push(windowName);
+      localStorage.setItem(WEEKLY_CHECK_PROMPT_KEY, JSON.stringify(state));
+    } catch { /* best-effort, mai bloccare il check per questo */ }
+  };
+
   const [showWeeklyCheck, setShowWeeklyCheck] = useState(false);
   const [weeklyCheckDone, setWeeklyCheckDone] = useState(false);
   useEffect(() => {
     if (weeklyCheckDone || !access.pro) return undefined;
-    if (!(supabase && userId)) { setShowWeeklyCheck(true); return undefined; } // anteprima demo
+    if (!(supabase && userId)) { setShowWeeklyCheck(true); return undefined; } // anteprima demo, comportamento invariato
+    const promptWindow = weeklyCheckPromptWindow();
+    if (!promptWindow) return undefined; // fuori mattina/sera: non disturbare
+    if (readWeeklyCheckPrompts().windows.includes(promptWindow)) return undefined; // già mostrato in questa finestra oggi
     let cancelled = false;
     const mondayIso = toLocalISODate(mondayOfLocal());
     fetchCheckins(supabase, userId, 60)
@@ -2588,7 +2627,10 @@ export function HomeDashboard({
         const thisWeek = rows.filter((r) => r.date >= mondayIso);
         const weeklyAlreadyDone = thisWeek.some((r) =>
           r.weight != null && r.pain != null && r.stress != null && r.digestion != null && r.sleep_quality != null);
-        setShowWeeklyCheck(!weeklyAlreadyDone);
+        if (!weeklyAlreadyDone) {
+          markWeeklyCheckPrompted(promptWindow);
+          setShowWeeklyCheck(true);
+        }
       })
       .catch((err) => console.error("PERFORM: errore verifica check settimanale già fatto", err));
     return () => { cancelled = true; };
@@ -5432,6 +5474,29 @@ function writeRestTimer(entry) {
   } catch { /* best-effort, mai bloccare il timer per questo */ }
 }
 
+// Sincronizza (best-effort, mai bloccante) rest_timer_notifications lato
+// server con lo stato del timer locale qui sopra: la Edge Function
+// rest-timer-push (cron ogni minuto, vedi le sue istruzioni di deploy) la
+// legge per mandare un push reale quando l'app è chiusa o in background
+// troppo a lungo per avvisare da sola (beep/vibrazione/Notification()
+// locale, che restano il meccanismo primario mentre l'app è aperta).
+// Upsert quando il timer parte, cancellazione quando finisce mentre l'app è
+// ancora aperta (il push non serve più, l'atleta l'ha già visto/sentito
+// qui) o quando viene annullato a mano. Fallisce in silenzio: il countdown
+// locale resta la fonte di verità primaria, mai bloccato da un problema di
+// rete verso questa sincronizzazione secondaria.
+function syncRestTimerNotification(supabase, userId, entry) {
+  if (!supabase || !userId) return;
+  if (entry) {
+    supabase.from("rest_timer_notifications")
+      .upsert({ user_id: userId, fire_at: new Date(entry.endAt).toISOString(), exercise_name: entry.exerciseName }, { onConflict: "user_id" })
+      .then(({ error }) => { if (error) console.error("PERFORM: errore salvataggio promemoria push timer di recupero", error); });
+  } else {
+    supabase.from("rest_timer_notifications").delete().eq("user_id", userId)
+      .then(({ error }) => { if (error) console.error("PERFORM: errore cancellazione promemoria push timer di recupero", error); });
+  }
+}
+
 // Riscaldamento/stretching: collassati di default (richiesta esplicita —
 // occupavano spazio anche quando l'atleta non ha bisogno di rileggerli ogni
 // volta), un tap apre il testo intero scritto dal coach. L'etichetta breve
@@ -5575,6 +5640,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
           try { new Notification("Recupero finito", { body: `${ex.name}: è ora della prossima serie.`, tag: "rest-timer" }); } catch (err) { /* best-effort */ }
         }
         writeRestTimer(null);
+        syncRestTimerNotification(supabase, userId, null); // finito con l'app aperta: il push non serve più
         setTimer(null);
         return;
       }
@@ -5588,7 +5654,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
     const id = setInterval(tick, 1000);
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", tick); };
-  }, [timer?.endAt, ex.name]);
+  }, [timer?.endAt, ex.name, supabase, userId]);
 
   // Registrazione automatica: niente più spunta manuale — appena kg e reps
   // sono entrambi inseriti la serie si considera fatta. Il confronto è per
@@ -5616,6 +5682,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
         const endAt = Date.now() + dur * 1000;
         setTimer({ total: dur, remaining: dur, endAt });
         writeRestTimer({ total: dur, endAt, exerciseId: ex.id, exerciseName: ex.name });
+        syncRestTimerNotification(supabase, userId, { endAt, exerciseName: ex.name });
         // Celebrazione automatica: questa serie appena completata batte il
         // carico massimo storico di questo esercizio (mai il primo giorno
         // registrato, best === 0 non è un vero confronto).
@@ -5744,7 +5811,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
             <p className="text-sm" style={{ color: "var(--ink)", fontWeight: 500 }}>Recupero in corso</p>
             <p className="meta mt-0.5">Al termine, una vibrazione ti avvisa che è ora della prossima serie.</p>
           </div>
-          <button onClick={() => { setTimer(null); writeRestTimer(null); }} className="shrink-0 label" style={{ fontSize: "0.6rem" }}>
+          <button onClick={() => { setTimer(null); writeRestTimer(null); syncRestTimerNotification(supabase, userId, null); }} className="shrink-0 label" style={{ fontSize: "0.6rem" }}>
             salta
           </button>
         </div>
