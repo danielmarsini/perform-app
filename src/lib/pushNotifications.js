@@ -88,6 +88,13 @@ export async function subscribeToPush(supabase, userId) {
   }
 
   const json = subscription.toJSON();
+  // BUG PRESO: quando il browser genera un endpoint nuovo (dopo reinstallo
+  // PWA, permesso resettato, ecc.) l'upsert sotto salva la riga nuova ma
+  // quella vecchia con l'endpoint precedente restava orfana per sempre —
+  // risultato: più righe per lo stesso utente/dispositivo, e la funzione
+  // di invio manda un push a ognuna → notifiche duplicate identiche.
+  // Prima di salvare la nuova, ripulisco le altre di questo utente.
+  await supabase.from("push_subscriptions").delete().eq("user_id", userId).neq("endpoint", json.endpoint);
   const { error } = await supabase.from("push_subscriptions").upsert(
     {
       user_id: userId,
