@@ -1292,7 +1292,7 @@ function CoachingPlanPicker({ onPick, busy, onCancel }) {
 // pulsante generava una stringa casuale solo in stato locale React, non
 // toccava mai auth.users, il coach pensava di aver risolto un accesso
 // bloccato e in realtà no.
-function AccountActions({ client, onRenamed }) {
+function AccountActions({ client, onRenamed, onDeleted }) {
   const { supabase, reloadRoster } = useContext(CoachDataContext);
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState(client.name);
@@ -1340,6 +1340,11 @@ function AccountActions({ client, onRenamed }) {
     try {
       await adminDeleteAccount(supabase, client.id);
       reloadRoster?.();
+      // BUG PRESO: dopo un'eliminazione riuscita il modale restava aperto
+      // senza nessun segnale — il coach vedeva il pulsante "Conferma" fermo
+      // lì (l'account era già cancellato sul serio) e pensava che l'azione
+      // non avesse funzionato. Chiudere il modale è la conferma visibile.
+      onDeleted?.();
     } catch (err) {
       console.error("PERFORM: errore eliminazione account", err);
       setError("Non sono riuscito a eliminare l'account.");
@@ -1619,7 +1624,7 @@ function ClientAccessDetailModal({ client, onClose }) {
 
           <div className="t-inner px-3.5 py-3 mb-4">
             <p className="c-label mb-2">Account</p>
-            <AccountActions client={client} onRenamed={onClose} />
+            <AccountActions client={client} onRenamed={onClose} onDeleted={onClose} />
           </div>
 
           <ClientWhitelistPanel client={client} onChanged={onClose} />
