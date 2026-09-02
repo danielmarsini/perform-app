@@ -28,7 +28,7 @@ import {
 import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, LEVEL_REWARDS, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps, guessBodyFocusLabel, fetchAnamnesis } from "../lib/coachingData.js";
-import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure } from "../lib/biometrics.js";
+import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate } from "../lib/biometrics.js";
 import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
@@ -2501,7 +2501,13 @@ export function HomeDashboard({
         if (cancelled) return;
         setAnamBio({
           heightCm: Number(answers?.altezza) || null,
-          age: Number(answers?.eta) || null,
+          // BUG PRESO: leggeva answers.eta, un campo che l'anamnesi non
+          // scrive mai — la domanda vera chiede la DATA di nascita
+          // ("nascita"), quindi l'età va sempre calcolata da lì (vedi
+          // computeAgeFromBirthDate in ../lib/biometrics.js). Per questo il
+          // Bilancio energetico restava sempre "dati insufficienti" anche
+          // con l'anamnesi completa.
+          age: computeAgeFromBirthDate(answers?.nascita) ?? (Number(answers?.eta) || null),
           initialWeightKg: Number(answers?.peso) || null,
         });
       })

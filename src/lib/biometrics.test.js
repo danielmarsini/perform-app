@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeReadinessScore, computeBMR, estimateStepEnergyKcal, computeEnergyExpenditure,
-  chart3dPct, grade, THRESH,
+  computeAgeFromBirthDate, chart3dPct, grade, THRESH,
 } from "./biometrics.js";
 
 describe("computeReadinessScore", () => {
@@ -71,6 +71,41 @@ describe("chart3dPct / grade — curva a semaforo", () => {
     expect(grade("sleep", THRESH.sleep.mid + 0.1)).toBe("good");
     expect(grade("rhr", THRESH.rhr.bad + 1)).toBe("bad"); // invertito: alto RHR = male
     expect(grade("rhr", THRESH.rhr.mid - 1)).toBe("good");
+  });
+});
+
+describe("computeAgeFromBirthDate", () => {
+  const isoDaysAgoYears = (years, dayOffset = 0) => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - years);
+    d.setDate(d.getDate() + dayOffset);
+    return d.toISOString().slice(0, 10);
+  };
+
+  it("torna null senza data", () => {
+    expect(computeAgeFromBirthDate(null)).toBeNull();
+    expect(computeAgeFromBirthDate("")).toBeNull();
+  });
+
+  it("torna null per una data non valida", () => {
+    expect(computeAgeFromBirthDate("non-una-data")).toBeNull();
+  });
+
+  it("calcola correttamente l'età per un compleanno già passato quest'anno", () => {
+    expect(computeAgeFromBirthDate(isoDaysAgoYears(30, -5))).toBe(30);
+  });
+
+  it("non conta ancora l'anno se il compleanno non è ancora arrivato quest'anno", () => {
+    expect(computeAgeFromBirthDate(isoDaysAgoYears(30, 5))).toBe(29);
+  });
+
+  it("conta l'anno esatto del compleanno di oggi", () => {
+    expect(computeAgeFromBirthDate(isoDaysAgoYears(30, 0))).toBe(30);
+  });
+
+  it("rifiuta età implausibili (data futura, o più di 130 anni)", () => {
+    expect(computeAgeFromBirthDate(isoDaysAgoYears(-1))).toBeNull(); // nato "nel futuro"
+    expect(computeAgeFromBirthDate(isoDaysAgoYears(150))).toBeNull();
   });
 });
 

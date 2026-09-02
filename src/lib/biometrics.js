@@ -27,6 +27,10 @@
         indiretta nella popolazione generale, oggi lo standard evidence-based
         al posto della più vecchia Harris-Benedict) + calorie attive stimate
         dai passi.
+     4. computeAgeFromBirthDate — l'anamnesi (AnamnesisShared.jsx) chiede la
+        DATA di nascita ("nascita", input type=date), non un numero di anni
+        già pronto: età va sempre calcolata da qui, mai letta da un campo
+        "eta" che l'anamnesi non scrive.
    ========================================================================== */
 
 /* ----------------------------------------------------------------------
@@ -145,6 +149,24 @@ export function computeReadinessScore({ sleepHours, steps, hrv, rhr, motivation,
    alla più datata Harris-Benedict (revisione sistematica: Frankenfield et
    al. 2005, J Am Diet Assoc). Richiede peso/altezza/età/sesso REALI: nessun
    valore di default se manca un dato, mai un BMR calcolato "a occhio". */
+// L'anamnesi (AnamnesisShared.jsx) chiede la DATA di nascita, non gli anni
+// già contati — età va sempre derivata da qui. Calcolo esatto (non solo
+// differenza fra anni): tiene conto del compleanno non ancora arrivato
+// quest'anno, altrimenti chi è nato a dicembre risulterebbe più vecchio di
+// un anno per gran parte dell'anno. Data non valida/assente → null, mai
+// un'età a caso.
+export function computeAgeFromBirthDate(birthDateIso) {
+  if (!birthDateIso) return null;
+  const birth = new Date(`${birthDateIso}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const hadBirthdayThisYear = now.getMonth() > birth.getMonth()
+    || (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate());
+  if (!hadBirthdayThisYear) age -= 1;
+  return age > 0 && age < 130 ? age : null;
+}
+
 export function computeBMR({ weightKg, heightCm, age, gender }) {
   if (!(weightKg > 0) || !(heightCm > 0) || !(age > 0) || (gender !== "M" && gender !== "F")) return null;
   const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
