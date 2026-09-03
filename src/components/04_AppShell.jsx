@@ -165,9 +165,15 @@ export function DesignSystem() {
         0%, 100% { filter: blur(32px) hue-rotate(0deg) saturate(1); }
         50% { filter: blur(32px) hue-rotate(-30deg) saturate(1.35); }
       }
+      /* BUG PRESO: qui c'era hue-rotate(30deg) — sul colore base della
+         macchia 2 (oro scuro/ambra, tonalità ~38°) una rotazione di +30°
+         atterra a ~68°, cioè giallo-verde: esattamente il "verde
+         nell'intelligenza artificiale fatto a caso" segnalato, e in
+         contraddizione col commento sopra ("mai verde/blu"). -20° invece
+         resta nella stessa famiglia di caldi (ambra→rosso), mai fuori. */
       @keyframes liveBgHue2 {
         0%, 100% { filter: blur(32px) hue-rotate(0deg) saturate(1); }
-        50% { filter: blur(32px) hue-rotate(30deg) saturate(1.35); }
+        50% { filter: blur(32px) hue-rotate(-20deg) saturate(1.35); }
       }
       @media (prefers-reduced-motion: reduce) {
         .live-bg-blob-1, .live-bg-blob-2 { animation: none; }

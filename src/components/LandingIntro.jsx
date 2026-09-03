@@ -424,6 +424,10 @@ export default function LandingIntro({ dark, onFinish }) {
           position: fixed; inset: 0; z-index: 0; pointer-events: none;
           background: radial-gradient(ellipse at 50% 38%, transparent 30%, rgba(4,3,1,0.6) 100%);
         }
+        .landing-bottom-black {
+          position: fixed; inset: 0; z-index: 0; pointer-events: none;
+          background: linear-gradient(180deg, transparent 55%, rgba(3,2,1,0.7) 78%, #030201 100%);
+        }
         .landing-gold-sweep {
           position: fixed; inset: -20%; z-index: 0; pointer-events: none; opacity: 0.4;
           background: linear-gradient(115deg, transparent 42%, rgba(197,160,89,0.16) 48%, rgba(243,229,171,0.2) 50%, rgba(197,160,89,0.16) 52%, transparent 58%);
@@ -450,6 +454,7 @@ export default function LandingIntro({ dark, onFinish }) {
       <motion.div style={{ x: reduce ? 0 : bgShift }}>
         <LiveBackground gender={gender} dark={dark} />
       </motion.div>
+      <div className="landing-bottom-black" aria-hidden="true" />
       <div className="landing-gold-sweep" aria-hidden="true" />
       <div className="landing-vignette" aria-hidden="true" />
 
