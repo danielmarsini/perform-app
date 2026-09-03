@@ -29,7 +29,7 @@
    farli comparire, zero modifiche al codice.
    ========================================================================== */
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useId } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform, useReducedMotion, animate } from "framer-motion";
 import { Dumbbell, Salad, Moon, ChevronRight, ShieldCheck, Camera, Sparkles } from "lucide-react";
 import { DesignSystem, LiveBackground } from "./04_AppShell.jsx";
@@ -155,22 +155,82 @@ function TransformationBackdrop({ pairs, reduce }) {
   );
 }
 
-/* Anello di compliance in miniatura, autonomo (niente import dal
-   05_HomeDashboard.jsx — quel file è enorme e non va caricato solo per
-   questa presentazione pre-login): stessa idea visiva dei cerchi veri
-   dell'app, così chi si iscrive li riconosce subito appena entra. */
-function MiniRing({ pct, label, color, delay, reduce }) {
-  const r = 30, c = 2 * Math.PI * r;
+/* Stessa curva a semaforo continua dei cerchi VERI di Home (rosso→arancio→
+   giallo→verde, interpolata con fluidità) — copiata qui invece di importata
+   da 05_HomeDashboard.jsx (quel file è enorme e non va caricato solo per
+   questa presentazione pre-login). Se la curva cambia in Home, aggiorna
+   anche questa costante: sono deliberatamente indipendenti. */
+const LANDING_RING_STOPS = [
+  { pct: 0,   h: 0,   s: 88, l: 47 },
+  { pct: 55,  h: 18,  s: 92, l: 50 },
+  { pct: 70,  h: 46,  s: 93, l: 50 },
+  { pct: 85,  h: 118, s: 68, l: 40 },
+  { pct: 100, h: 152, s: 72, l: 45 },
+];
+function landingRingHsl(pct) {
+  const p = Math.max(0, Math.min(100, pct));
+  let lo = LANDING_RING_STOPS[0], hi = LANDING_RING_STOPS[LANDING_RING_STOPS.length - 1];
+  for (let i = 0; i < LANDING_RING_STOPS.length - 1; i++) {
+    if (p >= LANDING_RING_STOPS[i].pct && p <= LANDING_RING_STOPS[i + 1].pct) { lo = LANDING_RING_STOPS[i]; hi = LANDING_RING_STOPS[i + 1]; break; }
+  }
+  const t = (p - lo.pct) / (hi.pct - lo.pct || 1);
+  return { h: lo.h + (hi.h - lo.h) * t, s: lo.s + (hi.s - lo.s) * t, l: lo.l + (hi.l - lo.l) * t };
+}
+
+/* Anello di compliance — STESSO look dei cerchi veri di Home (gradiente
+   lucido che ruota sullo stroke, tacche di graduazione ogni 10%, glow che
+   pulsa nel colore reale, percentuale al centro): non i cerchietti piatti
+   gialli di prima, quelli che chi si iscrive riconosce subito appena entra
+   nell'app vera. Riscritto qui in locale (stessa tecnica, non lo stesso
+   componente) per non importare 05_HomeDashboard.jsx solo per questo. */
+function LandingComplianceRing({ pct, label, delay, reduce, size = 72, stroke = 7 }) {
+  const gradId = useId();
+  const { h, s, l } = landingRingHsl(pct);
+  const color = `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+  const loL = Math.max(0, l - 14), hiL = Math.min(97, l + 30), hiS = Math.max(30, s - 12);
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
+  const [filled, setFilled] = useState(false);
+  React.useEffect(() => {
+    if (reduce) { setFilled(true); return; }
+    const t = setTimeout(() => setFilled(true), delay * 1000);
+    return () => clearTimeout(t);
+  }, [reduce, delay]);
+  const filledLen = c * (filled ? pct / 100 : 0);
+  const tickInner = r - stroke / 2 - 1;
+  const tickOuter = tickInner - Math.max(2, size * 0.045);
+  const ticks = Array.from({ length: 10 }, (_, i) => {
+    const angle = ((i * 36 - 90) * Math.PI) / 180;
+    return { x1: cx + tickOuter * Math.cos(angle), y1: cy + tickOuter * Math.sin(angle),
+             x2: cx + tickInner * Math.cos(angle), y2: cy + tickInner * Math.sin(angle) };
+  });
   return (
     <div className="flex flex-col items-center gap-2">
-      <svg width={72} height={72} viewBox="0 0 72 72">
-        <circle cx={36} cy={36} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={6} />
-        <motion.circle cx={36} cy={36} r={r} fill="none" stroke={color} strokeWidth={6} strokeLinecap="round"
-          strokeDasharray={c} transform="rotate(-90 36 36)"
-          initial={{ strokeDashoffset: c }}
-          animate={{ strokeDashoffset: c - c * (pct / 100) }}
-          transition={{ duration: reduce ? 0 : 1.15, delay: reduce ? 0 : delay, ease: [0.22, 1, 0.36, 1] }} />
-      </svg>
+      <div className="relative landing-ring-breathe" style={{ width: size, height: size }}>
+        <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={stroke} />
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="objectBoundingBox">
+              <stop offset="0%" stopColor={`hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${loL.toFixed(0)}%)`} />
+              <stop offset="35%" stopColor={color} />
+              <stop offset="50%" stopColor={`hsl(${h.toFixed(0)}, ${hiS.toFixed(0)}%, ${hiL.toFixed(0)}%)`} />
+              <stop offset="65%" stopColor={color} />
+              <stop offset="100%" stopColor={`hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${loL.toFixed(0)}%)`} />
+              {!reduce && <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="2.6s" repeatCount="indefinite" />}
+            </linearGradient>
+          </defs>
+          <circle className="landing-ring-glow-pulse" cx={cx} cy={cy} r={r} fill="none" stroke={`url(#${gradId})`} strokeWidth={stroke} strokeLinecap="round"
+                  strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
+                  style={{ transition: "stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)" }} />
+          {ticks.map((t, i) => (
+            <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="#141008" strokeWidth={1} strokeOpacity={0.6} strokeLinecap="round" />
+          ))}
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="font-data" style={{ fontSize: "0.8rem", fontWeight: 700, color: "#FAFAFA", lineHeight: 1 }}>
+            {pct}%
+          </span>
+        </div>
+      </div>
       <span style={{ fontSize: "0.62rem", fontWeight: 700, color: "rgba(255,255,255,0.65)" }}>{label}</span>
     </div>
   );
@@ -225,9 +285,9 @@ function useSlides(reduce) {
       body: "Allenamento, alimentazione, recupero e integrazione letti come un solo corpo — non quattro tracker scollegati che non si parlano.",
       visual: (
         <div className="flex items-center justify-center gap-5" style={{ width: "100%", height: 140 }}>
-          <MiniRing pct={88} label="Allenamento" color="#C5A059" delay={0.05} reduce={reduce} />
-          <MiniRing pct={94} label="Alimentazione" color="#D9B36A" delay={0.2} reduce={reduce} />
-          <MiniRing pct={76} label="Recupero" color="#8C6E33" delay={0.35} reduce={reduce} />
+          <LandingComplianceRing pct={88} label="Allenamento" delay={0.05} reduce={reduce} />
+          <LandingComplianceRing pct={94} label="Alimentazione" delay={0.2} reduce={reduce} />
+          <LandingComplianceRing pct={76} label="Recupero" delay={0.35} reduce={reduce} />
         </div>
       ),
     },
@@ -383,6 +443,13 @@ export default function LandingIntro({ dark, onFinish }) {
         }
         @media (prefers-reduced-motion: reduce) {
           .landing-gold-sweep { animation: none; }
+        }
+        .landing-ring-breathe { animation: landingRingBreathe 3.4s ease-in-out infinite; }
+        @keyframes landingRingBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
+        .landing-ring-glow-pulse { animation: landingRingGlowPulse 2.6s ease-in-out infinite; }
+        @keyframes landingRingGlowPulse { 0%, 100% { filter: brightness(0.94) saturate(0.92); } 50% { filter: brightness(1.28) saturate(1.2); } }
+        @media (prefers-reduced-motion: reduce) {
+          .landing-ring-breathe, .landing-ring-glow-pulse { animation: none; }
         }
       `}</style>
       <motion.div style={{ x: reduce ? 0 : bgShift }}>
