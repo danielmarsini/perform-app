@@ -53,9 +53,9 @@ function KenBurnsPhoto({ file, reduce, focal = "center" }) {
   return (
     <motion.img
       src={`/landing/${file}`} alt=""
-      initial={{ scale: 1.08, x: 0, y: 0 }}
-      animate={reduce ? {} : { scale: [1.08, 1.2, 1.08], x: [0, -12, 0], y: [0, 10, 0] }}
-      transition={reduce ? {} : { duration: 17, repeat: Infinity, ease: "easeInOut" }}
+      initial={{ scale: 1.1, x: 0, y: 0 }}
+      animate={reduce ? {} : { scale: [1.1, 1.28, 1.1], x: [0, -18, 0], y: [0, 14, 0] }}
+      transition={reduce ? {} : { duration: 15, repeat: Infinity, ease: "easeInOut" }}
       style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: focal, display: "block" }}
     />
   );
@@ -113,79 +113,77 @@ function PhotoComingSoon({ label }) {
   );
 }
 
-/* Sfondo pieno della slide "risultati reali": coppia prima/dopo divisa in
-   due metà verticali, ciascuna con Ken Burns indipendente. Se più coppie
-   sono disponibili (transformation-2-*, transformation-3-*…) ruotano da
-   sole ogni 5 secondi con una dissolvenza incrociata — è quello che dà il
-   senso di "sfondo vivo" invece di una foto ferma, non serve toccare il
-   codice: bastano i file con il nome giusto. */
+/* Sfondo pieno della slide "risultati reali": NON più prima/dopo affiancati
+   — richiesta esplicita: il corpo deve mutare piano piano nel nuovo, non
+   stare a fianco. Due foto sovrapposte a piena slide (stesso Ken Burns
+   continuo su entrambe, mai interrotto): quella "dopo" dissolve dentro
+   quella "prima" e viceversa, in loop lento — l'occhio vede la
+   trasformazione avvenire, non due scatti separati. Se più coppie sono
+   disponibili (transformation-2-*, transformation-3-*…) la coppia stessa
+   ruota ogni ~10s, indipendentemente dal loop prima/dopo, ognuna con lo
+   stesso ciclo — non serve toccare il codice: bastano i file col nome giusto. */
 function TransformationBackdrop({ pairs, reduce }) {
-  const [i, setI] = useState(0);
+  const [pairIdx, setPairIdx] = useState(0);
+  const [showAfter, setShowAfter] = useState(false);
+  React.useEffect(() => {
+    if (reduce) return undefined;
+    const id = setInterval(() => setShowAfter((v) => !v), 3400);
+    return () => clearInterval(id);
+  }, [reduce]);
   React.useEffect(() => {
     if (reduce || pairs.length < 2) return undefined;
-    const id = setInterval(() => setI((prev) => (prev + 1) % pairs.length), 5000);
+    const id = setInterval(() => setPairIdx((i) => (i + 1) % pairs.length), 10200);
     return () => clearInterval(id);
   }, [pairs.length, reduce]);
-  const n = pairs[i % pairs.length];
+  const n = pairs[pairIdx % pairs.length];
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-      <AnimatePresence mode="sync">
-        <motion.div key={n} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          transition={{ duration: reduce ? 0 : 1 }} style={{ position: "absolute", inset: 0, display: "flex" }}>
-          <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-            <KenBurnsPhoto file={`transformation-${n}-before.jpg`} reduce={reduce} focal="center 25%" />
-            <span className="landing-tag" style={{ position: "absolute", top: "14%", left: 14,
-              color: "rgba(255,255,255,0.9)", backgroundColor: "rgba(0,0,0,0.45)", padding: "2px 10px", borderRadius: 999 }}>
-              Prima
-            </span>
-          </div>
-          <div style={{ width: 1, backgroundColor: "rgba(217,179,106,0.35)" }} />
-          <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-            <KenBurnsPhoto file={`transformation-${n}-after.jpg`} reduce={reduce} focal="center 25%" />
-            <span className="landing-tag" style={{ position: "absolute", top: "14%", right: 14,
-              color: "#1a1408", backgroundColor: "#D9B36A", padding: "2px 10px", borderRadius: 999 }}>
-              Dopo
-            </span>
-          </div>
-        </motion.div>
-      </AnimatePresence>
+    <div style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
+      <div style={{ position: "absolute", inset: 0 }}>
+        <KenBurnsPhoto file={`transformation-${n}-before.jpg`} reduce={reduce} focal="center 22%" />
+      </div>
+      <motion.div style={{ position: "absolute", inset: 0 }}
+        animate={{ opacity: showAfter ? 1 : 0 }}
+        transition={{ duration: reduce ? 0 : 2.2, ease: [0.45, 0, 0.55, 1] }}>
+        <KenBurnsPhoto file={`transformation-${n}-after.jpg`} reduce={reduce} focal="center 22%" />
+      </motion.div>
       <div style={{ position: "absolute", inset: 0,
-        background: "linear-gradient(180deg, rgba(8,6,2,0.5) 0%, rgba(8,6,2,0.45) 45%, rgba(8,6,2,0.5) 60%, rgba(6,5,2,0.88) 100%)" }} />
+        background: "linear-gradient(180deg, rgba(6,5,2,0.5) 0%, rgba(6,5,2,0.42) 45%, rgba(6,5,2,0.48) 60%, rgba(4,3,1,0.9) 100%)" }} />
+      <div className="flex items-center gap-2" style={{ position: "absolute", top: "6%", left: 18 }}>
+        <motion.span className="landing-tag" animate={{ opacity: showAfter ? 0 : 1 }} transition={{ duration: reduce ? 0 : 0.7 }}
+          style={{ color: "#0f0c05", backgroundColor: "#8C6E33", padding: "3px 12px", borderRadius: 999 }}>
+          Prima
+        </motion.span>
+        <motion.span className="landing-tag" animate={{ opacity: showAfter ? 1 : 0 }} transition={{ duration: reduce ? 0 : 0.7 }}
+          style={{ position: "absolute", color: "#1a1408", backgroundColor: "#F3E5AB", padding: "3px 12px", borderRadius: 999,
+                   boxShadow: "0 0 18px rgba(243,229,171,0.5)" }}>
+          Dopo
+        </motion.span>
+      </div>
     </div>
   );
 }
 
-/* Stessa curva a semaforo continua dei cerchi VERI di Home (rosso→arancio→
-   giallo→verde, interpolata con fluidità) — copiata qui invece di importata
-   da 05_HomeDashboard.jsx (quel file è enorme e non va caricato solo per
-   questa presentazione pre-login). Se la curva cambia in Home, aggiorna
-   anche questa costante: sono deliberatamente indipendenti. */
-const LANDING_RING_STOPS = [
-  { pct: 0,   h: 0,   s: 88, l: 47 },
-  { pct: 55,  h: 18,  s: 92, l: 50 },
-  { pct: 70,  h: 46,  s: 93, l: 50 },
-  { pct: 85,  h: 118, s: 68, l: 40 },
-  { pct: 100, h: 152, s: 72, l: 45 },
-];
-function landingRingHsl(pct) {
-  const p = Math.max(0, Math.min(100, pct));
-  let lo = LANDING_RING_STOPS[0], hi = LANDING_RING_STOPS[LANDING_RING_STOPS.length - 1];
-  for (let i = 0; i < LANDING_RING_STOPS.length - 1; i++) {
-    if (p >= LANDING_RING_STOPS[i].pct && p <= LANDING_RING_STOPS[i + 1].pct) { lo = LANDING_RING_STOPS[i]; hi = LANDING_RING_STOPS[i + 1]; break; }
-  }
-  const t = (p - lo.pct) / (hi.pct - lo.pct || 1);
-  return { h: lo.h + (hi.h - lo.h) * t, s: lo.s + (hi.s - lo.s) * t, l: lo.l + (hi.l - lo.l) * t };
+/* Colore dell'anello: SEMPRE oro, mai il semaforo rosso→verde dei cerchi
+   di Home — quella tavolozza da "dashboard fitness qualunque" stona con
+   l'identità nero/oro editoriale di questa presentazione (richiesta
+   esplicita: niente verde, "nero e giallo professionale", più cupo e
+   realistico). L'unica cosa che cambia con la percentuale è QUANTO oro è
+   acceso: basso = bronzo scuro opaco, alto = oro vivo brillante — mai un
+   altro colore in mezzo. */
+function landingRingGold(pct) {
+  const t = Math.max(0, Math.min(100, pct)) / 100;
+  return { h: 42, s: 52 + t * 36, l: 30 + t * 32 };
 }
 
-/* Anello di compliance — STESSO look dei cerchi veri di Home (gradiente
-   lucido che ruota sullo stroke, tacche di graduazione ogni 10%, glow che
-   pulsa nel colore reale, percentuale al centro): non i cerchietti piatti
-   gialli di prima, quelli che chi si iscrive riconosce subito appena entra
-   nell'app vera. Riscritto qui in locale (stessa tecnica, non lo stesso
+/* Anello di compliance: gradiente lucido che ruota sullo stroke, glow che
+   pulsa, percentuale al centro — vivo come i cerchi veri di Home, ma
+   pulito: niente tacche/graduazioni (richiesta esplicita: "non le cose
+   grigie che segnano le ore") e niente semaforo cromatico, solo oro.
+   Riscritto in locale (stessa tecnica dei cerchi veri, non lo stesso
    componente) per non importare 05_HomeDashboard.jsx solo per questo. */
 function LandingComplianceRing({ pct, label, delay, reduce, size = 72, stroke = 7 }) {
   const gradId = useId();
-  const { h, s, l } = landingRingHsl(pct);
+  const { h, s, l } = landingRingGold(pct);
   const color = `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
   const loL = Math.max(0, l - 14), hiL = Math.min(97, l + 30), hiS = Math.max(30, s - 12);
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
@@ -196,13 +194,6 @@ function LandingComplianceRing({ pct, label, delay, reduce, size = 72, stroke = 
     return () => clearTimeout(t);
   }, [reduce, delay]);
   const filledLen = c * (filled ? pct / 100 : 0);
-  const tickInner = r - stroke / 2 - 1;
-  const tickOuter = tickInner - Math.max(2, size * 0.045);
-  const ticks = Array.from({ length: 10 }, (_, i) => {
-    const angle = ((i * 36 - 90) * Math.PI) / 180;
-    return { x1: cx + tickOuter * Math.cos(angle), y1: cy + tickOuter * Math.sin(angle),
-             x2: cx + tickInner * Math.cos(angle), y2: cy + tickInner * Math.sin(angle) };
-  });
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="relative landing-ring-breathe" style={{ width: size, height: size }}>
@@ -221,9 +212,6 @@ function LandingComplianceRing({ pct, label, delay, reduce, size = 72, stroke = 
           <circle className="landing-ring-glow-pulse" cx={cx} cy={cy} r={r} fill="none" stroke={`url(#${gradId})`} strokeWidth={stroke} strokeLinecap="round"
                   strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
                   style={{ transition: "stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)" }} />
-          {ticks.map((t, i) => (
-            <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="#141008" strokeWidth={1} strokeOpacity={0.6} strokeLinecap="round" />
-          ))}
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
           <span className="font-data" style={{ fontSize: "0.8rem", fontWeight: 700, color: "#FAFAFA", lineHeight: 1 }}>
@@ -354,10 +342,17 @@ function useSlides(reduce) {
   ];
 }
 
+// Transizione "carta che ruota nello spazio" (richiesta esplicita: più
+// animata, "premium 3D") invece del semplice scorrimento di prima — la
+// slide entra/esce ruotando sull'asse Y con prospettiva reale (vedi
+// transformPerspective sul motion.div e perspective sul contenitore
+// padre), non un fake 2D. Stessa metafora "carta che si solleva dal
+// mazzo" già usata per la rotazione Z live durante il drag qui sotto,
+// ora estesa anche al cambio slide stesso.
 const VARIANTS = {
-  enter: (dir) => ({ x: dir >= 0 ? 56 : -56, opacity: 0, scale: 0.94, filter: "blur(8px)" }),
-  center: { x: 0, opacity: 1, scale: 1, filter: "blur(0px)" },
-  exit: (dir) => ({ x: dir >= 0 ? -56 : 56, opacity: 0, scale: 0.94, filter: "blur(8px)" }),
+  enter: (dir) => ({ x: dir >= 0 ? 90 : -90, opacity: 0, scale: 0.9, rotateY: dir >= 0 ? 46 : -46, filter: "blur(12px)" }),
+  center: { x: 0, opacity: 1, scale: 1, rotateY: 0, filter: "blur(0px)" },
+  exit: (dir) => ({ x: dir >= 0 ? -90 : 90, opacity: 0, scale: 0.9, rotateY: dir >= 0 ? -46 : 46, filter: "blur(12px)" }),
 };
 const VARIANTS_REDUCED = {
   enter: { opacity: 0 },
@@ -481,7 +476,7 @@ export default function LandingIntro({ dark, onFinish }) {
             del lato toccato, come le Storie) e a trascinamento orizzontale
             (come si sfoglia un libro) — il testo/CTA fuori da qui restano
             sempre cliccabili senza interferire col gesto. */}
-        <div className="flex-1 relative" style={{ overflow: "hidden", touchAction: "pan-y" }}>
+        <div className="flex-1 relative" style={{ overflow: "hidden", touchAction: "pan-y", perspective: "1400px" }}>
           <AnimatePresence custom={direction} initial={false} mode="wait">
             <motion.div
               key={index}
@@ -490,7 +485,8 @@ export default function LandingIntro({ dark, onFinish }) {
               initial="enter" animate="center" exit="exit"
               transition={{
                 x: { type: "spring", stiffness: 300, damping: 32 },
-                opacity: { duration: 0.22 }, scale: { duration: 0.3 }, filter: { duration: 0.3 },
+                rotateY: { type: "spring", stiffness: 240, damping: 26 },
+                opacity: { duration: 0.25 }, scale: { duration: 0.35 }, filter: { duration: 0.35 },
               }}
               drag={reduce ? false : "x"}
               dragConstraints={{ left: 0, right: 0 }}
@@ -512,7 +508,8 @@ export default function LandingIntro({ dark, onFinish }) {
                 go(x < window.innerWidth * 0.32 ? -1 : 1);
               }}
               className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center"
-              style={{ maxWidth: 480, margin: "0 auto", cursor: "pointer", rotate: reduce ? 0 : rotateZ, overflow: "hidden" }}>
+              style={{ maxWidth: 480, margin: "0 auto", cursor: "pointer", rotate: reduce ? 0 : rotateZ,
+                       overflow: "hidden", transformPerspective: 1400, transformStyle: "preserve-3d" }}>
               {s.bg}
               <div style={{ position: "relative", zIndex: 1, width: "100%" }} className="flex flex-col items-center">
                 {s.visual && <div className="mb-7" style={{ width: "100%" }}>{s.visual}</div>}
