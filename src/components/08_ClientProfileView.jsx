@@ -39,8 +39,8 @@ import {
   ShieldCheck, CreditCard, Trash2, FileText, ExternalLink, TrendingDown, Crown, Trophy, Loader2, Video, Share2,
   ClipboardList,
 } from "lucide-react";
-import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, LEVEL_REWARDS, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, isRealCoachingPlan, fetchCoachMarketingPublic, computeSpotsRemaining, isPromoActive, computeTrainingCompliance, computeNutritionCompliance, computeRecoveryCompliance } from "../lib/coachingData.js";
-import { GlobalStyle as AnamGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./AnamnesisShared.jsx";
+import { computeRealXpAndStreak, xpToLevelInfo, fetchCheckins, getCheckinPhotoUrl, saveProfileDetails, fetchProfileDetails, uploadAvatar, fetchLegalConsents, recompositionReading, LEVEL_TIERS, LEVELS_PER_TIER, LEVEL_REWARDS, fetchDailyMetricsRange, fetchMonthlyWrapped, fetchAllNutritionLogsForExport, fetchClientSetHistory, ensureReferralCode, fetchReferralProgress, fetchAnamnesis, saveAnamnesis, uploadAnamnesisFile, getAnamnesisFileUrl, isRealCoachingPlan, fetchCoachMarketingPublic, computeSpotsRemaining, isPromoActive, computeTrainingCompliance, computeNutritionCompliance, computeRecoveryCompliance } from "../lib/coachingData.js";
+import { GlobalStyle as AnamGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection, isAnamAnswerFilled } from "./AnamnesisShared.jsx";
 import { shareWrappedStory } from "../lib/wrappedShare.js";
 import { isSoundEnabled, setSoundEnabled, playSound } from "../lib/sounds.js";
 import { haptic } from "../lib/haptics.js";
@@ -1200,15 +1200,16 @@ function AnamnesisSection({ supabase, userId, dark }) {
       : <p className="meta">Carico la tua anamnesi…</p>;
   }
 
-  const fillable = ANAM_QUESTIONS.filter((q) => q.t !== "photos");
-  const filled = fillable.filter((q) => String(answers[q.k] ?? "").trim() !== "").length;
-  const pct = Math.round((filled / fillable.length) * 100);
+  const filled = ANAM_QUESTIONS.filter((q) => isAnamAnswerFilled(q, answers[q.k])).length;
+  const pct = Math.round((filled / ANAM_QUESTIONS.length) * 100);
+  const uploadFile = (file, tag) => uploadAnamnesisFile(supabase, userId, file, tag);
+  const getFileUrl = (path) => getAnamnesisFileUrl(supabase, path);
 
   return (
     <div className={`coach-root${dark ? " dark" : ""}`}>
       <AnamGlobalStyle />
       <div className="flex items-center justify-between mb-3">
-        <p className="c-muted text-xs">Le stesse 56 domande date al coach — aggiornale quando cambia qualcosa.</p>
+        <p className="c-muted text-xs">Le stesse 60 domande date al coach — aggiornale quando cambia qualcosa.</p>
         <span className="font-data text-xs font-bold shrink-0 ml-2" style={{ color: pct >= 90 ? "#10B981" : pct >= 50 ? "#F0A020" : "var(--ink-soft)" }}>
           {pct}%
         </span>
@@ -1216,8 +1217,9 @@ function AnamnesisSection({ supabase, userId, dark }) {
       <div className="space-y-3">
         {Object.entries(ANAM_AREAS).map(([areaId, label]) => (
           <AnamAreaSection key={areaId} areaId={areaId} label={label}
-            questions={ANAM_QUESTIONS.filter((q) => q.area === areaId && q.t !== "photos")}
-            answers={answers} onChange={setField} />
+            questions={ANAM_QUESTIONS.filter((q) => q.area === areaId)}
+            answers={answers} onChange={setField}
+            onUploadFile={uploadFile} getFileUrl={getFileUrl} />
         ))}
       </div>
       <p className="c-muted text-xs mt-3 px-1">

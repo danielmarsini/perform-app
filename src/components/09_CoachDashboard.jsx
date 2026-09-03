@@ -17,7 +17,7 @@ import { VolumeBar, VolumeDrillModal, SUPP_WIKI, SUPP_MOMENTS, matchSuppMoment }
 // tutto questo file (5000+ righe, lazy-caricato apposta solo per il coach)
 // nel bundle iniziale di ogni utente, coach o meno — vedi commento in testa
 // ad AnamnesisShared.jsx per il dettaglio.
-import { GlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./AnamnesisShared.jsx";
+import { GlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection, isAnamAnswerFilled } from "./AnamnesisShared.jsx";
 
 /* ============================================================================
    COACH DASHBOARD — PERFORM (Evidence-Based Method by D. Marsini)
@@ -77,7 +77,7 @@ const STATUS_META = {
    non presenti nel monolite in questa forma sintetica — li introduco per
    alimentare il motore di Generazione Predittiva Totale (TDEE + macros). */
 import {
-  fetchClientRoster, fetchAnamnesis, saveAnamnesis, activateClient,
+  fetchClientRoster, fetchAnamnesis, saveAnamnesis, getAnamnesisFileUrl, activateClient,
   MUSCLE_TARGETS, fetchWeekWorkout, saveWeekWorkout, cloneWeekWorkout,
   assignNutritionTarget, fetchBothNutritionTargets, applyNutritionProgramToDateRange, fetchNutritionProgramsRange, deleteNutritionProgram,
   saveWeekDiet, saveWeekSupplements, computeTrainingCompliance,
@@ -218,7 +218,7 @@ function simulateAnamnesis(client) {
     oreSeduto: client.activity === "sedentario" ? 9 : client.activity === "leggero" ? 7 : 5,
     oreMovimento: client.activity === "attivo" ? 3 : client.activity === "moderato" ? 2 : 1,
     peso: client.lastCheck.weight, altezza: client.heightCm,
-    circonferenze: "", plico: `${client.bodyFatPct}% massa grassa stimata (bioimpedenza)`, __foto: "",
+    circonferenze: "", plico: `${client.bodyFatPct}% massa grassa stimata (bioimpedenza)`, __foto: {},
     patologie: "", interventi: "", infortuni: client.evening.doloreGrado > 0 ? client.evening.doloreNota : "",
     dolori: client.evening.doloreGrado > 0 ? `Grado ${client.evening.doloreGrado}/5 · ${client.evening.doloreNota}` : "",
     analisi: "", farmaci: "", allergie: "",
@@ -4878,8 +4878,13 @@ function AnamnesisPanel({ client }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answers, isRealMode, client.id]);
 
-  const totalFilled = ANAM_QUESTIONS.filter((q) => q.t !== "photos" && String(answers[q.k] ?? "").trim() !== "").length;
-  const pct = Math.round((totalFilled / (ANAM_QUESTIONS.length - 1)) * 100); // -1: __foto non conta come domanda testuale
+  const totalFilled = ANAM_QUESTIONS.filter((q) => isAnamAnswerFilled(q, answers[q.k])).length;
+  const pct = Math.round((totalFilled / ANAM_QUESTIONS.length) * 100);
+  // Il coach vede foto/allegati caricati dal cliente (getFileUrl) ma non
+  // carica MAI al posto suo — niente onUploadFile qui: la RLS del bucket
+  // "anamnesis-attachments" (SCHEMA_v91) lo impedirebbe comunque in
+  // scrittura, solo il proprietario (auth.uid()) può inserire file.
+  const getFileUrl = isRealMode ? (path) => getAnamnesisFileUrl(supabase, path) : undefined;
 
   return (
     <div className="space-y-3">
@@ -4889,7 +4894,7 @@ function AnamnesisPanel({ client }) {
           <span className="font-data text-xs font-bold" style={{ color: pct >= 90 ? "#10B981" : pct >= 50 ? "#F0A020" : "#DC2626" }}>{pct}% anamnesi compilata</span>
         </div>
         <p className="c-muted text-xs mb-4">
-          Email e password vengono dalla registrazione (la password si rigenera dal dettaglio utente in Hub Utenti); il resto (data di nascita, telefono, città, peso, altezza…) viene autocompilato dalle 56 domande di anamnesi qui sotto.
+          Email e password vengono dalla registrazione (la password si rigenera dal dettaglio utente in Hub Utenti); il resto (data di nascita, telefono, città, peso, altezza…) viene autocompilato dalle 60 domande di anamnesi qui sotto.
         </p>
         <div className="grid grid-cols-2 gap-2.5 mb-3">
           <div className="t-inner px-3 py-2.5">
@@ -4921,7 +4926,7 @@ function AnamnesisPanel({ client }) {
 
       {Object.entries(ANAM_AREAS).map(([areaId, label]) => (
         <AnamAreaSection key={areaId} areaId={areaId} label={label} questions={ANAM_QUESTIONS.filter((q) => q.area === areaId)}
-          answers={answers} onChange={setField} defaultOpen={areaId === "a1"} />
+          answers={answers} onChange={setField} defaultOpen={areaId === "a1"} getFileUrl={getFileUrl} />
       ))}
 
       {isRealMode ? (

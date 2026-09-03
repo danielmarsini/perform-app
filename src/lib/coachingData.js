@@ -3176,6 +3176,31 @@ export async function getCheckinPhotoUrl(supabase, path) {
   return data?.signedUrl ?? null;
 }
 
+// Allegati anamnesi (SCHEMA_v91): stesso identico pattern di
+// uploadCheckinPhoto/getCheckinPhotoUrl qui sopra, ma nel bucket privato a sé
+// "anamnesis-attachments" — usato per le foto del check iniziale (domanda
+// __foto) e per i documenti di programmi/diete passati che un cliente
+// carica in anamnesi (segnalato da un cliente: non riusciva a caricare
+// foto del fisico che il coach potesse vedere — quel campo era solo un
+// placeholder demo, mai davvero funzionante). RLS identica: solo il
+// proprietario può scrivere, proprietario e coach possono leggere — mai un
+// bucket pubblico. `tag` distingue il tipo di allegato nel nome file (es.
+// "foto-front", "programma", "dieta").
+export async function uploadAnamnesisFile(supabase, userId, file, tag) {
+  const ext = (file.name?.split(".").pop() || "bin").toLowerCase();
+  const path = `${userId}/${Date.now()}-${tag}.${ext}`;
+  const { error } = await supabase.storage.from("anamnesis-attachments").upload(path, file, { upsert: false });
+  if (error) throw error;
+  return path;
+}
+
+export async function getAnamnesisFileUrl(supabase, path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("anamnesis-attachments").createSignedUrl(path, 3600);
+  if (error) { console.error("PERFORM: errore signed url allegato anamnesi", error); return null; }
+  return data?.signedUrl ?? null;
+}
+
 export async function saveCheckin(supabase, userId, checkin) {
   const { error } = await supabase.from("checkins").insert({
     user_id: userId,

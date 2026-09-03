@@ -17,13 +17,16 @@
         aggiornato e riprende da dove serve (anamnesi per i piani coaching,
         chiusura diretta per Premium).
      2. Anamnesi → SOLO se il piano scelto è a coaching (scheda/training/full):
-        le stesse 56 domande del pannello coach (ANAM_QUESTIONS/AnamAreaSection,
-        esportate da 09_CoachDashboard.jsx), compilate stavolta dall'atleta
+        le stesse 60 domande del pannello coach (ANAM_QUESTIONS/AnamAreaSection,
+        esportate da AnamnesisShared.jsx), compilate stavolta dall'atleta
         stesso invece che simulate, salvate su anamnesis_responses via
         saveAnamnesis — la stessa funzione che il coach usa per leggerle.
-        La domanda "photos" (__foto) è esclusa: quella riga nel pannello coach
-        è dichiaratamente un placeholder demo ("3/3 caricate"), non va
-        mostrata a un atleta reale come se fosse già stato fatto un upload.
+        Le domande "photos" (__foto, foto del check iniziale) e "files"
+        (programmi/diete passati) sono upload reali sul bucket privato
+        "anamnesis-attachments" (SCHEMA_v91) via uploadAnamnesisFile —
+        BUG PRESO: prima erano un placeholder demo mai collegato a un vero
+        upload, e per questo escluse dalla vista atleta: un cliente non
+        aveva alcun modo di caricare foto del fisico visibili al coach.
 
    Free e Premium non richiedono anamnesi (sono piani autogestiti,
    nessun coach li assegna): dopo la scelta si entra subito in Home.
@@ -39,8 +42,8 @@ import { STRIPE_PLANS, translations, GradientText, PlanCard, ScarcityMarketingBa
 // 4 export da lì costringeva Vite a includerlo comunque nel bundle
 // principale per ogni utente, coach o meno (vedi commento in testa ad
 // AnamnesisShared.jsx).
-import { GlobalStyle as CoachGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection } from "./AnamnesisShared.jsx";
-import { saveAnamnesis, resolveReferralCode, recordReferralSignup } from "../lib/coachingData.js";
+import { GlobalStyle as CoachGlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection, isAnamAnswerFilled } from "./AnamnesisShared.jsx";
+import { saveAnamnesis, resolveReferralCode, recordReferralSignup, uploadAnamnesisFile, getAnamnesisFileUrl } from "../lib/coachingData.js";
 
 // UI id (quello di STRIPE_PLANS, condiviso con SettingsDrawer) -> valore reale
 // accettato dal check constraint di profiles.plan (SCHEMA_v14).
@@ -54,8 +57,7 @@ const UI_TO_DB_PLAN = {
 
 const DB_TO_UI_PLAN = { scheda_personalizzata: "scheda", training: "training", full: "full" };
 
-const ANAM_FILLABLE = ANAM_QUESTIONS.filter((q) => q.t !== "photos");
-const ANAM_REQUIRED = ANAM_FILLABLE.filter((q) => q.req);
+const ANAM_REQUIRED = ANAM_QUESTIONS.filter((q) => q.req);
 
 // Il mini-tutorial di benvenuto (le 4 slide di presentazione) non vive più
 // qui: è stato spostato in LandingIntro.jsx e mostrato PRIMA della
@@ -182,8 +184,10 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
 
   const missingRequired = ANAM_REQUIRED.filter((q) => String(answers[q.k] ?? "").trim() === "");
   const canSubmitAnamnesi = missingRequired.length === 0;
-  const filledCount = ANAM_FILLABLE.filter((q) => String(answers[q.k] ?? "").trim() !== "").length;
-  const pctFilled = Math.round((filledCount / ANAM_FILLABLE.length) * 100);
+  const filledCount = ANAM_QUESTIONS.filter((q) => isAnamAnswerFilled(q, answers[q.k])).length;
+  const pctFilled = Math.round((filledCount / ANAM_QUESTIONS.length) * 100);
+  const uploadFile = (file, tag) => uploadAnamnesisFile(supabase, userId, file, tag);
+  const getFileUrl = (path) => getAnamnesisFileUrl(supabase, path);
 
   const submitAnamnesi = async () => {
     if (!canSubmitAnamnesi || !chosenPlan) return;
@@ -224,7 +228,7 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
               Prima di iniziare, raccontami di te
             </h1>
             <p className="c-muted text-sm leading-relaxed">
-              56 domande in 9 aree: mi servono per costruirti una scheda e un piano su misura, non
+              60 domande in 9 aree: mi servono per costruirti una scheda e un piano su misura, non
               generici. Puoi tornare a compilarle anche in seguito dal tuo profilo, ma i campi con
               l'asterisco (*) servono subito per partire.
             </p>
@@ -249,10 +253,12 @@ export default function OnboardingFlow({ supabase, userId, gender = "M", dark = 
               key={areaId}
               areaId={areaId}
               label={label}
-              questions={ANAM_FILLABLE.filter((q) => q.area === areaId)}
+              questions={ANAM_QUESTIONS.filter((q) => q.area === areaId)}
               answers={answers}
               onChange={setField}
               defaultOpen={areaId === "a1"}
+              onUploadFile={uploadFile}
+              getFileUrl={getFileUrl}
             />
           ))}
 
