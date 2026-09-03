@@ -16,17 +16,20 @@
      2. La soluzione: tutto quello che conta in un unico sistema
      3. Il professionista vero dietro l'app (non un algoritmo)
      4. Anche senza coach: autogestione seria, da atleta vero
-     5. Risultati reali (foto prima/dopo — vedi LandingPhoto sotto)
+     5. Risultati reali (foto prima/dopo — vedi TransformationBackdrop sotto)
      6. Invito all'azione
 
-   FOTO: nessun dato finto qui dentro. I riquadri prima/dopo e il ritratto
-   del coach puntano a file in /public/landing/ (vedi LEGGIMI.txt lì
-   dentro) — finché quei file non esistono, compare un placeholder elegante
-   (mai una foto finta spacciata per reale). Bastano i file con il nome
-   giusto per farli comparire, zero modifiche al codice.
+   FOTO: nessun dato finto qui dentro. Il ritratto del coach e le coppie
+   prima/dopo puntano a file in /public/landing/ (vedi LEGGIMI.txt lì
+   dentro) — finché quei file non esistono, compare un placeholder discreto
+   (mai una foto finta spacciata per reale). Quando ci sono, NON sono
+   riquadri piccoli isolati: riempiono l'intera slide come sfondo, con Ken
+   Burns continuo (vedi KenBurnsPhoto) — è quello che dà il senso di
+   "pienezza"/"vividezza" richiesto. Bastano i file con il nome giusto per
+   farli comparire, zero modifiche al codice.
    ========================================================================== */
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useId } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform, useReducedMotion, animate } from "framer-motion";
 import { Dumbbell, Salad, Moon, ChevronRight, ShieldCheck, Camera, Sparkles } from "lucide-react";
 import { DesignSystem, LiveBackground } from "./04_AppShell.jsx";
@@ -41,80 +44,181 @@ const COACH_NAME = "Daniel Marsini";
 const COACH_BIO = "Preparatore evidence-based. Ogni scheda nasce dai tuoi dati reali — non da un modello standard, copiato e incollato per tutti.";
 
 /* ----------------------------------------------------------------------
-   Foto con fallback elegante: prova a caricare da /landing/<file>, se il
-   file non esiste ancora mostra un riquadro placeholder (icona + testo),
-   mai una foto finta. Basta aggiungere il file con il nome giusto in
-   public/landing/ perché compaia da solo, senza toccare questo codice. */
-function LandingPhoto({ file, label, rounded = "1rem" }) {
-  const [broken, setBroken] = useState(false);
-  const boxStyle = {
-    aspectRatio: "3 / 4",
-    borderRadius: rounded,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    border: broken ? "1px dashed rgba(255,255,255,0.18)" : "1px solid rgba(255,255,255,0.1)",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  };
-  if (broken) {
-    return (
-      <div style={boxStyle}>
-        <Camera size={18} style={{ color: "rgba(255,255,255,0.35)" }} />
-        <span style={{ fontSize: "0.58rem", color: "rgba(255,255,255,0.4)", textAlign: "center", padding: "0 8px", lineHeight: 1.3 }}>
-          {label}
-        </span>
-      </div>
-    );
-  }
+   Le foto vere non sono più riquadri piccoli isolati in mezzo al testo:
+   riempiono tutta la slide come sfondo, con uno zoom lentissimo continuo
+   (Ken Burns) + un pan leggero — è quello che dà "pienezza"/"vividezza"
+   invece di sembrare un'icona buttata lì. overflow:hidden sul contenitore
+   evita che lo zoom sconfini oltre i bordi della slide. */
+function KenBurnsPhoto({ file, reduce, focal = "center" }) {
   return (
-    <div style={boxStyle}>
-      <img src={`/landing/${file}`} alt="" onError={() => setBroken(true)}
-           style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    <motion.img
+      src={`/landing/${file}`} alt=""
+      initial={{ scale: 1.1, x: 0, y: 0 }}
+      animate={reduce ? {} : { scale: [1.1, 1.28, 1.1], x: [0, -18, 0], y: [0, 14, 0] }}
+      transition={reduce ? {} : { duration: 15, repeat: Infinity, ease: "easeInOut" }}
+      style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: focal, display: "block" }}
+    />
+  );
+}
+
+/* Verifica se un file esiste in /landing/ SENZA mai mostrarlo se manca —
+   stessa filosofia di "mai una foto finta", solo spostata a monte: qui si
+   decide se attivare la modalità sfondo pieno o restare sul placeholder
+   discreto, invece di scoprirlo dentro un <img> isolato dentro la slide. */
+function usePhotoStatus(file) {
+  const [status, setStatus] = useState("loading");
+  React.useEffect(() => {
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => { if (!cancelled) setStatus("ok"); };
+    img.onerror = () => { if (!cancelled) setStatus("error"); };
+    img.src = `/landing/${file}`;
+    return () => { cancelled = true; };
+  }, [file]);
+  return status;
+}
+
+/* Sfondo pieno della slide "professionista vero": la foto del coach
+   riempie tutta la slide con Ken Burns, uno scrim scuro la rende
+   leggibile, nome+bio diventano una didascalia in basso — non più un
+   ritratto piccolo isolato in mezzo al testo. */
+function CoachBackdrop({ reduce }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+      <KenBurnsPhoto file="coach-portrait.jpg" reduce={reduce} focal="center 20%" />
+      <div style={{ position: "absolute", inset: 0,
+        background: "linear-gradient(180deg, rgba(8,6,2,0.4) 0%, rgba(8,6,2,0.35) 40%, rgba(8,6,2,0.55) 70%, rgba(6,5,2,0.92) 100%)" }} />
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: "15%", padding: "0 1.75rem", textAlign: "left" }}>
+        <p style={{ fontSize: "1rem", fontWeight: 800, color: "#FAFAFA" }}>{COACH_NAME}</p>
+        <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.72)", marginTop: 3, lineHeight: 1.45, maxWidth: 320 }}>
+          {COACH_BIO}
+        </p>
+      </div>
     </div>
   );
 }
 
-/* Coppia prima/dopo compatta, per la slide "risultati reali". */
-function TransformationPair({ n }) {
+/* Placeholder discreto quando la foto non c'è ancora (mai una foto finta
+   spacciata per reale): solo un'icona, niente riquadro pieno — usato sia
+   per il coach sia per le trasformazioni quando nessuna coppia è pronta. */
+function PhotoComingSoon({ label }) {
   return (
-    <div className="flex gap-1.5" style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ flex: 1, position: "relative" }}>
-        <LandingPhoto file={`transformation-${n}-before.jpg`} label="Prima" />
-        <span className="landing-tag" style={{ position: "absolute", top: 6, left: 6,
-                       color: "rgba(255,255,255,0.85)", backgroundColor: "rgba(0,0,0,0.5)", padding: "2px 8px", borderRadius: 999 }}>
+    <div className="flex flex-col items-center gap-2" style={{ padding: "2.5rem 0" }}>
+      <div style={{ width: 64, height: 64, borderRadius: "999px", border: "1px dashed rgba(255,255,255,0.22)",
+        display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Camera size={20} style={{ color: "rgba(255,255,255,0.4)" }} />
+      </div>
+      <span style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.4)" }}>{label}</span>
+    </div>
+  );
+}
+
+/* Sfondo pieno della slide "risultati reali": NON più prima/dopo affiancati
+   — richiesta esplicita: il corpo deve mutare piano piano nel nuovo, non
+   stare a fianco. Due foto sovrapposte a piena slide (stesso Ken Burns
+   continuo su entrambe, mai interrotto): quella "dopo" dissolve dentro
+   quella "prima" e viceversa, in loop lento — l'occhio vede la
+   trasformazione avvenire, non due scatti separati. Se più coppie sono
+   disponibili (transformation-2-*, transformation-3-*…) la coppia stessa
+   ruota ogni ~10s, indipendentemente dal loop prima/dopo, ognuna con lo
+   stesso ciclo — non serve toccare il codice: bastano i file col nome giusto. */
+function TransformationBackdrop({ pairs, reduce }) {
+  const [pairIdx, setPairIdx] = useState(0);
+  const [showAfter, setShowAfter] = useState(false);
+  React.useEffect(() => {
+    if (reduce) return undefined;
+    const id = setInterval(() => setShowAfter((v) => !v), 3400);
+    return () => clearInterval(id);
+  }, [reduce]);
+  React.useEffect(() => {
+    if (reduce || pairs.length < 2) return undefined;
+    const id = setInterval(() => setPairIdx((i) => (i + 1) % pairs.length), 10200);
+    return () => clearInterval(id);
+  }, [pairs.length, reduce]);
+  const n = pairs[pairIdx % pairs.length];
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
+      <div style={{ position: "absolute", inset: 0 }}>
+        <KenBurnsPhoto file={`transformation-${n}-before.jpg`} reduce={reduce} focal="center 22%" />
+      </div>
+      <motion.div style={{ position: "absolute", inset: 0 }}
+        animate={{ opacity: showAfter ? 1 : 0 }}
+        transition={{ duration: reduce ? 0 : 2.2, ease: [0.45, 0, 0.55, 1] }}>
+        <KenBurnsPhoto file={`transformation-${n}-after.jpg`} reduce={reduce} focal="center 22%" />
+      </motion.div>
+      <div style={{ position: "absolute", inset: 0,
+        background: "linear-gradient(180deg, rgba(6,5,2,0.5) 0%, rgba(6,5,2,0.42) 45%, rgba(6,5,2,0.48) 60%, rgba(4,3,1,0.9) 100%)" }} />
+      <div className="flex items-center gap-2" style={{ position: "absolute", top: "6%", left: 18 }}>
+        <motion.span className="landing-tag" animate={{ opacity: showAfter ? 0 : 1 }} transition={{ duration: reduce ? 0 : 0.7 }}
+          style={{ color: "#0f0c05", backgroundColor: "#8C6E33", padding: "3px 12px", borderRadius: 999 }}>
           Prima
-        </span>
-      </div>
-      <div style={{ flex: 1, position: "relative" }}>
-        <LandingPhoto file={`transformation-${n}-after.jpg`} label="Dopo" />
-        <span className="landing-tag" style={{ position: "absolute", top: 6, left: 6,
-                       color: "#1a1408", backgroundColor: "#D9B36A", padding: "2px 8px", borderRadius: 999 }}>
+        </motion.span>
+        <motion.span className="landing-tag" animate={{ opacity: showAfter ? 1 : 0 }} transition={{ duration: reduce ? 0 : 0.7 }}
+          style={{ position: "absolute", color: "#1a1408", backgroundColor: "#F3E5AB", padding: "3px 12px", borderRadius: 999,
+                   boxShadow: "0 0 18px rgba(243,229,171,0.5)" }}>
           Dopo
-        </span>
+        </motion.span>
       </div>
     </div>
   );
 }
 
-/* Anello di compliance in miniatura, autonomo (niente import dal
-   05_HomeDashboard.jsx — quel file è enorme e non va caricato solo per
-   questa presentazione pre-login): stessa idea visiva dei cerchi veri
-   dell'app, così chi si iscrive li riconosce subito appena entra. */
-function MiniRing({ pct, label, color, delay, reduce }) {
-  const r = 30, c = 2 * Math.PI * r;
+/* Colore dell'anello: SEMPRE oro, mai il semaforo rosso→verde dei cerchi
+   di Home — quella tavolozza da "dashboard fitness qualunque" stona con
+   l'identità nero/oro editoriale di questa presentazione (richiesta
+   esplicita: niente verde, "nero e giallo professionale", più cupo e
+   realistico). L'unica cosa che cambia con la percentuale è QUANTO oro è
+   acceso: basso = bronzo scuro opaco, alto = oro vivo brillante — mai un
+   altro colore in mezzo. */
+function landingRingGold(pct) {
+  const t = Math.max(0, Math.min(100, pct)) / 100;
+  return { h: 42, s: 52 + t * 36, l: 30 + t * 32 };
+}
+
+/* Anello di compliance: gradiente lucido che ruota sullo stroke, glow che
+   pulsa, percentuale al centro — vivo come i cerchi veri di Home, ma
+   pulito: niente tacche/graduazioni (richiesta esplicita: "non le cose
+   grigie che segnano le ore") e niente semaforo cromatico, solo oro.
+   Riscritto in locale (stessa tecnica dei cerchi veri, non lo stesso
+   componente) per non importare 05_HomeDashboard.jsx solo per questo. */
+function LandingComplianceRing({ pct, label, delay, reduce, size = 72, stroke = 7 }) {
+  const gradId = useId();
+  const { h, s, l } = landingRingGold(pct);
+  const color = `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+  const loL = Math.max(0, l - 14), hiL = Math.min(97, l + 30), hiS = Math.max(30, s - 12);
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, cx = size / 2, cy = size / 2;
+  const [filled, setFilled] = useState(false);
+  React.useEffect(() => {
+    if (reduce) { setFilled(true); return; }
+    const t = setTimeout(() => setFilled(true), delay * 1000);
+    return () => clearTimeout(t);
+  }, [reduce, delay]);
+  const filledLen = c * (filled ? pct / 100 : 0);
   return (
     <div className="flex flex-col items-center gap-2">
-      <svg width={72} height={72} viewBox="0 0 72 72">
-        <circle cx={36} cy={36} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={6} />
-        <motion.circle cx={36} cy={36} r={r} fill="none" stroke={color} strokeWidth={6} strokeLinecap="round"
-          strokeDasharray={c} transform="rotate(-90 36 36)"
-          initial={{ strokeDashoffset: c }}
-          animate={{ strokeDashoffset: c - c * (pct / 100) }}
-          transition={{ duration: reduce ? 0 : 1.15, delay: reduce ? 0 : delay, ease: [0.22, 1, 0.36, 1] }} />
-      </svg>
+      <div className="relative landing-ring-breathe" style={{ width: size, height: size }}>
+        <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={stroke} />
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="objectBoundingBox">
+              <stop offset="0%" stopColor={`hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${loL.toFixed(0)}%)`} />
+              <stop offset="35%" stopColor={color} />
+              <stop offset="50%" stopColor={`hsl(${h.toFixed(0)}, ${hiS.toFixed(0)}%, ${hiL.toFixed(0)}%)`} />
+              <stop offset="65%" stopColor={color} />
+              <stop offset="100%" stopColor={`hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${loL.toFixed(0)}%)`} />
+              {!reduce && <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="2.6s" repeatCount="indefinite" />}
+            </linearGradient>
+          </defs>
+          <circle className="landing-ring-glow-pulse" cx={cx} cy={cy} r={r} fill="none" stroke={`url(#${gradId})`} strokeWidth={stroke} strokeLinecap="round"
+                  strokeDasharray={c} strokeDashoffset={c - filledLen} transform={`rotate(-90 ${cx} ${cy})`}
+                  style={{ transition: "stroke-dashoffset 1.1s cubic-bezier(.22,1,.36,1)" }} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="font-data" style={{ fontSize: "0.8rem", fontWeight: 700, color: "#FAFAFA", lineHeight: 1 }}>
+            {pct}%
+          </span>
+        </div>
+      </div>
       <span style={{ fontSize: "0.62rem", fontWeight: 700, color: "rgba(255,255,255,0.65)" }}>{label}</span>
     </div>
   );
@@ -142,6 +246,14 @@ function FloatingChip({ icon: Icon, style, delay, reduce }) {
    Contenuto delle 6 slide — testi + visual dedicato per ciascuna.
    ========================================================================== */
 function useSlides(reduce) {
+  const coachStatus = usePhotoStatus("coach-portrait.jpg");
+  const pairStatuses = [1, 2, 3].map((n) => ({
+    n,
+    before: usePhotoStatus(`transformation-${n}-before.jpg`),
+    after: usePhotoStatus(`transformation-${n}-after.jpg`),
+  }));
+  const okPairs = pairStatuses.filter((p) => p.before === "ok" && p.after === "ok").map((p) => p.n);
+
   return [
     {
       kicker: "Il problema, in una frase",
@@ -161,9 +273,9 @@ function useSlides(reduce) {
       body: "Allenamento, alimentazione, recupero e integrazione letti come un solo corpo — non quattro tracker scollegati che non si parlano.",
       visual: (
         <div className="flex items-center justify-center gap-5" style={{ width: "100%", height: 140 }}>
-          <MiniRing pct={88} label="Allenamento" color="#C5A059" delay={0.05} reduce={reduce} />
-          <MiniRing pct={94} label="Alimentazione" color="#D9B36A" delay={0.2} reduce={reduce} />
-          <MiniRing pct={76} label="Recupero" color="#8C6E33" delay={0.35} reduce={reduce} />
+          <LandingComplianceRing pct={88} label="Allenamento" delay={0.05} reduce={reduce} />
+          <LandingComplianceRing pct={94} label="Alimentazione" delay={0.2} reduce={reduce} />
+          <LandingComplianceRing pct={76} label="Recupero" delay={0.35} reduce={reduce} />
         </div>
       ),
     },
@@ -171,11 +283,10 @@ function useSlides(reduce) {
       kicker: "Non un algoritmo con la tua faccia",
       title: "Dietro ogni numero, un professionista vero.",
       body: "Fisiologia, biomeccanica, i tuoi progressi reali — letti da chi se ne occupa per mestiere. Non una scheda fotocopiata.",
-      visual: (
+      bg: coachStatus === "ok" ? <CoachBackdrop reduce={reduce} /> : null,
+      visual: coachStatus === "ok" ? null : (
         <div className="flex flex-col items-center gap-3" style={{ width: "100%" }}>
-          <div style={{ width: 96 }}>
-            <LandingPhoto file="coach-portrait.jpg" label="Foto in arrivo" rounded="999px" />
-          </div>
+          <PhotoComingSoon label="Foto in arrivo" />
           <div className="text-center" style={{ maxWidth: 280 }}>
             <p style={{ fontSize: "0.95rem", fontWeight: 800, color: "#FAFAFA" }}>{COACH_NAME}</p>
             <p style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.5)", marginTop: 2, lineHeight: 1.4 }}>{COACH_BIO}</p>
@@ -206,17 +317,8 @@ function useSlides(reduce) {
       kicker: "Non promesse. Persone.",
       title: "I risultati parlano da soli.",
       body: "Percorsi reali, un check alla volta.",
-      visual: (
-        <div className="flex flex-col gap-2.5" style={{ width: "100%" }}>
-          <div className="flex gap-2.5">
-            <TransformationPair n={1} />
-            <TransformationPair n={2} />
-          </div>
-          <div style={{ width: "48%" }}>
-            <TransformationPair n={3} />
-          </div>
-        </div>
-      ),
+      bg: okPairs.length > 0 ? <TransformationBackdrop pairs={okPairs} reduce={reduce} /> : null,
+      visual: okPairs.length > 0 ? null : <PhotoComingSoon label="Trasformazioni in arrivo" />,
     },
     {
       kicker: "Pronto?",
@@ -240,10 +342,17 @@ function useSlides(reduce) {
   ];
 }
 
+// Transizione "carta che ruota nello spazio" (richiesta esplicita: più
+// animata, "premium 3D") invece del semplice scorrimento di prima — la
+// slide entra/esce ruotando sull'asse Y con prospettiva reale (vedi
+// transformPerspective sul motion.div e perspective sul contenitore
+// padre), non un fake 2D. Stessa metafora "carta che si solleva dal
+// mazzo" già usata per la rotazione Z live durante il drag qui sotto,
+// ora estesa anche al cambio slide stesso.
 const VARIANTS = {
-  enter: (dir) => ({ x: dir >= 0 ? 56 : -56, opacity: 0, scale: 0.94, filter: "blur(8px)" }),
-  center: { x: 0, opacity: 1, scale: 1, filter: "blur(0px)" },
-  exit: (dir) => ({ x: dir >= 0 ? -56 : 56, opacity: 0, scale: 0.94, filter: "blur(8px)" }),
+  enter: (dir) => ({ x: dir >= 0 ? 90 : -90, opacity: 0, scale: 0.9, rotateY: dir >= 0 ? 46 : -46, filter: "blur(12px)" }),
+  center: { x: 0, opacity: 1, scale: 1, rotateY: 0, filter: "blur(0px)" },
+  exit: (dir) => ({ x: dir >= 0 ? -90 : 90, opacity: 0, scale: 0.9, rotateY: dir >= 0 ? -46 : 46, filter: "blur(12px)" }),
 };
 const VARIANTS_REDUCED = {
   enter: { opacity: 0 },
@@ -330,6 +439,13 @@ export default function LandingIntro({ dark, onFinish }) {
         @media (prefers-reduced-motion: reduce) {
           .landing-gold-sweep { animation: none; }
         }
+        .landing-ring-breathe { animation: landingRingBreathe 3.4s ease-in-out infinite; }
+        @keyframes landingRingBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
+        .landing-ring-glow-pulse { animation: landingRingGlowPulse 2.6s ease-in-out infinite; }
+        @keyframes landingRingGlowPulse { 0%, 100% { filter: brightness(0.94) saturate(0.92); } 50% { filter: brightness(1.28) saturate(1.2); } }
+        @media (prefers-reduced-motion: reduce) {
+          .landing-ring-breathe, .landing-ring-glow-pulse { animation: none; }
+        }
       `}</style>
       <motion.div style={{ x: reduce ? 0 : bgShift }}>
         <LiveBackground gender={gender} dark={dark} />
@@ -360,7 +476,7 @@ export default function LandingIntro({ dark, onFinish }) {
             del lato toccato, come le Storie) e a trascinamento orizzontale
             (come si sfoglia un libro) — il testo/CTA fuori da qui restano
             sempre cliccabili senza interferire col gesto. */}
-        <div className="flex-1 relative" style={{ overflow: "hidden", touchAction: "pan-y" }}>
+        <div className="flex-1 relative" style={{ overflow: "hidden", touchAction: "pan-y", perspective: "1400px" }}>
           <AnimatePresence custom={direction} initial={false} mode="wait">
             <motion.div
               key={index}
@@ -369,7 +485,8 @@ export default function LandingIntro({ dark, onFinish }) {
               initial="enter" animate="center" exit="exit"
               transition={{
                 x: { type: "spring", stiffness: 300, damping: 32 },
-                opacity: { duration: 0.22 }, scale: { duration: 0.3 }, filter: { duration: 0.3 },
+                rotateY: { type: "spring", stiffness: 240, damping: 26 },
+                opacity: { duration: 0.25 }, scale: { duration: 0.35 }, filter: { duration: 0.35 },
               }}
               drag={reduce ? false : "x"}
               dragConstraints={{ left: 0, right: 0 }}
@@ -391,29 +508,33 @@ export default function LandingIntro({ dark, onFinish }) {
                 go(x < window.innerWidth * 0.32 ? -1 : 1);
               }}
               className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center"
-              style={{ maxWidth: 480, margin: "0 auto", cursor: "pointer", rotate: reduce ? 0 : rotateZ }}>
-              <div className="mb-7" style={{ width: "100%" }}>{s.visual}</div>
-              <p className="landing-kicker mb-2.5">
-                {s.kicker}
-              </p>
-              <GradientText gender={gender} className="landing-title" style={{ fontSize: "1.7rem", fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.2, display: "block" }}>
-                {s.title}
-              </GradientText>
-              <p className="mt-3.5 text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.62)", maxWidth: 340 }}>
-                {s.body}
-              </p>
-              {index === 0 && (
-                <motion.div className="flex items-center justify-center gap-1.5 mt-8" aria-hidden="true"
-                  initial={{ opacity: 0 }} animate={{ opacity: reduce ? 0.5 : 1 }} transition={{ delay: 0.5, duration: 0.5 }}>
-                  <motion.span
-                    animate={reduce ? {} : { x: [6, -6, 6] }}
-                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
-                    style={{ width: 26, height: 2, borderRadius: 999, background: "linear-gradient(90deg, transparent, #C5A059)" }} />
-                  <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic", fontSize: "0.68rem", color: "rgba(255,255,255,0.4)" }}>
-                    scorri
-                  </span>
-                </motion.div>
-              )}
+              style={{ maxWidth: 480, margin: "0 auto", cursor: "pointer", rotate: reduce ? 0 : rotateZ,
+                       overflow: "hidden", transformPerspective: 1400, transformStyle: "preserve-3d" }}>
+              {s.bg}
+              <div style={{ position: "relative", zIndex: 1, width: "100%" }} className="flex flex-col items-center">
+                {s.visual && <div className="mb-7" style={{ width: "100%" }}>{s.visual}</div>}
+                <p className="landing-kicker mb-2.5">
+                  {s.kicker}
+                </p>
+                <GradientText gender={gender} className="landing-title" style={{ fontSize: "1.7rem", fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.2, display: "block" }}>
+                  {s.title}
+                </GradientText>
+                <p className="mt-3.5 text-sm leading-relaxed" style={{ color: "rgba(255,255,255,0.62)", maxWidth: 340 }}>
+                  {s.body}
+                </p>
+                {index === 0 && (
+                  <motion.div className="flex items-center justify-center gap-1.5 mt-8" aria-hidden="true"
+                    initial={{ opacity: 0 }} animate={{ opacity: reduce ? 0.5 : 1 }} transition={{ delay: 0.5, duration: 0.5 }}>
+                    <motion.span
+                      animate={reduce ? {} : { x: [6, -6, 6] }}
+                      transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                      style={{ width: 26, height: 2, borderRadius: 999, background: "linear-gradient(90deg, transparent, #C5A059)" }} />
+                    <span style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic", fontSize: "0.68rem", color: "rgba(255,255,255,0.4)" }}>
+                      scorri
+                    </span>
+                  </motion.div>
+                )}
+              </div>
             </motion.div>
           </AnimatePresence>
         </div>
