@@ -30,6 +30,7 @@ import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchW
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps, guessBodyFocusLabel, fetchAnamnesis } from "../lib/coachingData.js";
 import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate } from "../lib/biometrics.js";
 import { enqueueWrite, flushOfflineQueue, cancelQueuedWrite, useOfflineQueueCount } from "../lib/offlineQueue.js";
+import { readCache, writeCache } from "../lib/localCache.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
@@ -11151,15 +11152,25 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
   // SUPP_PLAN_PRO di sempre; se arrivano ma il coach non ha ancora
   // prescritto nulla, mostra uno stato vuoto esplicito — mai la demo al
   // posto di un dato reale mancante.
-  const [prescribed, setPrescribed] = useState(null); // null = non ancora caricato (solo isRealMode)
+  // null = non ancora caricato (solo isRealMode). Inizializzato dall'ultimo
+  // protocollo noto (localCache.js): così se l'app riparte con rete assente
+  // (non solo se cade a metà sessione) il cliente vede comunque l'ultimo
+  // protocollo visto, non uno stato vuoto indistinguibile da "il coach non
+  // ha ancora prescritto nulla".
+  const [prescribed, setPrescribed] = useState(() => (userId ? readCache(`prescribed_${userId}`) : null));
   useEffect(() => {
     if (!isRealMode) return;
     let cancelled = false;
     fetchPrescribedSupplements(supabase, userId)
-      .then((rows) => { if (!cancelled) setPrescribed(rows); })
+      .then((rows) => { if (!cancelled) { setPrescribed(rows); writeCache(`prescribed_${userId}`, rows); } })
       .catch((err) => {
-        console.error("PERFORM: errore lettura prescribed_supplements", err);
-        if (!cancelled) setPrescribed([]);
+        // BUG PRESO: azzerava a [] su QUALSIASI fallimento, anche solo rete
+        // assente — un protocollo reale già assegnato spariva e sembrava
+        // "nessuna prescrizione", invece di "non sono riuscito a
+        // ricaricare, ecco l'ultimo che avevo". Mai perdere un dato reale
+        // già mostrato per un semplice errore di rete.
+        console.error("PERFORM: errore lettura prescribed_supplements, mostro l'ultimo protocollo noto", err);
+        if (!cancelled) setPrescribed((prev) => prev ?? []);
       });
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId]);
@@ -11472,20 +11483,25 @@ export default function HomePreview({
   // assegnata dal coach) appena è disponibile — questo stato resta solo per
   // il toggle manuale "Simula ON/OFF" della preview demo.
   const [manualTrainingDay, setManualTrainingDay] = useState(true);
-  const [targetOn, setTargetOn] = useState({ kcal: 3000, p: 200, c: 380, f: 75 });   // giorno ON (allenamento)
-  const [targetOff, setTargetOff] = useState({ kcal: 2550, p: 200, c: 230, f: 85 }); // giorno OFF (riposo)
+  // Inizializzati dall'ultimo target noto (localCache.js) se c'è, altrimenti
+  // il default finto di sempre — mai un flash a vuoto se il coach ha già
+  // assegnato qualcosa e la prima richiesta parte offline.
+  const [targetOn, setTargetOn] = useState(() => (userId && readCache(`nutTargetOn_${userId}`)) || { kcal: 3000, p: 200, c: 380, f: 75 });   // giorno ON (allenamento)
+  const [targetOff, setTargetOff] = useState(() => (userId && readCache(`nutTargetOff_${userId}`)) || { kcal: 2550, p: 200, c: 230, f: 85 }); // giorno OFF (riposo)
 
   // Dati reali: se supabase+userId sono passati (da App.jsx), sovrascrive i target
   // finti con quelli assegnati davvero dal coach (nutrition_targets). Se il coach
   // non ha ancora assegnato nulla, resta il target di default sopra (nessun crash).
+  // Un fallimento (rete assente) non tocca lo stato: resta quello dell'ultima
+  // volta riuscita (o il default), mai azzerato per un errore di rete.
   useEffect(() => {
     if (!supabaseProp || !userId) return;
     fetchBothNutritionTargets(supabaseProp, userId)
       .then(({ targetOn: realOn, targetOff: realOff }) => {
-        if (realOn) setTargetOn(realOn);
-        if (realOff) setTargetOff(realOff);
+        if (realOn) { setTargetOn(realOn); writeCache(`nutTargetOn_${userId}`, realOn); }
+        if (realOff) { setTargetOff(realOff); writeCache(`nutTargetOff_${userId}`, realOff); }
       })
-      .catch((err) => console.error("PERFORM: errore lettura nutrition_targets", err));
+      .catch((err) => console.error("PERFORM: errore lettura nutrition_targets, mostro l'ultimo valore noto", err));
   }, [supabaseProp, userId]);
 
   // Dieta tipo pasto-per-pasto assegnata dal coach (diet_plans, SCHEMA_v83) —
@@ -11493,12 +11509,12 @@ export default function HomePreview({
   // target sopra, mai i pasti stessi, quindi questo fetch non esisteva e il
   // tab "Dieta Tipo" restava sempre nascosto in modalità reale (vedi
   // NutritionTabs più sotto). null finché non caricato o non assegnato.
-  const [dietPlan, setDietPlan] = useState({ on: null, off: null });
+  const [dietPlan, setDietPlan] = useState(() => (userId && readCache(`dietPlan_${userId}`)) || { on: null, off: null });
   useEffect(() => {
     if (!supabaseProp || !userId) return;
     fetchDietPlan(supabaseProp, userId)
-      .then(setDietPlan)
-      .catch((err) => console.error("PERFORM: errore lettura diet_plans", err));
+      .then((plan) => { setDietPlan(plan); writeCache(`dietPlan_${userId}`, plan); })
+      .catch((err) => console.error("PERFORM: errore lettura diet_plans, mostro l'ultimo valore noto", err));
   }, [supabaseProp, userId]);
 
   // Scheda assegnata dal coach per l'INTERA settimana corrente (Lun→Dom, stesso
@@ -11508,7 +11524,10 @@ export default function HomePreview({
   // il giorno che il cliente clicca davvero, non solo quello odierno. Se un
   // giorno non ha nulla assegnato resta null — niente dati finti mostrati a
   // un utente reale.
-  const [assignedWeek, setAssignedWeek] = useState(null); // null = non ancora caricato; 7 elementi Lun→Dom
+  // null = non ancora caricato; 7 elementi Lun→Dom. Inizializzato dall'ultima
+  // scheda nota (localCache.js) se c'è: un'app riaperta con rete assente
+  // mostra subito l'ultima settimana vista, non una schermata vuota.
+  const [assignedWeek, setAssignedWeek] = useState(() => (userId ? readCache(`assignedWeek_${userId}`) : null));
   useEffect(() => {
     if (!supabaseProp || !userId) return;
     let cancelled = false;
@@ -11598,11 +11617,18 @@ export default function HomePreview({
         });
         if (cancelled) return;
         setAssignedWeek(week);
+        writeCache(`assignedWeek_${userId}`, week);
         if (Object.keys(setsPatch).length > 0) setSets((prev) => ({ ...setsPatch, ...prev }));
       })
       .catch((err) => {
-        console.error("PERFORM: errore lettura workout_logs assegnati", err);
-        if (!cancelled) setAssignedWeek(Array(7).fill(null));
+        console.error("PERFORM: errore lettura workout_logs assegnati, mostro l'ultima scheda nota", err);
+        // BUG PRESO: azzerava SEMPRE a "nessun giorno assegnato" (anche su
+        // un semplice errore di rete) — un cliente che riapriva l'app
+        // offline vedeva la scheda sparire del tutto, anche se l'ultima
+        // volta online l'aveva già vista per intero (ora in cache). Il
+        // fallback vuoto resta solo per quando non c'è proprio nulla, né
+        // dalla cache né da un caricamento precedente in questa sessione.
+        if (!cancelled) setAssignedWeek((prev) => prev ?? Array(7).fill(null));
       });
     return () => { cancelled = true; };
   }, [supabaseProp, userId]);
