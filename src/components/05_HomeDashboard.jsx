@@ -3285,9 +3285,18 @@ export function HomeDashboard({
               <span className="meta font-data">{xpBarDisplay} / {xpNeeded} XP</span>
             </div>
             <div className="rounded-full overflow-hidden" style={{ height: 10, backgroundColor: "var(--surface-2)" }}>
+              {/* Perf: anima transform invece di width — width forza un
+                  reflow di layout a ogni frame, transform:scaleX è
+                  composited dalla GPU (mai un ricalcolo di layout). Il
+                  box resta largo il 100% (background-size/position del
+                  bagliore restano corretti, calcolati sulla larghezza
+                  vera), lo scaleX lo comprime visivamente in modo
+                  matematicamente identico a una width più stretta. */}
               <div className="xp-bar xp-bar-shine relative h-full rounded-full overflow-hidden"
-                   style={{ width: `${Math.min(100, (xpBarDisplay / xpNeeded) * 100)}%`,
-                            transition: "width 900ms cubic-bezier(.22,1,.36,1)",
+                   style={{ width: "100%",
+                            transform: `scaleX(${Math.min(1, xpBarDisplay / xpNeeded)})`,
+                            transformOrigin: "left",
+                            transition: "transform 900ms cubic-bezier(.22,1,.36,1)",
                             boxShadow: "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.5)" }}>
                 <div className="absolute inset-x-0 top-0" style={{ height: "55%",
                        background: "linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0))" }} />
@@ -12119,7 +12128,7 @@ export default function HomePreview({
         .app-root[data-theme="dark"] .search-strong{color:#FAFAFA!important}
         .on-light,.on-light *{color:#111111!important}
         .on-dark,.on-dark *{color:#FAFAFA!important}
-        .xp-bar{transition:width .8s cubic-bezier(.22,1.2,.36,1)}
+        .xp-bar{transition:transform .8s cubic-bezier(.22,1.2,.36,1)}
         @keyframes xpBarShine{0%{background-position:200% 50%}100%{background-position:0% 50%}}
         .xp-bar-shine{background-image:linear-gradient(90deg, var(--title-a), var(--title-b), var(--title-c), var(--title-b), var(--title-a));
           background-size:220% auto;animation:xpBarShine 3.5s linear infinite}
