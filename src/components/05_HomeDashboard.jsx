@@ -5557,31 +5557,6 @@ function WarmupStretchCard({ icon, eyebrow, title, text }) {
 // ancora previste; con un solo boundary globale QUALUNQUE crash su UN
 // esercizio smontava l'intera pagina Allenamento ("Qualcosa è andato
 // storto" a schermo intero). Ora un problema resta isolato alla sua card:
-// il resto della lista (e dell'app) continua a funzionare.
-// React.memo: una schermata Allenamento può avere 10-15+ ExerciseCard nella
-// stessa lista, e il componente padre (500+ righe di stato per tutta la
-// schermata Home) ricrea qualcosa a OGNI interazione, anche in una sezione
-// non correlata (Alimentazione, un toast XP...). Senza memo ogni card
-// intera si ri-renderizza a ogni singola digitazione ovunque nella
-// schermata — con onSetField/onCoachSync ora stabilizzati (useCallback,
-// vedi sopra) il confronto shallow delle props regge davvero: una card si
-// ri-renderizza solo quando i SUOI dati cambiano, non quelli di un'altra.
-const MemoExerciseCard = React.memo(ExerciseCard);
-
-function SafeExerciseCard(props) {
-  return (
-    <ErrorBoundary fallback={
-      <div className="card">
-        <p className="body text-sm" style={{ color: "var(--ink-2)" }}>
-          Non sono riuscito a mostrare "{props.ex?.name || "questo esercizio"}" — riprova più tardi o contatta il coach se il problema resta.
-        </p>
-      </div>
-    }>
-      <MemoExerciseCard {...props} />
-    </ErrorBoundary>
-  );
-}
-
 function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId }) {
   const [guideOpen, setGuideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -5956,6 +5931,29 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
   );
 }
 
+// React.memo: una schermata Allenamento può avere 10-15+ ExerciseCard nella
+// stessa lista, e il componente padre (500+ righe di stato per tutta la
+// schermata Home) ricrea qualcosa a OGNI interazione, anche in una sezione
+// non correlata (Alimentazione, un toast XP...). Senza memo ogni card
+// intera si ri-renderizza a ogni singola digitazione ovunque nella
+// schermata — con onSetField/onCoachSync ora stabilizzati (useCallback,
+// vedi sopra) il confronto shallow delle props regge davvero: una card si
+// ri-renderizza solo quando i SUOI dati cambiano, non quelli di un'altra.
+const MemoExerciseCard = React.memo(ExerciseCard);
+
+function SafeExerciseCard(props) {
+  return (
+    <ErrorBoundary fallback={
+      <div className="card">
+        <p className="body text-sm" style={{ color: "var(--ink-2)" }}>
+          Non sono riuscito a mostrare "{props.ex?.name || "questo esercizio"}" — riprova più tardi o contatta il coach se il problema resta.
+        </p>
+      </div>
+    }>
+      <MemoExerciseCard {...props} />
+    </ErrorBoundary>
+  );
+}
 
 /* ---------------------------------------------------------------------------
    Allenamento FREE: routine libera, esercizi a scelta, Lun-Dom, multi-settimana.
