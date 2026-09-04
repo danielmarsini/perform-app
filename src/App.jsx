@@ -174,14 +174,14 @@ function TabCrashFallback() {
 }
 
 const ClassificaView = lazy(() => import("./components/07_ClassificaView.jsx"));
-// NOTA: per CoachDashboard questo lazy() è corretto ma oggi NON produce
-// ancora un chunk separato — 11_OnboardingFlow.jsx importa staticamente
-// (GlobalStyle, ANAM_AREAS, ANAM_QUESTIONS, AnamAreaSection) dallo STESSO
-// file 09_CoachDashboard.jsx, quindi Vite deve comunque includerlo nel
-// bundle principale. La soluzione pulita è spostare quei 4 export condivisi
-// in un file a parte — file da 3000+ righe con parecchio codice intrecciato
-// in mezzo, un refactor che merita il suo giro dedicato invece di farlo di
-// fretta a fine sessione. Il lazy() resta comunque innocuo nel frattempo.
+// AGGIORNAMENTO: il problema descritto qui (11_OnboardingFlow.jsx importava
+// staticamente GlobalStyle/ANAM_AREAS/ANAM_QUESTIONS/AnamAreaSection
+// direttamente da 09_CoachDashboard.jsx, costringendo Vite a includerlo
+// comunque nel bundle principale nonostante il lazy()) è stato risolto:
+// quei 4 export ora vivono in AnamnesisShared.jsx, importato sia
+// dall'onboarding sia dal coach dashboard. Il lazy() qui sotto produce
+// davvero un chunk separato (09_CoachDashboard-*.js nel build), scaricato
+// solo da chi apre il pannello coach.
 const CoachDashboard = lazy(() => import("./components/09_CoachDashboard.jsx"));
 
 /* ============================================================================
