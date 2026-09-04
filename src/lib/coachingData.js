@@ -738,10 +738,19 @@ export async function fetchAllNutritionLogsForExport(supabase, userId, fromISO, 
 // somma dai record già in nutrition_logs, quindi ogni ricarica (giorno dopo,
 // nuova sessione) li rileggeva sempre a 0 qualunque cosa fosse stata
 // registrata. La tabella non aveva nemmeno le colonne (SCHEMA_v85).
-export async function addNutritionLogItem(supabase, userId, dateISO, mealSlot, item) {
+// `clientId` (opzionale): id generato lato client (crypto.randomUUID())
+// PRIMA della scrittura — permette alla coda offline (offlineQueue.js) di
+// ritentare questo stesso insert in sicurezza. Se il primo tentativo era
+// davvero arrivato al server ma la risposta si è persa per rete caduta
+// proprio in quel momento (raro, ma possibile), il retry con lo stesso id
+// urta la chiave primaria (23505): non è un duplicato reale, è la stessa
+// scrittura di cui non avevamo ricevuto conferma — si rilegge la riga già
+// esistente invece di fallire di nuovo o creare un doppione.
+export async function addNutritionLogItem(supabase, userId, dateISO, mealSlot, item, clientId) {
   const { data, error } = await supabase
     .from("nutrition_logs")
     .insert({
+      ...(clientId ? { id: clientId } : {}),
       user_id: userId, date: dateISO, meal_slot: mealSlot,
       name: item.name, grams: item.grams ?? null,
       kcal: item.kcal || 0, protein: item.p || 0, carbs: item.c || 0, fat: item.f || 0,
@@ -751,10 +760,20 @@ export async function addNutritionLogItem(supabase, userId, dateISO, mealSlot, i
     .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, sodium_mg, potassium_mg, iron_mg, calcium_mg, magnesium_mg, created_at")
     .single();
   if (error) {
+    if (clientId && error.code === "23505") {
+      const { data: existing, error: existingError } = await supabase
+        .from("nutrition_logs")
+        .select("id, meal_slot, name, grams, kcal, protein, carbs, fat, sodium_mg, potassium_mg, iron_mg, calcium_mg, magnesium_mg, created_at")
+        .eq("id", clientId)
+        .single();
+      if (existingError) throw existingError;
+      return existing;
+    }
     if (!isMissingColumnError(error)) throw error;
     const { data: legacy, error: legacyError } = await supabase
       .from("nutrition_logs")
       .insert({
+        ...(clientId ? { id: clientId } : {}),
         user_id: userId, date: dateISO, meal_slot: mealSlot,
         name: item.name, grams: item.grams ?? null,
         kcal: item.kcal || 0, protein: item.p || 0, carbs: item.c || 0, fat: item.f || 0,
@@ -3173,6 +3192,31 @@ export async function getCheckinPhotoUrl(supabase, path) {
   if (!path) return null;
   const { data, error } = await supabase.storage.from("checkin-photos").createSignedUrl(path, 3600);
   if (error) { console.error("PERFORM: errore signed url foto check", error); return null; }
+  return data?.signedUrl ?? null;
+}
+
+// Allegati anamnesi (SCHEMA_v91): stesso identico pattern di
+// uploadCheckinPhoto/getCheckinPhotoUrl qui sopra, ma nel bucket privato a sé
+// "anamnesis-attachments" — usato per le foto del check iniziale (domanda
+// __foto) e per i documenti di programmi/diete passati che un cliente
+// carica in anamnesi (segnalato da un cliente: non riusciva a caricare
+// foto del fisico che il coach potesse vedere — quel campo era solo un
+// placeholder demo, mai davvero funzionante). RLS identica: solo il
+// proprietario può scrivere, proprietario e coach possono leggere — mai un
+// bucket pubblico. `tag` distingue il tipo di allegato nel nome file (es.
+// "foto-front", "programma", "dieta").
+export async function uploadAnamnesisFile(supabase, userId, file, tag) {
+  const ext = (file.name?.split(".").pop() || "bin").toLowerCase();
+  const path = `${userId}/${Date.now()}-${tag}.${ext}`;
+  const { error } = await supabase.storage.from("anamnesis-attachments").upload(path, file, { upsert: false });
+  if (error) throw error;
+  return path;
+}
+
+export async function getAnamnesisFileUrl(supabase, path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("anamnesis-attachments").createSignedUrl(path, 3600);
+  if (error) { console.error("PERFORM: errore signed url allegato anamnesi", error); return null; }
   return data?.signedUrl ?? null;
 }
 

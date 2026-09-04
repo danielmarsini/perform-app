@@ -15,8 +15,8 @@
    export davvero condivisi, l'onboarding non tocca più 09_CoachDashboard.jsx
    e il lazy() può finalmente fare il suo lavoro.
    ========================================================================== */
-import React, { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { ChevronDown, ChevronUp, Camera, Loader2, Paperclip, X } from "lucide-react";
 
 /* --------------------------- DESIGN TOKEN REALI --------------------------- */
 /* Estratti verbatim dal blocco <style> del monolite (righe 8170-8350).      */
@@ -204,6 +204,7 @@ export const ANAM_QUESTIONS = [
   { area: "a6", n: 37, k: "passi",        q: "Passi medi giornalieri (se li monitori)", t: "number", min: 0, max: 40000, step: 500 },
   { area: "a6", n: 38, k: "tecniche",     q: "Conosci e hai già usato tecniche di intensità?", t: "area", ph: "es. Rest-Pause, stripping, dropset" },
   { area: "a6", n: 39, k: "orarioAllen",  q: "In quale fascia oraria ti alleni di solito?", t: "select", opts: ["mattina presto", "mattina", "pausa pranzo", "pomeriggio", "sera", "variabile"] },
+  { area: "a6", n: 39.1, k: "programmiPassati", q: "Programmi/schede di allenamento passati, se ne hai già seguiti (tuoi o di un altro coach)", t: "files" },
 
   /* 7 · Alimentazione e abitudini nutrizionali */
   { area: "a7", n: 40, k: "numPasti",     q: "Quanti pasti fai attualmente in una giornata?", t: "number", min: 1, max: 8 },
@@ -215,6 +216,9 @@ export const ANAM_QUESTIONS = [
   { area: "a7", n: 46, k: "alcol",        q: "Consumo di alcolici: frequenza e quantità", t: "text", ph: "es. 2 birre nel weekend" },
   { area: "a7", n: 47, k: "fuoriCasa",    q: "Quante volte a settimana mangi fuori casa?", t: "number", min: 0, max: 21 },
   { area: "a7", n: 48, k: "fameNervosa",  q: "Ti capitano episodi di fame nervosa o abbuffate? Quando?", t: "area", ph: "es. La sera davanti alla TV, nei giorni di stress" },
+  { area: "a7", n: 48.1, k: "dietePassate", q: "Diete passate già seguite, se ne hai (tue o di un altro coach/nutrizionista)", t: "files" },
+  { area: "a7", n: 48.2, k: "calorieMacroPassati", q: "Calorie e macro seguiti in passato, se li tracciavi", t: "area", ph: "es. 1800 kcal · 140g proteine, 180g carbo, 55g grassi" },
+  { area: "a7", n: 48.3, k: "calorieMacroAttuali", q: "Calorie e macro che segui attualmente, se già li tieni sotto controllo", t: "area", ph: "es. 2000 kcal · 150g proteine, 200g carbo, 60g grassi" },
 
   /* 8 · Integrazione */
   { area: "a8", n: 49, k: "integratori",  q: "Integratori attualmente in uso, con dosaggi", t: "area", ph: "es. Creatina 5 g, vitamina D 2000 UI" },
@@ -229,8 +233,177 @@ export const ANAM_QUESTIONS = [
   { area: "a9", n: 56, k: "aspettative",  q: "Cosa ti aspetti da me come coach?", t: "area" },
 ];
 
-/* ------------------------------- ANAMNESI (56) ------------------------------ */
-function AnamField({ q, value, onChange }) {
+/* --------------------------- ALLEGATI ANAMNESI ------------------------------
+   BUG PRESO (segnalato da un cliente): il campo "Foto del check iniziale"
+   era solo testo statico ("3/3 caricate (demo)") — mai un vero upload, ed
+   era per questo escluso esplicitamente dalla vista cliente (onboarding e
+   Profilo mostravano solo le domande testuali). Il cliente non aveva
+   davvero NESSUN modo di caricare foto del fisico visibili al coach.
+   Ora "photos" e il nuovo tipo "files" (programmi/diete passati) sono
+   upload reali sul bucket privato "anamnesis-attachments" (SCHEMA_v91),
+   stessa RLS di checkin-photos: solo il proprietario scrive, proprietario
+   e coach leggono. onUploadFile/getFileUrl sono passati dal chiamante
+   (che ha supabase/userId in scope) — se assenti il campo passa in sola
+   lettura (usato lato coach, che vede ma non carica al posto del cliente).
+   ============================================================================ */
+const PHOTO_ANGLES = [
+  { key: "front", label: "Frontale" },
+  { key: "side", label: "Laterale" },
+  { key: "back", label: "Posteriore" },
+];
+
+function PhotoSlot({ label, url, onPick, uploading }) {
+  const handler = url ? () => window.open(url, "_blank", "noopener,noreferrer") : onPick;
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <button type="button" onClick={handler} disabled={!handler || uploading}
+        className="c-ghost rounded-lg overflow-hidden flex items-center justify-center"
+        style={{ width: 64, height: 64, opacity: handler ? 1 : 0.5 }}>
+        {url
+          ? <img src={url} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          : uploading
+            ? <Loader2 size={16} className="animate-spin" style={{ color: "var(--ink-soft)" }} />
+            : <Camera size={16} style={{ color: "var(--ink-soft)" }} />}
+      </button>
+      <span className="c-label" style={{ fontSize: "0.55rem" }}>{label}</span>
+    </div>
+  );
+}
+
+function AnamPhotosField({ value, onChange, onUploadFile, getFileUrl }) {
+  const paths = value && typeof value === "object" ? value : {};
+  const [urls, setUrls] = useState({});
+  const [uploadingKey, setUploadingKey] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!getFileUrl) return undefined;
+    let cancelled = false;
+    Promise.all(PHOTO_ANGLES.map(({ key }) => {
+      const p = paths[key];
+      if (!p) return Promise.resolve([key, null]);
+      return getFileUrl(p).then((url) => [key, url]).catch(() => [key, null]);
+    })).then((entries) => { if (!cancelled) setUrls(Object.fromEntries(entries)); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paths.front, paths.side, paths.back]);
+
+  const pick = (angleKey) => {
+    if (!onUploadFile) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setError("");
+      setUploadingKey(angleKey);
+      try {
+        const path = await onUploadFile(file, `foto-${angleKey}`);
+        onChange({ ...paths, [angleKey]: path });
+      } catch (err) {
+        console.error("PERFORM: errore upload foto anamnesi", err);
+        setError("Caricamento non riuscito, riprova.");
+      } finally {
+        setUploadingKey(null);
+      }
+    };
+    input.click();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-4 px-1 py-1">
+        {PHOTO_ANGLES.map(({ key, label }) => (
+          <PhotoSlot key={key} label={label} url={urls[key]} uploading={uploadingKey === key}
+            onPick={onUploadFile ? () => pick(key) : undefined} />
+        ))}
+      </div>
+      {error && <p className="text-xs px-1" style={{ color: "#DC2626" }}>{error}</p>}
+      {onUploadFile
+        ? <p className="c-muted text-[11px] px-1 pt-1">Visibili solo a te e al tuo coach.</p>
+        : Object.keys(paths).length === 0 && <p className="c-muted text-xs px-1 py-1">Il cliente non ha ancora caricato foto.</p>}
+    </div>
+  );
+}
+
+function AnamFilesField({ value, onChange, onUploadFile, getFileUrl, tag }) {
+  const files = Array.isArray(value) ? value : [];
+  const canEdit = !!onUploadFile;
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const pick = () => {
+    if (!onUploadFile) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*,.pdf,application/pdf";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setError("");
+      setUploading(true);
+      try {
+        const path = await onUploadFile(file, tag);
+        onChange([...files, { path, name: file.name }]);
+      } catch (err) {
+        console.error("PERFORM: errore upload allegato anamnesi", err);
+        setError("Caricamento non riuscito, riprova.");
+      } finally {
+        setUploading(false);
+      }
+    };
+    input.click();
+  };
+
+  const remove = (idx) => { if (canEdit) onChange(files.filter((_, i) => i !== idx)); };
+
+  const open = async (path) => {
+    if (!getFileUrl) return;
+    const url = await getFileUrl(path).catch(() => null);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <div className="space-y-2">
+      {files.length === 0 && !canEdit && <p className="c-muted text-xs px-1 py-2">Il cliente non ha ancora caricato allegati.</p>}
+      {files.map((f, idx) => (
+        <div key={f.path} className="t-inner flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg">
+          <button type="button" onClick={() => open(f.path)} className="flex items-center gap-1.5 text-xs truncate min-w-0" style={{ color: "var(--ink)" }}>
+            <Paperclip size={12} style={{ color: "var(--ink-soft)", flexShrink: 0 }} />
+            <span className="truncate">{f.name}</span>
+          </button>
+          {canEdit && (
+            <button type="button" onClick={() => remove(idx)} aria-label="Rimuovi allegato" className="shrink-0">
+              <X size={13} style={{ color: "var(--ink-soft)" }} />
+            </button>
+          )}
+        </div>
+      ))}
+      {canEdit && (
+        <button type="button" onClick={pick} disabled={uploading}
+          className="c-ghost text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+          {uploading ? <Loader2 size={13} className="animate-spin" /> : <Paperclip size={13} />}
+          {uploading ? "Caricamento…" : "Allega file (foto o PDF)"}
+        </button>
+      )}
+      {error && <p className="text-xs" style={{ color: "#DC2626" }}>{error}</p>}
+    </div>
+  );
+}
+
+// Un campo conta come "compilato" in modo diverso a seconda del tipo:
+// photos/files sono oggetti/array, non stringhe — String({}) o String([])
+// darebbero sempre un risultato non vuoto, quindi vanno controllati a parte
+// (usato per la % di compilazione ovunque l'anamnesi viene mostrata).
+export function isAnamAnswerFilled(q, value) {
+  if (q.t === "photos") return !!(value && typeof value === "object" && Object.keys(value).length > 0);
+  if (q.t === "files") return Array.isArray(value) && value.length > 0;
+  return String(value ?? "").trim() !== "";
+}
+
+/* ------------------------------- ANAMNESI (60) ------------------------------ */
+function AnamField({ q, value, onChange, onUploadFile, getFileUrl }) {
   const common = "t-input w-full text-sm rounded-md px-2.5 py-2";
   if (q.t === "area") return <textarea value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={q.ph} rows={2} className={common} />;
   if (q.t === "select") return (
@@ -242,13 +415,14 @@ function AnamField({ q, value, onChange }) {
   if (q.t === "scale") return <input type="number" min={1} max={10} value={value ?? ""} onChange={(e) => onChange(Number(e.target.value))} className={common + " font-data"} placeholder="1-10" />;
   if (q.t === "date") return <input type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} className={common + " font-data"} />;
   if (q.t === "number") return <input type="number" min={q.min} max={q.max} step={q.step || 1} value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} className={common + " font-data"} />;
-  if (q.t === "photos") return <p className="c-muted text-xs px-1 py-2">📷 3/3 foto caricate al check iniziale (demo)</p>;
+  if (q.t === "photos") return <AnamPhotosField value={value} onChange={onChange} onUploadFile={onUploadFile} getFileUrl={getFileUrl} />;
+  if (q.t === "files") return <AnamFilesField value={value} onChange={onChange} onUploadFile={onUploadFile} getFileUrl={getFileUrl} tag={q.k} />;
   return <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={q.ph} className={common} />;
 }
 
-export function AnamAreaSection({ areaId, label, questions, answers, onChange, defaultOpen }) {
+export function AnamAreaSection({ areaId, label, questions, answers, onChange, defaultOpen, onUploadFile, getFileUrl }) {
   const [open, setOpen] = useState(!!defaultOpen);
-  const filled = questions.filter((q) => q.t !== "photos" && String(answers[q.k] ?? "").trim() !== "").length;
+  const filled = questions.filter((q) => isAnamAnswerFilled(q, answers[q.k])).length;
   return (
     <div className="c-card">
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-3">
@@ -263,7 +437,7 @@ export function AnamAreaSection({ areaId, label, questions, answers, onChange, d
           {questions.map((q) => (
             <div key={q.k}>
               <label className="c-label block mb-1">{q.n}. {q.q}{q.req && <span style={{ color: "#DC2626" }}> *</span>}</label>
-              <AnamField q={q} value={answers[q.k]} onChange={(v) => onChange(q.k, v)} />
+              <AnamField q={q} value={answers[q.k]} onChange={(v) => onChange(q.k, v)} onUploadFile={onUploadFile} getFileUrl={getFileUrl} />
             </div>
           ))}
         </div>

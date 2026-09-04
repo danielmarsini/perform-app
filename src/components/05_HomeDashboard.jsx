@@ -29,7 +29,8 @@ import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchW
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps, guessBodyFocusLabel, fetchAnamnesis } from "../lib/coachingData.js";
 import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate } from "../lib/biometrics.js";
-import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
+import { enqueueWrite, flushOfflineQueue, cancelQueuedWrite, useOfflineQueueCount } from "../lib/offlineQueue.js";
+import { readCache, writeCache } from "../lib/localCache.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
@@ -2380,6 +2381,7 @@ export function HomeDashboard({
   accent, accentSoft, accentText,
   profile,            // { name, nickname, gender, goalLabel }
   day,                // { weekday, weekNumber, isTraining, sessionLabel, dayNumber }
+  workoutLoading,     // true SOLO al primo caricamento reale, prima che assignedWeek arrivi (mai dalla demo)
   target, consumed,   // { kcal, p, c, f }
   streak, level, xp, xpInLevel, xpNeeded,
   mealsBySlot, foods, mealGuide,
@@ -2696,21 +2698,29 @@ export function HomeDashboard({
   }, [selectedNutritionIso, supabase, userId]);
   const addFoodForPastDay = (slot, item) => {
     if (!selectedNutritionIso) return;
-    const localItem = { ...item };
+    // Stesso pattern offline-first di onAddFood (Home, oggi): id generato
+    // subito lato client, così un pasto di backfill registrato con rete
+    // assente non sparisce ma va in coda e si sincronizza da solo.
+    const clientId = crypto.randomUUID();
+    const localItem = { ...item, id: clientId };
     setPastMeals((m) => ({ ...(m || {}), [slot]: [...((m || {})[slot] || []), localItem] }));
     if (supabase && userId) {
-      addNutritionLogItem(supabase, userId, selectedNutritionIso, slot, item)
-        .then((saved) => {
-          setPastMeals((m) => ({ ...(m || {}), [slot]: ((m || {})[slot] || []).map((it) => (it === localItem ? { ...it, id: saved.id } : it)) }));
-        })
-        .catch((err) => console.error("PERFORM: errore salvataggio pasto giorno passato", err));
+      addNutritionLogItem(supabase, userId, selectedNutritionIso, slot, item, clientId)
+        .catch((err) => {
+          console.error("PERFORM: errore salvataggio pasto giorno passato, lo metto in coda per riprovare quando torna la rete", err);
+          enqueueWrite("nutrition-log", { userId, dateISO: selectedNutritionIso, mealSlot: slot, item, clientId });
+        });
     }
   };
   const removeFoodForPastDay = (slot, index) => {
     setPastMeals((m) => {
       const item = (m || {})[slot]?.[index];
       if (supabase && userId && item?.id) {
-        removeNutritionLogItem(supabase, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto giorno passato", err));
+        cancelQueuedWrite("nutrition-log", (p) => p.clientId === item.id).then((cancelled) => {
+          if (!cancelled) {
+            removeNutritionLogItem(supabase, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto giorno passato", err));
+          }
+        });
       }
       return { ...(m || {}), [slot]: ((m || {})[slot] || []).filter((_, i) => i !== index) };
     });
@@ -3275,9 +3285,18 @@ export function HomeDashboard({
               <span className="meta font-data">{xpBarDisplay} / {xpNeeded} XP</span>
             </div>
             <div className="rounded-full overflow-hidden" style={{ height: 10, backgroundColor: "var(--surface-2)" }}>
+              {/* Perf: anima transform invece di width — width forza un
+                  reflow di layout a ogni frame, transform:scaleX è
+                  composited dalla GPU (mai un ricalcolo di layout). Il
+                  box resta largo il 100% (background-size/position del
+                  bagliore restano corretti, calcolati sulla larghezza
+                  vera), lo scaleX lo comprime visivamente in modo
+                  matematicamente identico a una width più stretta. */}
               <div className="xp-bar xp-bar-shine relative h-full rounded-full overflow-hidden"
-                   style={{ width: `${Math.min(100, (xpBarDisplay / xpNeeded) * 100)}%`,
-                            transition: "width 900ms cubic-bezier(.22,1,.36,1)",
+                   style={{ width: "100%",
+                            transform: `scaleX(${Math.min(1, xpBarDisplay / xpNeeded)})`,
+                            transformOrigin: "left",
+                            transition: "transform 900ms cubic-bezier(.22,1,.36,1)",
                             boxShadow: "0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.5)" }}>
                 <div className="absolute inset-x-0 top-0" style={{ height: "55%",
                        background: "linear-gradient(180deg, rgba(255,255,255,0.5), rgba(255,255,255,0))" }} />
@@ -3304,7 +3323,7 @@ export function HomeDashboard({
                style={{ backgroundColor: "rgba(240,160,32,0.1)", border: "1px solid rgba(240,160,32,0.35)" }}>
             <Loader2 size={14} className="animate-spin" style={{ color: "#B45309", flexShrink: 0 }} />
             <p className="text-xs" style={{ color: "#B45309", fontWeight: 600 }}>
-              {pendingSyncCount === 1 ? "1 serie in attesa di rete" : `${pendingSyncCount} serie in attesa di rete`} — si sincronizza da sola appena torna la connessione.
+              {pendingSyncCount === 1 ? "1 registrazione in attesa di rete" : `${pendingSyncCount} registrazioni in attesa di rete`} — si sincronizza tutto da solo appena torna la connessione.
             </p>
           </div>
         )}
@@ -3528,6 +3547,17 @@ export function HomeDashboard({
                 <WorkoutCalendarStrip weekPlan={weekPlan} selectedIso={selectedCalendarIso} onSelectIso={setSelectedCalendarIso} doneDates={workoutDoneDates} />
                 {selectedCalendarIso ? (
                   <CalendarDayReadOnlyView date={new Date(selectedCalendarIso)} weekPlan={weekPlan} />
+                ) : workoutLoading ? (
+                  // BUG PRESO: prima del primo fetch riuscito, weekPlan era
+                  // sempre Array(7).fill(null) → isTraining sempre false →
+                  // questa stessa schermata mostrava "giorno di riposo"
+                  // anche in un giorno di allenamento vero, per poi cambiare
+                  // di scatto appena arrivava il dato reale. Un caricamento
+                  // non deve mai sembrare un risultato.
+                  <div className="card text-center py-10">
+                    <Loader2 size={24} className="animate-spin mx-auto mb-3" style={{ color: accent }} />
+                    <p className="body">Carico la tua scheda di allenamento…</p>
+                  </div>
                 ) : !day.isTraining ? (
                   <div className="card text-center py-10">
                     <BedDouble size={26} className="mx-auto mb-3" style={{ color: accent }} />
@@ -5528,6 +5558,16 @@ function WarmupStretchCard({ icon, eyebrow, title, text }) {
 // esercizio smontava l'intera pagina Allenamento ("Qualcosa è andato
 // storto" a schermo intero). Ora un problema resta isolato alla sua card:
 // il resto della lista (e dell'app) continua a funzionare.
+// React.memo: una schermata Allenamento può avere 10-15+ ExerciseCard nella
+// stessa lista, e il componente padre (500+ righe di stato per tutta la
+// schermata Home) ricrea qualcosa a OGNI interazione, anche in una sezione
+// non correlata (Alimentazione, un toast XP...). Senza memo ogni card
+// intera si ri-renderizza a ogni singola digitazione ovunque nella
+// schermata — con onSetField/onCoachSync ora stabilizzati (useCallback,
+// vedi sopra) il confronto shallow delle props regge davvero: una card si
+// ri-renderizza solo quando i SUOI dati cambiano, non quelli di un'altra.
+const MemoExerciseCard = React.memo(ExerciseCard);
+
 function SafeExerciseCard(props) {
   return (
     <ErrorBoundary fallback={
@@ -5537,7 +5577,7 @@ function SafeExerciseCard(props) {
         </p>
       </div>
     }>
-      <ExerciseCard {...props} />
+      <MemoExerciseCard {...props} />
     </ErrorBoundary>
   );
 }
@@ -6181,11 +6221,17 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
   const todayDay = weeks[0]?.[day.weekday] || null;
 
   const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }));
-  const onSetField = (ex, i, f, v) =>
+  // useCallback (mai ricreata a ogni render): passata a OGNI ExerciseCard
+  // della giornata (ora memo-izzato, vedi sotto) — usa solo l'updater
+  // funzionale di setSets, quindi non ha bisogno di richiudere su `sets` e
+  // può restare la STESSA funzione tra un render e l'altro. Prima, essendo
+  // ricreata ogni volta, invalidava il memo di ogni card a ogni digitazione
+  // in una qualunque di esse (o in qualsiasi altro stato della schermata).
+  const onSetField = useCallback((ex, i, f, v) =>
     setSets((s) => {
       const rows = (s[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }))).map((r, j) => (j === i ? { ...r, [f]: v } : r));
       return { ...s, [ex.id]: rows };
-    });
+    }), []);
 
   const toggleDayTraining = (weekIdx, dayIdx) =>
     setWeeks((ws) => ws.map((w, wi) => (wi !== weekIdx ? w : w.map((d, di) => (di !== dayIdx ? d : (d ? null : { label: "", exercises: [] }))))));
@@ -9543,10 +9589,18 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
   const toggleTaken = (momentId, id) => {
     if (isRealMode) {
       const wasTaken = realTaken?.has(id);
+      const taken = !wasTaken;
       setRealTaken((s) => { const n = new Set(s); wasTaken ? n.delete(id) : n.add(id); return n; });
-      setSelfSupplementTaken(supabase, userId, id, !wasTaken).catch((err) => {
-        console.error("PERFORM: errore salvataggio spunta integratore autogestito", err);
-        setRealTaken((s) => { const n = new Set(s); wasTaken ? n.add(id) : n.delete(id); return n; }); // rollback
+      setSelfSupplementTaken(supabase, userId, id, taken).catch((err) => {
+        // BUG-CLASS PRESA (stessa già risolta per le serie e per il diario
+        // alimentare): con rete assente questo era un rollback silenzioso —
+        // la spunta tornava indietro, indistinguibile da "non ho toccato
+        // nulla". setSelfSupplementTaken è idempotente (insert/delete
+        // tollerano il duplicato/il già-assente, vedi coachingData.js), va
+        // quindi in coda e si ritenta da solo: NIENTE rollback, la spunta
+        // resta come l'ha lasciata l'utente.
+        console.error("PERFORM: errore salvataggio spunta integratore autogestito, la metto in coda per riprovare quando torna la rete", err);
+        enqueueWrite("self-supplement-taken", { userId, id, taken });
       });
     } else {
       setDemoEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, taken: !e.taken } : e)) }));
@@ -11135,15 +11189,25 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
   // SUPP_PLAN_PRO di sempre; se arrivano ma il coach non ha ancora
   // prescritto nulla, mostra uno stato vuoto esplicito — mai la demo al
   // posto di un dato reale mancante.
-  const [prescribed, setPrescribed] = useState(null); // null = non ancora caricato (solo isRealMode)
+  // null = non ancora caricato (solo isRealMode). Inizializzato dall'ultimo
+  // protocollo noto (localCache.js): così se l'app riparte con rete assente
+  // (non solo se cade a metà sessione) il cliente vede comunque l'ultimo
+  // protocollo visto, non uno stato vuoto indistinguibile da "il coach non
+  // ha ancora prescritto nulla".
+  const [prescribed, setPrescribed] = useState(() => (userId ? readCache(`prescribed_${userId}`) : null));
   useEffect(() => {
     if (!isRealMode) return;
     let cancelled = false;
     fetchPrescribedSupplements(supabase, userId)
-      .then((rows) => { if (!cancelled) setPrescribed(rows); })
+      .then((rows) => { if (!cancelled) { setPrescribed(rows); writeCache(`prescribed_${userId}`, rows); } })
       .catch((err) => {
-        console.error("PERFORM: errore lettura prescribed_supplements", err);
-        if (!cancelled) setPrescribed([]);
+        // BUG PRESO: azzerava a [] su QUALSIASI fallimento, anche solo rete
+        // assente — un protocollo reale già assegnato spariva e sembrava
+        // "nessuna prescrizione", invece di "non sono riuscito a
+        // ricaricare, ecco l'ultimo che avevo". Mai perdere un dato reale
+        // già mostrato per un semplice errore di rete.
+        console.error("PERFORM: errore lettura prescribed_supplements, mostro l'ultimo protocollo noto", err);
+        if (!cancelled) setPrescribed((prev) => prev ?? []);
       });
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId]);
@@ -11201,12 +11265,18 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
     haptic("tap");
     if (isRealMode) {
       const wasTaken = takenIds?.has(itemId);
+      const taken = !wasTaken;
       setIntakeError("");
       setTakenIds((s) => { const n = new Set(s); wasTaken ? n.delete(itemId) : n.add(itemId); return n; });
-      setSupplementTaken(supabase, userId, itemId, !wasTaken).catch((err) => {
-        console.error("PERFORM: errore salvataggio supplement_intake", err);
-        setTakenIds((s) => { const n = new Set(s); wasTaken ? n.add(itemId) : n.delete(itemId); return n; }); // rollback
-        setIntakeError("Non sono riuscito a salvare — controlla la connessione e riprova.");
+      setSupplementTaken(supabase, userId, itemId, taken).catch((err) => {
+        // Rete assente: setSupplementTaken è idempotente (insert/delete
+        // tollerano il duplicato/il già-assente), quindi va in coda e si
+        // ritenta da solo invece di un rollback silenzioso — la spunta
+        // resta come l'ha lasciata l'utente. Un vero errore del server (non
+        // di rete) è raro qui proprio perché la scrittura è idempotente;
+        // teniamo comunque il messaggio visibile finché non si sincronizza.
+        console.error("PERFORM: errore salvataggio supplement_intake, la metto in coda per riprovare quando torna la rete", err);
+        enqueueWrite("supplement-taken", { userId, itemId, taken });
       });
     } else {
       const key = `${momentId}-${itemId}`;
@@ -11450,20 +11520,25 @@ export default function HomePreview({
   // assegnata dal coach) appena è disponibile — questo stato resta solo per
   // il toggle manuale "Simula ON/OFF" della preview demo.
   const [manualTrainingDay, setManualTrainingDay] = useState(true);
-  const [targetOn, setTargetOn] = useState({ kcal: 3000, p: 200, c: 380, f: 75 });   // giorno ON (allenamento)
-  const [targetOff, setTargetOff] = useState({ kcal: 2550, p: 200, c: 230, f: 85 }); // giorno OFF (riposo)
+  // Inizializzati dall'ultimo target noto (localCache.js) se c'è, altrimenti
+  // il default finto di sempre — mai un flash a vuoto se il coach ha già
+  // assegnato qualcosa e la prima richiesta parte offline.
+  const [targetOn, setTargetOn] = useState(() => (userId && readCache(`nutTargetOn_${userId}`)) || { kcal: 3000, p: 200, c: 380, f: 75 });   // giorno ON (allenamento)
+  const [targetOff, setTargetOff] = useState(() => (userId && readCache(`nutTargetOff_${userId}`)) || { kcal: 2550, p: 200, c: 230, f: 85 }); // giorno OFF (riposo)
 
   // Dati reali: se supabase+userId sono passati (da App.jsx), sovrascrive i target
   // finti con quelli assegnati davvero dal coach (nutrition_targets). Se il coach
   // non ha ancora assegnato nulla, resta il target di default sopra (nessun crash).
+  // Un fallimento (rete assente) non tocca lo stato: resta quello dell'ultima
+  // volta riuscita (o il default), mai azzerato per un errore di rete.
   useEffect(() => {
     if (!supabaseProp || !userId) return;
     fetchBothNutritionTargets(supabaseProp, userId)
       .then(({ targetOn: realOn, targetOff: realOff }) => {
-        if (realOn) setTargetOn(realOn);
-        if (realOff) setTargetOff(realOff);
+        if (realOn) { setTargetOn(realOn); writeCache(`nutTargetOn_${userId}`, realOn); }
+        if (realOff) { setTargetOff(realOff); writeCache(`nutTargetOff_${userId}`, realOff); }
       })
-      .catch((err) => console.error("PERFORM: errore lettura nutrition_targets", err));
+      .catch((err) => console.error("PERFORM: errore lettura nutrition_targets, mostro l'ultimo valore noto", err));
   }, [supabaseProp, userId]);
 
   // Dieta tipo pasto-per-pasto assegnata dal coach (diet_plans, SCHEMA_v83) —
@@ -11471,12 +11546,12 @@ export default function HomePreview({
   // target sopra, mai i pasti stessi, quindi questo fetch non esisteva e il
   // tab "Dieta Tipo" restava sempre nascosto in modalità reale (vedi
   // NutritionTabs più sotto). null finché non caricato o non assegnato.
-  const [dietPlan, setDietPlan] = useState({ on: null, off: null });
+  const [dietPlan, setDietPlan] = useState(() => (userId && readCache(`dietPlan_${userId}`)) || { on: null, off: null });
   useEffect(() => {
     if (!supabaseProp || !userId) return;
     fetchDietPlan(supabaseProp, userId)
-      .then(setDietPlan)
-      .catch((err) => console.error("PERFORM: errore lettura diet_plans", err));
+      .then((plan) => { setDietPlan(plan); writeCache(`dietPlan_${userId}`, plan); })
+      .catch((err) => console.error("PERFORM: errore lettura diet_plans, mostro l'ultimo valore noto", err));
   }, [supabaseProp, userId]);
 
   // Scheda assegnata dal coach per l'INTERA settimana corrente (Lun→Dom, stesso
@@ -11486,7 +11561,10 @@ export default function HomePreview({
   // il giorno che il cliente clicca davvero, non solo quello odierno. Se un
   // giorno non ha nulla assegnato resta null — niente dati finti mostrati a
   // un utente reale.
-  const [assignedWeek, setAssignedWeek] = useState(null); // null = non ancora caricato; 7 elementi Lun→Dom
+  // null = non ancora caricato; 7 elementi Lun→Dom. Inizializzato dall'ultima
+  // scheda nota (localCache.js) se c'è: un'app riaperta con rete assente
+  // mostra subito l'ultima settimana vista, non una schermata vuota.
+  const [assignedWeek, setAssignedWeek] = useState(() => (userId ? readCache(`assignedWeek_${userId}`) : null));
   useEffect(() => {
     if (!supabaseProp || !userId) return;
     let cancelled = false;
@@ -11576,11 +11654,18 @@ export default function HomePreview({
         });
         if (cancelled) return;
         setAssignedWeek(week);
+        writeCache(`assignedWeek_${userId}`, week);
         if (Object.keys(setsPatch).length > 0) setSets((prev) => ({ ...setsPatch, ...prev }));
       })
       .catch((err) => {
-        console.error("PERFORM: errore lettura workout_logs assegnati", err);
-        if (!cancelled) setAssignedWeek(Array(7).fill(null));
+        console.error("PERFORM: errore lettura workout_logs assegnati, mostro l'ultima scheda nota", err);
+        // BUG PRESO: azzerava SEMPRE a "nessun giorno assegnato" (anche su
+        // un semplice errore di rete) — un cliente che riapriva l'app
+        // offline vedeva la scheda sparire del tutto, anche se l'ultima
+        // volta online l'aveva già vista per intero (ora in cache). Il
+        // fallback vuoto resta solo per quando non c'è proprio nulla, né
+        // dalla cache né da un caricamento precedente in questa sessione.
+        if (!cancelled) setAssignedWeek((prev) => prev ?? Array(7).fill(null));
       });
     return () => { cancelled = true; };
   }, [supabaseProp, userId]);
@@ -11738,27 +11823,32 @@ export default function HomePreview({
   const [coachFeed, setCoachFeed] = useState([]);
   const [lastActivityDate, setLastActivityDate] = useState(() => toLocalISODate());
 
-  // §07 memo "Verso l'élite" (Mai perdere una serie): wifi di sala pesi
-  // scarso, la serie appena registrata deve arrivare comunque. Se
-  // logWorkoutSet fallisce (rete assente, non un errore di validazione —
-  // ma mettiamo in coda comunque: ripetere la stessa scrittura idempotente
-  // qualche volta in più non fa danno) viene messa in coda offline
-  // (IndexedDB, vedi lib/offlineQueue.js) e riprovata da sola quando la
-  // rete torna. flushQueue gira al mount, quando la rete torna (`online`)
-  // e quando la scheda ridiventa visibile — mai il Background Sync API del
-  // Service Worker, che Safari/iOS (il target primario di questa app) non
-  // supporta affatto.
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  // §07 memo "Verso l'élite" (Mai perdere una serie), esteso ora anche ad
+  // alimentazione e integrazione (richiesta esplicita: poter aprire scheda
+  // di allenamento/alimentazione/integrazione anche con rete scarsa,
+  // registrare e vedersi sincronizzare tutto da solo al ritorno online).
+  // Wifi di sala pesi scarso, la serie/il pasto/la spunta appena registrati
+  // devono arrivare comunque. Se la scrittura fallisce (rete assente, non
+  // un errore di validazione) viene messa in coda offline (IndexedDB, vedi
+  // lib/offlineQueue.js) e riprovata da sola quando la rete torna.
+  // flushQueue gira al mount, quando la rete torna (`online`) e quando la
+  // scheda ridiventa visibile — mai il Background Sync API del Service
+  // Worker, che Safari/iOS (il target primario di questa app) non supporta
+  // affatto. pendingSyncCount ora è reattivo (useOfflineQueueCount): conta
+  // OGNI tipo di scrittura in coda, anche quelle messe/tolte da componenti
+  // lontani (SupplementsFreeDiary, SupplementsPlanLocked...) che non hanno
+  // accesso diretto a questo state.
+  const pendingSyncCount = useOfflineQueueCount();
   const flushQueue = useCallback(() => {
     if (!supabaseProp) return;
     flushOfflineQueue({
       "workout-set": (payload) => logWorkoutSet(supabaseProp, payload.exerciseId, payload.userId, payload.setNumber, {
         repsCompleted: payload.repsCompleted, loadKg: payload.loadKg, rir: payload.rir,
       }),
-    })
-      .then(() => getPendingWrites())
-      .then((rows) => setPendingSyncCount(rows.length))
-      .catch((err) => console.error("PERFORM: errore sincronizzazione coda offline", err));
+      "nutrition-log": (payload) => addNutritionLogItem(supabaseProp, payload.userId, payload.dateISO, payload.mealSlot, payload.item, payload.clientId),
+      "supplement-taken": (payload) => setSupplementTaken(supabaseProp, payload.userId, payload.itemId, payload.taken),
+      "self-supplement-taken": (payload) => setSelfSupplementTaken(supabaseProp, payload.userId, payload.id, payload.taken),
+    }).catch((err) => console.error("PERFORM: errore sincronizzazione coda offline", err));
   }, [supabaseProp]);
   useEffect(() => {
     flushQueue();
@@ -11771,7 +11861,13 @@ export default function HomePreview({
     };
   }, [flushQueue]);
 
-  const pushCoachSync = (evt) => {
+  // useCallback: passata come onCoachSync a ogni ExerciseCard (ora
+  // memo-izzato) e a molti altri pannelli (Alimentazione, Integrazione...).
+  // Ricreata a ogni render invaliderebbe il memo di TUTTE le card ogni
+  // volta che QUALSIASI stato di questa schermata cambia, non solo quello
+  // dell'esercizio toccato — deps esplicite (isRealMode/userId/supabaseProp
+  // cambiano solo su login/logout, mai durante l'uso normale).
+  const pushCoachSync = useCallback((evt) => {
     setCoachFeed((f) => [...f.slice(-99), { ...evt, at: new Date().toISOString() }]);
     setLastActivityDate(toLocalISODate());
 
@@ -11793,10 +11889,10 @@ export default function HomePreview({
         repsCompleted: payload.repsCompleted, loadKg: payload.loadKg, rir: payload.rir,
       }).catch((err) => {
         console.error("PERFORM: errore salvataggio workout_sets, la metto in coda per riprovare quando torna la rete", err);
-        enqueueWrite("workout-set", payload).then(() => setPendingSyncCount((n) => n + 1));
+        enqueueWrite("workout-set", payload);
       });
     }
-  };
+  }, [isRealMode, userId, supabaseProp]);
   const simulateInactivity = () => {
     const d = new Date(); d.setDate(d.getDate() - 3);
     setLastActivityDate(toLocalISODate(d));
@@ -11877,11 +11973,16 @@ export default function HomePreview({
       history: [{ kg: 12, reps: 14 }, { kg: 12.5, reps: 13 }] },
   ];
   const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }));
-  const onSetField = (ex, i, f, v) =>
+  // useCallback: stessa ragione della gemella in FreeWorkoutBuilder più
+  // sopra — passata a ogni ExerciseCard della settimana (ora memo-izzato),
+  // deve restare la stessa funzione tra un render e l'altro per non
+  // invalidare il memo di TUTTE le card a ogni digitazione o a qualunque
+  // altro stato che cambia in questa schermata enorme.
+  const onSetField = useCallback((ex, i, f, v) =>
     setSets((s) => {
       const rows = (s[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }))).map((r, j) => (j === i ? { ...r, [f]: v } : r));
       return { ...s, [ex.id]: rows };
-    });
+    }), []);
 
   const consumed = Object.values(meals).flat().reduce(
     (a, i) => ({ kcal: a.kcal + i.kcal, p: a.p + i.p, c: a.c + i.c, f: a.f + i.f }),
@@ -12027,7 +12128,7 @@ export default function HomePreview({
         .app-root[data-theme="dark"] .search-strong{color:#FAFAFA!important}
         .on-light,.on-light *{color:#111111!important}
         .on-dark,.on-dark *{color:#FAFAFA!important}
-        .xp-bar{transition:width .8s cubic-bezier(.22,1.2,.36,1)}
+        .xp-bar{transition:transform .8s cubic-bezier(.22,1.2,.36,1)}
         @keyframes xpBarShine{0%{background-position:200% 50%}100%{background-position:0% 50%}}
         .xp-bar-shine{background-image:linear-gradient(90deg, var(--title-a), var(--title-b), var(--title-c), var(--title-b), var(--title-a));
           background-size:220% auto;animation:xpBarShine 3.5s linear infinite}
@@ -12120,6 +12221,7 @@ export default function HomePreview({
           accent={accent} accentSoft={accentSoft} accentText={accentText}
           profile={{ name: "Marco Bianchi", nickname: "IronWolf", ...profileOverride, gender, goalLabel: "86 kg mantenendo i carichi" }}
           day={day}
+          workoutLoading={isRealMode && assignedWeek === null}
           target={target} consumed={consumed}
           targetOn={targetOn} targetOff={targetOff}
           onSetTargetOn={(patch) => setTargetOn((t) => ({ ...t, ...patch }))}
@@ -12173,24 +12275,44 @@ export default function HomePreview({
           coachFeed={coachFeed}
           onSimulateInactivity={simulateInactivity} onResetActivityToday={resetActivityToday}
           onAddFood={(slot, item) => {
-            const localItem = { ...item };
+            // BUG PRESO (segnalato): rete assente in palestra/fuori casa e il
+            // pasto appena registrato spariva — solo console.error, mai
+            // ritentato. Stesso principio già in uso per le serie
+            // (workout-set): id generato SUBITO lato client (mai attendere
+            // la risposta del server per saperlo) così l'elemento è già
+            // "vero" in UI, e se addNutritionLogItem fallisce per rete
+            // assente lo mettiamo in coda invece di perderlo — si
+            // sincronizza da solo al ritorno online (flushQueue sopra).
+            const dateISO = toLocalISODate();
+            const clientId = crypto.randomUUID();
+            const localItem = { ...item, id: clientId };
             setMeals((m) => ({ ...m, [slot]: [...m[slot], localItem] }));
             if (supabaseProp && userId) {
-              addNutritionLogItem(supabaseProp, userId, toLocalISODate(), slot, item)
-                .then((saved) => {
-                  setMeals((m) => ({ ...m, [slot]: m[slot].map((it) => (it === localItem ? { ...it, id: saved.id } : it)) }));
-                  pushCoachSync({ type: "nutrition" }); // il cerchio Alimentazione si muove subito, non al prossimo poll
-                })
-                .catch((err) => console.error("PERFORM: errore salvataggio pasto", err));
+              addNutritionLogItem(supabaseProp, userId, dateISO, slot, item, clientId)
+                .then(() => pushCoachSync({ type: "nutrition" })) // il cerchio Alimentazione si muove subito, non al prossimo poll
+                .catch((err) => {
+                  console.error("PERFORM: errore salvataggio pasto, lo metto in coda per riprovare quando torna la rete", err);
+                  enqueueWrite("nutrition-log", { userId, dateISO, mealSlot: slot, item, clientId });
+                });
             }
           }}
           onRemoveFood={(slot, index) => {
             setMeals((m) => {
               const item = m[slot][index];
               if (supabaseProp && userId && item?.id) {
-                removeNutritionLogItem(supabaseProp, item.id)
-                  .then(() => pushCoachSync({ type: "nutrition" }))
-                  .catch((err) => console.error("PERFORM: errore rimozione pasto", err));
+                // Se il pasto non è ancora sincronizzato (rimosso prima che
+                // la coda offline riuscisse a scaricarlo) non ha senso
+                // cancellarlo sul server: non esiste ancora lì. Si annulla
+                // direttamente la scrittura in coda, altrimenti verrebbe
+                // inserita comunque al ritorno online e resterebbe
+                // "fantasma" nel diario.
+                cancelQueuedWrite("nutrition-log", (p) => p.clientId === item.id).then((cancelled) => {
+                  if (!cancelled) {
+                    removeNutritionLogItem(supabaseProp, item.id)
+                      .then(() => pushCoachSync({ type: "nutrition" }))
+                      .catch((err) => console.error("PERFORM: errore rimozione pasto", err));
+                  }
+                });
               }
               return { ...m, [slot]: m[slot].filter((_, i) => i !== index) };
             });

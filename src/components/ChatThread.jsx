@@ -214,7 +214,7 @@ export default function ChatThread({ supabase, clientId, meId, accent, emptyText
       );
     }
     if (m.attachment_type === "image") {
-      return <img src={url} alt="" className="rounded-2xl" style={{ maxWidth: "100%", maxHeight: 280, display: "block" }} />;
+      return <img src={url} alt="" loading="lazy" className="rounded-2xl" style={{ maxWidth: "100%", maxHeight: 280, display: "block" }} />;
     }
     if (m.attachment_type === "video") {
       return <video controls src={url} className="rounded-2xl" style={{ maxWidth: "100%", maxHeight: 280, backgroundColor: "#000", display: "block" }} />;
