@@ -2696,21 +2696,29 @@ export function HomeDashboard({
   }, [selectedNutritionIso, supabase, userId]);
   const addFoodForPastDay = (slot, item) => {
     if (!selectedNutritionIso) return;
-    const localItem = { ...item };
+    // Stesso pattern offline-first di onAddFood (Home, oggi): id generato
+    // subito lato client, così un pasto di backfill registrato con rete
+    // assente non sparisce ma va in coda e si sincronizza da solo.
+    const clientId = crypto.randomUUID();
+    const localItem = { ...item, id: clientId };
     setPastMeals((m) => ({ ...(m || {}), [slot]: [...((m || {})[slot] || []), localItem] }));
     if (supabase && userId) {
-      addNutritionLogItem(supabase, userId, selectedNutritionIso, slot, item)
-        .then((saved) => {
-          setPastMeals((m) => ({ ...(m || {}), [slot]: ((m || {})[slot] || []).map((it) => (it === localItem ? { ...it, id: saved.id } : it)) }));
-        })
-        .catch((err) => console.error("PERFORM: errore salvataggio pasto giorno passato", err));
+      addNutritionLogItem(supabase, userId, selectedNutritionIso, slot, item, clientId)
+        .catch((err) => {
+          console.error("PERFORM: errore salvataggio pasto giorno passato, lo metto in coda per riprovare quando torna la rete", err);
+          enqueueWrite("nutrition-log", { userId, dateISO: selectedNutritionIso, mealSlot: slot, item, clientId });
+        });
     }
   };
   const removeFoodForPastDay = (slot, index) => {
     setPastMeals((m) => {
       const item = (m || {})[slot]?.[index];
       if (supabase && userId && item?.id) {
-        removeNutritionLogItem(supabase, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto giorno passato", err));
+        cancelQueuedWrite("nutrition-log", (p) => p.clientId === item.id).then((cancelled) => {
+          if (!cancelled) {
+            removeNutritionLogItem(supabase, item.id).catch((err) => console.error("PERFORM: errore rimozione pasto giorno passato", err));
+          }
+        });
       }
       return { ...(m || {}), [slot]: ((m || {})[slot] || []).filter((_, i) => i !== index) };
     });
