@@ -440,13 +440,13 @@ function FeedCard({ item, channel, isLatest, gender, accent, liked, likeCount, s
         <div className="mt-4 grid grid-cols-2 gap-2" onClick={(e) => e.stopPropagation()}>
           {item.photo_before_url && (
             <div className="relative rounded-xl overflow-hidden">
-              <img src={item.photo_before_url} alt="Prima" className="w-full h-32 object-cover" />
+              <img src={item.photo_before_url} alt="Prima" loading="lazy" className="w-full h-32 object-cover" />
               <span className="absolute bottom-1.5 left-1.5 rounded-full px-2 py-0.5" style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "rgba(9,9,11,0.65)", color: "#FFFFFF" }}>PRIMA</span>
             </div>
           )}
           {item.photo_after_url && (
             <div className="relative rounded-xl overflow-hidden">
-              <img src={item.photo_after_url} alt="Dopo" className="w-full h-32 object-cover" />
+              <img src={item.photo_after_url} alt="Dopo" loading="lazy" className="w-full h-32 object-cover" />
               <span className="absolute bottom-1.5 left-1.5 rounded-full px-2 py-0.5" style={{ fontSize: "0.6rem", fontWeight: 700, backgroundColor: "rgba(9,9,11,0.65)", color: "#FFFFFF" }}>DOPO</span>
             </div>
           )}

@@ -898,7 +898,7 @@ function BiometricPhotoGallery({ checkPhotos, t }) {
               <div key={k} className="text-center">
                 <div className="rounded-xl overflow-hidden"
                      style={{ border: "1px solid var(--line)", backgroundColor: "var(--surface-2)", aspectRatio: "3/4" }}>
-                  {s[k] ? <img src={s[k]} alt={t.photoLabels[i]} className="w-full h-full object-cover" />
+                  {s[k] ? <img src={s[k]} alt={t.photoLabels[i]} loading="lazy" className="w-full h-full object-cover" />
                         : <span className="w-full h-full flex items-center justify-center label">{t.photoAbsent}</span>}
                 </div>
                 <p className="label mt-1" style={{ fontSize: "0.52rem" }}>{t.photoLabels[i]}</p>

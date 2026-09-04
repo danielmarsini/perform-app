@@ -321,7 +321,7 @@ function AvatarCircle({ avatarUrl, className = '' }) {
   const showImage = avatarUrl && !errored;
   return (
     <div className={`pc-avatar ${className}`}>
-      {showImage ? <img src={avatarUrl} alt="" className="pc-avatar-img" onError={() => setErrored(true)} /> : <PersonSilhouetteIcon />}
+      {showImage ? <img src={avatarUrl} alt="" loading="lazy" className="pc-avatar-img" onError={() => setErrored(true)} /> : <PersonSilhouetteIcon />}
     </div>
   );
 }
