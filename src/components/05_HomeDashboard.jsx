@@ -2381,6 +2381,7 @@ export function HomeDashboard({
   accent, accentSoft, accentText,
   profile,            // { name, nickname, gender, goalLabel }
   day,                // { weekday, weekNumber, isTraining, sessionLabel, dayNumber }
+  workoutLoading,     // true SOLO al primo caricamento reale, prima che assignedWeek arrivi (mai dalla demo)
   target, consumed,   // { kcal, p, c, f }
   streak, level, xp, xpInLevel, xpNeeded,
   mealsBySlot, foods, mealGuide,
@@ -3537,6 +3538,17 @@ export function HomeDashboard({
                 <WorkoutCalendarStrip weekPlan={weekPlan} selectedIso={selectedCalendarIso} onSelectIso={setSelectedCalendarIso} doneDates={workoutDoneDates} />
                 {selectedCalendarIso ? (
                   <CalendarDayReadOnlyView date={new Date(selectedCalendarIso)} weekPlan={weekPlan} />
+                ) : workoutLoading ? (
+                  // BUG PRESO: prima del primo fetch riuscito, weekPlan era
+                  // sempre Array(7).fill(null) → isTraining sempre false →
+                  // questa stessa schermata mostrava "giorno di riposo"
+                  // anche in un giorno di allenamento vero, per poi cambiare
+                  // di scatto appena arrivava il dato reale. Un caricamento
+                  // non deve mai sembrare un risultato.
+                  <div className="card text-center py-10">
+                    <Loader2 size={24} className="animate-spin mx-auto mb-3" style={{ color: accent }} />
+                    <p className="body">Carico la tua scheda di allenamento…</p>
+                  </div>
                 ) : !day.isTraining ? (
                   <div className="card text-center py-10">
                     <BedDouble size={26} className="mx-auto mb-3" style={{ color: accent }} />
@@ -12200,6 +12212,7 @@ export default function HomePreview({
           accent={accent} accentSoft={accentSoft} accentText={accentText}
           profile={{ name: "Marco Bianchi", nickname: "IronWolf", ...profileOverride, gender, goalLabel: "86 kg mantenendo i carichi" }}
           day={day}
+          workoutLoading={isRealMode && assignedWeek === null}
           target={target} consumed={consumed}
           targetOn={targetOn} targetOff={targetOff}
           onSetTargetOn={(patch) => setTargetOn((t) => ({ ...t, ...patch }))}
