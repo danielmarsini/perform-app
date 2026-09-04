@@ -30,10 +30,18 @@ export default defineConfig({
           // che VOGLIAMO isolare e lasciare `undefined` per tutto il resto:
           // Rollup applica il suo chunking automatico, che già rispetta
           // import statici vs dinamici.
+          // react/react-dom/scheduler NON vengono splittati in un chunk a
+          // parte: un `ReferenceError: Cannot access 'X' before
+          // initialization` in produzione (solo su alcuni ambienti desktop,
+          // non su mobile) è un sintomo noto di Rollup che genera un ordine
+          // di valutazione dei chunk scorretto quando React viene isolato
+          // manualmente insieme a `React.lazy`/import dinamici sparsi in
+          // tutta l'app (App.jsx importa CoachDashboard/ClassificaView/
+          // LandingIntro con lazy()). Le altre librerie isolate qui sotto
+          // non comparivano nello stack trace del crash e restano splittate.
           if (id.includes("framer-motion")) return "vendor-framer-motion";
           if (id.includes("lucide-react")) return "vendor-lucide";
           if (id.includes("@supabase")) return "vendor-supabase";
-          if (id.includes("/react-dom/") || id.includes("/react/") || id.includes("/scheduler/")) return "vendor-react";
           return undefined;
         },
       },
