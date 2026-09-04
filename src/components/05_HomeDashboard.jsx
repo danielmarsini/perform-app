@@ -5537,6 +5537,16 @@ function WarmupStretchCard({ icon, eyebrow, title, text }) {
 // esercizio smontava l'intera pagina Allenamento ("Qualcosa è andato
 // storto" a schermo intero). Ora un problema resta isolato alla sua card:
 // il resto della lista (e dell'app) continua a funzionare.
+// React.memo: una schermata Allenamento può avere 10-15+ ExerciseCard nella
+// stessa lista, e il componente padre (500+ righe di stato per tutta la
+// schermata Home) ricrea qualcosa a OGNI interazione, anche in una sezione
+// non correlata (Alimentazione, un toast XP...). Senza memo ogni card
+// intera si ri-renderizza a ogni singola digitazione ovunque nella
+// schermata — con onSetField/onCoachSync ora stabilizzati (useCallback,
+// vedi sopra) il confronto shallow delle props regge davvero: una card si
+// ri-renderizza solo quando i SUOI dati cambiano, non quelli di un'altra.
+const MemoExerciseCard = React.memo(ExerciseCard);
+
 function SafeExerciseCard(props) {
   return (
     <ErrorBoundary fallback={
@@ -5546,7 +5556,7 @@ function SafeExerciseCard(props) {
         </p>
       </div>
     }>
-      <ExerciseCard {...props} />
+      <MemoExerciseCard {...props} />
     </ErrorBoundary>
   );
 }
@@ -6190,11 +6200,17 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
   const todayDay = weeks[0]?.[day.weekday] || null;
 
   const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }));
-  const onSetField = (ex, i, f, v) =>
+  // useCallback (mai ricreata a ogni render): passata a OGNI ExerciseCard
+  // della giornata (ora memo-izzato, vedi sotto) — usa solo l'updater
+  // funzionale di setSets, quindi non ha bisogno di richiudere su `sets` e
+  // può restare la STESSA funzione tra un render e l'altro. Prima, essendo
+  // ricreata ogni volta, invalidava il memo di ogni card a ogni digitazione
+  // in una qualunque di esse (o in qualsiasi altro stato della schermata).
+  const onSetField = useCallback((ex, i, f, v) =>
     setSets((s) => {
       const rows = (s[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }))).map((r, j) => (j === i ? { ...r, [f]: v } : r));
       return { ...s, [ex.id]: rows };
-    });
+    }), []);
 
   const toggleDayTraining = (weekIdx, dayIdx) =>
     setWeeks((ws) => ws.map((w, wi) => (wi !== weekIdx ? w : w.map((d, di) => (di !== dayIdx ? d : (d ? null : { label: "", exercises: [] }))))));
@@ -11824,7 +11840,13 @@ export default function HomePreview({
     };
   }, [flushQueue]);
 
-  const pushCoachSync = (evt) => {
+  // useCallback: passata come onCoachSync a ogni ExerciseCard (ora
+  // memo-izzato) e a molti altri pannelli (Alimentazione, Integrazione...).
+  // Ricreata a ogni render invaliderebbe il memo di TUTTE le card ogni
+  // volta che QUALSIASI stato di questa schermata cambia, non solo quello
+  // dell'esercizio toccato — deps esplicite (isRealMode/userId/supabaseProp
+  // cambiano solo su login/logout, mai durante l'uso normale).
+  const pushCoachSync = useCallback((evt) => {
     setCoachFeed((f) => [...f.slice(-99), { ...evt, at: new Date().toISOString() }]);
     setLastActivityDate(toLocalISODate());
 
@@ -11849,7 +11871,7 @@ export default function HomePreview({
         enqueueWrite("workout-set", payload);
       });
     }
-  };
+  }, [isRealMode, userId, supabaseProp]);
   const simulateInactivity = () => {
     const d = new Date(); d.setDate(d.getDate() - 3);
     setLastActivityDate(toLocalISODate(d));
@@ -11930,11 +11952,16 @@ export default function HomePreview({
       history: [{ kg: 12, reps: 14 }, { kg: 12.5, reps: 13 }] },
   ];
   const setsFor = (ex) => sets[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }));
-  const onSetField = (ex, i, f, v) =>
+  // useCallback: stessa ragione della gemella in FreeWorkoutBuilder più
+  // sopra — passata a ogni ExerciseCard della settimana (ora memo-izzato),
+  // deve restare la stessa funzione tra un render e l'altro per non
+  // invalidare il memo di TUTTE le card a ogni digitazione o a qualunque
+  // altro stato che cambia in questa schermata enorme.
+  const onSetField = useCallback((ex, i, f, v) =>
     setSets((s) => {
       const rows = (s[ex.id] || Array.from({ length: ex.sets }, () => ({ kg: "", reps: "" }))).map((r, j) => (j === i ? { ...r, [f]: v } : r));
       return { ...s, [ex.id]: rows };
-    });
+    }), []);
 
   const consumed = Object.values(meals).flat().reduce(
     (a, i) => ({ kcal: a.kcal + i.kcal, p: a.p + i.p, c: a.c + i.c, f: a.f + i.f }),
