@@ -23,9 +23,21 @@
    scrittura che la chiama.
    ========================================================================== */
 
+import { useState, useEffect } from "react";
+
 const DB_NAME = "perform_offline_queue";
 const DB_VERSION = 1;
 const STORE = "pending_writes";
+
+// Chi mostra "N in attesa di rete" (banner in Home) deve saperlo per OGNI
+// tipo di scrittura in coda (serie, pasto, integratore...), scritti da
+// componenti diversi e lontani nell'albero — passare una prop in giù da un
+// capo all'altro per ognuno sarebbe fragile. Pub/sub minimo invece: chi
+// mette o toglie una voce dalla coda notifica, useOfflineQueueCount() sotto
+// si ricalcola da solo. Nessuna libreria, stesso IndexedDB di sempre come
+// unica fonte di verità (mai uno stato duplicato che può disallinearsi).
+const listeners = new Set();
+function notifyQueueChanged() { listeners.forEach((fn) => fn()); }
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -55,6 +67,7 @@ export async function enqueueWrite(type, payload) {
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
+    notifyQueueChanged();
     return id;
   } catch (err) {
     console.error("PERFORM: impossibile mettere in coda la scrittura offline", err);
@@ -85,9 +98,24 @@ async function removePendingWrite(id) {
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
+    notifyQueueChanged();
   } catch (err) {
     console.error("PERFORM: impossibile rimuovere una scrittura dalla coda offline", err);
   }
+}
+
+// Rimuove dalla coda una scrittura non ancora sincronizzata che soddisfa
+// `matches(payload)` — serve per quando l'utente annulla in locale
+// un'azione (es. rimuove un alimento appena aggiunto) PRIMA che la coda sia
+// riuscita a scaricarla: non ha senso lasciarla lì, verrebbe sincronizzata
+// e poi bisognerebbe cancellarla di nuovo. Ritorna true se ha trovato ed
+// eliminato qualcosa.
+export async function cancelQueuedWrite(type, matches) {
+  const pending = await getPendingWrites();
+  const hit = pending.find((item) => item.type === type && matches(item.payload));
+  if (!hit) return false;
+  await removePendingWrite(hit.id);
+  return true;
 }
 
 // Prova a scaricare la coda: per ogni voce chiama l'handler giusto (in base
@@ -112,4 +140,21 @@ export async function flushOfflineQueue(handlers) {
     }
   }
   return { synced, remaining: pending.length - synced };
+}
+
+// Contatore reattivo di quante scritture sono in coda in questo momento,
+// utilizzabile da QUALSIASI componente (Allenamento, Alimentazione,
+// Integrazione — anche lontanissimi tra loro nell'albero) senza dover far
+// passare stato/callback da un genitore comune. Si aggiorna da solo a ogni
+// enqueue/rimozione grazie al pub/sub sopra.
+export function useOfflineQueueCount() {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const recompute = () => getPendingWrites().then((rows) => { if (!cancelled) setCount(rows.length); });
+    recompute();
+    listeners.add(recompute);
+    return () => { cancelled = true; listeners.delete(recompute); };
+  }, []);
+  return count;
 }

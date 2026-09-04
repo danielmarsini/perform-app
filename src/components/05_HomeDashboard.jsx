@@ -29,7 +29,7 @@ import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchW
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps, guessBodyFocusLabel, fetchAnamnesis } from "../lib/coachingData.js";
 import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate } from "../lib/biometrics.js";
-import { enqueueWrite, flushOfflineQueue, getPendingWrites } from "../lib/offlineQueue.js";
+import { enqueueWrite, flushOfflineQueue, cancelQueuedWrite, useOfflineQueueCount } from "../lib/offlineQueue.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
@@ -3304,7 +3304,7 @@ export function HomeDashboard({
                style={{ backgroundColor: "rgba(240,160,32,0.1)", border: "1px solid rgba(240,160,32,0.35)" }}>
             <Loader2 size={14} className="animate-spin" style={{ color: "#B45309", flexShrink: 0 }} />
             <p className="text-xs" style={{ color: "#B45309", fontWeight: 600 }}>
-              {pendingSyncCount === 1 ? "1 serie in attesa di rete" : `${pendingSyncCount} serie in attesa di rete`} — si sincronizza da sola appena torna la connessione.
+              {pendingSyncCount === 1 ? "1 registrazione in attesa di rete" : `${pendingSyncCount} registrazioni in attesa di rete`} — si sincronizza tutto da solo appena torna la connessione.
             </p>
           </div>
         )}
@@ -9543,10 +9543,18 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
   const toggleTaken = (momentId, id) => {
     if (isRealMode) {
       const wasTaken = realTaken?.has(id);
+      const taken = !wasTaken;
       setRealTaken((s) => { const n = new Set(s); wasTaken ? n.delete(id) : n.add(id); return n; });
-      setSelfSupplementTaken(supabase, userId, id, !wasTaken).catch((err) => {
-        console.error("PERFORM: errore salvataggio spunta integratore autogestito", err);
-        setRealTaken((s) => { const n = new Set(s); wasTaken ? n.add(id) : n.delete(id); return n; }); // rollback
+      setSelfSupplementTaken(supabase, userId, id, taken).catch((err) => {
+        // BUG-CLASS PRESA (stessa già risolta per le serie e per il diario
+        // alimentare): con rete assente questo era un rollback silenzioso —
+        // la spunta tornava indietro, indistinguibile da "non ho toccato
+        // nulla". setSelfSupplementTaken è idempotente (insert/delete
+        // tollerano il duplicato/il già-assente, vedi coachingData.js), va
+        // quindi in coda e si ritenta da solo: NIENTE rollback, la spunta
+        // resta come l'ha lasciata l'utente.
+        console.error("PERFORM: errore salvataggio spunta integratore autogestito, la metto in coda per riprovare quando torna la rete", err);
+        enqueueWrite("self-supplement-taken", { userId, id, taken });
       });
     } else {
       setDemoEntries((s) => ({ ...s, [momentId]: s[momentId].map((e) => (e.id === id ? { ...e, taken: !e.taken } : e)) }));
@@ -11201,12 +11209,18 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
     haptic("tap");
     if (isRealMode) {
       const wasTaken = takenIds?.has(itemId);
+      const taken = !wasTaken;
       setIntakeError("");
       setTakenIds((s) => { const n = new Set(s); wasTaken ? n.delete(itemId) : n.add(itemId); return n; });
-      setSupplementTaken(supabase, userId, itemId, !wasTaken).catch((err) => {
-        console.error("PERFORM: errore salvataggio supplement_intake", err);
-        setTakenIds((s) => { const n = new Set(s); wasTaken ? n.add(itemId) : n.delete(itemId); return n; }); // rollback
-        setIntakeError("Non sono riuscito a salvare — controlla la connessione e riprova.");
+      setSupplementTaken(supabase, userId, itemId, taken).catch((err) => {
+        // Rete assente: setSupplementTaken è idempotente (insert/delete
+        // tollerano il duplicato/il già-assente), quindi va in coda e si
+        // ritenta da solo invece di un rollback silenzioso — la spunta
+        // resta come l'ha lasciata l'utente. Un vero errore del server (non
+        // di rete) è raro qui proprio perché la scrittura è idempotente;
+        // teniamo comunque il messaggio visibile finché non si sincronizza.
+        console.error("PERFORM: errore salvataggio supplement_intake, la metto in coda per riprovare quando torna la rete", err);
+        enqueueWrite("supplement-taken", { userId, itemId, taken });
       });
     } else {
       const key = `${momentId}-${itemId}`;
@@ -11738,27 +11752,32 @@ export default function HomePreview({
   const [coachFeed, setCoachFeed] = useState([]);
   const [lastActivityDate, setLastActivityDate] = useState(() => toLocalISODate());
 
-  // §07 memo "Verso l'élite" (Mai perdere una serie): wifi di sala pesi
-  // scarso, la serie appena registrata deve arrivare comunque. Se
-  // logWorkoutSet fallisce (rete assente, non un errore di validazione —
-  // ma mettiamo in coda comunque: ripetere la stessa scrittura idempotente
-  // qualche volta in più non fa danno) viene messa in coda offline
-  // (IndexedDB, vedi lib/offlineQueue.js) e riprovata da sola quando la
-  // rete torna. flushQueue gira al mount, quando la rete torna (`online`)
-  // e quando la scheda ridiventa visibile — mai il Background Sync API del
-  // Service Worker, che Safari/iOS (il target primario di questa app) non
-  // supporta affatto.
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  // §07 memo "Verso l'élite" (Mai perdere una serie), esteso ora anche ad
+  // alimentazione e integrazione (richiesta esplicita: poter aprire scheda
+  // di allenamento/alimentazione/integrazione anche con rete scarsa,
+  // registrare e vedersi sincronizzare tutto da solo al ritorno online).
+  // Wifi di sala pesi scarso, la serie/il pasto/la spunta appena registrati
+  // devono arrivare comunque. Se la scrittura fallisce (rete assente, non
+  // un errore di validazione) viene messa in coda offline (IndexedDB, vedi
+  // lib/offlineQueue.js) e riprovata da sola quando la rete torna.
+  // flushQueue gira al mount, quando la rete torna (`online`) e quando la
+  // scheda ridiventa visibile — mai il Background Sync API del Service
+  // Worker, che Safari/iOS (il target primario di questa app) non supporta
+  // affatto. pendingSyncCount ora è reattivo (useOfflineQueueCount): conta
+  // OGNI tipo di scrittura in coda, anche quelle messe/tolte da componenti
+  // lontani (SupplementsFreeDiary, SupplementsPlanLocked...) che non hanno
+  // accesso diretto a questo state.
+  const pendingSyncCount = useOfflineQueueCount();
   const flushQueue = useCallback(() => {
     if (!supabaseProp) return;
     flushOfflineQueue({
       "workout-set": (payload) => logWorkoutSet(supabaseProp, payload.exerciseId, payload.userId, payload.setNumber, {
         repsCompleted: payload.repsCompleted, loadKg: payload.loadKg, rir: payload.rir,
       }),
-    })
-      .then(() => getPendingWrites())
-      .then((rows) => setPendingSyncCount(rows.length))
-      .catch((err) => console.error("PERFORM: errore sincronizzazione coda offline", err));
+      "nutrition-log": (payload) => addNutritionLogItem(supabaseProp, payload.userId, payload.dateISO, payload.mealSlot, payload.item, payload.clientId),
+      "supplement-taken": (payload) => setSupplementTaken(supabaseProp, payload.userId, payload.itemId, payload.taken),
+      "self-supplement-taken": (payload) => setSelfSupplementTaken(supabaseProp, payload.userId, payload.id, payload.taken),
+    }).catch((err) => console.error("PERFORM: errore sincronizzazione coda offline", err));
   }, [supabaseProp]);
   useEffect(() => {
     flushQueue();
@@ -11793,7 +11812,7 @@ export default function HomePreview({
         repsCompleted: payload.repsCompleted, loadKg: payload.loadKg, rir: payload.rir,
       }).catch((err) => {
         console.error("PERFORM: errore salvataggio workout_sets, la metto in coda per riprovare quando torna la rete", err);
-        enqueueWrite("workout-set", payload).then(() => setPendingSyncCount((n) => n + 1));
+        enqueueWrite("workout-set", payload);
       });
     }
   };
@@ -12173,24 +12192,44 @@ export default function HomePreview({
           coachFeed={coachFeed}
           onSimulateInactivity={simulateInactivity} onResetActivityToday={resetActivityToday}
           onAddFood={(slot, item) => {
-            const localItem = { ...item };
+            // BUG PRESO (segnalato): rete assente in palestra/fuori casa e il
+            // pasto appena registrato spariva — solo console.error, mai
+            // ritentato. Stesso principio già in uso per le serie
+            // (workout-set): id generato SUBITO lato client (mai attendere
+            // la risposta del server per saperlo) così l'elemento è già
+            // "vero" in UI, e se addNutritionLogItem fallisce per rete
+            // assente lo mettiamo in coda invece di perderlo — si
+            // sincronizza da solo al ritorno online (flushQueue sopra).
+            const dateISO = toLocalISODate();
+            const clientId = crypto.randomUUID();
+            const localItem = { ...item, id: clientId };
             setMeals((m) => ({ ...m, [slot]: [...m[slot], localItem] }));
             if (supabaseProp && userId) {
-              addNutritionLogItem(supabaseProp, userId, toLocalISODate(), slot, item)
-                .then((saved) => {
-                  setMeals((m) => ({ ...m, [slot]: m[slot].map((it) => (it === localItem ? { ...it, id: saved.id } : it)) }));
-                  pushCoachSync({ type: "nutrition" }); // il cerchio Alimentazione si muove subito, non al prossimo poll
-                })
-                .catch((err) => console.error("PERFORM: errore salvataggio pasto", err));
+              addNutritionLogItem(supabaseProp, userId, dateISO, slot, item, clientId)
+                .then(() => pushCoachSync({ type: "nutrition" })) // il cerchio Alimentazione si muove subito, non al prossimo poll
+                .catch((err) => {
+                  console.error("PERFORM: errore salvataggio pasto, lo metto in coda per riprovare quando torna la rete", err);
+                  enqueueWrite("nutrition-log", { userId, dateISO, mealSlot: slot, item, clientId });
+                });
             }
           }}
           onRemoveFood={(slot, index) => {
             setMeals((m) => {
               const item = m[slot][index];
               if (supabaseProp && userId && item?.id) {
-                removeNutritionLogItem(supabaseProp, item.id)
-                  .then(() => pushCoachSync({ type: "nutrition" }))
-                  .catch((err) => console.error("PERFORM: errore rimozione pasto", err));
+                // Se il pasto non è ancora sincronizzato (rimosso prima che
+                // la coda offline riuscisse a scaricarlo) non ha senso
+                // cancellarlo sul server: non esiste ancora lì. Si annulla
+                // direttamente la scrittura in coda, altrimenti verrebbe
+                // inserita comunque al ritorno online e resterebbe
+                // "fantasma" nel diario.
+                cancelQueuedWrite("nutrition-log", (p) => p.clientId === item.id).then((cancelled) => {
+                  if (!cancelled) {
+                    removeNutritionLogItem(supabaseProp, item.id)
+                      .then(() => pushCoachSync({ type: "nutrition" }))
+                      .catch((err) => console.error("PERFORM: errore rimozione pasto", err));
+                  }
+                });
               }
               return { ...m, [slot]: m[slot].filter((_, i) => i !== index) };
             });
