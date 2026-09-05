@@ -9490,15 +9490,31 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
   // già validato per il protocollo Pro (prescribed_supplements/
   // supplement_intake). In demo (!isRealMode) resta lo stato locale di
   // sempre, invariato.
-  const [realRows, setRealRows] = useState(null); // null = non ancora caricato
-  const [realTaken, setRealTaken] = useState(null);
+  // BUG PRESO (audit offline-first, stesso gap già corretto in
+  // SupplementsPlanLocked/Pro qui sotto): realRows/realTaken partivano
+  // sempre null, quindi un'apertura a freddo senza rete restava bloccata su
+  // "Caricamento…" finché il fetch non falliva — mai un'apertura davvero
+  // istantanea. Stessa cache di lib/localCache.js: realRows (elenco
+  // integratori autogestiti, non legato al giorno) sotto una chiave fissa,
+  // realTaken (spunte di oggi) sotto una chiave per giorno come todayIso.
+  const [realRows, setRealRows] = useState(() => (userId ? readCache(`selfSupp_${userId}`) : null));
+  const [realTaken, setRealTaken] = useState(() => {
+    if (!userId) return null;
+    const cached = readCache(`selfTaken_${userId}_${toLocalISODate()}`);
+    return cached ? new Set(cached) : null;
+  });
   const loadReal = useCallback(() => {
     if (!isRealMode) return;
     Promise.all([fetchSelfSupplements(supabase, userId), fetchSelfSupplementIntakeToday(supabase, userId)])
-      .then(([rows, taken]) => { setRealRows(rows); setRealTaken(taken); })
+      .then(([rows, taken]) => {
+        setRealRows(rows); setRealTaken(taken);
+        writeCache(`selfSupp_${userId}`, rows);
+        writeCache(`selfTaken_${userId}_${toLocalISODate()}`, [...taken]);
+      })
       .catch((err) => {
-        console.error("PERFORM: errore lettura diario integratori autogestito", err);
-        setRealRows([]); setRealTaken(new Set());
+        console.error("PERFORM: errore lettura diario integratori autogestito, mostro l'ultimo noto", err);
+        setRealRows((prev) => prev ?? []);
+        setRealTaken((prev) => prev ?? new Set());
       });
   }, [isRealMode, supabase, userId]);
   const todayIso = useTodayIso();
@@ -9664,7 +9680,12 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
     if (isRealMode) {
       const wasTaken = realTaken?.has(id);
       const taken = !wasTaken;
-      setRealTaken((s) => { const n = new Set(s); wasTaken ? n.delete(id) : n.add(id); return n; });
+      setRealTaken((s) => {
+        const n = new Set(s);
+        wasTaken ? n.delete(id) : n.add(id);
+        writeCache(`selfTaken_${userId}_${todayIso}`, [...n]);
+        return n;
+      });
       setSelfSupplementTaken(supabase, userId, id, taken).catch((err) => {
         // BUG-CLASS PRESA (stessa già risolta per le serie e per il diario
         // alimentare): con rete assente questo era un rollback silenzioso —
@@ -11232,26 +11253,30 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
   // scrittura su Supabase. Ora, in modalità reale, "preso" è un dato vero
   // (supplement_intake, SCHEMA_v54): caricato una volta all'apertura,
   // aggiornato in ottimistico al tap con rollback se la scrittura fallisce.
-  const [takenIds, setTakenIds] = useState(null); // null = non ancora caricato (solo isRealMode)
-  // BUG PRESO: la fetch girava una sola volta al mount — con AppShell che
-  // tiene ogni tab montato per sempre (display:none, mai un vero unmount),
-  // un utente che apre l'app un giorno, la lascia in background e la
-  // riapre il giorno dopo SENZA un reload completo continuava a vedere
-  // takenIds di IERI (lo stato React non si aggiornava mai da solo). La
-  // scrittura era già corretta (setSupplementTaken usa sempre la data di
-  // oggi), il problema era solo in lettura: todayIso rientra nelle
-  // dipendenze e forza un refetch reale appena cambia il giorno di
-  // calendario (vedi useTodayIso per il motivo del listener su
-  // visibilitychange, non solo un setInterval).
+  // BUG PRESO (audit offline-first): a differenza di `prescribed` qui sotto
+  // (già seminato dall'ultima cache nota), takenIds partiva SEMPRE null finché
+  // la fetch non risolveva — su un'apertura a freddo senza rete, il gate più
+  // in basso (prescribed === null || takenIds === null) restava bloccato su
+  // "Caricamento protocollo…" anche se il protocollo stesso era già
+  // disponibile dalla cache: "apertura istantanea offline" non era vera per
+  // questo pannello. Stessa cache key di giorno di useTodayIso/toLocalISODate,
+  // così un nuovo giorno (nessuna cache per la chiave odierna) torna
+  // correttamente a null e aspetta il fetch reale, senza riesumare le spunte
+  // di ieri.
   const todayIso = useTodayIso();
+  const [takenIds, setTakenIds] = useState(() => {
+    if (!userId) return null;
+    const cached = readCache(`takenIds_${userId}_${toLocalISODate()}`);
+    return cached ? new Set(cached) : null;
+  });
   useEffect(() => {
     if (!isRealMode) return;
     let cancelled = false;
     fetchSupplementIntakeToday(supabase, userId)
-      .then((ids) => { if (!cancelled) setTakenIds(ids); })
+      .then((ids) => { if (!cancelled) { setTakenIds(ids); writeCache(`takenIds_${userId}_${todayIso}`, [...ids]); } })
       .catch((err) => {
         console.error("PERFORM: errore lettura supplement_intake", err);
-        if (!cancelled) setTakenIds(new Set());
+        if (!cancelled) setTakenIds((prev) => prev ?? new Set());
       });
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId, todayIso]);
@@ -11341,7 +11366,12 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
       const wasTaken = takenIds?.has(itemId);
       const taken = !wasTaken;
       setIntakeError("");
-      setTakenIds((s) => { const n = new Set(s); wasTaken ? n.delete(itemId) : n.add(itemId); return n; });
+      setTakenIds((s) => {
+        const n = new Set(s);
+        wasTaken ? n.delete(itemId) : n.add(itemId);
+        writeCache(`takenIds_${userId}_${todayIso}`, [...n]);
+        return n;
+      });
       setSupplementTaken(supabase, userId, itemId, taken).catch((err) => {
         // Rete assente: setSupplementTaken è idempotente (insert/delete
         // tollerano il duplicato/il già-assente), quindi va in coda e si
