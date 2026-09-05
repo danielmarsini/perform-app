@@ -295,15 +295,19 @@ export function computeOverreachAlert(days) {
     });
   }
 
-  if (flags.length === 0) return { level: "none", flags: [], suggestion: null };
+  if (flags.length === 0) return { level: "none", flags: [], suggestion: null, volumeReductionPct: null };
 
   const level = flags.some((f) => f.severity === "high") ? "high" : "watch";
   // Suggerimento azionabile, non solo un allarme: stessa logica di
   // autoregolazione del volume già standard nella periodizzazione
   // evidence-based (Helms ER et al., "The Muscle and Strength Pyramid").
+  // volumeReductionPct: stessa percentuale del testo, ma come numero — così
+  // chi mostra l'alert (es. VolumeMatrixCard) può calcolare un target di
+  // serie concreto invece di far ricalcolare la percentuale dal testo.
+  const volumeReductionPct = level === "high" ? { min: 30, max: 40 } : { min: 10, max: 20 };
   const suggestion = level === "high"
     ? "Riduci il volume di allenamento del 30-40% questa settimana (meno serie per gruppo muscolare, stesso peso) o inserisci un giorno di riposo extra — più di un marcatore indica un sovraccarico reale, non solo stanchezza normale."
     : "Considera di ridurre leggermente il volume (10-20% in meno di serie) o l'intensità nelle prossime sessioni finché i valori non tornano al tuo basale.";
 
-  return { level, flags, suggestion };
+  return { level, flags, suggestion, volumeReductionPct };
 }

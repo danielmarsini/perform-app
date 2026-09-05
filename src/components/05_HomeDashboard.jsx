@@ -789,7 +789,7 @@ export function VolumeDrillModal({ muscle, contributions, accent, onClose }) {
 
 /* Card completa della Matrice dei Volumi: mostra solo i distretti realmente
    coinvolti questa settimana, ordinati anatomicamente. */
-function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accentProp, supabase, userId, libOverride }) {
+function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accentProp, supabase, userId, libOverride, overreachAlert = null }) {
   const accent = accentProp || (gender === "F" ? "#D4A5A5" : "#C5A059");
   const isRealMode = Boolean(supabase && userId);
   // Libreria condivisa reale (SCHEMA_v39): stessa fonte usata dal coach.
@@ -807,6 +807,21 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
   const volume = useMemo(() => computeVolume(weekDays, libOverride || lib), [weekDays, lib, libOverride]);
   const involved = VOLUME_MUSCLES.filter((m) => volume[m].direct + volume[m].indirect > 0);
 
+  // Digital Twin -> numero concreto, non solo prosa: quante serie dirette
+  // totali questa settimana, e a quanto scendere secondo la percentuale di
+  // riduzione già calcolata da computeOverreachAlert (volumeReductionPct).
+  // Mai un secondo calcolo di soglie qui — solo applicare la percentuale già
+  // decisa in biometrics.js all'unico numero di volume reale che questa card
+  // già mostra.
+  const totalDirectSets = involved.reduce((sum, m) => sum + volume[m].direct, 0);
+  const showOverreachNote = overreachAlert && overreachAlert.level !== "none" && totalDirectSets > 0;
+  const targetSetsRange = showOverreachNote
+    ? {
+        lo: Math.round(totalDirectSets * (1 - overreachAlert.volumeReductionPct.max / 100)),
+        hi: Math.round(totalDirectSets * (1 - overreachAlert.volumeReductionPct.min / 100)),
+      }
+    : null;
+
   // Drill-down (richiesta esplicita): tocca un distretto per vedere quali
   // esercizi/serie hanno generato quel totale — calcolato al volo solo per
   // il distretto aperto, mai per tutti e 15 ad ogni render.
@@ -819,6 +834,20 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
   return (
     <div className="card mb-4">
       <p className="h1 mb-4">Volume settimanale per gruppo muscolare</p>
+
+      {showOverreachNote && (
+        <div className="rounded-xl px-3.5 py-2.5 mb-4 text-sm"
+             style={{
+               backgroundColor: overreachAlert.level === "high" ? "rgba(220,38,38,0.08)" : "rgba(217,119,6,0.08)",
+               border: `1px solid ${overreachAlert.level === "high" ? "rgba(220,38,38,0.25)" : "rgba(217,119,6,0.25)"}`,
+               color: "var(--ink)",
+             }}>
+          <strong>Digital Twin — sovraccarico rilevato:</strong> con {totalDirectSets} serie dirette pianificate
+          questa settimana, valuta di scendere a <strong>{targetSetsRange.lo}–{targetSetsRange.hi} serie totali</strong> (
+          {overreachAlert.volumeReductionPct.min}-{overreachAlert.volumeReductionPct.max}% in meno, distribuite
+          proporzionalmente sui distretti coinvolti) finché HRV/RHR/sonno non tornano al tuo basale.
+        </div>
+      )}
 
       {userPlan === "free" ? (
         <>
@@ -3692,7 +3721,7 @@ export function HomeDashboard({
                     onMotivationChange={setMotivation} onFatigueChange={setFatigue} accentText={accentText} />
                 )}
                 <div className="mt-4">
-                  <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} />
+                  <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} overreachAlert={overreachAlert} />
                 </div>
               </>
             ) : (
@@ -3704,7 +3733,7 @@ export function HomeDashboard({
                 <ErrorBoundary>
                   <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
                                        day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
-                                       schedaAddonChatActive={schedaAddonChatActive} unitSystem={unitSystem}
+                                       schedaAddonChatActive={schedaAddonChatActive} unitSystem={unitSystem} overreachAlert={overreachAlert}
                                        supabase={supabase} userId={userId} />
                 </ErrorBoundary>
                 {/* Disponibile a TUTTI i piani, non solo a fine giorno di
@@ -6265,7 +6294,7 @@ function TemplateBrowserModal({ supabase, onClose, onApply, accent }) {
   );
 }
 
-function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, schedaAddonChatActive, gender, supabase, userId, unitSystem = "metric" }) {
+function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, schedaAddonChatActive, gender, supabase, userId, unitSystem = "metric", overreachAlert = null }) {
   const [innerTab, setInnerTab] = useState("oggi");
   const restored = useMemo(() => loadFreeRoutine(userId), [userId]);
   const [weeks, setWeeks] = useState(() => restored?.weeks ?? [emptyWeek()]);
@@ -6535,7 +6564,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
           )}
 
           <div className="mt-4">
-            <VolumeMatrixCard weekDays={weeks[activeWeek]} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} libOverride={exerciseLib} />
+            <VolumeMatrixCard weekDays={weeks[activeWeek]} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} libOverride={exerciseLib} overreachAlert={overreachAlert} />
           </div>
         </div>
       )}

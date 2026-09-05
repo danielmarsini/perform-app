@@ -221,6 +221,7 @@ describe("computeOverreachAlert", () => {
     expect(r.level).toBe("none");
     expect(r.flags).toHaveLength(0);
     expect(r.suggestion).toBeNull();
+    expect(r.volumeReductionPct).toBeNull();
   });
 
   it("calo HRV sostenuto >10% negli ultimi giorni: flag hrv, level almeno 'watch'", () => {
@@ -234,6 +235,8 @@ describe("computeOverreachAlert", () => {
     expect(r.level).not.toBe("none");
     expect(r.flags.some((f) => f.key === "hrv")).toBe(true);
     expect(typeof r.suggestion).toBe("string");
+    expect(r.volumeReductionPct.min).toBeGreaterThan(0);
+    expect(r.volumeReductionPct.max).toBeGreaterThan(r.volumeReductionPct.min);
   });
 
   it("RHR sopra basale di oltre 5bpm sostenuto: flag rhr", () => {
@@ -268,6 +271,7 @@ describe("computeOverreachAlert", () => {
     const r = computeOverreachAlert(days);
     expect(r.level).toBe("high");
     expect(r.flags.length).toBeGreaterThanOrEqual(2);
+    expect(r.volumeReductionPct).toEqual({ min: 30, max: 40 });
   });
 
   it("dati mancanti (null) su alcuni giorni non fanno crashare, semplicemente non contano per la media", () => {
