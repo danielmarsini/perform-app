@@ -17,6 +17,7 @@
    ========================================================================== */
 
 import React, { useState, useMemo, useEffect, useRef, useCallback, useId } from "react";
+import { useTranslation } from "react-i18next";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
@@ -28,9 +29,10 @@ import {
 import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, LEVEL_REWARDS, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps, guessBodyFocusLabel, fetchAnamnesis } from "../lib/coachingData.js";
-import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate } from "../lib/biometrics.js";
+import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate, computeOverreachAlert } from "../lib/biometrics.js";
 import { enqueueWrite, flushOfflineQueue, cancelQueuedWrite, useOfflineQueueCount } from "../lib/offlineQueue.js";
 import { readCache, writeCache } from "../lib/localCache.js";
+import { formatWeight, parseWeightToKg, weightUnitLabel, parseLengthToCm, lengthUnitLabel } from "../lib/units.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
@@ -787,7 +789,7 @@ export function VolumeDrillModal({ muscle, contributions, accent, onClose }) {
 
 /* Card completa della Matrice dei Volumi: mostra solo i distretti realmente
    coinvolti questa settimana, ordinati anatomicamente. */
-function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accentProp, supabase, userId, libOverride }) {
+function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accentProp, supabase, userId, libOverride, overreachAlert = null }) {
   const accent = accentProp || (gender === "F" ? "#D4A5A5" : "#C5A059");
   const isRealMode = Boolean(supabase && userId);
   // Libreria condivisa reale (SCHEMA_v39): stessa fonte usata dal coach.
@@ -805,6 +807,21 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
   const volume = useMemo(() => computeVolume(weekDays, libOverride || lib), [weekDays, lib, libOverride]);
   const involved = VOLUME_MUSCLES.filter((m) => volume[m].direct + volume[m].indirect > 0);
 
+  // Digital Twin -> numero concreto, non solo prosa: quante serie dirette
+  // totali questa settimana, e a quanto scendere secondo la percentuale di
+  // riduzione già calcolata da computeOverreachAlert (volumeReductionPct).
+  // Mai un secondo calcolo di soglie qui — solo applicare la percentuale già
+  // decisa in biometrics.js all'unico numero di volume reale che questa card
+  // già mostra.
+  const totalDirectSets = involved.reduce((sum, m) => sum + volume[m].direct, 0);
+  const showOverreachNote = overreachAlert && overreachAlert.level !== "none" && totalDirectSets > 0;
+  const targetSetsRange = showOverreachNote
+    ? {
+        lo: Math.round(totalDirectSets * (1 - overreachAlert.volumeReductionPct.max / 100)),
+        hi: Math.round(totalDirectSets * (1 - overreachAlert.volumeReductionPct.min / 100)),
+      }
+    : null;
+
   // Drill-down (richiesta esplicita): tocca un distretto per vedere quali
   // esercizi/serie hanno generato quel totale — calcolato al volo solo per
   // il distretto aperto, mai per tutti e 15 ad ogni render.
@@ -817,6 +834,20 @@ function VolumeMatrixCard({ weekDays, userPlan, gender, onUpgrade, accent: accen
   return (
     <div className="card mb-4">
       <p className="h1 mb-4">Volume settimanale per gruppo muscolare</p>
+
+      {showOverreachNote && (
+        <div className="rounded-xl px-3.5 py-2.5 mb-4 text-sm"
+             style={{
+               backgroundColor: overreachAlert.level === "high" ? "rgba(220,38,38,0.08)" : "rgba(217,119,6,0.08)",
+               border: `1px solid ${overreachAlert.level === "high" ? "rgba(220,38,38,0.25)" : "rgba(217,119,6,0.25)"}`,
+               color: "var(--ink)",
+             }}>
+          <strong>Digital Twin — sovraccarico rilevato:</strong> con {totalDirectSets} serie dirette pianificate
+          questa settimana, valuta di scendere a <strong>{targetSetsRange.lo}–{targetSetsRange.hi} serie totali</strong> (
+          {overreachAlert.volumeReductionPct.min}-{overreachAlert.volumeReductionPct.max}% in meno, distribuite
+          proporzionalmente sui distretti coinvolti) finché HRV/RHR/sonno non tornano al tuo basale.
+        </div>
+      )}
 
       {userPlan === "free" ? (
         <>
@@ -1170,7 +1201,7 @@ function ComplianceRings({ rings, onSelect }) {
    spiega perché il cerchio Recupero è quello che è (ci contribuisce
    direttamente, vedi blendRecoveryWithReadiness), quindi il suo dettaglio
    appartiene al popup del cerchio Recupero. */
-function CompliancePopup({ ring, onClose, readiness }) {
+function CompliancePopup({ ring, onClose, readiness, overreachAlert }) {
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose);
   if (!ring) return null;
@@ -1213,6 +1244,25 @@ function CompliancePopup({ ring, onClose, readiness }) {
               </p>
               <p className="meta mt-1.5" style={{ fontSize: "0.62rem" }}>
                 Contribuisce al {"Recupero"} di oggi insieme alla media di sonno e passi degli ultimi 7 giorni.
+              </p>
+            </div>
+          )}
+          {/* Digital Twin: sovraccarico predittivo — visibile solo quando i
+              marcatori (HRV/RHR/sonno) mostrano davvero un segnale rispetto
+              al basale personale (vedi computeOverreachAlert), mai un
+              avviso "di cortesia" senza dati a supporto. */}
+          {ring.id === "recovery" && overreachAlert && overreachAlert.level !== "none" && (
+            <div className="rounded-2xl px-4 py-3.5 mb-4" style={{
+                   backgroundColor: overreachAlert.level === "high" ? "rgba(239,68,68,0.1)" : "rgba(240,160,32,0.12)",
+                   border: `1px solid ${overreachAlert.level === "high" ? "rgba(239,68,68,0.3)" : "rgba(240,160,32,0.35)"}` }}>
+              <p className="text-sm mb-1.5" style={{ fontWeight: 700, color: overreachAlert.level === "high" ? "#DC2626" : "#B45309" }}>
+                {overreachAlert.level === "high" ? "⚠️ Segnale di sovraccarico" : "Attenzione al recupero"}
+              </p>
+              {overreachAlert.flags.map((f) => (
+                <p key={f.key} className="meta mb-1" style={{ lineHeight: 1.4 }}>{f.message}</p>
+              ))}
+              <p className="text-sm mt-2" style={{ color: "var(--ink)", fontWeight: 600, lineHeight: 1.4 }}>
+                {overreachAlert.suggestion}
               </p>
             </div>
           )}
@@ -1920,7 +1970,7 @@ function WorkoutFeedbackCard({ motivation, fatigue, onMotivationChange, onFatigu
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
    parametri biometrici storici su Supabase (legati all'ID utente) e sblocca
    di nuovo la navigazione della Home. */
-export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose, onSkip }) {
+export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose, onSkip, unitSystem = "metric" }) {
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
   const [thigh, setThigh] = useState("");
@@ -1973,7 +2023,14 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
       // BUG PRESO: weight era sempre Number(weight) anche a campo vuoto —
       // Number("") è 0, quindi un check senza peso (ora possibile) salvava
       // un falso "0 kg" invece di lasciarlo assente.
-      weight: weight ? Number(weight) : null, waist: waist ? Number(waist) : null, thigh: thigh ? Number(thigh) : null, arm: arm ? Number(arm) : null,
+      // weight/waist/thigh/arm si salvano sempre in kg/cm (fonte di verità
+      // condivisa con tutto il resto dell'app — grafici, coach, storico):
+      // parseWeightToKg/parseLengthToCm convertono da qui SOLO se l'utente
+      // sta usando il sistema imperiale, altrimenti sono un passthrough.
+      weight: weight ? parseWeightToKg(weight, unitSystem) : null,
+      waist: waist ? parseLengthToCm(waist, unitSystem) : null,
+      thigh: thigh ? parseLengthToCm(thigh, unitSystem) : null,
+      arm: arm ? parseLengthToCm(arm, unitSystem) : null,
       pain: pain ? Number(pain) : null, stress: stress ? Number(stress) : null, digestion: digestion ? Number(digestion) : null,
       sleepQuality: sleepQuality ? Number(sleepQuality) : null,
       cyclePhase: cyclePhase || null,
@@ -2045,26 +2102,26 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
 
           <div className={showFullSection ? "grid grid-cols-2 gap-3 mb-5" : "mb-5"}>
             <label className="block">
-              <span className="label block mb-1.5">Peso mattina (kg)</span>
+              <span className="label block mb-1.5">Peso mattina ({weightUnitLabel(unitSystem)})</span>
               <input type="text" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value.replace(",", "."))}
-                     placeholder="es. 78.4" className="input w-full px-4 py-3 font-data" />
+                     placeholder={unitSystem === "imperial" ? "es. 173" : "es. 78.4"} className="input w-full px-4 py-3 font-data" />
             </label>
             {showFullSection && (
               <>
                 <label className="block">
-                  <span className="label block mb-1.5">Addome (cm)</span>
+                  <span className="label block mb-1.5">Addome ({lengthUnitLabel(unitSystem)})</span>
                   <input type="text" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value.replace(",", "."))}
-                         placeholder="es. 84" className="input w-full px-4 py-3 font-data" />
+                         placeholder={unitSystem === "imperial" ? "es. 33" : "es. 84"} className="input w-full px-4 py-3 font-data" />
                 </label>
                 <label className="block">
-                  <span className="label block mb-1.5">Coscia (cm)</span>
+                  <span className="label block mb-1.5">Coscia ({lengthUnitLabel(unitSystem)})</span>
                   <input type="text" inputMode="decimal" value={thigh} onChange={(e) => setThigh(e.target.value.replace(",", "."))}
-                         placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
+                         placeholder={unitSystem === "imperial" ? "es. 23" : "es. 58"} className="input w-full px-4 py-3 font-data" />
                 </label>
                 <label className="block">
-                  <span className="label block mb-1.5">Braccio (cm)</span>
+                  <span className="label block mb-1.5">Braccio ({lengthUnitLabel(unitSystem)})</span>
                   <input type="text" inputMode="decimal" value={arm} onChange={(e) => setArm(e.target.value.replace(",", "."))}
-                         placeholder="es. 37" className="input w-full px-4 py-3 font-data" />
+                         placeholder={unitSystem === "imperial" ? "es. 14.5" : "es. 37"} className="input w-full px-4 py-3 font-data" />
                 </label>
               </>
             )}
@@ -2379,6 +2436,7 @@ function HrvMatrixWidget({ hrv, rhr, accent }) {
 
 export function HomeDashboard({
   accent, accentSoft, accentText,
+  unitSystem = "metric", // 'metric' | 'imperial' — profiles.unit_system (SCHEMA_v92), da App.jsx
   profile,            // { name, nickname, gender, goalLabel }
   day,                // { weekday, weekNumber, isTraining, sessionLabel, dayNumber }
   workoutLoading,     // true SOLO al primo caricamento reale, prima che assignedWeek arrivi (mai dalla demo)
@@ -2413,6 +2471,7 @@ export function HomeDashboard({
   // sistema operativo scarica la pagina dalla memoria mentre l'app è in
   // background e il browser la ricarica al ritorno, si riparte dalla
   // stessa sotto-schermata invece che sempre dalla Home.
+  const { t } = useTranslation();
   const [screen, setScreen] = useState(() => localStorage.getItem("perform_last_screen") || "dash");   // dash | workout | nutrition | recovery
   useEffect(() => { localStorage.setItem("perform_last_screen", screen); }, [screen]);
   // Digestione (Alimentazione, ex check-in a emoji locale) + motivazione/
@@ -2962,6 +3021,21 @@ export function HomeDashboard({
     motivation, fatigue, recentSensations,
   });
 
+  // Motore di predizione del sovraccarico (Digital Twin): confronta gli
+  // ultimi giorni con il basale personale su HRV/RHR/sonno — vedi
+  // computeOverreachAlert in ../lib/biometrics.js. Usa liveHistory (stessa
+  // serie storica di sonno/passi/HRV/RHR già costruita sopra per i grafici
+  // Chart3D), quindi eredita la stessa onestà sui dati: in modalità reale,
+  // finché nessun dispositivo HRV/RHR è collegato, quei due marcatori
+  // restano 0 (mai finti) e semplicemente non concorrono all'alert — resta
+  // attivo solo il debito di sonno, l'unico segnale davvero misurato oggi.
+  const overreachAlert = useMemo(() => {
+    const days = liveHistory.sleep.map((s, i) => ({
+      sleepHours: s, hrv: liveHistory.hrv[i], rhr: liveHistory.rhr[i],
+    }));
+    return computeOverreachAlert(days);
+  }, [liveHistory]);
+
   // Bilancio energetico stimato di oggi (BMR + calorie attive dai passi):
   // vedi computeEnergyExpenditure in ../lib/biometrics.js. Peso: il più
   // recente registrato in un check, o quello dell'anamnesi iniziale finché
@@ -3114,7 +3188,7 @@ export function HomeDashboard({
 
   const complianceRings = [
     {
-      id: "train", label: "Allenamento", icon: Dumbbell, pct: trainPct, insight: trainInsight,
+      id: "train", label: t("sections.training", "Allenamento"), icon: Dumbbell, pct: trainPct, insight: trainInsight,
       details: isRealMode
         ? [
             { label: "Completamento sessioni recenti", value: realTrainCompliance?.completionPct != null ? `${realTrainCompliance.completionPct}%` : "…" },
@@ -3127,7 +3201,7 @@ export function HomeDashboard({
           ],
     },
     {
-      id: "nutri", label: "Alimentazione", icon: Salad, pct: nutriPct, insight: nutriInsight,
+      id: "nutri", label: t("sections.nutrition", "Alimentazione"), icon: Salad, pct: nutriPct, insight: nutriInsight,
       details: isRealMode
         ? [
             { label: "Kcal oggi", value: `${consumed.kcal} / ${target.kcal}` },
@@ -3140,7 +3214,7 @@ export function HomeDashboard({
           ],
     },
     {
-      id: "recovery", label: "Recupero", icon: BedDouble, pct: recoveryPct, insight: recoveryInsight,
+      id: "recovery", label: t("sections.recovery", "Recupero"), icon: BedDouble, pct: recoveryPct, insight: recoveryInsight,
       details: isRealMode
         ? [
             { label: "Sonno medio", value: realRecoveryCompliance?.sleepAvg != null ? `${realRecoveryCompliance.sleepAvg} h` : "…" },
@@ -3189,7 +3263,7 @@ export function HomeDashboard({
     return (
       <WeeklyCheckModal
         accent={accent} accentText={accentText} accentSoft={accentSoft} gender={profile.gender}
-        supabase={supabase} userId={userId}
+        supabase={supabase} userId={userId} unitSystem={unitSystem}
         onSkip={() => setShowWeeklyCheck(false)}
         onSubmit={(data) => {
           onCoachSync && onCoachSync({ type: "weekly-check", ...data });
@@ -3264,6 +3338,25 @@ export function HomeDashboard({
           <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }} data-tour="compliance">
             <ComplianceRings rings={complianceRings} onSelect={setActiveRingPopup} />
           </div>
+
+          {/* Digital Twin: segnale proattivo — non solo nel popup Recupero
+              (che richiede di toccare il cerchio per scoprirlo), ma visibile
+              subito appena si apre la Home, quando c'è davvero un segnale di
+              sovraccarico. Tap = stesso popup di dettaglio del cerchio
+              Recupero, nessuna logica duplicata. */}
+          {overreachAlert && overreachAlert.level !== "none" && (
+            <button onClick={() => setActiveRingPopup("recovery")}
+                    className="w-full text-left mt-3 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5"
+                    style={{
+                      backgroundColor: overreachAlert.level === "high" ? "rgba(239,68,68,0.1)" : "rgba(240,160,32,0.12)",
+                      border: `1px solid ${overreachAlert.level === "high" ? "rgba(239,68,68,0.3)" : "rgba(240,160,32,0.35)"}`,
+                    }}>
+              <span aria-hidden="true">{overreachAlert.level === "high" ? "⚠️" : "🟡"}</span>
+              <span className="text-sm flex-1" style={{ fontWeight: 600, color: overreachAlert.level === "high" ? "#DC2626" : "#B45309" }}>
+                {overreachAlert.level === "high" ? "Segnale di sovraccarico — tocca per i dettagli" : "Attenzione al recupero — tocca per i dettagli"}
+              </span>
+            </button>
+          )}
 
           {/* barra XP: pulita, niente più elenco "obiettivi di oggi" da
               espandere — il feedback su cosa fa guadagnare punti arriva
@@ -3387,7 +3480,7 @@ export function HomeDashboard({
           </div>
         )}
 
-        <CompliancePopup ring={complianceRings.find((r) => r.id === activeRingPopup)} onClose={() => setActiveRingPopup(null)} readiness={readiness} />
+        <CompliancePopup ring={complianceRings.find((r) => r.id === activeRingPopup)} onClose={() => setActiveRingPopup(null)} readiness={readiness} overreachAlert={overreachAlert} />
         {levelRoadmapOpen && (
           <LevelRoadmapModal currentXp={isRealMode ? (realXpStreak?.xpTotal ?? 0) : xp} onClose={() => setLevelRoadmapOpen(false)} />
         )}
@@ -3436,19 +3529,19 @@ export function HomeDashboard({
             e più vicine fra loro, come richiesto. */}
         <div className="grid grid-cols-1 gap-2.5">
           <div data-tour="card-workout">
-            <Window3D icon={Dumbbell} label="Allenamento" accent={accent} floatClass="icon-float-1"
+            <Window3D icon={Dumbbell} label={t("sections.training", "Allenamento")} accent={accent} floatClass="icon-float-1"
               sub={day.isTraining ? day.sessionLabel : "Giorno di riposo"}
               novelty={sectionNovelty.workout}
               onClick={() => setScreen("workout")} />
           </div>
           <div data-tour="card-nutrition">
-            <Window3D icon={Salad} label="Alimentazione" accent={accent} floatClass="icon-float-2"
+            <Window3D icon={Salad} label={t("sections.nutrition", "Alimentazione")} accent={accent} floatClass="icon-float-2"
               sub={`${remaining.kcal} kcal rimanenti`}
               novelty={sectionNovelty.nutrition}
               onClick={() => setScreen("nutrition")} />
           </div>
           <div data-tour="card-supplements">
-            <Window3D icon={Pill} label="Integrazione" accent={accent} floatClass="icon-float-2"
+            <Window3D icon={Pill} label={t("sections.supplements", "Integrazione")} accent={accent} floatClass="icon-float-2"
               sub={access.pro ? "Piano del coach attivo" : "Diario libero + wiki scientifica"}
               novelty={sectionNovelty.supplements}
               onClick={() => setScreen("supplements")} />
@@ -3487,7 +3580,7 @@ export function HomeDashboard({
     return (
       <div className="spring-in">
         <XpToastBanner toast={xpToast} />
-        {back("Allenamento")}
+        {back(t("sections.training", "Allenamento"))}
 
         <div className="grid grid-cols-3 gap-1.5 mb-5">
           {[["pesi", "Allenamento Pesi"], ["cardio", "Allenamento Cardio"], ["wiki", "Wiki Allenamento"]].map(([id, lab]) => {
@@ -3599,6 +3692,7 @@ export function HomeDashboard({
                           onSetField={onSetField}
                           accent={accent}
                           accentText={accentText}
+                          unitSystem={unitSystem}
                           userPlan={userPlan}
                           schedaAddonChatActive={schedaAddonChatActive}
                           gender={profile.gender}
@@ -3627,7 +3721,7 @@ export function HomeDashboard({
                     onMotivationChange={setMotivation} onFatigueChange={setFatigue} accentText={accentText} />
                 )}
                 <div className="mt-4">
-                  <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} />
+                  <VolumeMatrixCard weekDays={weekPlan} userPlan={userPlan} gender={profile.gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} overreachAlert={overreachAlert} />
                 </div>
               </>
             ) : (
@@ -3639,7 +3733,7 @@ export function HomeDashboard({
                 <ErrorBoundary>
                   <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
                                        day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
-                                       schedaAddonChatActive={schedaAddonChatActive}
+                                       schedaAddonChatActive={schedaAddonChatActive} unitSystem={unitSystem} overreachAlert={overreachAlert}
                                        supabase={supabase} userId={userId} />
                 </ErrorBoundary>
                 {/* Disponibile a TUTTI i piani, non solo a fine giorno di
@@ -3685,7 +3779,7 @@ export function HomeDashboard({
     return (
       <div className="spring-in">
         <XpToastBanner toast={xpToast} />
-        {back("Alimentazione")}
+        {back(t("sections.nutrition", "Alimentazione"))}
 
         {/* Striscia calendario: come su Allenamento, per tornare su un giorno
             passato e aggiungere un pasto dimenticato. Oro/Rosa (Giorno ON,
@@ -3829,7 +3923,7 @@ export function HomeDashboard({
     return (
       <div className="spring-in">
         <XpToastBanner toast={xpToast} />
-        {back("Integrazione")}
+        {back(t("sections.supplements", "Integrazione"))}
         <SupplementsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
                            isPro={userPlan === "full_coaching"} isPaid={!!access.paid} isTrainingDay={isTrainingDay}
                            onUpgrade={onUpgrade} onCoachSync={onCoachSync} onXpEarned={fireXpToast}
@@ -5557,7 +5651,7 @@ function WarmupStretchCard({ icon, eyebrow, title, text }) {
 // ancora previste; con un solo boundary globale QUALUNQUE crash su UN
 // esercizio smontava l'intera pagina Allenamento ("Qualcosa è andato
 // storto" a schermo intero). Ora un problema resta isolato alla sua card:
-function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId }) {
+function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId, unitSystem = "metric" }) {
   const [guideOpen, setGuideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [timer, setTimer] = useState(null); // { total, remaining, endAt } — endAt: epoch ms di fine, fonte di verità
@@ -5767,7 +5861,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       <p className="mt-1 text-sm font-data" style={{ color: "var(--ink-2)" }}>
         Scorsa:{" "}
         <span style={{ color: "var(--ink)", fontWeight: 700 }}>
-          {lastSessionSets.length > 0 ? lastSessionSets.map((s) => `${s.kg}x${s.reps}`).join(" ") : "n/d"}
+          {lastSessionSets.length > 0 ? lastSessionSets.map((s) => `${formatWeight(s.kg, unitSystem) ?? s.kg}x${s.reps}`).join(" ") : "n/d"}
         </span>
       </p>
       <p className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: "var(--ink)" }}>
@@ -5780,19 +5874,31 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       <div className="mt-4 space-y-2">
         <div className="grid grid-cols-12 gap-2">
           <span className="col-span-2 label">Serie</span>
-          {["Kg", "Reps"].map((h) => <span key={h} className="col-span-4 label text-center">{h}</span>)}
+          <span className="col-span-4 label text-center">{weightUnitLabel(unitSystem).toUpperCase()}</span>
+          <span className="col-span-4 label text-center">Reps</span>
           <span className="col-span-2 label text-center">✓</span>
         </div>
         {rows.map((row, i) => (
           <div key={i} className="grid grid-cols-12 gap-2 items-center">
             <span className="col-span-2 text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>S{i + 1}</span>
-            {["kg", "reps"].map((f) => (
-              <input key={f} type="number" min="0" value={row[f]}
-                     onChange={(e) => onSetField(ex, i, f, e.target.value)}
-                     placeholder={f === "reps" ? repsTargets[i] : undefined}
-                     className="col-span-4 input w-full px-2 py-2.5 text-center text-sm"
-                     aria-label={f === "reps" && repsTargets[i] ? `reps serie ${i + 1} di ${ex.name}, target ${repsTargets[i]}` : `${f} serie ${i + 1} di ${ex.name}`} />
-            ))}
+            {/* row.kg resta SEMPRE in kg (fonte di verità, così com'è salvato
+                su workout_sets/workout_logs) — qui si converte solo ciò che
+                si MOSTRA e ciò che si LEGGE dall'input, mai il dato salvato:
+                stessa logica di units.js, "" vuoto resta "" in entrambe le
+                direzioni (mai un 0 finto per un campo non ancora compilato,
+                vedi complete() qui sopra). */}
+            <input type="number" min="0" value={row.kg === "" ? "" : formatWeight(row.kg, unitSystem) ?? ""}
+                   onChange={(e) => {
+                     const v = e.target.value;
+                     onSetField(ex, i, "kg", v === "" ? "" : parseWeightToKg(v, unitSystem));
+                   }}
+                   className="col-span-4 input w-full px-2 py-2.5 text-center text-sm"
+                   aria-label={`${weightUnitLabel(unitSystem)} serie ${i + 1} di ${ex.name}`} />
+            <input type="number" min="0" value={row.reps}
+                   onChange={(e) => onSetField(ex, i, "reps", e.target.value)}
+                   placeholder={repsTargets[i]}
+                   className="col-span-4 input w-full px-2 py-2.5 text-center text-sm"
+                   aria-label={repsTargets[i] ? `reps serie ${i + 1} di ${ex.name}, target ${repsTargets[i]}` : `reps serie ${i + 1} di ${ex.name}`} />
             {/* Non più un pulsante: la serie si registra da sola appena kg e
                 reps sono compilati (vedi l'effetto sopra) — questo è solo
                 un riflesso passivo di quello stato, niente da toccare qui. */}
@@ -6188,7 +6294,7 @@ function TemplateBrowserModal({ supabase, onClose, onApply, accent }) {
   );
 }
 
-function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, schedaAddonChatActive, gender, supabase, userId }) {
+function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, schedaAddonChatActive, gender, supabase, userId, unitSystem = "metric", overreachAlert = null }) {
   const [innerTab, setInnerTab] = useState("oggi");
   const restored = useMemo(() => loadFreeRoutine(userId), [userId]);
   const [weeks, setWeeks] = useState(() => restored?.weeks ?? [emptyWeek()]);
@@ -6354,7 +6460,8 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                 return (
                   <SafeExerciseCard key={exObj.id} ex={exObj} index={exIdx} rows={setsFor(exObj)}
                     onSetField={onSetField} accent={accent} accentText={accentText} onCoachSync={onCoachSync}
-                    userPlan={userPlan} schedaAddonChatActive={schedaAddonChatActive} gender={gender} onUpgrade={onUpgrade} />
+                    userPlan={userPlan} schedaAddonChatActive={schedaAddonChatActive} gender={gender} onUpgrade={onUpgrade}
+                    unitSystem={unitSystem} />
                 );
               })}
             </div>
@@ -6457,7 +6564,7 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
           )}
 
           <div className="mt-4">
-            <VolumeMatrixCard weekDays={weeks[activeWeek]} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} libOverride={exerciseLib} />
+            <VolumeMatrixCard weekDays={weeks[activeWeek]} userPlan={userPlan} gender={gender} onUpgrade={onUpgrade} accent={accent} supabase={supabase} userId={userId} libOverride={exerciseLib} overreachAlert={overreachAlert} />
           </div>
         </div>
       )}
@@ -7748,7 +7855,15 @@ async function searchOpenFoodFactsByName(query) {
     // di lookupBarcodeProduct — di default arrivava spesso in francese).
     // cc=it: dà priorità nel ranking ai prodotti diffusi/venduti in Italia,
     // senza escludere gli altri se non ce ne sono di locali.
-    `&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments&lc=it&cc=it`
+    // BUG SEGNALATO: search_simple fa solo un match testuale grezzo, senza
+    // ordinare per rilevanza — un prodotto di marca che CONTIENE il termine
+    // cercato tra gli ingredienti (es. "Yogurt ai frutti con kiwi") poteva
+    // comparire alla pari o prima del prodotto generico cercato davvero.
+    // sort_by=unique_scans_n ordina per popolarità reale (quante persone
+    // nel mondo hanno scansionato/registrato quel prodotto): un alimento
+    // comune cercato da tutti sale naturalmente in cima, un prodotto di
+    // nicchia con match casuale nel nome scende in fondo.
+    `&search_simple=1&action=process&json=1&page_size=8&sort_by=unique_scans_n&fields=product_name,brands,nutriments&lc=it&cc=it`
   );
   if (!res.ok) throw new Error(`Open Food Facts ${res.status}`);
   const data = await res.json();
@@ -8482,7 +8597,20 @@ function NutritionTabs({
                                 onMouseDown={() => pickFood(f)}
                                 className="search-strong w-full text-left px-4 py-2.5"
                                 style={{ borderBottom: "1px solid var(--line)" }}>
-                                <span className="block truncate">{f.name}</span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="block truncate">{f.name}</span>
+                                  {/* Alimenti grezzi (frutta/verdura/materie prime): stessi macro
+                                      a prescindere dalla marca — un badge distingue subito
+                                      l'originale generico da un prodotto confezionato con nome
+                                      simile, invece di farli sembrare risultati equivalenti. */}
+                                  {BASE_FOOD_NAMES.has(f.name) && (
+                                    <span className="shrink-0 rounded-full px-1.5 py-0.5"
+                                          style={{ fontSize: "0.55rem", fontWeight: 700, letterSpacing: "0.02em",
+                                                   backgroundColor: "rgba(16,185,129,0.12)", color: "#10B981" }}>
+                                      ✓ BASE
+                                    </span>
+                                  )}
+                                </span>
                                 <span className="font-data flex gap-2.5 mt-0.5" style={{ fontSize: "0.68rem", fontWeight: 600 }}>
                                   <span style={{ color: MACRO_COLORS.kcal.base }}>{f.kcal} kcal</span>
                                   <span style={{ color: MACRO_COLORS.p.base }}>P{f.p}</span>
@@ -9414,15 +9542,31 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
   // già validato per il protocollo Pro (prescribed_supplements/
   // supplement_intake). In demo (!isRealMode) resta lo stato locale di
   // sempre, invariato.
-  const [realRows, setRealRows] = useState(null); // null = non ancora caricato
-  const [realTaken, setRealTaken] = useState(null);
+  // BUG PRESO (audit offline-first, stesso gap già corretto in
+  // SupplementsPlanLocked/Pro qui sotto): realRows/realTaken partivano
+  // sempre null, quindi un'apertura a freddo senza rete restava bloccata su
+  // "Caricamento…" finché il fetch non falliva — mai un'apertura davvero
+  // istantanea. Stessa cache di lib/localCache.js: realRows (elenco
+  // integratori autogestiti, non legato al giorno) sotto una chiave fissa,
+  // realTaken (spunte di oggi) sotto una chiave per giorno come todayIso.
+  const [realRows, setRealRows] = useState(() => (userId ? readCache(`selfSupp_${userId}`) : null));
+  const [realTaken, setRealTaken] = useState(() => {
+    if (!userId) return null;
+    const cached = readCache(`selfTaken_${userId}_${toLocalISODate()}`);
+    return cached ? new Set(cached) : null;
+  });
   const loadReal = useCallback(() => {
     if (!isRealMode) return;
     Promise.all([fetchSelfSupplements(supabase, userId), fetchSelfSupplementIntakeToday(supabase, userId)])
-      .then(([rows, taken]) => { setRealRows(rows); setRealTaken(taken); })
+      .then(([rows, taken]) => {
+        setRealRows(rows); setRealTaken(taken);
+        writeCache(`selfSupp_${userId}`, rows);
+        writeCache(`selfTaken_${userId}_${toLocalISODate()}`, [...taken]);
+      })
       .catch((err) => {
-        console.error("PERFORM: errore lettura diario integratori autogestito", err);
-        setRealRows([]); setRealTaken(new Set());
+        console.error("PERFORM: errore lettura diario integratori autogestito, mostro l'ultimo noto", err);
+        setRealRows((prev) => prev ?? []);
+        setRealTaken((prev) => prev ?? new Set());
       });
   }, [isRealMode, supabase, userId]);
   const todayIso = useTodayIso();
@@ -9588,7 +9732,12 @@ function SupplementsFreeDiary({ accent, accentSoft, accentText, isPaid, isTraini
     if (isRealMode) {
       const wasTaken = realTaken?.has(id);
       const taken = !wasTaken;
-      setRealTaken((s) => { const n = new Set(s); wasTaken ? n.delete(id) : n.add(id); return n; });
+      setRealTaken((s) => {
+        const n = new Set(s);
+        wasTaken ? n.delete(id) : n.add(id);
+        writeCache(`selfTaken_${userId}_${todayIso}`, [...n]);
+        return n;
+      });
       setSelfSupplementTaken(supabase, userId, id, taken).catch((err) => {
         // BUG-CLASS PRESA (stessa già risolta per le serie e per il diario
         // alimentare): con rete assente questo era un rollback silenzioso —
@@ -11156,26 +11305,30 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
   // scrittura su Supabase. Ora, in modalità reale, "preso" è un dato vero
   // (supplement_intake, SCHEMA_v54): caricato una volta all'apertura,
   // aggiornato in ottimistico al tap con rollback se la scrittura fallisce.
-  const [takenIds, setTakenIds] = useState(null); // null = non ancora caricato (solo isRealMode)
-  // BUG PRESO: la fetch girava una sola volta al mount — con AppShell che
-  // tiene ogni tab montato per sempre (display:none, mai un vero unmount),
-  // un utente che apre l'app un giorno, la lascia in background e la
-  // riapre il giorno dopo SENZA un reload completo continuava a vedere
-  // takenIds di IERI (lo stato React non si aggiornava mai da solo). La
-  // scrittura era già corretta (setSupplementTaken usa sempre la data di
-  // oggi), il problema era solo in lettura: todayIso rientra nelle
-  // dipendenze e forza un refetch reale appena cambia il giorno di
-  // calendario (vedi useTodayIso per il motivo del listener su
-  // visibilitychange, non solo un setInterval).
+  // BUG PRESO (audit offline-first): a differenza di `prescribed` qui sotto
+  // (già seminato dall'ultima cache nota), takenIds partiva SEMPRE null finché
+  // la fetch non risolveva — su un'apertura a freddo senza rete, il gate più
+  // in basso (prescribed === null || takenIds === null) restava bloccato su
+  // "Caricamento protocollo…" anche se il protocollo stesso era già
+  // disponibile dalla cache: "apertura istantanea offline" non era vera per
+  // questo pannello. Stessa cache key di giorno di useTodayIso/toLocalISODate,
+  // così un nuovo giorno (nessuna cache per la chiave odierna) torna
+  // correttamente a null e aspetta il fetch reale, senza riesumare le spunte
+  // di ieri.
   const todayIso = useTodayIso();
+  const [takenIds, setTakenIds] = useState(() => {
+    if (!userId) return null;
+    const cached = readCache(`takenIds_${userId}_${toLocalISODate()}`);
+    return cached ? new Set(cached) : null;
+  });
   useEffect(() => {
     if (!isRealMode) return;
     let cancelled = false;
     fetchSupplementIntakeToday(supabase, userId)
-      .then((ids) => { if (!cancelled) setTakenIds(ids); })
+      .then((ids) => { if (!cancelled) { setTakenIds(ids); writeCache(`takenIds_${userId}_${todayIso}`, [...ids]); } })
       .catch((err) => {
         console.error("PERFORM: errore lettura supplement_intake", err);
-        if (!cancelled) setTakenIds(new Set());
+        if (!cancelled) setTakenIds((prev) => prev ?? new Set());
       });
     return () => { cancelled = true; };
   }, [isRealMode, supabase, userId, todayIso]);
@@ -11265,7 +11418,12 @@ function SupplementsPlanLocked({ accent, accentSoft, accentText, isTrainingDay, 
       const wasTaken = takenIds?.has(itemId);
       const taken = !wasTaken;
       setIntakeError("");
-      setTakenIds((s) => { const n = new Set(s); wasTaken ? n.delete(itemId) : n.add(itemId); return n; });
+      setTakenIds((s) => {
+        const n = new Set(s);
+        wasTaken ? n.delete(itemId) : n.add(itemId);
+        writeCache(`takenIds_${userId}_${todayIso}`, [...n]);
+        return n;
+      });
       setSupplementTaken(supabase, userId, itemId, taken).catch((err) => {
         // Rete assente: setSupplementTaken è idempotente (insert/delete
         // tollerano il duplicato/il già-assente), quindi va in coda e si
@@ -11416,7 +11574,35 @@ const F = [
   { name: "Semi di Lino", kcal: 534, p: 18, c: 29, f: 42, na: 30, k: 813, fe: 5.73, ca: 255, mg: 392 },
   { name: "Burro", kcal: 717, p: 0.9, c: 0.1, f: 81, na: 15, k: 24, fe: 0.02, ca: 24, mg: 2 },
   { name: "Cocco Essiccato", kcal: 660, p: 7, c: 24, f: 65, na: 37, k: 543, fe: 3.3, ca: 26, mg: 90 },
+  // BUG SEGNALATO: cercando frutta/verdura di base (es. "kiwi", "mela") il
+  // catalogo locale non aveva nulla, e la ricerca cadeva su Open Food
+  // Facts — che non ordina per rilevanza/popolarità e scarta i prodotti
+  // senza kcal compilate: risultato, la prima ricerca spesso non trovava
+  // niente e i tentativi successivi mostravano solo prodotti di marca che
+  // CONTENGONO kiwi (yogurt, succhi...) invece del frutto stesso, perché
+  // sono quelli con i valori nutrizionali compilati. Aggiunti qui i
+  // prodotti "grezzi" più comuni ancora mancanti — frutta e verdura fresca,
+  // dove cambiare marca non cambia davvero i macro. Valori per 100g,
+  // riferimento USDA FoodData Central (stessa fonte già citata sopra).
+  { name: "Mela", kcal: 52, p: 0.3, c: 14, f: 0.2, na: 1, k: 107, fe: 0.12, ca: 6, mg: 5 },
+  { name: "Kiwi", kcal: 61, p: 1.1, c: 15, f: 0.5, na: 3, k: 312, fe: 0.31, ca: 34, mg: 17 },
+  { name: "Pera", kcal: 57, p: 0.4, c: 15, f: 0.1, na: 1, k: 116, fe: 0.18, ca: 9, mg: 7 },
+  { name: "Arancia", kcal: 47, p: 0.9, c: 12, f: 0.1, na: 0, k: 181, fe: 0.1, ca: 40, mg: 10 },
+  { name: "Fragole", kcal: 32, p: 0.7, c: 7.7, f: 0.3, na: 1, k: 153, fe: 0.41, ca: 16, mg: 13 },
+  { name: "Pomodoro", kcal: 18, p: 0.9, c: 3.9, f: 0.2, na: 5, k: 237, fe: 0.27, ca: 10, mg: 11 },
+  { name: "Carote", kcal: 41, p: 0.9, c: 10, f: 0.2, na: 69, k: 320, fe: 0.3, ca: 33, mg: 12 },
+  { name: "Zucchine", kcal: 17, p: 1.2, c: 3.1, f: 0.3, na: 8, k: 261, fe: 0.37, ca: 16, mg: 18 },
+  { name: "Insalata", kcal: 15, p: 1.4, c: 2.9, f: 0.2, na: 28, k: 194, fe: 0.86, ca: 36, mg: 13 },
+  { name: "Cipolla", kcal: 40, p: 1.1, c: 9.3, f: 0.1, na: 4, k: 146, fe: 0.21, ca: 23, mg: 10 },
+  { name: "Latte Intero", kcal: 61, p: 3.2, c: 4.8, f: 3.3, na: 40, k: 150, fe: 0.03, ca: 113, mg: 10 },
 ];
+
+// Alimenti "base" (frutta/verdura/materie prime grezze): stessi macro a
+// prescindere dalla marca, a differenza di un prodotto confezionato dove
+// la ricetta cambia da produttore a produttore — segnalati in dropdown con
+// un badge, così l'utente riconosce a colpo d'occhio "questo è l'originale
+// generico" invece di dover indovinare tra risultati apparentemente uguali.
+const BASE_FOOD_NAMES = new Set(F.map((f) => f.name));
 
 const GUIDE = MEAL_SLOTS.map((_, i) => ({
   items: [{ name: F[i % F.length].name, grams: 80 + i * 10, kcal: 200 + i * 20 }],
@@ -11457,6 +11643,7 @@ export default function HomePreview({
   profileOverride,         // { name, nickname } dalla sessione reale, sostituisce i valori di preview
   microAddon: microAddonProp, // profiles.micro_addon reale — componente aggiuntivo micronutrienti per Scheda/Training
   schedaAddonChatUntil, // profiles.scheda_addon_chat_until (SCHEMA_v68) — chat col coach per chi ha comprato la Scheda Personalizzata come add-on sopra Free/Premium, non collegata a planProp
+  unitSystem = "metric", // 'metric' | 'imperial' — profiles.unit_system (SCHEMA_v92), da App.jsx
   supabase: supabaseProp,  // se passato insieme a userId, sostituisce scheda/target finti con quelli reali assegnati dal coach
   userId,
   onUpgrade: onUpgradeProp,   // apre le impostazioni/abbonamento (App.jsx) — no-op in preview isolata
@@ -11513,6 +11700,19 @@ export default function HomePreview({
   // presenti con array di zeri) — la seconda condizione è quella che deve
   // arrivare a fullHistory, mai un momentaneo array vuoto scambiato per dati.
   const [realHistory, setRealHistory] = useState(null); // null finché non caricato (solo isRealMode)
+  // BUG PRESO (audit Digital Twin): "58"/"62" sono valori DEMO per la preview
+  // interattiva (vedi HrvMatrixWidget/i due input manuali più sotto, resi
+  // solo in !isRealMode) — ma essendo l'unico useState iniziale, in modalità
+  // reale erano SEMPRE truthy: `Number(rhr) || rhrFallback` in liveHistory
+  // più sotto non ricadeva MAI sull'ultimo valore storico reale come
+  // previsto, e computeOverreachAlert (Digital Twin) calcolava il confronto
+  // "ultimi 3 giorni" con un 58/62 costante e finto al posto del dato vero
+  // di oggi. In modalità reale parte vuoto: la stessa riga liveHistory
+  // ricade allora sul fallback reale, e l'effetto di lettura daily_metrics
+  // qui sotto lo sovrascrive con un valore vero appena disponibile (stesso
+  // pattern già in uso per sleep/steps).
+  const [rhr, setRhr] = useState(() => (isRealMode ? "" : "58"));
+  const [hrv, setHrv] = useState(() => (isRealMode ? "" : "62"));
   const [water, setWater] = useState(0);
   const [autoSteps, setAutoSteps] = useState(false);
   // isTrainingDay REALE si calcola più sotto da weekPlan (la scheda vera
@@ -11702,6 +11902,8 @@ export default function HomePreview({
             setSleep({ start: todayRow.sleep_start?.slice(0, 5) || "", end: todayRow.sleep_end?.slice(0, 5) || "", hours: Number(todayRow.sleep_hours) || 0 });
           }
           if (todayRow.steps != null) setSteps(String(todayRow.steps));
+          if (todayRow.hrv_ms != null) setHrv(String(todayRow.hrv_ms));
+          if (todayRow.rhr_bpm != null) setRhr(String(todayRow.rhr_bpm));
         }
         setRealHistory({
           sleep: pastDates.map((d) => Number(byDate.get(d)?.sleep_hours) || 0),
@@ -11786,8 +11988,6 @@ export default function HomePreview({
     return () => { cancelled = true; };
   }, [supabaseProp, userId]);
 
-  const [rhr, setRhr] = useState("58");
-  const [hrv, setHrv] = useState("62");
   const [stressLevel, setStressLevel] = useState("");
   const [caffeineMg, setCaffeineMg] = useState("");
   const [caffeineTime, setCaffeineTime] = useState("");
@@ -12215,7 +12415,7 @@ export default function HomePreview({
 
       <main className={isControlled ? "" : "max-w-2xl mx-auto px-4 py-8"} style={isControlled ? undefined : { paddingBottom: 60 }}>
         <HomeDashboard
-          accent={accent} accentSoft={accentSoft} accentText={accentText}
+          accent={accent} accentSoft={accentSoft} accentText={accentText} unitSystem={unitSystem}
           profile={{ name: "Marco Bianchi", nickname: "IronWolf", ...profileOverride, gender, goalLabel: "86 kg mantenendo i carichi" }}
           day={day}
           workoutLoading={isRealMode && assignedWeek === null}

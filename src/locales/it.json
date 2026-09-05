@@ -1,0 +1,27 @@
+{
+  "nav": {
+    "home": "Home",
+    "news": "News & Tips",
+    "chat": "Chat",
+    "ranking": "Classifica",
+    "profile": "Profilo",
+    "coach": "Coach Panel"
+  },
+  "chat": {
+    "header": "Chat privata col coach"
+  },
+  "ranking": {
+    "titleGlobal": "Classifica Globale",
+    "titleCrew": "La mia Crew",
+    "subtitleCrew": "streak di gruppo, 3-6 persone",
+    "subtitleGlobal": "migliori atleti di {{month}}",
+    "tabClassifica": "Classifica",
+    "tabCrew": "La mia Crew"
+  },
+  "sections": {
+    "training": "Allenamento",
+    "nutrition": "Alimentazione",
+    "recovery": "Recupero",
+    "supplements": "Integrazione"
+  }
+}

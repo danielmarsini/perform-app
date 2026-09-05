@@ -41,6 +41,7 @@
    ========================================================================== */
 
 import React, { useState, useEffect, useId } from "react";
+import { useTranslation } from "react-i18next";
 import { BarChart3, Newspaper, Trophy, User, Settings, Activity, SlidersHorizontal, ShieldCheck, MessageCircle } from "lucide-react";
 import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
 
@@ -676,6 +677,7 @@ function NavButton({ id, Icon, label, on, dark, accent, idle, burst, onPick, isC
 }
 
 export function BottomBar({ active, onSelect, accent, dark, isCoach = false, chatUnreadCount = 0, newsHasUnseen = false }) {
+  const { t } = useTranslation();
   const [burst, setBurst] = useState(null);
   const idle = dark ? "#71717A" : "#A1A1AA";
 
@@ -722,7 +724,7 @@ export function BottomBar({ active, onSelect, accent, dark, isCoach = false, cha
             key={id}
             id={id}
             Icon={Icon}
-            label={label}
+            label={t(`nav.${id}`, label)}
             on={active === id}
             dark={dark}
             accent={accent}

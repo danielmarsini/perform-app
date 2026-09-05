@@ -73,6 +73,9 @@ export const translations = {
     bioPlaceholder: "Due righe su di te: sport, obiettivo, una frase.",
     nicknameHint: "Il nickname è ciò che vedono gli altri atleti: cambia subito in Home e nella classifica. Il nome vero non è mai pubblico.",
     langLabel: "Lingua",
+    unitLabel: "Unità di misura",
+    unitMetric: "Metrico (kg, cm)",
+    unitImperial: "Imperiale (lbs, in)",
     stats: { level: "Livello", xp: "XP", streak: "Streak", rank: "Classifica" },
     records: {
       title: "I miei traguardi",
@@ -165,6 +168,9 @@ export const translations = {
     bioPlaceholder: "Two lines about you: sport, goal, one sentence.",
     nicknameHint: "Your nickname is what other athletes see: it updates instantly on Home and the leaderboard. Your real name is never public.",
     langLabel: "Language",
+    unitLabel: "Units",
+    unitMetric: "Metric (kg, cm)",
+    unitImperial: "Imperial (lbs, in)",
     stats: { level: "Level", xp: "XP", streak: "Streak", rank: "Rank" },
     records: {
       title: "My Milestones",
@@ -251,6 +257,9 @@ export const translations = {
     bioPlaceholder: "Dos líneas sobre ti: deporte, objetivo, una frase.",
     nicknameHint: "Tu nickname es lo que ven los demás atletas: se actualiza al instante en Inicio y en la clasificación. Tu nombre real nunca es público.",
     langLabel: "Idioma",
+    unitLabel: "Unidades",
+    unitMetric: "Métrico (kg, cm)",
+    unitImperial: "Imperial (lbs, in)",
     stats: { level: "Nivel", xp: "XP", streak: "Racha", rank: "Ranking" },
     records: {
       title: "Mis Logros",
@@ -337,6 +346,9 @@ export const translations = {
     bioPlaceholder: "Deux lignes sur toi : sport, objectif, une phrase.",
     nicknameHint: "Ton pseudo est ce que voient les autres athlètes : il se met à jour instantanément sur l'accueil et le classement. Ton vrai nom n'est jamais public.",
     langLabel: "Langue",
+    unitLabel: "Unités",
+    unitMetric: "Métrique (kg, cm)",
+    unitImperial: "Impérial (lbs, in)",
     stats: { level: "Niveau", xp: "XP", streak: "Série", rank: "Classement" },
     records: {
       title: "Mes Records",
@@ -437,6 +449,34 @@ function LangSelector({ lang, onChange }) {
             <span style={{ fontSize: "1.55rem", lineHeight: 1, color: "var(--ink)" }}>{l.flag}</span>
             <span style={{ fontSize: "0.68rem", fontWeight: on ? 700 : 500,
                             color: on ? "var(--ink)" : "var(--ink-2)" }}>{l.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Selettore Metrico/Imperiale — stessa card grande di LangSelector qui sopra,
+   usato in Impostazioni → Aspetto subito sotto la lingua. */
+function UnitSelector({ unitSystem, onChange, labels }) {
+  const options = [
+    { code: "metric", label: labels.unitMetric },
+    { code: "imperial", label: labels.unitImperial },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2" role="group" aria-label={labels.unitLabel}>
+      {options.map((o) => {
+        const on = unitSystem === o.code;
+        return (
+          <button key={o.code} onClick={() => onChange(o.code)}
+            className="rounded-xl flex items-center justify-center py-3 transition-all duration-200 active:scale-95"
+            style={{
+              border: on ? "1.5px solid var(--ink)" : "1px solid var(--line)",
+              backgroundColor: on ? "var(--surface-2)" : "transparent",
+            }}
+            aria-pressed={on}>
+            <span style={{ fontSize: "0.78rem", fontWeight: on ? 700 : 500,
+                            color: on ? "var(--ink)" : "var(--ink-2)" }}>{o.label}</span>
           </button>
         );
       })}
@@ -1164,7 +1204,7 @@ function Section({ id, icon: Icon, title, sub, openId, setOpenId, children, badg
 // coach (AnamnesisShared.jsx): stessa fonte di verità, mai una terza copia.
 // Autosalvataggio debounced (900ms), stesso identico pattern già in uso e
 // verificato lato coach (AnamnesisPanel, 09_CoachDashboard.jsx).
-function AnamnesisSection({ supabase, userId, dark }) {
+function AnamnesisSection({ supabase, userId, dark, unitSystem = "metric" }) {
   const [answers, setAnswers] = useState(null); // null = non ancora caricata
   const [loadError, setLoadError] = useState("");
   const [saveState, setSaveState] = useState(null); // null | 'saving' | 'saved' | 'error'
@@ -1219,7 +1259,7 @@ function AnamnesisSection({ supabase, userId, dark }) {
           <AnamAreaSection key={areaId} areaId={areaId} label={label}
             questions={ANAM_QUESTIONS.filter((q) => q.area === areaId)}
             answers={answers} onChange={setField}
-            onUploadFile={uploadFile} getFileUrl={getFileUrl} />
+            onUploadFile={uploadFile} getFileUrl={getFileUrl} unitSystem={unitSystem} />
         ))}
       </div>
       <p className="c-muted text-xs mt-3 px-1">
@@ -1247,6 +1287,7 @@ export function ClientProfileView({
   plan,                // id STRIPE_PLANS ("free"/"performance"/"scheda"/"training"/"full") — gate PauseSection
   dark,                // per la sezione Anamnesi (AnamnesisShared.jsx usa .coach-root/.coach-root.dark)
   showAnamnesis,       // true per chi ha un piano a coaching reale — vedi nota nel chiamante
+  unitSystem = "metric", // per i campi peso/altezza dell'anamnesi (AnamnesisShared.jsx)
 }) {
   const t = translations[lang] || translations.it;
   const [editing, setEditing] = useState(false);
@@ -1563,7 +1604,7 @@ export function ClientProfileView({
                  title="La tua anamnesi"
                  sub="Rivedi o aggiorna le informazioni date al tuo coach"
                  openId={openSection} setOpenId={setOpenSection}>
-          <AnamnesisSection supabase={supabase} userId={userId} dark={dark} />
+          <AnamnesisSection supabase={supabase} userId={userId} dark={dark} unitSystem={unitSystem} />
         </Section>
       )}
 
@@ -1904,6 +1945,9 @@ function ReferralCodeCard({ supabase, userId }) {
 
 export function SettingsDrawer({
   open, onClose, dark, accent, accentText, gender, lang, onChangeLang,
+  unitSystem = "metric", onChangeUnitSystem,
+  whoopConnected = false, whoopLastSync = null, whoopStatus = "",
+  onConnectWhoop, onSyncWhoop, onDisconnectWhoop,
   currentPlan, planRenewsOn, accountEmail,
   onOpenBillingPortal, onChangePlan, onDeleteAccount, onLogout,
   supabase, userId,   // anche per il toggle reale "Notifiche push"
@@ -2206,6 +2250,60 @@ export function SettingsDrawer({
 
               <p className="h2 mt-7 mb-3">{t.langLabel}</p>
               <LangSelector lang={lang} onChange={onChangeLang} />
+
+              <p className="h2 mt-7 mb-3">{t.unitLabel}</p>
+              <UnitSelector unitSystem={unitSystem} onChange={onChangeUnitSystem} labels={t} />
+
+              {/* Digital Twin: HRV/RHR reali da Whoop invece del placeholder
+                  "58"/"62" — vedi audit in 05_HomeDashboard.jsx. Solo account
+                  reali: in anteprima isolata onConnectWhoop non arriva mai. */}
+              {isRealMode && onConnectWhoop && (
+                <>
+                  <p className="h2 mt-7 mb-3">Whoop</p>
+                  <div className="inner rounded-2xl p-4">
+                    {whoopConnected ? (
+                      <>
+                        <p className="text-sm mb-1" style={{ color: "var(--ink)", fontWeight: 600 }}>Whoop collegato</p>
+                        <p className="meta mb-3">
+                          {whoopLastSync
+                            ? `Ultima sincronizzazione: ${new Date(whoopLastSync).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
+                            : "Non ancora sincronizzato."}
+                        </p>
+                        <div className="flex gap-2">
+                          <button onClick={onSyncWhoop} disabled={whoopStatus === "connecting"}
+                            className="rounded-full px-4 py-2.5 text-sm"
+                            style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700, opacity: whoopStatus === "connecting" ? 0.6 : 1 }}>
+                            {whoopStatus === "connecting" ? "Sincronizzo…" : "Sincronizza ora"}
+                          </button>
+                          <button onClick={onDisconnectWhoop}
+                            className="rounded-full px-4 py-2.5 text-sm"
+                            style={{ border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
+                            Scollega
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm mb-1" style={{ color: "var(--ink)", fontWeight: 600 }}>Collega il tuo Whoop</p>
+                        <p className="meta mb-3">
+                          HRV e frequenza cardiaca a riposo reali, letti automaticamente ogni giorno —
+                          il Digital Twin li usa per avvisarti prima di un sovraccarico.
+                        </p>
+                        <button onClick={onConnectWhoop} disabled={whoopStatus === "connecting"}
+                          className="rounded-full px-4 py-2.5 text-sm"
+                          style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700, opacity: whoopStatus === "connecting" ? 0.6 : 1 }}>
+                          {whoopStatus === "connecting" ? "Collegamento…" : "Connetti Whoop"}
+                        </button>
+                      </>
+                    )}
+                    {whoopStatus === "error" && (
+                      <p className="text-xs mt-2" style={{ color: "#DC2626" }}>
+                        Qualcosa è andato storto con Whoop. Riprova tra poco.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -2438,6 +2536,7 @@ export default function ClientProfileViewPreview({
   dark: darkProp,
   lang: langProp,
   onChangeLang: onChangeLangProp,
+  unitSystem: unitSystemProp, // 'metric' | 'imperial' — da App.jsx, profiles.unit_system (SCHEMA_v92)
   userPlan,               // 'free' | 'performance_pack' | 'full_coaching' — da App.jsx
   onOpenSettings: onOpenSettingsProp,   // se passato, l'Impostazioni globali di App.jsx sostituisce il drawer locale
   profileOverride,        // { name, nickname, email, joined_at } dalla sessione reale
@@ -2448,6 +2547,7 @@ export default function ClientProfileViewPreview({
   const [dark, setDark] = useState(darkProp ?? false);
   const [gender, setGender] = useState(genderProp ?? "M");
   const [lang, setLang] = useState(langProp ?? "it");
+  const [unitSystem, setUnitSystem] = useState(unitSystemProp ?? "metric");
   const [owner, setOwner] = useState(false);
   const [settings, setSettings] = useState(false);
   const [plan, setPlan] = useState(
@@ -2456,6 +2556,7 @@ export default function ClientProfileViewPreview({
   useEffect(() => { if (darkProp !== undefined) setDark(darkProp); }, [darkProp]);
   useEffect(() => { if (genderProp !== undefined) setGender(genderProp); }, [genderProp]);
   useEffect(() => { if (langProp !== undefined) setLang(langProp); }, [langProp]);
+  useEffect(() => { if (unitSystemProp !== undefined) setUnitSystem(unitSystemProp); }, [unitSystemProp]);
   const [profile, setProfile] = useState({
     name: "Marco Bianchi", nickname: "IronWolf",
     bio: "Panca e pazienza. Obiettivo: 100 kg per 5 entro l'estate.",
@@ -2720,13 +2821,14 @@ export default function ClientProfileViewPreview({
           // preciso. Non tocco quel mapping qui (rischio non necessario, fuori
           // scopo) — l'anamnesi usa la sua fonte di verità indipendente.
           showAnamnesis={isRealMode && isRealCoachingPlan(userPlan)}
+          unitSystem={unitSystem}
         />
       </main>
 
       {showManualCheck && (
         <WeeklyCheckModal
           accent={accent} accentText={accentText} gender={gender}
-          supabase={supabase} userId={userId}
+          supabase={supabase} userId={userId} unitSystem={unitSystem}
           onClose={() => setShowManualCheck(false)}
           onSubmit={() => { setShowManualCheck(false); reloadCheckins(); }}
         />
@@ -2741,6 +2843,7 @@ export default function ClientProfileViewPreview({
           open={settings} onClose={() => setSettings(false)}
           dark={dark} onToggleDark={() => setDark((v) => !v)}
           accent={accent} accentText={accentText} gender={gender} lang={lang} onChangeLang={setLang}
+          unitSystem={unitSystem} onChangeUnitSystem={setUnitSystem}
           currentPlan={plan} planRenewsOn="2026-09-01"
           accountEmail={owner ? OWNER_EMAIL : profile.email}
           supabase={supabase} userId={userId}

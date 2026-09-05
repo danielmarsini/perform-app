@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, Suspense, lazy } from "react";
 import { ArrowLeft, Lock } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { supabase, makeAuth, AuthScreen } from "./components/03_AuthView.jsx";
 import { AppShell, COACH_EMAIL, accentFor, SplashScreen } from "./components/04_AppShell.jsx";
@@ -15,7 +16,9 @@ import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, countUnreadChatMessages, hasUnseenTeamPost, updateUserLang } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, countUnreadChatMessages, hasUnseenTeamPost, updateUserLang, updateUnitSystem } from "./lib/coachingData.js";
+import { setI18nLanguage } from "./i18n/index.js";
+import { completeWhoopConnect, startWhoopConnect, syncWhoopData, disconnectWhoop } from "./lib/whoop.js";
 
 // Anteprima leggibile del messaggio appena inviato, per il push — mai il
 // body grezzo se manca (solo un allegato): un push senza testo sembrerebbe
@@ -34,10 +37,11 @@ function chatPushPreview(message) {
    intestazione fissa in alto, messaggi che scorrono, input in fondo — mai
    la pagina intera a scorrere. */
 function ChatScreen({ supabase, userId, accent, gender }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col h-full px-4 pt-4">
       <div className="mb-3 shrink-0">
-        <p className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>Chat privata col coach</p>
+        <p className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>{t("chat.header", "Chat privata col coach")}</p>
       </div>
       <div className="flex-1 min-h-0">
         <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} gender={gender}
@@ -312,6 +316,7 @@ export default function App() {
   }, []);
   const [gender, setGender] = useState("M");           // 'M' | 'F' — da profiles.gender
   const [lang, setLang] = useState("it");               // 'it' | 'en' | 'es' | 'fr'
+  const [unitSystem, setUnitSystem] = useState("metric"); // 'metric' | 'imperial' — da profiles.unit_system
   const [userPlan, setUserPlan] = useState("free");      // 'free' | 'performance_pack' | 'full_coaching'
   // BUG PRESO: su mobile (specie PWA), cambiare app per pochi secondi e
   // tornare indietro spesso fa sì che il sistema operativo scarichi dalla
@@ -394,7 +399,7 @@ export default function App() {
     const loadProfile = (attempt = 0) => {
       supabase
         .from("profiles")
-        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon, scheda_addon_chat_until, scheda_addon_program_until, lang")
+        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon, scheda_addon_chat_until, scheda_addon_program_until, lang, unit_system, whoop_connected, whoop_last_sync")
         .eq("id", session.user.id)
         .single()
         .then(({ data, error }) => {
@@ -425,6 +430,8 @@ export default function App() {
           setGender(data.gender === "female" ? "F" : "M");
           setUserPlan(data.plan === "full" ? "full_coaching" : data.plan || "free");
           setLang(data.lang || "it");
+          setI18nLanguage(data.lang || "it");
+          setUnitSystem(data.unit_system || "metric");
           setProfile(data);
           setProfileLoading(false);
         });
@@ -455,8 +462,70 @@ export default function App() {
   // login — prima restava solo in memoria e tornava sempre a 'it' al reload.
   const changeLang = (l) => {
     setLang(l);
+    setI18nLanguage(l);
     if (supabase && session?.user?.id) {
       updateUserLang(supabase, session.user.id, l).catch((err) => console.error("PERFORM: errore salvataggio lingua", err));
+    }
+  };
+
+  // Stesso pattern di changeLang: stato locale reattivo subito, persistito
+  // su profiles.unit_system (SCHEMA_v92) così sopravvive al prossimo login.
+  const changeUnitSystem = (u) => {
+    setUnitSystem(u);
+    if (supabase && session?.user?.id) {
+      updateUnitSystem(supabase, session.user.id, u).catch((err) => console.error("PERFORM: errore salvataggio unità di misura", err));
+    }
+  };
+
+  // Whoop (Digital Twin, HRV/RHR reali): dopo il consenso Whoop rimanda qui
+  // con ?code=...&state=... — code va scambiato UNA SOLA volta (è a uso
+  // singolo, un secondo tentativo fallirebbe comunque), quindi ripulisco
+  // l'URL subito indipendentemente dall'esito, prima di eventuali retry di
+  // React in StrictMode/dev che rieseguirebbero l'effetto con lo stesso code
+  // già consumato. Un reload dopo il primo sync fa ripartire l'app con lo
+  // storico daily_metrics fresco (la fetch in HomeDashboard gira solo al
+  // mount, mai un vero remount finché il tab resta aperto).
+  const [whoopStatus, setWhoopStatus] = useState(""); // "" | "connecting" | "error"
+  useEffect(() => {
+    if (!supabase || !session?.user?.id) return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+    if (!code || !state) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("code");
+    url.searchParams.delete("state");
+    window.history.replaceState({}, "", url);
+    setWhoopStatus("connecting");
+    completeWhoopConnect(supabase, code, state)
+      .then(() => syncWhoopData(supabase))
+      .then(() => window.location.reload())
+      .catch((err) => {
+        console.error("PERFORM: errore collegamento Whoop", err);
+        setWhoopStatus("error");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, session?.user?.id]);
+
+  const syncWhoopNow = async () => {
+    if (!supabase) return;
+    setWhoopStatus("connecting");
+    try {
+      await syncWhoopData(supabase);
+      window.location.reload();
+    } catch (err) {
+      console.error("PERFORM: errore sincronizzazione Whoop", err);
+      setWhoopStatus("error");
+    }
+  };
+
+  const disconnectWhoopNow = async () => {
+    if (!supabase) return;
+    try {
+      await disconnectWhoop(supabase);
+      setProfile((p) => (p ? { ...p, whoop_connected: false } : p));
+    } catch (err) {
+      console.error("PERFORM: errore scollegamento Whoop", err);
     }
   };
 
@@ -601,6 +670,7 @@ export default function App() {
               isOwner={isCoach}
               microAddon={!!profile?.micro_addon}
               schedaAddonChatUntil={profile?.scheda_addon_chat_until || null}
+              unitSystem={unitSystem}
               supabase={supabase}
               userId={session.user.id}
               onUpgrade={openUpgradeSettings}
@@ -644,6 +714,7 @@ export default function App() {
               dark={dark}
               lang={lang}
               onChangeLang={changeLang}
+              unitSystem={unitSystem}
               userPlan={userPlan}
               onOpenSettings={() => { setSettingsInitialTab(undefined); setSettingsOpen(true); }}
               ownerEmail={COACH_EMAIL}
@@ -697,6 +768,14 @@ export default function App() {
           gender={gender}
           lang={lang}
           onChangeLang={changeLang}
+          unitSystem={unitSystem}
+          onChangeUnitSystem={changeUnitSystem}
+          whoopConnected={profile?.whoop_connected || false}
+          whoopLastSync={profile?.whoop_last_sync || null}
+          whoopStatus={whoopStatus}
+          onConnectWhoop={startWhoopConnect}
+          onSyncWhoop={syncWhoopNow}
+          onDisconnectWhoop={disconnectWhoopNow}
           currentPlan={stripePlanId}
           planRenewsOn="2026-09-01"
           accountEmail={session.user.email || ""}

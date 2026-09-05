@@ -4200,6 +4200,13 @@ export async function updateUserLang(supabase, userId, lang) {
   if (error) throw error;
 }
 
+// profiles.unit_system (SCHEMA_v92): 'metric' | 'imperial' — persiste la
+// scelta dual-unit fatta in Impostazioni → Aspetto, stesso pattern di lang.
+export async function updateUnitSystem(supabase, userId, unitSystem) {
+  const { error } = await supabase.from("profiles").update({ unit_system: unitSystem }).eq("id", userId);
+  if (error) throw error;
+}
+
 // Restituisce { eyebrow, title, body, body_extended } tradotti, o rilancia
 // se la Edge Function fallisce — il chiamante decide se tenere l'originale
 // italiano nel frattempo (mai bloccare la lettura in attesa della traduzione).

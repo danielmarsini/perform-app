@@ -1,0 +1,27 @@
+{
+  "nav": {
+    "home": "Home",
+    "news": "News & Tips",
+    "chat": "Chat",
+    "ranking": "Leaderboard",
+    "profile": "Profile",
+    "coach": "Coach Panel"
+  },
+  "chat": {
+    "header": "Private chat with your coach"
+  },
+  "ranking": {
+    "titleGlobal": "Global Leaderboard",
+    "titleCrew": "My Crew",
+    "subtitleCrew": "group streak, 3-6 people",
+    "subtitleGlobal": "top athletes of {{month}}",
+    "tabClassifica": "Leaderboard",
+    "tabCrew": "My Crew"
+  },
+  "sections": {
+    "training": "Training",
+    "nutrition": "Nutrition",
+    "recovery": "Recovery",
+    "supplements": "Supplements"
+  }
+}

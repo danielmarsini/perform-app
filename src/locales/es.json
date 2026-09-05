@@ -1,0 +1,27 @@
+{
+  "nav": {
+    "home": "Inicio",
+    "news": "Noticias y Consejos",
+    "chat": "Chat",
+    "ranking": "Clasificación",
+    "profile": "Perfil",
+    "coach": "Panel Coach"
+  },
+  "chat": {
+    "header": "Chat privado con tu coach"
+  },
+  "ranking": {
+    "titleGlobal": "Clasificación Global",
+    "titleCrew": "Mi Crew",
+    "subtitleCrew": "racha de grupo, 3-6 personas",
+    "subtitleGlobal": "mejores atletas de {{month}}",
+    "tabClassifica": "Clasificación",
+    "tabCrew": "Mi Crew"
+  },
+  "sections": {
+    "training": "Entrenamiento",
+    "nutrition": "Alimentación",
+    "recovery": "Recuperación",
+    "supplements": "Suplementación"
+  }
+}

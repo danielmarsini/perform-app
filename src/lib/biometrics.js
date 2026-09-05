@@ -212,3 +212,102 @@ export function computeEnergyExpenditure({ weightKg, heightCm, age, gender, step
 
   return { bmr, activeKcal, total, complete: missing.length === 0, missing };
 }
+
+/* ----------------------------------------------------------------------
+   4. DIGITAL TWIN — motore di predizione del sovraccarico (overreaching)
+   ---------------------------------------------------------------------- */
+
+/* Confronta gli ultimi giorni (RECENT_WINDOW) con un basale personale
+   calcolato sui giorni precedenti (BASELINE_MIN_DAYS), sugli stessi 3
+   marcatori usati dalla letteratura di monitoraggio del carico per
+   individuare il sovraccarico non funzionale prima che diventi infortunio/
+   malattia/calo di rendimento:
+
+   - HRV: un calo sostenuto (≥3 giorni) di oltre il 10% sotto il proprio
+     basale a rolling window è il segnale più citato di soppressione
+     parasimpatica da accumulo di fatica (Plews et al. 2013, "Heart rate
+     variability and training intensity distribution in elite rowers";
+     Buchheit M. 2014, "Monitoring training status with HR measures:
+     do all roads lead to Rome?", Front Physiol).
+   - RHR: un rialzo sostenuto di almeno 5 bpm sopra il basale è un
+     marcatore precoce classico di overreaching (Bourdon PC et al. 2017,
+     consensus statement IJSPP "Monitoring Athlete Training Loads").
+   - Sonno: una media recente sotto le 6h (debito di sonno cronico) altera
+     il recupero neuromuscolare e ormonale (letteratura consolidata su
+     restrizione di sonno e prestazione/recupero sportivo).
+
+   Ogni marcatore entra SOLO se i dati esistono davvero per abbastanza
+   giorni (mai un basale calcolato su 1-2 punti) — con dati insufficienti
+   la funzione ritorna null, mai un alert inventato. */
+const RECENT_WINDOW = 3;
+const BASELINE_MIN_DAYS = 7;
+const HRV_DROP_PCT = 0.10;
+const RHR_RISE_BPM = 5;
+const SLEEP_DEBT_HOURS = 6;
+
+function meanOf(values) {
+  const valid = values.filter((v) => v != null && v > 0);
+  return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
+}
+
+// days: array ordinato dal più vecchio al più recente, ciascuno
+// { sleepHours, hrv, rhr } — null/assente dove il dato non è mai stato
+// registrato. Servono almeno RECENT_WINDOW + BASELINE_MIN_DAYS giorni
+// totali perché il confronto basale-vs-recente sia statisticamente
+// sensato, non un rumore di 2-3 punti.
+export function computeOverreachAlert(days) {
+  if (!Array.isArray(days) || days.length < RECENT_WINDOW + BASELINE_MIN_DAYS) return null;
+
+  const recent = days.slice(-RECENT_WINDOW);
+  const baseline = days.slice(-(RECENT_WINDOW + BASELINE_MIN_DAYS), -RECENT_WINDOW);
+
+  const flags = [];
+
+  const hrvBaseline = meanOf(baseline.map((d) => d.hrv));
+  const hrvRecent = meanOf(recent.map((d) => d.hrv));
+  if (hrvBaseline != null && hrvRecent != null) {
+    const dropPct = (hrvBaseline - hrvRecent) / hrvBaseline;
+    if (dropPct >= HRV_DROP_PCT) {
+      flags.push({
+        key: "hrv", severity: dropPct >= HRV_DROP_PCT * 2 ? "high" : "watch",
+        message: `HRV in calo del ${Math.round(dropPct * 100)}% rispetto al tuo basale — segnale di sistema nervoso sotto stress da accumulo di fatica.`,
+      });
+    }
+  }
+
+  const rhrBaseline = meanOf(baseline.map((d) => d.rhr));
+  const rhrRecent = meanOf(recent.map((d) => d.rhr));
+  if (rhrBaseline != null && rhrRecent != null) {
+    const riseBpm = rhrRecent - rhrBaseline;
+    if (riseBpm >= RHR_RISE_BPM) {
+      flags.push({
+        key: "rhr", severity: riseBpm >= RHR_RISE_BPM * 2 ? "high" : "watch",
+        message: `Frequenza cardiaca a riposo di +${Math.round(riseBpm)} bpm sopra il tuo basale — il corpo non si sta riprendendo del tutto tra una sessione e l'altra.`,
+      });
+    }
+  }
+
+  const sleepRecent = meanOf(recent.map((d) => d.sleepHours));
+  if (sleepRecent != null && sleepRecent < SLEEP_DEBT_HOURS) {
+    flags.push({
+      key: "sleep", severity: sleepRecent < SLEEP_DEBT_HOURS - 1.5 ? "high" : "watch",
+      message: `Solo ${sleepRecent.toFixed(1)}h di sonno medio negli ultimi ${RECENT_WINDOW} giorni — il recupero neuromuscolare ne risente prima ancora che tu lo senta in palestra.`,
+    });
+  }
+
+  if (flags.length === 0) return { level: "none", flags: [], suggestion: null, volumeReductionPct: null };
+
+  const level = flags.some((f) => f.severity === "high") ? "high" : "watch";
+  // Suggerimento azionabile, non solo un allarme: stessa logica di
+  // autoregolazione del volume già standard nella periodizzazione
+  // evidence-based (Helms ER et al., "The Muscle and Strength Pyramid").
+  // volumeReductionPct: stessa percentuale del testo, ma come numero — così
+  // chi mostra l'alert (es. VolumeMatrixCard) può calcolare un target di
+  // serie concreto invece di far ricalcolare la percentuale dal testo.
+  const volumeReductionPct = level === "high" ? { min: 30, max: 40 } : { min: 10, max: 20 };
+  const suggestion = level === "high"
+    ? "Riduci il volume di allenamento del 30-40% questa settimana (meno serie per gruppo muscolare, stesso peso) o inserisci un giorno di riposo extra — più di un marcatore indica un sovraccarico reale, non solo stanchezza normale."
+    : "Considera di ridurre leggermente il volume (10-20% in meno di serie) o l'intensità nelle prossime sessioni finché i valori non tornano al tuo basale.";
+
+  return { level, flags, suggestion, volumeReductionPct };
+}
