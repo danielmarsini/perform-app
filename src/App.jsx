@@ -15,7 +15,8 @@ import { subscribeToPush } from "./lib/pushNotifications.js";
 import AddToHomeScreenBanner from "./components/AddToHomeScreenBanner.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import ChatThread from "./components/ChatThread.jsx";
-import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, countUnreadChatMessages, hasUnseenTeamPost, updateUserLang } from "./lib/coachingData.js";
+import { touchLastActivity, fetchCoachChatInbox, deleteMyAccount, isRealCoachingPlan, notifyClientPlanChange, notifyCoachNewMessage, countUnreadChatMessages, hasUnseenTeamPost, updateUserLang, updateUnitSystem } from "./lib/coachingData.js";
+import { setI18nLanguage } from "./i18n/index.js";
 
 // Anteprima leggibile del messaggio appena inviato, per il push — mai il
 // body grezzo se manca (solo un allegato): un push senza testo sembrerebbe
@@ -312,6 +313,7 @@ export default function App() {
   }, []);
   const [gender, setGender] = useState("M");           // 'M' | 'F' — da profiles.gender
   const [lang, setLang] = useState("it");               // 'it' | 'en' | 'es' | 'fr'
+  const [unitSystem, setUnitSystem] = useState("metric"); // 'metric' | 'imperial' — da profiles.unit_system
   const [userPlan, setUserPlan] = useState("free");      // 'free' | 'performance_pack' | 'full_coaching'
   // BUG PRESO: su mobile (specie PWA), cambiare app per pochi secondi e
   // tornare indietro spesso fa sì che il sistema operativo scarichi dalla
@@ -394,7 +396,7 @@ export default function App() {
     const loadProfile = (attempt = 0) => {
       supabase
         .from("profiles")
-        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon, scheda_addon_chat_until, scheda_addon_program_until, lang")
+        .select("gender, plan, onboarding_completed, nickname, full_name, micro_addon, scheda_addon_chat_until, scheda_addon_program_until, lang, unit_system")
         .eq("id", session.user.id)
         .single()
         .then(({ data, error }) => {
@@ -425,6 +427,8 @@ export default function App() {
           setGender(data.gender === "female" ? "F" : "M");
           setUserPlan(data.plan === "full" ? "full_coaching" : data.plan || "free");
           setLang(data.lang || "it");
+          setI18nLanguage(data.lang || "it");
+          setUnitSystem(data.unit_system || "metric");
           setProfile(data);
           setProfileLoading(false);
         });
@@ -455,8 +459,18 @@ export default function App() {
   // login — prima restava solo in memoria e tornava sempre a 'it' al reload.
   const changeLang = (l) => {
     setLang(l);
+    setI18nLanguage(l);
     if (supabase && session?.user?.id) {
       updateUserLang(supabase, session.user.id, l).catch((err) => console.error("PERFORM: errore salvataggio lingua", err));
+    }
+  };
+
+  // Stesso pattern di changeLang: stato locale reattivo subito, persistito
+  // su profiles.unit_system (SCHEMA_v92) così sopravvive al prossimo login.
+  const changeUnitSystem = (u) => {
+    setUnitSystem(u);
+    if (supabase && session?.user?.id) {
+      updateUnitSystem(supabase, session.user.id, u).catch((err) => console.error("PERFORM: errore salvataggio unità di misura", err));
     }
   };
 
@@ -601,6 +615,7 @@ export default function App() {
               isOwner={isCoach}
               microAddon={!!profile?.micro_addon}
               schedaAddonChatUntil={profile?.scheda_addon_chat_until || null}
+              unitSystem={unitSystem}
               supabase={supabase}
               userId={session.user.id}
               onUpgrade={openUpgradeSettings}
@@ -697,6 +712,8 @@ export default function App() {
           gender={gender}
           lang={lang}
           onChangeLang={changeLang}
+          unitSystem={unitSystem}
+          onChangeUnitSystem={changeUnitSystem}
           currentPlan={stripePlanId}
           planRenewsOn="2026-09-01"
           accountEmail={session.user.email || ""}

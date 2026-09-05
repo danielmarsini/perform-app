@@ -1,0 +1,10 @@
+{
+  "nav": {
+    "home": "Home",
+    "news": "News & Tips",
+    "chat": "Chat",
+    "ranking": "Classifica",
+    "profile": "Profilo",
+    "coach": "Coach Panel"
+  }
+}

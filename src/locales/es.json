@@ -1,0 +1,10 @@
+{
+  "nav": {
+    "home": "Inicio",
+    "news": "Noticias y Consejos",
+    "chat": "Chat",
+    "ranking": "Clasificación",
+    "profile": "Perfil",
+    "coach": "Panel Coach"
+  }
+}

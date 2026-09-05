@@ -73,6 +73,9 @@ export const translations = {
     bioPlaceholder: "Due righe su di te: sport, obiettivo, una frase.",
     nicknameHint: "Il nickname è ciò che vedono gli altri atleti: cambia subito in Home e nella classifica. Il nome vero non è mai pubblico.",
     langLabel: "Lingua",
+    unitLabel: "Unità di misura",
+    unitMetric: "Metrico (kg, cm)",
+    unitImperial: "Imperiale (lbs, in)",
     stats: { level: "Livello", xp: "XP", streak: "Streak", rank: "Classifica" },
     records: {
       title: "I miei traguardi",
@@ -165,6 +168,9 @@ export const translations = {
     bioPlaceholder: "Two lines about you: sport, goal, one sentence.",
     nicknameHint: "Your nickname is what other athletes see: it updates instantly on Home and the leaderboard. Your real name is never public.",
     langLabel: "Language",
+    unitLabel: "Units",
+    unitMetric: "Metric (kg, cm)",
+    unitImperial: "Imperial (lbs, in)",
     stats: { level: "Level", xp: "XP", streak: "Streak", rank: "Rank" },
     records: {
       title: "My Milestones",
@@ -251,6 +257,9 @@ export const translations = {
     bioPlaceholder: "Dos líneas sobre ti: deporte, objetivo, una frase.",
     nicknameHint: "Tu nickname es lo que ven los demás atletas: se actualiza al instante en Inicio y en la clasificación. Tu nombre real nunca es público.",
     langLabel: "Idioma",
+    unitLabel: "Unidades",
+    unitMetric: "Métrico (kg, cm)",
+    unitImperial: "Imperial (lbs, in)",
     stats: { level: "Nivel", xp: "XP", streak: "Racha", rank: "Ranking" },
     records: {
       title: "Mis Logros",
@@ -337,6 +346,9 @@ export const translations = {
     bioPlaceholder: "Deux lignes sur toi : sport, objectif, une phrase.",
     nicknameHint: "Ton pseudo est ce que voient les autres athlètes : il se met à jour instantanément sur l'accueil et le classement. Ton vrai nom n'est jamais public.",
     langLabel: "Langue",
+    unitLabel: "Unités",
+    unitMetric: "Métrique (kg, cm)",
+    unitImperial: "Impérial (lbs, in)",
     stats: { level: "Niveau", xp: "XP", streak: "Série", rank: "Classement" },
     records: {
       title: "Mes Records",
@@ -437,6 +449,34 @@ function LangSelector({ lang, onChange }) {
             <span style={{ fontSize: "1.55rem", lineHeight: 1, color: "var(--ink)" }}>{l.flag}</span>
             <span style={{ fontSize: "0.68rem", fontWeight: on ? 700 : 500,
                             color: on ? "var(--ink)" : "var(--ink-2)" }}>{l.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Selettore Metrico/Imperiale — stessa card grande di LangSelector qui sopra,
+   usato in Impostazioni → Aspetto subito sotto la lingua. */
+function UnitSelector({ unitSystem, onChange, labels }) {
+  const options = [
+    { code: "metric", label: labels.unitMetric },
+    { code: "imperial", label: labels.unitImperial },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2" role="group" aria-label={labels.unitLabel}>
+      {options.map((o) => {
+        const on = unitSystem === o.code;
+        return (
+          <button key={o.code} onClick={() => onChange(o.code)}
+            className="rounded-xl flex items-center justify-center py-3 transition-all duration-200 active:scale-95"
+            style={{
+              border: on ? "1.5px solid var(--ink)" : "1px solid var(--line)",
+              backgroundColor: on ? "var(--surface-2)" : "transparent",
+            }}
+            aria-pressed={on}>
+            <span style={{ fontSize: "0.78rem", fontWeight: on ? 700 : 500,
+                            color: on ? "var(--ink)" : "var(--ink-2)" }}>{o.label}</span>
           </button>
         );
       })}
@@ -1904,6 +1944,7 @@ function ReferralCodeCard({ supabase, userId }) {
 
 export function SettingsDrawer({
   open, onClose, dark, accent, accentText, gender, lang, onChangeLang,
+  unitSystem = "metric", onChangeUnitSystem,
   currentPlan, planRenewsOn, accountEmail,
   onOpenBillingPortal, onChangePlan, onDeleteAccount, onLogout,
   supabase, userId,   // anche per il toggle reale "Notifiche push"
@@ -2206,6 +2247,9 @@ export function SettingsDrawer({
 
               <p className="h2 mt-7 mb-3">{t.langLabel}</p>
               <LangSelector lang={lang} onChange={onChangeLang} />
+
+              <p className="h2 mt-7 mb-3">{t.unitLabel}</p>
+              <UnitSelector unitSystem={unitSystem} onChange={onChangeUnitSystem} labels={t} />
             </div>
           )}
 
@@ -2448,6 +2492,7 @@ export default function ClientProfileViewPreview({
   const [dark, setDark] = useState(darkProp ?? false);
   const [gender, setGender] = useState(genderProp ?? "M");
   const [lang, setLang] = useState(langProp ?? "it");
+  const [unitSystem, setUnitSystem] = useState("metric"); // solo preview isolata: nessun profilo reale da leggere qui
   const [owner, setOwner] = useState(false);
   const [settings, setSettings] = useState(false);
   const [plan, setPlan] = useState(
@@ -2741,6 +2786,7 @@ export default function ClientProfileViewPreview({
           open={settings} onClose={() => setSettings(false)}
           dark={dark} onToggleDark={() => setDark((v) => !v)}
           accent={accent} accentText={accentText} gender={gender} lang={lang} onChangeLang={setLang}
+          unitSystem={unitSystem} onChangeUnitSystem={setUnitSystem}
           currentPlan={plan} planRenewsOn="2026-09-01"
           accountEmail={owner ? OWNER_EMAIL : profile.email}
           supabase={supabase} userId={userId}

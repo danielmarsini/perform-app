@@ -31,6 +31,7 @@ import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchW
 import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate } from "../lib/biometrics.js";
 import { enqueueWrite, flushOfflineQueue, cancelQueuedWrite, useOfflineQueueCount } from "../lib/offlineQueue.js";
 import { readCache, writeCache } from "../lib/localCache.js";
+import { formatWeight, parseWeightToKg, weightUnitLabel } from "../lib/units.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
@@ -2379,6 +2380,7 @@ function HrvMatrixWidget({ hrv, rhr, accent }) {
 
 export function HomeDashboard({
   accent, accentSoft, accentText,
+  unitSystem = "metric", // 'metric' | 'imperial' — profiles.unit_system (SCHEMA_v92), da App.jsx
   profile,            // { name, nickname, gender, goalLabel }
   day,                // { weekday, weekNumber, isTraining, sessionLabel, dayNumber }
   workoutLoading,     // true SOLO al primo caricamento reale, prima che assignedWeek arrivi (mai dalla demo)
@@ -3599,6 +3601,7 @@ export function HomeDashboard({
                           onSetField={onSetField}
                           accent={accent}
                           accentText={accentText}
+                          unitSystem={unitSystem}
                           userPlan={userPlan}
                           schedaAddonChatActive={schedaAddonChatActive}
                           gender={profile.gender}
@@ -3639,7 +3642,7 @@ export function HomeDashboard({
                 <ErrorBoundary>
                   <FreeWorkoutBuilder accent={accent} accentText={accentText} accentSoft={accentSoft}
                                        day={day} onUpgrade={onUpgrade} onCoachSync={onCoachSync} userPlan={userPlan} gender={profile.gender}
-                                       schedaAddonChatActive={schedaAddonChatActive}
+                                       schedaAddonChatActive={schedaAddonChatActive} unitSystem={unitSystem}
                                        supabase={supabase} userId={userId} />
                 </ErrorBoundary>
                 {/* Disponibile a TUTTI i piani, non solo a fine giorno di
@@ -5557,7 +5560,7 @@ function WarmupStretchCard({ icon, eyebrow, title, text }) {
 // ancora previste; con un solo boundary globale QUALUNQUE crash su UN
 // esercizio smontava l'intera pagina Allenamento ("Qualcosa è andato
 // storto" a schermo intero). Ora un problema resta isolato alla sua card:
-function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId }) {
+function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPlan, schedaAddonChatActive, gender, onUpgrade, onOpenChat, onCoachSync, supabase, userId, unitSystem = "metric" }) {
   const [guideOpen, setGuideOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [timer, setTimer] = useState(null); // { total, remaining, endAt } — endAt: epoch ms di fine, fonte di verità
@@ -5767,7 +5770,7 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       <p className="mt-1 text-sm font-data" style={{ color: "var(--ink-2)" }}>
         Scorsa:{" "}
         <span style={{ color: "var(--ink)", fontWeight: 700 }}>
-          {lastSessionSets.length > 0 ? lastSessionSets.map((s) => `${s.kg}x${s.reps}`).join(" ") : "n/d"}
+          {lastSessionSets.length > 0 ? lastSessionSets.map((s) => `${formatWeight(s.kg, unitSystem) ?? s.kg}x${s.reps}`).join(" ") : "n/d"}
         </span>
       </p>
       <p className="mt-1.5 flex items-center gap-1.5 text-sm" style={{ color: "var(--ink)" }}>
@@ -5780,19 +5783,31 @@ function ExerciseCard({ ex, index, rows, onSetField, accent, accentText, userPla
       <div className="mt-4 space-y-2">
         <div className="grid grid-cols-12 gap-2">
           <span className="col-span-2 label">Serie</span>
-          {["Kg", "Reps"].map((h) => <span key={h} className="col-span-4 label text-center">{h}</span>)}
+          <span className="col-span-4 label text-center">{weightUnitLabel(unitSystem).toUpperCase()}</span>
+          <span className="col-span-4 label text-center">Reps</span>
           <span className="col-span-2 label text-center">✓</span>
         </div>
         {rows.map((row, i) => (
           <div key={i} className="grid grid-cols-12 gap-2 items-center">
             <span className="col-span-2 text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>S{i + 1}</span>
-            {["kg", "reps"].map((f) => (
-              <input key={f} type="number" min="0" value={row[f]}
-                     onChange={(e) => onSetField(ex, i, f, e.target.value)}
-                     placeholder={f === "reps" ? repsTargets[i] : undefined}
-                     className="col-span-4 input w-full px-2 py-2.5 text-center text-sm"
-                     aria-label={f === "reps" && repsTargets[i] ? `reps serie ${i + 1} di ${ex.name}, target ${repsTargets[i]}` : `${f} serie ${i + 1} di ${ex.name}`} />
-            ))}
+            {/* row.kg resta SEMPRE in kg (fonte di verità, così com'è salvato
+                su workout_sets/workout_logs) — qui si converte solo ciò che
+                si MOSTRA e ciò che si LEGGE dall'input, mai il dato salvato:
+                stessa logica di units.js, "" vuoto resta "" in entrambe le
+                direzioni (mai un 0 finto per un campo non ancora compilato,
+                vedi complete() qui sopra). */}
+            <input type="number" min="0" value={row.kg === "" ? "" : formatWeight(row.kg, unitSystem) ?? ""}
+                   onChange={(e) => {
+                     const v = e.target.value;
+                     onSetField(ex, i, "kg", v === "" ? "" : parseWeightToKg(v, unitSystem));
+                   }}
+                   className="col-span-4 input w-full px-2 py-2.5 text-center text-sm"
+                   aria-label={`${weightUnitLabel(unitSystem)} serie ${i + 1} di ${ex.name}`} />
+            <input type="number" min="0" value={row.reps}
+                   onChange={(e) => onSetField(ex, i, "reps", e.target.value)}
+                   placeholder={repsTargets[i]}
+                   className="col-span-4 input w-full px-2 py-2.5 text-center text-sm"
+                   aria-label={repsTargets[i] ? `reps serie ${i + 1} di ${ex.name}, target ${repsTargets[i]}` : `reps serie ${i + 1} di ${ex.name}`} />
             {/* Non più un pulsante: la serie si registra da sola appena kg e
                 reps sono compilati (vedi l'effetto sopra) — questo è solo
                 un riflesso passivo di quello stato, niente da toccare qui. */}
@@ -6188,7 +6203,7 @@ function TemplateBrowserModal({ supabase, onClose, onApply, accent }) {
   );
 }
 
-function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, schedaAddonChatActive, gender, supabase, userId }) {
+function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, onCoachSync, userPlan, schedaAddonChatActive, gender, supabase, userId, unitSystem = "metric" }) {
   const [innerTab, setInnerTab] = useState("oggi");
   const restored = useMemo(() => loadFreeRoutine(userId), [userId]);
   const [weeks, setWeeks] = useState(() => restored?.weeks ?? [emptyWeek()]);
@@ -6354,7 +6369,8 @@ function FreeWorkoutBuilder({ accent, accentText, accentSoft, day, onUpgrade, on
                 return (
                   <SafeExerciseCard key={exObj.id} ex={exObj} index={exIdx} rows={setsFor(exObj)}
                     onSetField={onSetField} accent={accent} accentText={accentText} onCoachSync={onCoachSync}
-                    userPlan={userPlan} schedaAddonChatActive={schedaAddonChatActive} gender={gender} onUpgrade={onUpgrade} />
+                    userPlan={userPlan} schedaAddonChatActive={schedaAddonChatActive} gender={gender} onUpgrade={onUpgrade}
+                    unitSystem={unitSystem} />
                 );
               })}
             </div>
@@ -11457,6 +11473,7 @@ export default function HomePreview({
   profileOverride,         // { name, nickname } dalla sessione reale, sostituisce i valori di preview
   microAddon: microAddonProp, // profiles.micro_addon reale — componente aggiuntivo micronutrienti per Scheda/Training
   schedaAddonChatUntil, // profiles.scheda_addon_chat_until (SCHEMA_v68) — chat col coach per chi ha comprato la Scheda Personalizzata come add-on sopra Free/Premium, non collegata a planProp
+  unitSystem = "metric", // 'metric' | 'imperial' — profiles.unit_system (SCHEMA_v92), da App.jsx
   supabase: supabaseProp,  // se passato insieme a userId, sostituisce scheda/target finti con quelli reali assegnati dal coach
   userId,
   onUpgrade: onUpgradeProp,   // apre le impostazioni/abbonamento (App.jsx) — no-op in preview isolata
@@ -12215,7 +12232,7 @@ export default function HomePreview({
 
       <main className={isControlled ? "" : "max-w-2xl mx-auto px-4 py-8"} style={isControlled ? undefined : { paddingBottom: 60 }}>
         <HomeDashboard
-          accent={accent} accentSoft={accentSoft} accentText={accentText}
+          accent={accent} accentSoft={accentSoft} accentText={accentText} unitSystem={unitSystem}
           profile={{ name: "Marco Bianchi", nickname: "IronWolf", ...profileOverride, gender, goalLabel: "86 kg mantenendo i carichi" }}
           day={day}
           workoutLoading={isRealMode && assignedWeek === null}
