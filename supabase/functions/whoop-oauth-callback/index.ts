@@ -23,6 +23,22 @@ const WHOOP_CLIENT_SECRET = Deno.env.get("WHOOP_CLIENT_SECRET")!;
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
 const WHOOP_PROFILE_URL = "https://api.prod.whoop.com/developer/v2/user/profile/basic";
 
+// Stesso allowlist di resolveBase() in create-checkout-session: redirectUri
+// arriva dal body della richiesta, quindi va validato prima di rimandarlo
+// a Whoop nello scambio token — mai fidarsi di un hostname arbitrario anche
+// se qui l'impatto reale è basso (Whoop stesso rifiuta un redirect_uri che
+// non combacia con quello registrato nel Developer Dashboard). Qui si
+// rifiuta esplicitamente (400), mai un default silenzioso: un redirect_uri
+// sbagliato romperebbe comunque lo scambio, meglio un errore chiaro subito.
+function isAllowedRedirectUri(uri) {
+  try {
+    const u = new URL(uri);
+    return u.hostname === "localhost" || u.hostname.endsWith(".vercel.app") || u.hostname === "performlab.it" || u.hostname === "www.performlab.it";
+  } catch {
+    return false;
+  }
+}
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -44,6 +60,9 @@ Deno.serve(async (req) => {
   const { code, redirectUri } = await req.json().catch(() => ({}));
   if (!code || !redirectUri) {
     return new Response(JSON.stringify({ error: "code e redirectUri sono richiesti" }), { status: 400, headers: CORS_HEADERS });
+  }
+  if (!isAllowedRedirectUri(redirectUri)) {
+    return new Response(JSON.stringify({ error: "redirectUri non valido" }), { status: 400, headers: CORS_HEADERS });
   }
 
   try {
