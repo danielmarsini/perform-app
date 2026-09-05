@@ -1946,6 +1946,8 @@ function ReferralCodeCard({ supabase, userId }) {
 export function SettingsDrawer({
   open, onClose, dark, accent, accentText, gender, lang, onChangeLang,
   unitSystem = "metric", onChangeUnitSystem,
+  whoopConnected = false, whoopLastSync = null, whoopStatus = "",
+  onConnectWhoop, onSyncWhoop, onDisconnectWhoop,
   currentPlan, planRenewsOn, accountEmail,
   onOpenBillingPortal, onChangePlan, onDeleteAccount, onLogout,
   supabase, userId,   // anche per il toggle reale "Notifiche push"
@@ -2251,6 +2253,57 @@ export function SettingsDrawer({
 
               <p className="h2 mt-7 mb-3">{t.unitLabel}</p>
               <UnitSelector unitSystem={unitSystem} onChange={onChangeUnitSystem} labels={t} />
+
+              {/* Digital Twin: HRV/RHR reali da Whoop invece del placeholder
+                  "58"/"62" — vedi audit in 05_HomeDashboard.jsx. Solo account
+                  reali: in anteprima isolata onConnectWhoop non arriva mai. */}
+              {isRealMode && onConnectWhoop && (
+                <>
+                  <p className="h2 mt-7 mb-3">Whoop</p>
+                  <div className="inner rounded-2xl p-4">
+                    {whoopConnected ? (
+                      <>
+                        <p className="text-sm mb-1" style={{ color: "var(--ink)", fontWeight: 600 }}>Whoop collegato</p>
+                        <p className="meta mb-3">
+                          {whoopLastSync
+                            ? `Ultima sincronizzazione: ${new Date(whoopLastSync).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`
+                            : "Non ancora sincronizzato."}
+                        </p>
+                        <div className="flex gap-2">
+                          <button onClick={onSyncWhoop} disabled={whoopStatus === "connecting"}
+                            className="rounded-full px-4 py-2.5 text-sm"
+                            style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700, opacity: whoopStatus === "connecting" ? 0.6 : 1 }}>
+                            {whoopStatus === "connecting" ? "Sincronizzo…" : "Sincronizza ora"}
+                          </button>
+                          <button onClick={onDisconnectWhoop}
+                            className="rounded-full px-4 py-2.5 text-sm"
+                            style={{ border: "1px solid var(--line)", color: "var(--ink-2)", fontWeight: 600 }}>
+                            Scollega
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm mb-1" style={{ color: "var(--ink)", fontWeight: 600 }}>Collega il tuo Whoop</p>
+                        <p className="meta mb-3">
+                          HRV e frequenza cardiaca a riposo reali, letti automaticamente ogni giorno —
+                          il Digital Twin li usa per avvisarti prima di un sovraccarico.
+                        </p>
+                        <button onClick={onConnectWhoop} disabled={whoopStatus === "connecting"}
+                          className="rounded-full px-4 py-2.5 text-sm"
+                          style={{ backgroundColor: "#111111", color: "#FFFFFF", fontWeight: 700, opacity: whoopStatus === "connecting" ? 0.6 : 1 }}>
+                          {whoopStatus === "connecting" ? "Collegamento…" : "Connetti Whoop"}
+                        </button>
+                      </>
+                    )}
+                    {whoopStatus === "error" && (
+                      <p className="text-xs mt-2" style={{ color: "#DC2626" }}>
+                        Qualcosa è andato storto con Whoop. Riprova tra poco.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
