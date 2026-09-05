@@ -17,6 +17,7 @@
    ========================================================================== */
 import React, { useState, useEffect } from "react";
 import { ChevronDown, ChevronUp, Camera, Loader2, Paperclip, X } from "lucide-react";
+import { formatWeight, parseWeightToKg, formatLength, parseLengthToCm, weightUnitLabel, lengthUnitLabel } from "../lib/units.js";
 
 /* --------------------------- DESIGN TOKEN REALI --------------------------- */
 /* Estratti verbatim dal blocco <style> del monolite (righe 8170-8350).      */
@@ -164,8 +165,8 @@ export const ANAM_QUESTIONS = [
   { area: "a1", n: 7,  k: "oreMovimento", q: "Quante ore al giorno passi in movimento?", t: "number", min: 0, max: 16, step: 0.5 },
 
   /* 2 · Dati fisici e composizione */
-  { area: "a2", n: 8,  k: "peso",         q: "Peso attuale (kg), rilevato a digiuno", t: "number", min: 30, max: 300, step: 0.1, req: true },
-  { area: "a2", n: 9,  k: "altezza",      q: "Altezza (cm)", t: "number", min: 120, max: 230, req: true },
+  { area: "a2", n: 8,  k: "peso",         q: "Peso attuale, rilevato a digiuno", t: "number", unit: "weight", min: 30, max: 300, step: 0.1, req: true },
+  { area: "a2", n: 9,  k: "altezza",      q: "Altezza", t: "number", unit: "length", min: 120, max: 230, req: true },
   { area: "a2", n: 10, k: "circonferenze",q: "Circonferenze note (vita, fianchi, braccio, coscia)", t: "area", ph: "es. Vita 78 · Fianchi 98 · Braccio 30" },
   { area: "a2", n: 11, k: "plico",        q: "Dati di plicometria o DEXA, se disponibili", t: "area", ph: "es. Plico addome 22 mm · DEXA 28% massa grassa (03/2026)" },
   { area: "a2", n: 12, k: "__foto",       q: "Foto del check iniziale: Frontale, Laterale, Posteriore", t: "photos" },
@@ -228,7 +229,7 @@ export const ANAM_QUESTIONS = [
 
   /* 9 · Obiettivi e aspettative */
   { area: "a9", n: 53, k: "obiettivoPrinc", q: "Qual è il tuo obiettivo principale?", t: "select", opts: ["dimagrimento", "ricomposizione corporea", "ipertrofia", "forza", "salute e benessere", "preparazione atletica"] },
-  { area: "a9", n: 54, k: "kgTarget",     q: "Quanti chili vuoi raggiungere entro 2 mesi? (peso target)", t: "number", min: 30, max: 300, step: 0.5, req: true },
+  { area: "a9", n: 54, k: "kgTarget",     q: "Quanto peso vuoi raggiungere entro 2 mesi? (peso target)", t: "number", unit: "weight", min: 30, max: 300, step: 0.5, req: true },
   { area: "a9", n: 55, k: "obiettivo",    q: "Obiettivo a lungo termine ed eventuale data-evento", t: "text", req: true, ph: "es. Raggiungere 60 kg entro 2 mesi, matrimonio a settembre" },
   { area: "a9", n: 56, k: "aspettative",  q: "Cosa ti aspetti da me come coach?", t: "area" },
 ];
@@ -403,7 +404,13 @@ export function isAnamAnswerFilled(q, value) {
 }
 
 /* ------------------------------- ANAMNESI (60) ------------------------------ */
-function AnamField({ q, value, onChange, onUploadFile, getFileUrl }) {
+// Peso/altezza/peso-target (q.unit "weight"/"length"): la RISPOSTA salvata in
+// answers[q.k] resta SEMPRE in kg/cm — la stessa "fonte di verità" usata
+// altrove nel dual-unit system (lib/units.js) e letta come tale da chi legge
+// l'anamnesi a valle (es. Number(answers?.peso) in 05_HomeDashboard.jsx per
+// initialWeightKg/heightCm). Solo qui, al bordo dell'input, si converte da e
+// verso l'unità scelta dall'utente — mai una seconda fonte di verità.
+function AnamField({ q, value, onChange, onUploadFile, getFileUrl, unitSystem = "metric" }) {
   const common = "t-input w-full text-sm rounded-md px-2.5 py-2";
   if (q.t === "area") return <textarea value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={q.ph} rows={2} className={common} />;
   if (q.t === "select") return (
@@ -414,13 +421,29 @@ function AnamField({ q, value, onChange, onUploadFile, getFileUrl }) {
   );
   if (q.t === "scale") return <input type="number" min={1} max={10} value={value ?? ""} onChange={(e) => onChange(Number(e.target.value))} className={common + " font-data"} placeholder="1-10" />;
   if (q.t === "date") return <input type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} className={common + " font-data"} />;
+  if (q.t === "number" && (q.unit === "weight" || q.unit === "length")) {
+    const toDisplay = q.unit === "weight" ? formatWeight : formatLength;
+    const toCanonical = q.unit === "weight" ? parseWeightToKg : parseLengthToCm;
+    const displayValue = value === "" || value == null ? "" : toDisplay(value, unitSystem) ?? "";
+    const displayMin = q.min != null ? toDisplay(q.min, unitSystem) : undefined;
+    const displayMax = q.max != null ? toDisplay(q.max, unitSystem) : undefined;
+    const displayStep = unitSystem === "imperial" ? (q.unit === "weight" ? 1 : 0.5) : (q.step || 1);
+    return (
+      <input type="number" min={displayMin} max={displayMax} step={displayStep} value={displayValue}
+        onChange={(e) => {
+          const raw = e.target.value;
+          onChange(raw === "" ? "" : toCanonical(raw, unitSystem) ?? "");
+        }}
+        className={common + " font-data"} />
+    );
+  }
   if (q.t === "number") return <input type="number" min={q.min} max={q.max} step={q.step || 1} value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} className={common + " font-data"} />;
   if (q.t === "photos") return <AnamPhotosField value={value} onChange={onChange} onUploadFile={onUploadFile} getFileUrl={getFileUrl} />;
   if (q.t === "files") return <AnamFilesField value={value} onChange={onChange} onUploadFile={onUploadFile} getFileUrl={getFileUrl} tag={q.k} />;
   return <input type="text" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={q.ph} className={common} />;
 }
 
-export function AnamAreaSection({ areaId, label, questions, answers, onChange, defaultOpen, onUploadFile, getFileUrl }) {
+export function AnamAreaSection({ areaId, label, questions, answers, onChange, defaultOpen, onUploadFile, getFileUrl, unitSystem = "metric" }) {
   const [open, setOpen] = useState(!!defaultOpen);
   const filled = questions.filter((q) => isAnamAnswerFilled(q, answers[q.k])).length;
   return (
@@ -436,8 +459,12 @@ export function AnamAreaSection({ areaId, label, questions, answers, onChange, d
         <div className="mt-4 space-y-3">
           {questions.map((q) => (
             <div key={q.k}>
-              <label className="c-label block mb-1">{q.n}. {q.q}{q.req && <span style={{ color: "#DC2626" }}> *</span>}</label>
-              <AnamField q={q} value={answers[q.k]} onChange={(v) => onChange(q.k, v)} onUploadFile={onUploadFile} getFileUrl={getFileUrl} />
+              <label className="c-label block mb-1">
+                {q.n}. {q.q}
+                {q.unit && ` (${q.unit === "weight" ? weightUnitLabel(unitSystem) : lengthUnitLabel(unitSystem)})`}
+                {q.req && <span style={{ color: "#DC2626" }}> *</span>}
+              </label>
+              <AnamField q={q} value={answers[q.k]} onChange={(v) => onChange(q.k, v)} onUploadFile={onUploadFile} getFileUrl={getFileUrl} unitSystem={unitSystem} />
             </div>
           ))}
         </div>

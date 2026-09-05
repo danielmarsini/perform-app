@@ -1204,7 +1204,7 @@ function Section({ id, icon: Icon, title, sub, openId, setOpenId, children, badg
 // coach (AnamnesisShared.jsx): stessa fonte di verità, mai una terza copia.
 // Autosalvataggio debounced (900ms), stesso identico pattern già in uso e
 // verificato lato coach (AnamnesisPanel, 09_CoachDashboard.jsx).
-function AnamnesisSection({ supabase, userId, dark }) {
+function AnamnesisSection({ supabase, userId, dark, unitSystem = "metric" }) {
   const [answers, setAnswers] = useState(null); // null = non ancora caricata
   const [loadError, setLoadError] = useState("");
   const [saveState, setSaveState] = useState(null); // null | 'saving' | 'saved' | 'error'
@@ -1259,7 +1259,7 @@ function AnamnesisSection({ supabase, userId, dark }) {
           <AnamAreaSection key={areaId} areaId={areaId} label={label}
             questions={ANAM_QUESTIONS.filter((q) => q.area === areaId)}
             answers={answers} onChange={setField}
-            onUploadFile={uploadFile} getFileUrl={getFileUrl} />
+            onUploadFile={uploadFile} getFileUrl={getFileUrl} unitSystem={unitSystem} />
         ))}
       </div>
       <p className="c-muted text-xs mt-3 px-1">
@@ -1287,6 +1287,7 @@ export function ClientProfileView({
   plan,                // id STRIPE_PLANS ("free"/"performance"/"scheda"/"training"/"full") — gate PauseSection
   dark,                // per la sezione Anamnesi (AnamnesisShared.jsx usa .coach-root/.coach-root.dark)
   showAnamnesis,       // true per chi ha un piano a coaching reale — vedi nota nel chiamante
+  unitSystem = "metric", // per i campi peso/altezza dell'anamnesi (AnamnesisShared.jsx)
 }) {
   const t = translations[lang] || translations.it;
   const [editing, setEditing] = useState(false);
@@ -1603,7 +1604,7 @@ export function ClientProfileView({
                  title="La tua anamnesi"
                  sub="Rivedi o aggiorna le informazioni date al tuo coach"
                  openId={openSection} setOpenId={setOpenSection}>
-          <AnamnesisSection supabase={supabase} userId={userId} dark={dark} />
+          <AnamnesisSection supabase={supabase} userId={userId} dark={dark} unitSystem={unitSystem} />
         </Section>
       )}
 
@@ -2767,6 +2768,7 @@ export default function ClientProfileViewPreview({
           // preciso. Non tocco quel mapping qui (rischio non necessario, fuori
           // scopo) — l'anamnesi usa la sua fonte di verità indipendente.
           showAnamnesis={isRealMode && isRealCoachingPlan(userPlan)}
+          unitSystem={unitSystem}
         />
       </main>
 
