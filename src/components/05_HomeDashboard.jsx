@@ -11651,6 +11651,19 @@ export default function HomePreview({
   // presenti con array di zeri) — la seconda condizione è quella che deve
   // arrivare a fullHistory, mai un momentaneo array vuoto scambiato per dati.
   const [realHistory, setRealHistory] = useState(null); // null finché non caricato (solo isRealMode)
+  // BUG PRESO (audit Digital Twin): "58"/"62" sono valori DEMO per la preview
+  // interattiva (vedi HrvMatrixWidget/i due input manuali più sotto, resi
+  // solo in !isRealMode) — ma essendo l'unico useState iniziale, in modalità
+  // reale erano SEMPRE truthy: `Number(rhr) || rhrFallback` in liveHistory
+  // più sotto non ricadeva MAI sull'ultimo valore storico reale come
+  // previsto, e computeOverreachAlert (Digital Twin) calcolava il confronto
+  // "ultimi 3 giorni" con un 58/62 costante e finto al posto del dato vero
+  // di oggi. In modalità reale parte vuoto: la stessa riga liveHistory
+  // ricade allora sul fallback reale, e l'effetto di lettura daily_metrics
+  // qui sotto lo sovrascrive con un valore vero appena disponibile (stesso
+  // pattern già in uso per sleep/steps).
+  const [rhr, setRhr] = useState(() => (isRealMode ? "" : "58"));
+  const [hrv, setHrv] = useState(() => (isRealMode ? "" : "62"));
   const [water, setWater] = useState(0);
   const [autoSteps, setAutoSteps] = useState(false);
   // isTrainingDay REALE si calcola più sotto da weekPlan (la scheda vera
@@ -11840,6 +11853,8 @@ export default function HomePreview({
             setSleep({ start: todayRow.sleep_start?.slice(0, 5) || "", end: todayRow.sleep_end?.slice(0, 5) || "", hours: Number(todayRow.sleep_hours) || 0 });
           }
           if (todayRow.steps != null) setSteps(String(todayRow.steps));
+          if (todayRow.hrv_ms != null) setHrv(String(todayRow.hrv_ms));
+          if (todayRow.rhr_bpm != null) setRhr(String(todayRow.rhr_bpm));
         }
         setRealHistory({
           sleep: pastDates.map((d) => Number(byDate.get(d)?.sleep_hours) || 0),
@@ -11924,8 +11939,6 @@ export default function HomePreview({
     return () => { cancelled = true; };
   }, [supabaseProp, userId]);
 
-  const [rhr, setRhr] = useState("58");
-  const [hrv, setHrv] = useState("62");
   const [stressLevel, setStressLevel] = useState("");
   const [caffeineMg, setCaffeineMg] = useState("");
   const [caffeineTime, setCaffeineTime] = useState("");
