@@ -7855,7 +7855,15 @@ async function searchOpenFoodFactsByName(query) {
     // di lookupBarcodeProduct — di default arrivava spesso in francese).
     // cc=it: dà priorità nel ranking ai prodotti diffusi/venduti in Italia,
     // senza escludere gli altri se non ce ne sono di locali.
-    `&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments&lc=it&cc=it`
+    // BUG SEGNALATO: search_simple fa solo un match testuale grezzo, senza
+    // ordinare per rilevanza — un prodotto di marca che CONTIENE il termine
+    // cercato tra gli ingredienti (es. "Yogurt ai frutti con kiwi") poteva
+    // comparire alla pari o prima del prodotto generico cercato davvero.
+    // sort_by=unique_scans_n ordina per popolarità reale (quante persone
+    // nel mondo hanno scansionato/registrato quel prodotto): un alimento
+    // comune cercato da tutti sale naturalmente in cima, un prodotto di
+    // nicchia con match casuale nel nome scende in fondo.
+    `&search_simple=1&action=process&json=1&page_size=8&sort_by=unique_scans_n&fields=product_name,brands,nutriments&lc=it&cc=it`
   );
   if (!res.ok) throw new Error(`Open Food Facts ${res.status}`);
   const data = await res.json();
@@ -8589,7 +8597,20 @@ function NutritionTabs({
                                 onMouseDown={() => pickFood(f)}
                                 className="search-strong w-full text-left px-4 py-2.5"
                                 style={{ borderBottom: "1px solid var(--line)" }}>
-                                <span className="block truncate">{f.name}</span>
+                                <span className="flex items-center gap-1.5">
+                                  <span className="block truncate">{f.name}</span>
+                                  {/* Alimenti grezzi (frutta/verdura/materie prime): stessi macro
+                                      a prescindere dalla marca — un badge distingue subito
+                                      l'originale generico da un prodotto confezionato con nome
+                                      simile, invece di farli sembrare risultati equivalenti. */}
+                                  {BASE_FOOD_NAMES.has(f.name) && (
+                                    <span className="shrink-0 rounded-full px-1.5 py-0.5"
+                                          style={{ fontSize: "0.55rem", fontWeight: 700, letterSpacing: "0.02em",
+                                                   backgroundColor: "rgba(16,185,129,0.12)", color: "#10B981" }}>
+                                      ✓ BASE
+                                    </span>
+                                  )}
+                                </span>
                                 <span className="font-data flex gap-2.5 mt-0.5" style={{ fontSize: "0.68rem", fontWeight: 600 }}>
                                   <span style={{ color: MACRO_COLORS.kcal.base }}>{f.kcal} kcal</span>
                                   <span style={{ color: MACRO_COLORS.p.base }}>P{f.p}</span>
@@ -11553,7 +11574,35 @@ const F = [
   { name: "Semi di Lino", kcal: 534, p: 18, c: 29, f: 42, na: 30, k: 813, fe: 5.73, ca: 255, mg: 392 },
   { name: "Burro", kcal: 717, p: 0.9, c: 0.1, f: 81, na: 15, k: 24, fe: 0.02, ca: 24, mg: 2 },
   { name: "Cocco Essiccato", kcal: 660, p: 7, c: 24, f: 65, na: 37, k: 543, fe: 3.3, ca: 26, mg: 90 },
+  // BUG SEGNALATO: cercando frutta/verdura di base (es. "kiwi", "mela") il
+  // catalogo locale non aveva nulla, e la ricerca cadeva su Open Food
+  // Facts — che non ordina per rilevanza/popolarità e scarta i prodotti
+  // senza kcal compilate: risultato, la prima ricerca spesso non trovava
+  // niente e i tentativi successivi mostravano solo prodotti di marca che
+  // CONTENGONO kiwi (yogurt, succhi...) invece del frutto stesso, perché
+  // sono quelli con i valori nutrizionali compilati. Aggiunti qui i
+  // prodotti "grezzi" più comuni ancora mancanti — frutta e verdura fresca,
+  // dove cambiare marca non cambia davvero i macro. Valori per 100g,
+  // riferimento USDA FoodData Central (stessa fonte già citata sopra).
+  { name: "Mela", kcal: 52, p: 0.3, c: 14, f: 0.2, na: 1, k: 107, fe: 0.12, ca: 6, mg: 5 },
+  { name: "Kiwi", kcal: 61, p: 1.1, c: 15, f: 0.5, na: 3, k: 312, fe: 0.31, ca: 34, mg: 17 },
+  { name: "Pera", kcal: 57, p: 0.4, c: 15, f: 0.1, na: 1, k: 116, fe: 0.18, ca: 9, mg: 7 },
+  { name: "Arancia", kcal: 47, p: 0.9, c: 12, f: 0.1, na: 0, k: 181, fe: 0.1, ca: 40, mg: 10 },
+  { name: "Fragole", kcal: 32, p: 0.7, c: 7.7, f: 0.3, na: 1, k: 153, fe: 0.41, ca: 16, mg: 13 },
+  { name: "Pomodoro", kcal: 18, p: 0.9, c: 3.9, f: 0.2, na: 5, k: 237, fe: 0.27, ca: 10, mg: 11 },
+  { name: "Carote", kcal: 41, p: 0.9, c: 10, f: 0.2, na: 69, k: 320, fe: 0.3, ca: 33, mg: 12 },
+  { name: "Zucchine", kcal: 17, p: 1.2, c: 3.1, f: 0.3, na: 8, k: 261, fe: 0.37, ca: 16, mg: 18 },
+  { name: "Insalata", kcal: 15, p: 1.4, c: 2.9, f: 0.2, na: 28, k: 194, fe: 0.86, ca: 36, mg: 13 },
+  { name: "Cipolla", kcal: 40, p: 1.1, c: 9.3, f: 0.1, na: 4, k: 146, fe: 0.21, ca: 23, mg: 10 },
+  { name: "Latte Intero", kcal: 61, p: 3.2, c: 4.8, f: 3.3, na: 40, k: 150, fe: 0.03, ca: 113, mg: 10 },
 ];
+
+// Alimenti "base" (frutta/verdura/materie prime grezze): stessi macro a
+// prescindere dalla marca, a differenza di un prodotto confezionato dove
+// la ricetta cambia da produttore a produttore — segnalati in dropdown con
+// un badge, così l'utente riconosce a colpo d'occhio "questo è l'originale
+// generico" invece di dover indovinare tra risultati apparentemente uguali.
+const BASE_FOOD_NAMES = new Set(F.map((f) => f.name));
 
 const GUIDE = MEAL_SLOTS.map((_, i) => ({
   items: [{ name: F[i % F.length].name, grams: 80 + i * 10, kcal: 200 + i * 20 }],
