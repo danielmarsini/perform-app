@@ -17,5 +17,11 @@
     "subtitleGlobal": "top athletes of {{month}}",
     "tabClassifica": "Leaderboard",
     "tabCrew": "My Crew"
+  },
+  "sections": {
+    "training": "Training",
+    "nutrition": "Nutrition",
+    "recovery": "Recovery",
+    "supplements": "Supplements"
   }
 }

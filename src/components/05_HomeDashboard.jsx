@@ -17,6 +17,7 @@
    ========================================================================== */
 
 import React, { useState, useMemo, useEffect, useRef, useCallback, useId } from "react";
+import { useTranslation } from "react-i18next";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import {
   Dumbbell, Salad, BedDouble, ChevronRight, ChevronLeft, ChevronDown, ChevronUp,
@@ -2441,6 +2442,7 @@ export function HomeDashboard({
   // sistema operativo scarica la pagina dalla memoria mentre l'app è in
   // background e il browser la ricarica al ritorno, si riparte dalla
   // stessa sotto-schermata invece che sempre dalla Home.
+  const { t } = useTranslation();
   const [screen, setScreen] = useState(() => localStorage.getItem("perform_last_screen") || "dash");   // dash | workout | nutrition | recovery
   useEffect(() => { localStorage.setItem("perform_last_screen", screen); }, [screen]);
   // Digestione (Alimentazione, ex check-in a emoji locale) + motivazione/
@@ -3157,7 +3159,7 @@ export function HomeDashboard({
 
   const complianceRings = [
     {
-      id: "train", label: "Allenamento", icon: Dumbbell, pct: trainPct, insight: trainInsight,
+      id: "train", label: t("sections.training", "Allenamento"), icon: Dumbbell, pct: trainPct, insight: trainInsight,
       details: isRealMode
         ? [
             { label: "Completamento sessioni recenti", value: realTrainCompliance?.completionPct != null ? `${realTrainCompliance.completionPct}%` : "…" },
@@ -3170,7 +3172,7 @@ export function HomeDashboard({
           ],
     },
     {
-      id: "nutri", label: "Alimentazione", icon: Salad, pct: nutriPct, insight: nutriInsight,
+      id: "nutri", label: t("sections.nutrition", "Alimentazione"), icon: Salad, pct: nutriPct, insight: nutriInsight,
       details: isRealMode
         ? [
             { label: "Kcal oggi", value: `${consumed.kcal} / ${target.kcal}` },
@@ -3183,7 +3185,7 @@ export function HomeDashboard({
           ],
     },
     {
-      id: "recovery", label: "Recupero", icon: BedDouble, pct: recoveryPct, insight: recoveryInsight,
+      id: "recovery", label: t("sections.recovery", "Recupero"), icon: BedDouble, pct: recoveryPct, insight: recoveryInsight,
       details: isRealMode
         ? [
             { label: "Sonno medio", value: realRecoveryCompliance?.sleepAvg != null ? `${realRecoveryCompliance.sleepAvg} h` : "…" },
@@ -3498,19 +3500,19 @@ export function HomeDashboard({
             e più vicine fra loro, come richiesto. */}
         <div className="grid grid-cols-1 gap-2.5">
           <div data-tour="card-workout">
-            <Window3D icon={Dumbbell} label="Allenamento" accent={accent} floatClass="icon-float-1"
+            <Window3D icon={Dumbbell} label={t("sections.training", "Allenamento")} accent={accent} floatClass="icon-float-1"
               sub={day.isTraining ? day.sessionLabel : "Giorno di riposo"}
               novelty={sectionNovelty.workout}
               onClick={() => setScreen("workout")} />
           </div>
           <div data-tour="card-nutrition">
-            <Window3D icon={Salad} label="Alimentazione" accent={accent} floatClass="icon-float-2"
+            <Window3D icon={Salad} label={t("sections.nutrition", "Alimentazione")} accent={accent} floatClass="icon-float-2"
               sub={`${remaining.kcal} kcal rimanenti`}
               novelty={sectionNovelty.nutrition}
               onClick={() => setScreen("nutrition")} />
           </div>
           <div data-tour="card-supplements">
-            <Window3D icon={Pill} label="Integrazione" accent={accent} floatClass="icon-float-2"
+            <Window3D icon={Pill} label={t("sections.supplements", "Integrazione")} accent={accent} floatClass="icon-float-2"
               sub={access.pro ? "Piano del coach attivo" : "Diario libero + wiki scientifica"}
               novelty={sectionNovelty.supplements}
               onClick={() => setScreen("supplements")} />
@@ -3549,7 +3551,7 @@ export function HomeDashboard({
     return (
       <div className="spring-in">
         <XpToastBanner toast={xpToast} />
-        {back("Allenamento")}
+        {back(t("sections.training", "Allenamento"))}
 
         <div className="grid grid-cols-3 gap-1.5 mb-5">
           {[["pesi", "Allenamento Pesi"], ["cardio", "Allenamento Cardio"], ["wiki", "Wiki Allenamento"]].map(([id, lab]) => {
@@ -3748,7 +3750,7 @@ export function HomeDashboard({
     return (
       <div className="spring-in">
         <XpToastBanner toast={xpToast} />
-        {back("Alimentazione")}
+        {back(t("sections.nutrition", "Alimentazione"))}
 
         {/* Striscia calendario: come su Allenamento, per tornare su un giorno
             passato e aggiungere un pasto dimenticato. Oro/Rosa (Giorno ON,
@@ -3892,7 +3894,7 @@ export function HomeDashboard({
     return (
       <div className="spring-in">
         <XpToastBanner toast={xpToast} />
-        {back("Integrazione")}
+        {back(t("sections.supplements", "Integrazione"))}
         <SupplementsPanel accent={accent} accentSoft={accentSoft} accentText={accentText}
                            isPro={userPlan === "full_coaching"} isPaid={!!access.paid} isTrainingDay={isTrainingDay}
                            onUpgrade={onUpgrade} onCoachSync={onCoachSync} onXpEarned={fireXpToast}

@@ -17,5 +17,11 @@
     "subtitleGlobal": "migliori atleti di {{month}}",
     "tabClassifica": "Classifica",
     "tabCrew": "La mia Crew"
+  },
+  "sections": {
+    "training": "Allenamento",
+    "nutrition": "Alimentazione",
+    "recovery": "Recupero",
+    "supplements": "Integrazione"
   }
 }
