@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeReadinessScore, computeBMR, estimateStepEnergyKcal, computeEnergyExpenditure,
-  computeAgeFromBirthDate, chart3dPct, grade, THRESH,
+  computeAgeFromBirthDate, chart3dPct, grade, THRESH, computeOverreachAlert,
 } from "./biometrics.js";
 
 describe("computeReadinessScore", () => {
@@ -203,5 +203,82 @@ describe("computeEnergyExpenditure", () => {
     expect(r.total).toBeNull();
     expect(r.complete).toBe(false);
     expect(r.missing.length).toBeGreaterThan(0);
+  });
+});
+
+describe("computeOverreachAlert", () => {
+  const stableDay = { sleepHours: 7.5, hrv: 60, rhr: 55 };
+  const stableDays = (n) => Array.from({ length: n }, () => ({ ...stableDay }));
+
+  it("torna null con meno di RECENT_WINDOW+BASELINE_MIN_DAYS giorni (dati insufficienti)", () => {
+    expect(computeOverreachAlert(stableDays(5))).toBeNull();
+    expect(computeOverreachAlert([])).toBeNull();
+    expect(computeOverreachAlert(null)).toBeNull();
+  });
+
+  it("nessun cambiamento rispetto al basale: level 'none', nessun flag", () => {
+    const r = computeOverreachAlert(stableDays(10));
+    expect(r.level).toBe("none");
+    expect(r.flags).toHaveLength(0);
+    expect(r.suggestion).toBeNull();
+  });
+
+  it("calo HRV sostenuto >10% negli ultimi giorni: flag hrv, level almeno 'watch'", () => {
+    const days = [
+      ...stableDays(7),
+      { sleepHours: 7.5, hrv: 48, rhr: 55 }, // -20% rispetto al basale (60)
+      { sleepHours: 7.5, hrv: 48, rhr: 55 },
+      { sleepHours: 7.5, hrv: 48, rhr: 55 },
+    ];
+    const r = computeOverreachAlert(days);
+    expect(r.level).not.toBe("none");
+    expect(r.flags.some((f) => f.key === "hrv")).toBe(true);
+    expect(typeof r.suggestion).toBe("string");
+  });
+
+  it("RHR sopra basale di oltre 5bpm sostenuto: flag rhr", () => {
+    const days = [
+      ...stableDays(7),
+      { sleepHours: 7.5, hrv: 60, rhr: 62 },
+      { sleepHours: 7.5, hrv: 60, rhr: 62 },
+      { sleepHours: 7.5, hrv: 60, rhr: 62 },
+    ];
+    const r = computeOverreachAlert(days);
+    expect(r.flags.some((f) => f.key === "rhr")).toBe(true);
+  });
+
+  it("debito di sonno cronico (<6h medie recenti): flag sleep", () => {
+    const days = [
+      ...stableDays(7),
+      { sleepHours: 5, hrv: 60, rhr: 55 },
+      { sleepHours: 5, hrv: 60, rhr: 55 },
+      { sleepHours: 5, hrv: 60, rhr: 55 },
+    ];
+    const r = computeOverreachAlert(days);
+    expect(r.flags.some((f) => f.key === "sleep")).toBe(true);
+  });
+
+  it("più marcatori insieme (peggio): level 'high', suggerimento più aggressivo", () => {
+    const days = [
+      ...stableDays(7),
+      { sleepHours: 4.5, hrv: 40, rhr: 66 }, // hrv -33%, rhr +11, sonno molto basso
+      { sleepHours: 4.5, hrv: 40, rhr: 66 },
+      { sleepHours: 4.5, hrv: 40, rhr: 66 },
+    ];
+    const r = computeOverreachAlert(days);
+    expect(r.level).toBe("high");
+    expect(r.flags.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("dati mancanti (null) su alcuni giorni non fanno crashare, semplicemente non contano per la media", () => {
+    const days = [
+      ...Array.from({ length: 7 }, () => ({ sleepHours: null, hrv: null, rhr: null })),
+      { sleepHours: 7.5, hrv: 60, rhr: 55 },
+      { sleepHours: 7.5, hrv: 60, rhr: 55 },
+      { sleepHours: 7.5, hrv: 60, rhr: 55 },
+    ];
+    // basale interamente nullo -> nessun confronto possibile per hrv/rhr/sonno
+    const r = computeOverreachAlert(days);
+    expect(r.level).toBe("none");
   });
 });

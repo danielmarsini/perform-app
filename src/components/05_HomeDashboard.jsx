@@ -28,7 +28,7 @@ import {
 import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchWorkoutDayNotes, fetchWeekExerciseHistories, logWorkoutSet, fetchPrescribedSupplements, fetchSupplementIntakeToday, setSupplementTaken, computeTrainingCompliance, computeRecoveryCompliance, computeNutritionCompliance, fetchDailyMetricsRange, upsertDailyMetrics, fetchTodayWellness, fetchStreakFreezeStatus, useStreakFreezeToday, fetchNutritionLogsForDate, addNutritionLogItem, removeNutritionLogItem, updateNutritionLogItem, computeRealXpAndStreak, xpToLevelInfo, LEVEL_TIERS, LEVELS_PER_TIER, levelMinXp, LEVEL_REWARDS, saveCheckin,
   fetchSelfSupplements, addSelfSupplement, removeSelfSupplement, removeSelfSupplementMoment, updateSelfSupplementReminder,
   fetchSelfSupplementIntakeToday, setSelfSupplementTaken, fetchCheckins, uploadCheckinPhoto, fetchWorkoutDoneDates, fetchNutritionLoggedDates, requestPause, fetchActivePause, fetchCardioLogs, addCardioLog, deleteCardioLog, computeVolume, computeVolumeContributions, weekExerciseHistoryKey, MUSCLES as VOLUME_MUSCLES, DEFAULT_EXERCISE_LIB, fetchExerciseLibrary, learnExercise, DB_MUSCLE_TO_CHART, parseRepsTarget, fetchCustomFoods, learnCustomFood, markGuideTourCompleted, fetchWorkoutTemplates, isRealCoachingPlan, fetchFoodUsageStats, fetchSectionNovelty, markSectionSeen, formatSetsReps, guessBodyFocusLabel, fetchAnamnesis } from "../lib/coachingData.js";
-import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate } from "../lib/biometrics.js";
+import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate, computeOverreachAlert } from "../lib/biometrics.js";
 import { enqueueWrite, flushOfflineQueue, cancelQueuedWrite, useOfflineQueueCount } from "../lib/offlineQueue.js";
 import { readCache, writeCache } from "../lib/localCache.js";
 import { formatWeight, parseWeightToKg, weightUnitLabel } from "../lib/units.js";
@@ -1171,7 +1171,7 @@ function ComplianceRings({ rings, onSelect }) {
    spiega perché il cerchio Recupero è quello che è (ci contribuisce
    direttamente, vedi blendRecoveryWithReadiness), quindi il suo dettaglio
    appartiene al popup del cerchio Recupero. */
-function CompliancePopup({ ring, onClose, readiness }) {
+function CompliancePopup({ ring, onClose, readiness, overreachAlert }) {
   const headerRef = useRef(null);
   useSwipeDownClose(headerRef, onClose);
   if (!ring) return null;
@@ -1214,6 +1214,25 @@ function CompliancePopup({ ring, onClose, readiness }) {
               </p>
               <p className="meta mt-1.5" style={{ fontSize: "0.62rem" }}>
                 Contribuisce al {"Recupero"} di oggi insieme alla media di sonno e passi degli ultimi 7 giorni.
+              </p>
+            </div>
+          )}
+          {/* Digital Twin: sovraccarico predittivo — visibile solo quando i
+              marcatori (HRV/RHR/sonno) mostrano davvero un segnale rispetto
+              al basale personale (vedi computeOverreachAlert), mai un
+              avviso "di cortesia" senza dati a supporto. */}
+          {ring.id === "recovery" && overreachAlert && overreachAlert.level !== "none" && (
+            <div className="rounded-2xl px-4 py-3.5 mb-4" style={{
+                   backgroundColor: overreachAlert.level === "high" ? "rgba(239,68,68,0.1)" : "rgba(240,160,32,0.12)",
+                   border: `1px solid ${overreachAlert.level === "high" ? "rgba(239,68,68,0.3)" : "rgba(240,160,32,0.35)"}` }}>
+              <p className="text-sm mb-1.5" style={{ fontWeight: 700, color: overreachAlert.level === "high" ? "#DC2626" : "#B45309" }}>
+                {overreachAlert.level === "high" ? "⚠️ Segnale di sovraccarico" : "Attenzione al recupero"}
+              </p>
+              {overreachAlert.flags.map((f) => (
+                <p key={f.key} className="meta mb-1" style={{ lineHeight: 1.4 }}>{f.message}</p>
+              ))}
+              <p className="text-sm mt-2" style={{ color: "var(--ink)", fontWeight: 600, lineHeight: 1.4 }}>
+                {overreachAlert.suggestion}
               </p>
             </div>
           )}
@@ -2964,6 +2983,21 @@ export function HomeDashboard({
     motivation, fatigue, recentSensations,
   });
 
+  // Motore di predizione del sovraccarico (Digital Twin): confronta gli
+  // ultimi giorni con il basale personale su HRV/RHR/sonno — vedi
+  // computeOverreachAlert in ../lib/biometrics.js. Usa liveHistory (stessa
+  // serie storica di sonno/passi/HRV/RHR già costruita sopra per i grafici
+  // Chart3D), quindi eredita la stessa onestà sui dati: in modalità reale,
+  // finché nessun dispositivo HRV/RHR è collegato, quei due marcatori
+  // restano 0 (mai finti) e semplicemente non concorrono all'alert — resta
+  // attivo solo il debito di sonno, l'unico segnale davvero misurato oggi.
+  const overreachAlert = useMemo(() => {
+    const days = liveHistory.sleep.map((s, i) => ({
+      sleepHours: s, hrv: liveHistory.hrv[i], rhr: liveHistory.rhr[i],
+    }));
+    return computeOverreachAlert(days);
+  }, [liveHistory]);
+
   // Bilancio energetico stimato di oggi (BMR + calorie attive dai passi):
   // vedi computeEnergyExpenditure in ../lib/biometrics.js. Peso: il più
   // recente registrato in un check, o quello dell'anamnesi iniziale finché
@@ -3389,7 +3423,7 @@ export function HomeDashboard({
           </div>
         )}
 
-        <CompliancePopup ring={complianceRings.find((r) => r.id === activeRingPopup)} onClose={() => setActiveRingPopup(null)} readiness={readiness} />
+        <CompliancePopup ring={complianceRings.find((r) => r.id === activeRingPopup)} onClose={() => setActiveRingPopup(null)} readiness={readiness} overreachAlert={overreachAlert} />
         {levelRoadmapOpen && (
           <LevelRoadmapModal currentXp={isRealMode ? (realXpStreak?.xpTotal ?? 0) : xp} onClose={() => setLevelRoadmapOpen(false)} />
         )}
