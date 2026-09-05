@@ -31,7 +31,7 @@ import { fetchBothNutritionTargets, fetchDietPlan, fetchAssignedWorkouts, fetchW
 import { THRESH, chart3dPct, CANDLE, grade, computeReadinessScore, computeEnergyExpenditure, computeAgeFromBirthDate, computeOverreachAlert } from "../lib/biometrics.js";
 import { enqueueWrite, flushOfflineQueue, cancelQueuedWrite, useOfflineQueueCount } from "../lib/offlineQueue.js";
 import { readCache, writeCache } from "../lib/localCache.js";
-import { formatWeight, parseWeightToKg, weightUnitLabel } from "../lib/units.js";
+import { formatWeight, parseWeightToKg, weightUnitLabel, parseLengthToCm, lengthUnitLabel } from "../lib/units.js";
 import { useDragReorder, moveItem } from "../lib/useDragReorder.js";
 import { useEdgeSwipeBack, useSwipeDownClose } from "../lib/useSwipeGesture.js";
 import { saveScrollPosition, getScrollPosition } from "../lib/scrollMemory.js";
@@ -1940,7 +1940,7 @@ function WorkoutFeedbackCard({ motivation, fatigue, onMotivationChange, onFatigu
    di compilazione rapida più 3 foto. Al termine simula il salvataggio dei
    parametri biometrici storici su Supabase (legati all'ID utente) e sblocca
    di nuovo la navigazione della Home. */
-export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose, onSkip }) {
+export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSubmit, supabase, userId, onClose, onSkip, unitSystem = "metric" }) {
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
   const [thigh, setThigh] = useState("");
@@ -1993,7 +1993,14 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
       // BUG PRESO: weight era sempre Number(weight) anche a campo vuoto —
       // Number("") è 0, quindi un check senza peso (ora possibile) salvava
       // un falso "0 kg" invece di lasciarlo assente.
-      weight: weight ? Number(weight) : null, waist: waist ? Number(waist) : null, thigh: thigh ? Number(thigh) : null, arm: arm ? Number(arm) : null,
+      // weight/waist/thigh/arm si salvano sempre in kg/cm (fonte di verità
+      // condivisa con tutto il resto dell'app — grafici, coach, storico):
+      // parseWeightToKg/parseLengthToCm convertono da qui SOLO se l'utente
+      // sta usando il sistema imperiale, altrimenti sono un passthrough.
+      weight: weight ? parseWeightToKg(weight, unitSystem) : null,
+      waist: waist ? parseLengthToCm(waist, unitSystem) : null,
+      thigh: thigh ? parseLengthToCm(thigh, unitSystem) : null,
+      arm: arm ? parseLengthToCm(arm, unitSystem) : null,
       pain: pain ? Number(pain) : null, stress: stress ? Number(stress) : null, digestion: digestion ? Number(digestion) : null,
       sleepQuality: sleepQuality ? Number(sleepQuality) : null,
       cyclePhase: cyclePhase || null,
@@ -2065,26 +2072,26 @@ export function WeeklyCheckModal({ accent, accentText, accentSoft, gender, onSub
 
           <div className={showFullSection ? "grid grid-cols-2 gap-3 mb-5" : "mb-5"}>
             <label className="block">
-              <span className="label block mb-1.5">Peso mattina (kg)</span>
+              <span className="label block mb-1.5">Peso mattina ({weightUnitLabel(unitSystem)})</span>
               <input type="text" inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value.replace(",", "."))}
-                     placeholder="es. 78.4" className="input w-full px-4 py-3 font-data" />
+                     placeholder={unitSystem === "imperial" ? "es. 173" : "es. 78.4"} className="input w-full px-4 py-3 font-data" />
             </label>
             {showFullSection && (
               <>
                 <label className="block">
-                  <span className="label block mb-1.5">Addome (cm)</span>
+                  <span className="label block mb-1.5">Addome ({lengthUnitLabel(unitSystem)})</span>
                   <input type="text" inputMode="decimal" value={waist} onChange={(e) => setWaist(e.target.value.replace(",", "."))}
-                         placeholder="es. 84" className="input w-full px-4 py-3 font-data" />
+                         placeholder={unitSystem === "imperial" ? "es. 33" : "es. 84"} className="input w-full px-4 py-3 font-data" />
                 </label>
                 <label className="block">
-                  <span className="label block mb-1.5">Coscia (cm)</span>
+                  <span className="label block mb-1.5">Coscia ({lengthUnitLabel(unitSystem)})</span>
                   <input type="text" inputMode="decimal" value={thigh} onChange={(e) => setThigh(e.target.value.replace(",", "."))}
-                         placeholder="es. 58" className="input w-full px-4 py-3 font-data" />
+                         placeholder={unitSystem === "imperial" ? "es. 23" : "es. 58"} className="input w-full px-4 py-3 font-data" />
                 </label>
                 <label className="block">
-                  <span className="label block mb-1.5">Braccio (cm)</span>
+                  <span className="label block mb-1.5">Braccio ({lengthUnitLabel(unitSystem)})</span>
                   <input type="text" inputMode="decimal" value={arm} onChange={(e) => setArm(e.target.value.replace(",", "."))}
-                         placeholder="es. 37" className="input w-full px-4 py-3 font-data" />
+                         placeholder={unitSystem === "imperial" ? "es. 14.5" : "es. 37"} className="input w-full px-4 py-3 font-data" />
                 </label>
               </>
             )}
@@ -3225,7 +3232,7 @@ export function HomeDashboard({
     return (
       <WeeklyCheckModal
         accent={accent} accentText={accentText} accentSoft={accentSoft} gender={profile.gender}
-        supabase={supabase} userId={userId}
+        supabase={supabase} userId={userId} unitSystem={unitSystem}
         onSkip={() => setShowWeeklyCheck(false)}
         onSubmit={(data) => {
           onCoachSync && onCoachSync({ type: "weekly-check", ...data });
@@ -3300,6 +3307,25 @@ export function HomeDashboard({
           <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--line)" }} data-tour="compliance">
             <ComplianceRings rings={complianceRings} onSelect={setActiveRingPopup} />
           </div>
+
+          {/* Digital Twin: segnale proattivo — non solo nel popup Recupero
+              (che richiede di toccare il cerchio per scoprirlo), ma visibile
+              subito appena si apre la Home, quando c'è davvero un segnale di
+              sovraccarico. Tap = stesso popup di dettaglio del cerchio
+              Recupero, nessuna logica duplicata. */}
+          {overreachAlert && overreachAlert.level !== "none" && (
+            <button onClick={() => setActiveRingPopup("recovery")}
+                    className="w-full text-left mt-3 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5"
+                    style={{
+                      backgroundColor: overreachAlert.level === "high" ? "rgba(239,68,68,0.1)" : "rgba(240,160,32,0.12)",
+                      border: `1px solid ${overreachAlert.level === "high" ? "rgba(239,68,68,0.3)" : "rgba(240,160,32,0.35)"}`,
+                    }}>
+              <span aria-hidden="true">{overreachAlert.level === "high" ? "⚠️" : "🟡"}</span>
+              <span className="text-sm flex-1" style={{ fontWeight: 600, color: overreachAlert.level === "high" ? "#DC2626" : "#B45309" }}>
+                {overreachAlert.level === "high" ? "Segnale di sovraccarico — tocca per i dettagli" : "Attenzione al recupero — tocca per i dettagli"}
+              </span>
+            </button>
+          )}
 
           {/* barra XP: pulita, niente più elenco "obiettivi di oggi" da
               espandere — il feedback su cosa fa guadagnare punti arriva

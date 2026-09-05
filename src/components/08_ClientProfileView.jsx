@@ -2482,6 +2482,7 @@ export default function ClientProfileViewPreview({
   dark: darkProp,
   lang: langProp,
   onChangeLang: onChangeLangProp,
+  unitSystem: unitSystemProp, // 'metric' | 'imperial' — da App.jsx, profiles.unit_system (SCHEMA_v92)
   userPlan,               // 'free' | 'performance_pack' | 'full_coaching' — da App.jsx
   onOpenSettings: onOpenSettingsProp,   // se passato, l'Impostazioni globali di App.jsx sostituisce il drawer locale
   profileOverride,        // { name, nickname, email, joined_at } dalla sessione reale
@@ -2492,7 +2493,7 @@ export default function ClientProfileViewPreview({
   const [dark, setDark] = useState(darkProp ?? false);
   const [gender, setGender] = useState(genderProp ?? "M");
   const [lang, setLang] = useState(langProp ?? "it");
-  const [unitSystem, setUnitSystem] = useState("metric"); // solo preview isolata: nessun profilo reale da leggere qui
+  const [unitSystem, setUnitSystem] = useState(unitSystemProp ?? "metric");
   const [owner, setOwner] = useState(false);
   const [settings, setSettings] = useState(false);
   const [plan, setPlan] = useState(
@@ -2501,6 +2502,7 @@ export default function ClientProfileViewPreview({
   useEffect(() => { if (darkProp !== undefined) setDark(darkProp); }, [darkProp]);
   useEffect(() => { if (genderProp !== undefined) setGender(genderProp); }, [genderProp]);
   useEffect(() => { if (langProp !== undefined) setLang(langProp); }, [langProp]);
+  useEffect(() => { if (unitSystemProp !== undefined) setUnitSystem(unitSystemProp); }, [unitSystemProp]);
   const [profile, setProfile] = useState({
     name: "Marco Bianchi", nickname: "IronWolf",
     bio: "Panca e pazienza. Obiettivo: 100 kg per 5 entro l'estate.",
@@ -2771,7 +2773,7 @@ export default function ClientProfileViewPreview({
       {showManualCheck && (
         <WeeklyCheckModal
           accent={accent} accentText={accentText} gender={gender}
-          supabase={supabase} userId={userId}
+          supabase={supabase} userId={userId} unitSystem={unitSystem}
           onClose={() => setShowManualCheck(false)}
           onSubmit={() => { setShowManualCheck(false); reloadCheckins(); }}
         />

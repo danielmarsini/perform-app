@@ -659,6 +659,7 @@ export default function App() {
               dark={dark}
               lang={lang}
               onChangeLang={changeLang}
+              unitSystem={unitSystem}
               userPlan={userPlan}
               onOpenSettings={() => { setSettingsInitialTab(undefined); setSettingsOpen(true); }}
               ownerEmail={COACH_EMAIL}
