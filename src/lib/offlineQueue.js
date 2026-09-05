@@ -52,6 +52,19 @@ function openDb() {
   });
 }
 
+// Backoff esponenziale (cap 5 minuti) tra un tentativo e il successivo per
+// la STESSA voce in coda — senza questo, una scrittura che fallisce per un
+// motivo non di rete (es. un id di riferimento non più valido) verrebbe
+// ritentata ad ogni singolo mount/focus/evento online, "martellando" un
+// endpoint che continuerà a fallire finché il problema di fondo non è
+// risolto altrove. Il dato non si perde mai (nessuna cancellazione
+// automatica, mai un cap sui tentativi) — si allunga solo l'intervallo tra
+// un tentativo e l'altro, stesso principio dei retry di rete standard.
+export function backoffMs(attempts) {
+  if (!attempts || attempts < 1) return 0;
+  return Math.min(5 * 60 * 1000, 1000 * 2 ** attempts);
+}
+
 // Mette in coda una scrittura fallita per rete assente. `type` identifica
 // quale funzione la deve rieseguire (vedi flushOfflineQueue), `payload` è
 // tutto il necessario per rieseguirla — deve restare serializzabile
@@ -63,10 +76,11 @@ export async function enqueueWrite(type, payload) {
     const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, "readwrite");
-      tx.objectStore(STORE).put({ id, type, payload, createdAt: Date.now() });
+      tx.objectStore(STORE).put({ id, type, payload, createdAt: Date.now(), attempts: 0, lastAttemptAt: 0 });
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
+    db.close();
     notifyQueueChanged();
     return id;
   } catch (err) {
@@ -78,12 +92,14 @@ export async function enqueueWrite(type, payload) {
 export async function getPendingWrites() {
   try {
     const db = await openDb();
-    return await new Promise((resolve, reject) => {
+    const rows = await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, "readonly");
       const req = tx.objectStore(STORE).getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
+    db.close();
+    return rows;
   } catch (err) {
     return [];
   }
@@ -98,9 +114,35 @@ async function removePendingWrite(id) {
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
+    db.close();
     notifyQueueChanged();
   } catch (err) {
     console.error("PERFORM: impossibile rimuovere una scrittura dalla coda offline", err);
+  }
+}
+
+// Aggiorna solo attempts/lastAttemptAt di una voce già in coda (dopo un
+// fallimento) — non tocca payload/type, mai una scrittura persa per un
+// errore qui: se anche l'update fallisse, la voce resta comunque in coda
+// col vecchio contatore, ritentata al prossimo giro.
+async function markAttempt(id, attempts) {
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      const store = tx.objectStore(STORE);
+      const req = store.get(id);
+      req.onsuccess = () => {
+        const row = req.result;
+        if (row) store.put({ ...row, attempts, lastAttemptAt: Date.now() });
+      };
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (err) {
+    // best-effort: un contatore di backoff non aggiornato nel peggiore dei
+    // casi fa ritentare una voce prima del previsto, mai una perdita di dati.
   }
 }
 
@@ -125,18 +167,25 @@ export async function cancelQueuedWrite(type, matches) {
 // `handlers` = { [type]: (payload) => Promise<void> }.
 export async function flushOfflineQueue(handlers) {
   const pending = await getPendingWrites();
+  const now = Date.now();
   let synced = 0;
   for (const item of pending) {
     const handler = handlers[item.type];
     if (!handler) continue;
+    // Rispetta il backoff: una voce appena fallita non viene ritentata ad
+    // ogni singolo evento (online/focus/mount) se non è passato abbastanza
+    // tempo — vedi backoffMs qui sopra.
+    const attempts = item.attempts || 0;
+    if (attempts > 0 && now - (item.lastAttemptAt || 0) < backoffMs(attempts)) continue;
     try {
       await handler(item.payload);
       await removePendingWrite(item.id);
       synced++;
     } catch (err) {
       // Ancora offline o un altro errore reale: resta in coda, si riprova
-      // al prossimo giro (online/focus/mount) — nessun log qui, altrimenti
+      // al prossimo giro rispettando il backoff — nessun log qui, altrimenti
       // ogni tentativo fallito a rete assente spammerebbe la console.
+      await markAttempt(item.id, attempts + 1);
     }
   }
   return { synced, remaining: pending.length - synced };
