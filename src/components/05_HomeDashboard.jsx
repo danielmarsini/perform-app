@@ -11468,6 +11468,7 @@ export default function HomePreview({
   // per continuare a funzionare come preview isolata (npm run dev su questo file).
   const isControlled = genderProp !== undefined;
   const schedaAddonChatActive = Boolean(schedaAddonChatUntil) && new Date(schedaAddonChatUntil) > new Date();
+  const isRealMode = Boolean(supabaseProp && userId);
   const [dark, setDark] = useState(darkProp ?? false);
   const [gender, setGender] = useState(genderProp ?? "M");
   // I 3 piani a coaching reale (full_coaching, scheda_personalizzata, training)
@@ -11959,8 +11960,6 @@ export default function HomePreview({
   const accent = gender === "F" ? (dark ? "#D4A5A5" : "#9D6666") : (dark ? "#C5A059" : "#8C6E33");
   const accentSoft = gender === "F" ? "rgba(212,165,165,0.5)" : "rgba(197,160,89,0.5)";
   const accentText = gender === "F" ? "#9D6666" : "#8C6E33";
-
-  const isRealMode = Boolean(supabaseProp && userId);
 
   const demoExercises = [
     { id: "e1", name: "Panca piana bilanciere", sets: 4, reps: "6-8", rirTarget: "2", technique: "Rest-Pause ultima serie", rests: [180, 180, 180, 240],
