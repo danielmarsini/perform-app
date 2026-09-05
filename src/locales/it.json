@@ -6,5 +6,16 @@
     "ranking": "Classifica",
     "profile": "Profilo",
     "coach": "Coach Panel"
+  },
+  "chat": {
+    "header": "Chat privata col coach"
+  },
+  "ranking": {
+    "titleGlobal": "Classifica Globale",
+    "titleCrew": "La mia Crew",
+    "subtitleCrew": "streak di gruppo, 3-6 persone",
+    "subtitleGlobal": "migliori atleti di {{month}}",
+    "tabClassifica": "Classifica",
+    "tabCrew": "La mia Crew"
   }
 }

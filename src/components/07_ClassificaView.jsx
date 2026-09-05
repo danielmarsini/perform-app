@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { xpToLevelInfo, fetchMonthlyLeaderboard } from '../lib/coachingData.js';
 import Portal from './Portal.jsx';
 import SwipeHandle from './SwipeHandle.jsx';
@@ -522,6 +523,7 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
   // App.jsx) — prima erano un toggle locale scollegato ("Onyx/Light",
   // "Oro/Rosa" in alto a destra) rimasto in produzione per errore, lo stesso
   // bug del pannello coach che restava bianco fuori posto.
+  const { t } = useTranslation();
   const gender = genderOverride === 'female' ? 'female' : SIMULATED_GENDER;
   const mode = dark ? 'onyx' : 'light';
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1090,9 +1092,9 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
       `}</style>
 
       <div className="pc-header-center">
-        <div className="pc-title-line1">{tab === 'crew' ? 'La mia Crew' : 'Classifica Globale'}</div>
+        <div className="pc-title-line1">{tab === 'crew' ? t('ranking.titleCrew', 'La mia Crew') : t('ranking.titleGlobal', 'Classifica Globale')}</div>
         <div className="pc-title-line2">
-          {tab === 'crew' ? 'streak di gruppo, 3-6 persone' : `migliori atleti di ${currentMonth.monthName}`}
+          {tab === 'crew' ? t('ranking.subtitleCrew', 'streak di gruppo, 3-6 persone') : t('ranking.subtitleGlobal', 'migliori atleti di {{month}}', { month: currentMonth.monthName })}
         </div>
       </div>
 
@@ -1100,12 +1102,12 @@ export default function ClassificaView({ supabase, meId, genderOverride, dark = 
         <div className="pc-pill-toggle" style={{ margin: '0 auto 28px', width: 'fit-content' }}>
           <button type="button" onClick={() => setTab('classifica')} className={tab === 'classifica' ? 'pc-pill-active' : ''}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>
-            Classifica
+            {t('ranking.tabClassifica', 'Classifica')}
           </button>
           <span className="pc-pill-sep">|</span>
           <button type="button" onClick={() => setTab('crew')} className={tab === 'crew' ? 'pc-pill-active' : ''}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>
-            La mia Crew
+            {t('ranking.tabCrew', 'La mia Crew')}
           </button>
         </div>
       )}

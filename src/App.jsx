@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, Suspense, lazy } from "react";
 import { ArrowLeft, Lock } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { supabase, makeAuth, AuthScreen } from "./components/03_AuthView.jsx";
 import { AppShell, COACH_EMAIL, accentFor, SplashScreen } from "./components/04_AppShell.jsx";
@@ -35,10 +36,11 @@ function chatPushPreview(message) {
    intestazione fissa in alto, messaggi che scorrono, input in fondo — mai
    la pagina intera a scorrere. */
 function ChatScreen({ supabase, userId, accent, gender }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col h-full px-4 pt-4">
       <div className="mb-3 shrink-0">
-        <p className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>Chat privata col coach</p>
+        <p className="text-xs" style={{ color: "var(--ink-2)", fontWeight: 600 }}>{t("chat.header", "Chat privata col coach")}</p>
       </div>
       <div className="flex-1 min-h-0">
         <ChatThread supabase={supabase} clientId={userId} meId={userId} accent={accent} gender={gender}
